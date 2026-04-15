@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Architectural questions and design discussions
+    url: https://github.com/swift-institute/swift-institute/discussions
+    about: Use Discussions for design questions that are not bugs.
+  - name: Security vulnerability
+    url: https://github.com/swift-institute/swift-institute/security/advisories/new
+    about: Report security issues privately via a Security Advisory, not an Issue.
