@@ -11,9 +11,9 @@ PRs are reviewed by the maintainer before merging.
 ## Conventions
 
 Development conventions — naming, errors, memory safety, testing, modularization,
-and more — are defined in the [`Skills/`](https://github.com/swift-institute/swift-institute/tree/main/Skills)
-directory of the [swift-institute](https://github.com/swift-institute/swift-institute)
-meta-repository. Each skill is the canonical source for its area.
+and more — are maintained internally and applied during code review. Open a PR
+against the relevant repository; the maintainer will surface any convention
+considerations during review.
 
 ## Before opening a pull request
 

@@ -33,20 +33,22 @@ RISC-V, and Microsoft.
 
 | If you want to... | Go to |
 |-------------------|-------|
-| Understand the architecture, read conventions, or browse research | [swift-institute/swift-institute](https://github.com/swift-institute/swift-institute) — the meta-repository |
+| Read the website, architecture overview, or blog | [swift-institute.org](https://swift-institute.org) |
 | Use atomic primitives (buffer, geometry, algebra, memory, kernel) | [swift-primitives](https://github.com/swift-primitives) |
 | Consume an RFC or ISO specification | [swift-ietf](https://github.com/swift-ietf), [swift-iso](https://github.com/swift-iso), or the relevant per-authority org |
 | Use composed building blocks (IO, HTML, CSS, SVG, PDF) | [swift-foundations](https://github.com/swift-foundations) |
-| Read the blog | [swift-institute/swift-institute/tree/main/Blog](https://github.com/swift-institute/swift-institute/tree/main/Blog) |
+| Browse design rationale | [swift-institute/Research](https://github.com/swift-institute/Research) |
+| Browse the empirical receipts behind technical claims | [swift-institute/Experiments](https://github.com/swift-institute/Experiments) |
 | Report an issue or contribute | Open an issue or pull request on the relevant repository |
-| Report a security vulnerability | [Private security advisory](https://github.com/swift-institute/swift-institute/security/advisories/new) |
+| Report a security vulnerability | See the [security policy](https://github.com/swift-institute/.github/blob/main/SECURITY.md) |
 
 ## Status
 
-Initial public alpha. The meta-repository
-([swift-institute/swift-institute](https://github.com/swift-institute/swift-institute))
-is public. The package layers it describes are being released repository by
-repository over the coming weeks.
+Initial public alpha. The website ([swift-institute.org](https://swift-institute.org))
+and companion repositories ([Research](https://github.com/swift-institute/Research),
+[Experiments](https://github.com/swift-institute/Experiments)) are public.
+The package layers they describe are being released repository by repository
+over the coming weeks.
 
 Maintained by [Coen ten Thije Boonkkamp](https://github.com/coenttb) —
 contributions welcome via pull request.
