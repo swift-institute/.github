@@ -12,22 +12,20 @@ name: Swift DocC (reusable)
 #         umbrella-display-name: "Property Primitives"
 #         umbrella-bundle-id: "swift-property-primitives.Property-Primitives"
 #         umbrella-docc-path: "Sources/Property Primitives/Property Primitives.docc"
-#         archive-name: "Property Primitives"
 #         exclude-modules: "Property_Primitives_Test_Support"
-#         patch-script: "Scripts/patch-umbrella-symbol-graph.py"
 #         sanity-check-json-path: "data/documentation/property_primitives/property/init(_:).json"
 #       secrets: inherit
 #
 # Pipeline:
-#   1. `swift build` with symbol-graph emission
+#   1. `swift build` with symbol-graph emission (preserves @_exported doc comments)
 #   2. Pool per-module graphs, excluding caller-specified modules (e.g. Test Support)
-#   3. (Optional) run a patch script to inject missing doc comments — defensive
-#      no-op under the swift-build route but retained for forward-compatibility
-#   4. `xcrun docc convert` on the umbrella catalog — single-archive output
-#   5. (Optional) sanity-check that the archive contains non-empty abstracts
-#   6. Upload as an artifact
+#   3. `xcrun docc convert` on the umbrella catalog — single-archive output
+#   4. (Optional) sanity-check that the archive contains non-empty abstracts
+#   5. Upload as an artifact
 #
-# Details in swift-institute/Research/docc-multi-target-documentation-aggregation.md
+# If a future Swift release regresses @_exported doc-comment preservation,
+# reintroduce the patch logic INLINE here — every caller benefits at once.
+# Details: swift-institute/Research/docc-multi-target-documentation-aggregation.md
 
 on:
   workflow_call:
@@ -54,18 +52,10 @@ on:
         type: string
         required: true
         description: "Path to the umbrella .docc catalog (e.g. 'Sources/Property Primitives/Property Primitives.docc')."
-      archive-name:
-        type: string
-        required: true
-        description: "Output .doccarchive base name (without extension)."
       exclude-modules:
         type: string
         default: ""
         description: "Space-separated module names to exclude from the distribution symbol-graph pool (e.g. 'Test_Support_Module')."
-      patch-script:
-        type: string
-        default: ""
-        description: "Optional path to a patch script (e.g. 'Scripts/patch-umbrella-symbol-graph.py'). Leave empty to skip."
       sanity-check-json-path:
         type: string
         default: ""
@@ -120,38 +110,23 @@ jobs:
           echo "Distribution symbol graphs:"
           ls "${DOCS_WORK}/symbol-graphs/"
 
-      - if: inputs.patch-script != ''
-        name: Patch umbrella symbol graph with missing doc comments (defensive)
-        run: |
-          mkdir -p "${DOCS_WORK}/umbrella-symbol-graph"
-          python3 ${{ inputs.patch-script }} \
-            --symbol-graph-dir "${DOCS_WORK}/symbol-graphs" \
-            --umbrella-module ${{ inputs.umbrella-module }} \
-            --output-dir "${DOCS_WORK}/umbrella-symbol-graph"
-          ls "${DOCS_WORK}/umbrella-symbol-graph/"
-
       - name: Build distribution archive (xcrun docc convert)
         run: |
-          if [ -d "${DOCS_WORK}/umbrella-symbol-graph" ]; then
-            GRAPH_DIR="${DOCS_WORK}/umbrella-symbol-graph"
-          else
-            GRAPH_DIR="${DOCS_WORK}/symbol-graphs"
-          fi
           mkdir -p "${DOCS_WORK}/archives"
-          rm -rf "${DOCS_WORK}/archives/${{ inputs.archive-name }}.doccarchive"
+          rm -rf "${DOCS_WORK}/archives/${{ inputs.umbrella-display-name }}.doccarchive"
           xcrun docc convert "${{ inputs.umbrella-docc-path }}" \
-            --additional-symbol-graph-dir "${GRAPH_DIR}" \
+            --additional-symbol-graph-dir "${DOCS_WORK}/symbol-graphs" \
             --fallback-display-name "${{ inputs.umbrella-display-name }}" \
             --fallback-bundle-identifier "${{ inputs.umbrella-bundle-id }}" \
-            --output-path "${DOCS_WORK}/archives/${{ inputs.archive-name }}.doccarchive" \
+            --output-path "${DOCS_WORK}/archives/${{ inputs.umbrella-display-name }}.doccarchive" \
             2>&1 | tail -20
           echo "Top-level documentation routes:"
-          ls "${DOCS_WORK}/archives/${{ inputs.archive-name }}.doccarchive/data/documentation/" | sort
+          ls "${DOCS_WORK}/archives/${{ inputs.umbrella-display-name }}.doccarchive/data/documentation/" | sort
 
       - if: inputs.sanity-check-json-path != ''
         name: Sanity check — verify abstract present
         run: |
-          python3 - "${DOCS_WORK}/archives/${{ inputs.archive-name }}.doccarchive/${{ inputs.sanity-check-json-path }}" <<'PY'
+          python3 - "${DOCS_WORK}/archives/${{ inputs.umbrella-display-name }}.doccarchive/${{ inputs.sanity-check-json-path }}" <<'PY'
           import json, sys
           with open(sys.argv[1]) as f:
               d = json.load(f)
@@ -165,5 +140,5 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: docc-archive
-          path: ${{ env.DOCS_WORK }}/archives/${{ inputs.archive-name }}.doccarchive
+          path: ${{ env.DOCS_WORK }}/archives/${{ inputs.umbrella-display-name }}.doccarchive
           retention-days: ${{ inputs.retention-days }}
