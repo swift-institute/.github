@@ -1,0 +1,25 @@
+# Dependabot config for swift-institute/.github itself.
+#
+# Post-centralization the only action pins in the ecosystem live here
+# (actions/checkout, actions/cache, SwiftyLab/setup-swift, etc.). Consumer
+# repos reference this .github via `uses: swift-institute/.github/.../@main`,
+# so their own github-actions dependabot scan finds only the @main ref — not
+# bumpable. This config puts the real tracking where the real pins are.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 10
+    groups:
+      actions:
+        patterns: ["*"]
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "chore(deps)"

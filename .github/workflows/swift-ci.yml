@@ -66,6 +66,9 @@ jobs:
   macos-release:
     name: macOS (Swift ${{ inputs.swift-version }}, debug)
     runs-on: ${{ inputs.macos-runner }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v6
 
@@ -112,6 +115,9 @@ jobs:
     name: Ubuntu (Swift ${{ inputs.swift-version }}, release)
     runs-on: ubuntu-latest
     container: ${{ inputs.linux-image }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v6
 
@@ -135,6 +141,9 @@ jobs:
     runs-on: ubuntu-latest
     container: ${{ inputs.linux-nightly-image }}
     continue-on-error: true
+    timeout-minutes: 45
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v6
 
@@ -159,7 +168,9 @@ jobs:
     if: inputs.enable-windows
     name: Windows (Swift ${{ inputs.swift-version }})
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v6
 
@@ -168,7 +179,7 @@ jobs:
         run: git config --global url."https://${{ secrets.PRIVATE_REPO_TOKEN }}@github.com/".insteadOf "https://github.com/"
 
       - name: Install Swift
-        uses: SwiftyLab/setup-swift@latest
+        uses: SwiftyLab/setup-swift@v1
         with:
           swift-version: ${{ inputs.swift-version }}
 
