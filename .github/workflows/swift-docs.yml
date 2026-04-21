@@ -1,0 +1,169 @@
+name: Swift DocC (reusable)
+
+# Reusable DocC build workflow for Swift Institute packages using the
+# umbrella-module single-catalog pattern ([DOC-019a]). Consume from a caller
+# package's .github/workflows/docs.yml via:
+#
+#   jobs:
+#     docs:
+#       uses: swift-institute/.github/.github/workflows/swift-docs.yml@main
+#       with:
+#         umbrella-module: Property_Primitives
+#         umbrella-display-name: "Property Primitives"
+#         umbrella-bundle-id: "swift-property-primitives.Property-Primitives"
+#         umbrella-docc-path: "Sources/Property Primitives/Property Primitives.docc"
+#         archive-name: "Property Primitives"
+#         exclude-modules: "Property_Primitives_Test_Support"
+#         patch-script: "Scripts/patch-umbrella-symbol-graph.py"
+#         sanity-check-json-path: "data/documentation/property_primitives/property/init(_:).json"
+#       secrets: inherit
+#
+# Pipeline:
+#   1. `swift build` with symbol-graph emission
+#   2. Pool per-module graphs, excluding caller-specified modules (e.g. Test Support)
+#   3. (Optional) run a patch script to inject missing doc comments — defensive
+#      no-op under the swift-build route but retained for forward-compatibility
+#   4. `xcrun docc convert` on the umbrella catalog — single-archive output
+#   5. (Optional) sanity-check that the archive contains non-empty abstracts
+#   6. Upload as an artifact
+#
+# Details in swift-institute/Research/docc-multi-target-documentation-aggregation.md
+
+on:
+  workflow_call:
+    inputs:
+      xcode-version:
+        type: string
+        default: "26.4"
+      macos-runner:
+        type: string
+        default: "macos-26"
+      umbrella-module:
+        type: string
+        required: true
+        description: "Umbrella module name (underscore form, e.g. Property_Primitives)."
+      umbrella-display-name:
+        type: string
+        required: true
+        description: "Human-readable module name (e.g. 'Property Primitives')."
+      umbrella-bundle-id:
+        type: string
+        required: true
+        description: "DocC bundle identifier (e.g. swift-property-primitives.Property-Primitives)."
+      umbrella-docc-path:
+        type: string
+        required: true
+        description: "Path to the umbrella .docc catalog (e.g. 'Sources/Property Primitives/Property Primitives.docc')."
+      archive-name:
+        type: string
+        required: true
+        description: "Output .doccarchive base name (without extension)."
+      exclude-modules:
+        type: string
+        default: ""
+        description: "Space-separated module names to exclude from the distribution symbol-graph pool (e.g. 'Test_Support_Module')."
+      patch-script:
+        type: string
+        default: ""
+        description: "Optional path to a patch script (e.g. 'Scripts/patch-umbrella-symbol-graph.py'). Leave empty to skip."
+      sanity-check-json-path:
+        type: string
+        default: ""
+        description: "Optional relative path inside the archive to a JSON file whose 'abstract' field must be non-empty."
+      retention-days:
+        type: number
+        default: 14
+      enable-private-repos:
+        type: boolean
+        default: false
+    secrets:
+      PRIVATE_REPO_TOKEN:
+        required: false
+
+jobs:
+  docs:
+    name: DocC archive
+    runs-on: ${{ inputs.macos-runner }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - if: inputs.enable-private-repos
+        name: Configure git for private repos
+        run: git config --global url."https://${{ secrets.PRIVATE_REPO_TOKEN }}@github.com/".insteadOf "https://github.com/"
+
+      - name: Select Xcode ${{ inputs.xcode-version }}
+        run: sudo xcode-select -s /Applications/Xcode_${{ inputs.xcode-version }}.app
+
+      - name: Print Swift version
+        run: swift --version
+
+      - name: swift build — emit per-module symbol graphs
+        env:
+          DOCS_WORK: ${{ runner.temp }}/docs-work
+        run: |
+          echo "DOCS_WORK=${DOCS_WORK}" >> $GITHUB_ENV
+          rm -rf "${DOCS_WORK}"
+          mkdir -p "${DOCS_WORK}/symbol-graphs-raw"
+          swift build -c release \
+            -Xswiftc -emit-symbol-graph \
+            -Xswiftc -emit-symbol-graph-dir -Xswiftc "${DOCS_WORK}/symbol-graphs-raw"
+          echo "Raw symbol graphs:"
+          ls "${DOCS_WORK}/symbol-graphs-raw/"
+
+      - name: Pool distribution symbol graphs
+        run: |
+          mkdir -p "${DOCS_WORK}/symbol-graphs"
+          cp "${DOCS_WORK}/symbol-graphs-raw"/*.symbols.json "${DOCS_WORK}/symbol-graphs/"
+          for excluded in ${{ inputs.exclude-modules }}; do
+            rm -f "${DOCS_WORK}/symbol-graphs/${excluded}.symbols.json"
+          done
+          echo "Distribution symbol graphs:"
+          ls "${DOCS_WORK}/symbol-graphs/"
+
+      - if: inputs.patch-script != ''
+        name: Patch umbrella symbol graph with missing doc comments (defensive)
+        run: |
+          mkdir -p "${DOCS_WORK}/umbrella-symbol-graph"
+          python3 ${{ inputs.patch-script }} \
+            --symbol-graph-dir "${DOCS_WORK}/symbol-graphs" \
+            --umbrella-module ${{ inputs.umbrella-module }} \
+            --output-dir "${DOCS_WORK}/umbrella-symbol-graph"
+          ls "${DOCS_WORK}/umbrella-symbol-graph/"
+
+      - name: Build distribution archive (xcrun docc convert)
+        run: |
+          if [ -d "${DOCS_WORK}/umbrella-symbol-graph" ]; then
+            GRAPH_DIR="${DOCS_WORK}/umbrella-symbol-graph"
+          else
+            GRAPH_DIR="${DOCS_WORK}/symbol-graphs"
+          fi
+          mkdir -p "${DOCS_WORK}/archives"
+          rm -rf "${DOCS_WORK}/archives/${{ inputs.archive-name }}.doccarchive"
+          xcrun docc convert "${{ inputs.umbrella-docc-path }}" \
+            --additional-symbol-graph-dir "${GRAPH_DIR}" \
+            --fallback-display-name "${{ inputs.umbrella-display-name }}" \
+            --fallback-bundle-identifier "${{ inputs.umbrella-bundle-id }}" \
+            --output-path "${DOCS_WORK}/archives/${{ inputs.archive-name }}.doccarchive" \
+            2>&1 | tail -20
+          echo "Top-level documentation routes:"
+          ls "${DOCS_WORK}/archives/${{ inputs.archive-name }}.doccarchive/data/documentation/" | sort
+
+      - if: inputs.sanity-check-json-path != ''
+        name: Sanity check — verify abstract present
+        run: |
+          python3 - "${DOCS_WORK}/archives/${{ inputs.archive-name }}.doccarchive/${{ inputs.sanity-check-json-path }}" <<'PY'
+          import json, sys
+          with open(sys.argv[1]) as f:
+              d = json.load(f)
+          if not d.get('abstract'):
+              print('error: sanity check failed — abstract missing on the specified symbol', file=sys.stderr)
+              sys.exit(1)
+          print(f"verified: abstract present = {d['abstract'][0]['text']!r}")
+          PY
+
+      - name: Upload distribution DocC archive
+        uses: actions/upload-artifact@v7
+        with:
+          name: docc-archive
+          path: ${{ env.DOCS_WORK }}/archives/${{ inputs.archive-name }}.doccarchive
+          retention-days: ${{ inputs.retention-days }}
