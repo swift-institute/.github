@@ -61,6 +61,7 @@ jobs:
 
       - name: Install SwiftLint ${{ inputs.swiftlint-version }}
         if: steps.cache-swiftlint.outputs.cache-hit != 'true'
+        shell: bash
         run: |
           set -euo pipefail
           apt-get update -qq
