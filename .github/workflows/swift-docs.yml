@@ -6,7 +6,7 @@ name: Swift DocC (reusable)
 #
 #   jobs:
 #     docs:
-#       uses: swift-institute/.github/.github/workflows/swift-docs.yml@main
+#       uses: swift-institute/.github/.github/workflows/swift-docs.yml@v1
 #       with:
 #         umbrella-module: Property_Primitives
 #         umbrella-display-name: "Property Primitives"
@@ -19,12 +19,17 @@ name: Swift DocC (reusable)
 # Pipeline:
 #   1. `swift build` with symbol-graph emission (preserves @_exported doc comments)
 #   2. Pool per-module graphs, excluding caller-specified modules (e.g. Test Support)
-#   3. `xcrun docc convert` on the umbrella catalog — single-archive output
-#   4. (Optional) sanity-check that the archive contains non-empty abstracts
-#   5. Upload as an artifact
+#   3. Isolate the umbrella graph via patch-umbrella-symbol-graph.py. This step
+#      is load-bearing for in-catalog `Symbol` cross-reference resolution —
+#      passing the full pool to `docc convert` triggers cross-module
+#      ambiguity and every symbol reference fails silently. The script's
+#      doc-comment injection is a defensive no-op under `swift build` but
+#      catches any future regression of @_exported preservation.
+#   4. `xcrun docc convert` on the umbrella catalog pointed at ONLY the
+#      isolated umbrella graph — single-archive output, clean cross-refs.
+#   5. (Optional) sanity-check that the archive contains non-empty abstracts.
+#   6. Upload as an artifact.
 #
-# If a future Swift release regresses @_exported doc-comment preservation,
-# reintroduce the patch logic INLINE here — every caller benefits at once.
 # Details: swift-institute/Research/docc-multi-target-documentation-aggregation.md
 
 on:
@@ -121,16 +126,35 @@ jobs:
           cp "${DOCS_WORK}/symbol-graphs-raw"/*.symbols.json "${DOCS_WORK}/symbol-graphs/"
           for excluded in ${{ inputs.exclude-modules }}; do
             rm -f "${DOCS_WORK}/symbol-graphs/${excluded}.symbols.json"
+            rm -f "${DOCS_WORK}/symbol-graphs/${excluded}@"*.symbols.json
           done
           echo "Distribution symbol graphs:"
           ls "${DOCS_WORK}/symbol-graphs/"
+
+      - name: Fetch patch-umbrella-symbol-graph.py
+        uses: actions/checkout@v6
+        with:
+          repository: swift-institute/.github
+          ref: v1
+          path: .swift-institute-github
+          sparse-checkout: .github/scripts/patch-umbrella-symbol-graph.py
+          sparse-checkout-cone-mode: false
+
+      - name: Isolate umbrella symbol graph
+        run: |
+          python3 .swift-institute-github/.github/scripts/patch-umbrella-symbol-graph.py \
+            --symbol-graph-dir "${DOCS_WORK}/symbol-graphs" \
+            --umbrella-module "${{ inputs.umbrella-module }}" \
+            --output-dir "${DOCS_WORK}/umbrella-symbol-graph"
+          echo "Isolated umbrella graph(s):"
+          ls "${DOCS_WORK}/umbrella-symbol-graph/"
 
       - name: Build distribution archive (xcrun docc convert)
         run: |
           mkdir -p "${DOCS_WORK}/archives"
           rm -rf "${DOCS_WORK}/archives/${{ inputs.umbrella-display-name }}.doccarchive"
           xcrun docc convert "${{ inputs.umbrella-docc-path }}" \
-            --additional-symbol-graph-dir "${DOCS_WORK}/symbol-graphs" \
+            --additional-symbol-graph-dir "${DOCS_WORK}/umbrella-symbol-graph" \
             --fallback-display-name "${{ inputs.umbrella-display-name }}" \
             --fallback-bundle-identifier "${{ inputs.umbrella-bundle-id }}" \
             --output-path "${DOCS_WORK}/archives/${{ inputs.umbrella-display-name }}.doccarchive" \
