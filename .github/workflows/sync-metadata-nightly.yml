@@ -1,0 +1,85 @@
+# sync-metadata-nightly.yml — daily full-sweep autopilot.
+#
+# Runs sync-metadata.yml across all 17 ecosystem orgs at 04:00 UTC. When the
+# run applies any edits, opens or updates a tracking issue in
+# swift-institute/.github summarising what converged.
+#
+# Provenance: Skills/github-repository [GH-REPO-070] / [GH-REPO-071];
+# Research/github-metadata-harmonization.md § 4.2 / § 7 Q8.
+
+name: sync-metadata-nightly
+
+on:
+  schedule:
+    - cron: '0 4 * * *'   # daily 04:00 UTC
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: 'Preview edits without applying.'
+        type: boolean
+        required: false
+        default: false
+
+jobs:
+  sweep:
+    uses: ./.github/workflows/sync-metadata.yml
+    with:
+      dry-run: ${{ inputs.dry-run || false }}
+    secrets: inherit
+
+  report:
+    needs: sweep
+    runs-on: ubuntu-latest
+    if: needs.sweep.outputs.edits-applied != '0' && needs.sweep.outputs.edits-applied != ''
+    steps:
+      - name: Mint installation token
+        id: token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.METADATA_APP_ID }}
+          private-key: ${{ secrets.METADATA_APP_PRIVATE_KEY }}
+          owner: swift-institute
+          repositories: .github
+          permissions: |
+            issues: write
+
+      - name: Open or update tracking issue
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          EDITS_APPLIED: ${{ needs.sweep.outputs.edits-applied }}
+          DIFFS_FOUND: ${{ needs.sweep.outputs.diffs-found }}
+        run: |
+          set -euo pipefail
+          today=$(date -u '+%Y-%m-%d')
+          title="Metadata sync applied ${today}"
+          body=$(cat <<EOF
+          The nightly metadata sweep at 04:00 UTC on ${today} applied **${EDITS_APPLIED}** field edits across the public ecosystem (${DIFFS_FOUND} divergences detected).
+
+          Full per-repo breakdown is in the [run summary](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}).
+
+          ### What this means
+
+          GitHub-side metadata had drifted from the per-repo \`.github/metadata.yaml\` source-of-truth — e.g., a description was edited via the web UI, a topic was added externally, or a setting was changed. The sweep reverted GitHub state to match the YAML.
+
+          - To **accept** the change instead of reverting it, edit the relevant repo's \`.github/metadata.yaml\` to match what was on GitHub.
+          - To **investigate** how drift happened, check each affected repo's audit log around the change time.
+
+          See \`Skills/github-repository\` § [GH-REPO-002] for the single-source discipline.
+          EOF
+          )
+
+          # Find existing open tracking issue (any open issue with the title prefix).
+          existing=$(gh issue list --repo swift-institute/.github \
+            --state open --search "Metadata sync applied in:title" --json number,title \
+            --jq '.[0].number // ""')
+
+          if [[ -n "$existing" ]]; then
+            gh issue edit "$existing" --repo swift-institute/.github \
+              --title "$title" --body "$body"
+            echo "Updated existing issue #${existing}"
+          else
+            gh issue create --repo swift-institute/.github \
+              --title "$title" --body "$body" \
+              --label "metadata-sync"
+            echo "Opened new tracking issue"
+          fi

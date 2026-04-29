@@ -1,0 +1,236 @@
+# sync-metadata.yml — propagate .github/metadata.yaml to GitHub state.
+#
+# Reusable workflow. Reads each in-scope repo's .github/metadata.yaml, diffs
+# against current GitHub state, and applies divergent fields via `gh repo edit`.
+#
+# Provenance: Skills/github-repository [GH-REPO-070]; Research/github-metadata-
+# harmonization.md § 4.2.
+#
+# Inputs:
+#   repo:     "owner/name" form. When set, scope to one repo.
+#   org:      org name. When set, scope to one org. Ignored if `repo` set.
+#   dry-run:  when true, print proposed edits without applying.
+# (When both repo and org are unset, sweeps all 17 ecosystem orgs.)
+#
+# Authentication: swift-institute-bot GitHub App (per Skills/github-repository
+# [GH-REPO-073]). App secrets METADATA_APP_ID + METADATA_APP_PRIVATE_KEY at
+# org level on swift-institute/.github.
+
+name: sync-metadata
+
+on:
+  workflow_call:
+    inputs:
+      repo:
+        description: 'Owner/name of a single repo to sync.'
+        type: string
+        required: false
+        default: ''
+      org:
+        description: 'Org to sweep (ignored if repo is set).'
+        type: string
+        required: false
+        default: ''
+      dry-run:
+        description: 'Print proposed edits without applying.'
+        type: boolean
+        required: false
+        default: false
+    outputs:
+      edits-applied:
+        description: 'Number of fields actually edited (0 in dry-run).'
+        value: ${{ jobs.sync.outputs.edits-applied }}
+      diffs-found:
+        description: 'Number of fields divergent (whether or not applied).'
+        value: ${{ jobs.sync.outputs.diffs-found }}
+
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: 'Owner/name of a single repo to sync (optional).'
+        type: string
+        required: false
+      org:
+        description: 'Org to sweep (optional; ignored if repo is set).'
+        type: string
+        required: false
+      dry-run:
+        description: 'Print proposed edits without applying.'
+        type: boolean
+        required: false
+        default: false
+
+# All ecosystem orgs in scope. Update this list when new orgs are added.
+env:
+  ECOSYSTEM_ORGS: >-
+    swift-primitives swift-standards swift-foundations
+    swift-ietf swift-iso swift-ieee swift-iec
+    swift-w3c swift-whatwg swift-ecma swift-incits
+    swift-linux-foundation swift-microsoft swift-arm-ltd swift-intel swift-riscv
+    swift-institute
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    outputs:
+      edits-applied: ${{ steps.sync.outputs.edits-applied }}
+      diffs-found: ${{ steps.sync.outputs.diffs-found }}
+    steps:
+      - name: Mint installation token
+        id: token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.METADATA_APP_ID }}
+          private-key: ${{ secrets.METADATA_APP_PRIVATE_KEY }}
+          # When scoped to a single repo, mint a token for that repo only.
+          # When sweeping an org or all orgs, the token covers the App's
+          # full installation; we issue per-repo `gh repo edit` calls so
+          # nothing is implicitly batched at the auth layer.
+          owner: ${{ inputs.repo != '' && fromJSON(format('"{0}"', inputs.repo)) || (inputs.org != '' && inputs.org || 'swift-institute') }}
+
+      - name: Sync metadata
+        id: sync
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          DRY_RUN: ${{ inputs.dry-run }}
+        run: |
+          set -euo pipefail
+
+          edits_applied=0
+          diffs_found=0
+          summary_lines=()
+
+          # Build target list ----------------------------------------------------
+          if [[ -n "${{ inputs.repo }}" ]]; then
+            targets=("${{ inputs.repo }}")
+          elif [[ -n "${{ inputs.org }}" ]]; then
+            mapfile -t targets < <(gh repo list "${{ inputs.org }}" --limit 500 \
+              --json nameWithOwner,visibility,isArchived \
+              --jq '.[] | select(.visibility=="PUBLIC" and .isArchived==false) | .nameWithOwner')
+          else
+            targets=()
+            for org in $ECOSYSTEM_ORGS; do
+              while IFS= read -r line; do
+                targets+=("$line")
+              done < <(gh repo list "$org" --limit 500 \
+                --json nameWithOwner,visibility,isArchived \
+                --jq '.[] | select(.visibility=="PUBLIC" and .isArchived==false) | .nameWithOwner')
+            done
+          fi
+
+          echo "Targets: ${#targets[@]} repos"
+
+          # Per-repo sync -------------------------------------------------------
+          for target in "${targets[@]}"; do
+            # 1. Read .github/metadata.yaml from the target's main branch.
+            yaml_content=$(gh api "repos/${target}/contents/.github/metadata.yaml" \
+              --jq '.content' 2>/dev/null | base64 -d 2>/dev/null) || {
+              echo "  ${target}: skipped (no .github/metadata.yaml)"
+              continue
+            }
+
+            # 2. Parse YAML; bail loud on malformed.
+            desired=$(echo "$yaml_content" | yq -o=json) || {
+              echo "  ${target}: ERROR — malformed metadata.yaml"
+              exit 1
+            }
+
+            desired_desc=$(echo "$desired" | jq -r '.description // ""')
+            desired_homepage=$(echo "$desired" | jq -r '.homepage // ""')
+            desired_topics=$(echo "$desired" | jq -r '.topics // [] | .[]' | sort -u)
+            desired_issues=$(echo "$desired" | jq -r '.settings.hasIssuesEnabled // true')
+            desired_disc=$(echo "$desired" | jq -r '.settings.hasDiscussionsEnabled // false')
+            desired_wiki=$(echo "$desired" | jq -r '.settings.hasWikiEnabled // false')
+            desired_branch=$(echo "$desired" | jq -r '.settings.defaultBranch // "main"')
+
+            # 3. Read current GitHub state.
+            current=$(gh repo view "$target" \
+              --json description,repositoryTopics,homepageUrl,hasIssuesEnabled,hasDiscussionsEnabled,hasWikiEnabled,defaultBranchRef)
+
+            current_desc=$(echo "$current" | jq -r '.description // ""')
+            current_homepage=$(echo "$current" | jq -r '.homepageUrl // ""')
+            current_topics=$(echo "$current" | jq -r '.repositoryTopics // [] | .[].name' | sort -u)
+            current_issues=$(echo "$current" | jq -r '.hasIssuesEnabled')
+            current_disc=$(echo "$current" | jq -r '.hasDiscussionsEnabled')
+            current_wiki=$(echo "$current" | jq -r '.hasWikiEnabled')
+            current_branch=$(echo "$current" | jq -r '.defaultBranchRef.name // "main"')
+
+            # 4. Compute diffs.
+            edit_args=()
+            repo_diffs=0
+
+            if [[ "$desired_desc" != "$current_desc" ]]; then
+              edit_args+=(--description "$desired_desc")
+              repo_diffs=$((repo_diffs+1))
+            fi
+            if [[ "$desired_homepage" != "$current_homepage" ]]; then
+              edit_args+=(--homepage "$desired_homepage")
+              repo_diffs=$((repo_diffs+1))
+            fi
+
+            # Topic set-diff: add (desired ∖ current); remove (current ∖ desired).
+            to_add=$(comm -23 <(echo "$desired_topics") <(echo "$current_topics") || true)
+            to_remove=$(comm -13 <(echo "$desired_topics") <(echo "$current_topics") || true)
+            while IFS= read -r t; do
+              [[ -z "$t" ]] && continue
+              edit_args+=(--add-topic "$t")
+              repo_diffs=$((repo_diffs+1))
+            done <<< "$to_add"
+            while IFS= read -r t; do
+              [[ -z "$t" ]] && continue
+              edit_args+=(--remove-topic "$t")
+              repo_diffs=$((repo_diffs+1))
+            done <<< "$to_remove"
+
+            # Settings diff. gh repo edit flag names are --enable-{feature}={bool}.
+            if [[ "$desired_issues" != "$current_issues" ]]; then
+              edit_args+=(--enable-issues="$desired_issues")
+              repo_diffs=$((repo_diffs+1))
+            fi
+            if [[ "$desired_disc" != "$current_disc" ]]; then
+              edit_args+=(--enable-discussions="$desired_disc")
+              repo_diffs=$((repo_diffs+1))
+            fi
+            if [[ "$desired_wiki" != "$current_wiki" ]]; then
+              edit_args+=(--enable-wiki="$desired_wiki")
+              repo_diffs=$((repo_diffs+1))
+            fi
+            if [[ "$desired_branch" != "$current_branch" ]]; then
+              edit_args+=(--default-branch "$desired_branch")
+              repo_diffs=$((repo_diffs+1))
+            fi
+
+            diffs_found=$((diffs_found + repo_diffs))
+
+            # 5. Apply (or print).
+            if [[ $repo_diffs -eq 0 ]]; then
+              echo "  ${target}: converged"
+              continue
+            fi
+
+            if [[ "$DRY_RUN" == "true" ]]; then
+              echo "  ${target}: ${repo_diffs} diff(s) — would run:"
+              printf '    gh repo edit %q' "$target"
+              for a in "${edit_args[@]}"; do printf ' %q' "$a"; done
+              printf '\n'
+              summary_lines+=("- \`${target}\`: ${repo_diffs} field(s) — dry-run preview")
+            else
+              echo "  ${target}: ${repo_diffs} diff(s) — applying"
+              gh repo edit "$target" "${edit_args[@]}"
+              edits_applied=$((edits_applied + repo_diffs))
+              summary_lines+=("- \`${target}\`: ${repo_diffs} field(s) applied")
+            fi
+          done
+
+          echo "edits-applied=${edits_applied}" >> "$GITHUB_OUTPUT"
+          echo "diffs-found=${diffs_found}" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## sync-metadata summary"
+            echo ""
+            echo "- targets: ${#targets[@]}"
+            echo "- diffs found: ${diffs_found}"
+            echo "- edits applied: ${edits_applied} (dry-run: ${DRY_RUN})"
+            echo ""
+            for line in "${summary_lines[@]}"; do echo "$line"; done
+          } >> "$GITHUB_STEP_SUMMARY"

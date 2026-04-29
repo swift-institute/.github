@@ -1,0 +1,103 @@
+# spec-titles.yaml — canonical title lookup for L2 single-spec packages.
+#
+# Used by swift-institute/.github/.github/workflows/generate-metadata.yml
+# (and validated by sync-metadata.yml) to render L2 description templates per
+# Skills/github-repository [GH-REPO-011] / [GH-REPO-014]:
+#
+#   "Swift implementation of {AUTHORITY-FULL} {N}: {Spec Title}."
+#
+# Schema: top-level map keyed on authority code, then map keyed on spec-id
+# (always quoted to preserve year/dash forms like '4-1986' and '1035').
+# Title values are the canonical specification title verbatim from the
+# publication, with no leading article and no terminal period.
+#
+# Maintainer adds an entry whenever a new spec-id package enters the
+# ecosystem; entry lands in the same PR that creates the new repo's
+# .github/metadata.yaml. Drift between this table and a YAML's rendered
+# description is a defect surfaced by sync-metadata.yml.
+#
+# Provenance: harvested 2026-04-29 from existing IETF / ISO / IEEE / WHATWG
+# / W3C / INCITS public-repo descriptions per Research/github-metadata-
+# harmonization.md § 1.3 / § 3.1.3.
+
+rfc:
+  '768': 'User Datagram Protocol'
+  '791': 'Internet Protocol'
+  '1035': 'Domain Names - Implementation and Specification'
+  '1123': 'Requirements for Internet Hosts - Application and Support'
+  '1950': 'ZLIB Compressed Data Format'
+  '1951': 'DEFLATE Compressed Data Format'
+  '2045': 'MIME Part One - Format of Internet Message Bodies'
+  '2046': 'MIME Part Two - Media Types (Multipart)'
+  '2183': 'Communicating Presentation Information in Internet Messages: The Content-Disposition Header Field'
+  '2369': 'The Use of URLs as Meta-Syntax for Core Mail List Commands'
+  '2387': 'The MIME Multipart/Related Content-type'
+  '2388': 'Returning Values from Forms - multipart/form-data Encoding'
+  '2822': 'Internet Message Format'
+  '3986': 'Uniform Resource Identifier (URI) Generic Syntax'
+  '3987': 'Internationalized Resource Identifiers (IRIs)'
+  '4287': 'Atom Syndication Format'
+  '4648': 'The Base16, Base32, and Base64 Data Encodings'
+  '5321': 'Simple Mail Transfer Protocol'
+  '5322': 'Internet Message Format'
+  '6068': "The 'mailto' URI Scheme"
+  '6238': 'TOTP: Time-Based One-Time Password Algorithm'
+  '6265': 'HTTP State Management Mechanism'
+  '6531': 'SMTP Extension for Internationalized Email'
+  '6570': 'URI Template'
+  '6750': 'The OAuth 2.0 Authorization Framework: Bearer Token Usage'
+  '7519': 'JSON Web Token (JWT)'
+  '7578': 'Returning Values from Forms - multipart/form-data'
+  '7617': "The 'Basic' HTTP Authentication Scheme"
+  '8058': 'Signaling One-Click Functionality for List Email Headers'
+  '9110': 'HTTP Semantics'
+  '9111': 'HTTP Caching'
+  '9112': 'HTTP/1.1'
+  '9293': 'Transmission Control Protocol'
+  '9557': 'Date and Time on the Internet: Timestamps with Additional Information'
+
+iso:
+  '639': 'Language codes'
+  '3166': 'Country codes'
+  '8601': 'Date and time format'
+  '15924': 'Script codes'
+  '21320': 'Document Container File (ZIP)'
+  '32000': 'Document management - Portable document format'
+
+# ISO/IEC joint specifications: authority is "ISO/IEC" in the rendered description.
+# Stored under iso-iec to disambiguate; generator handles the AUTHORITY-FULL rendering.
+iso-iec:
+  '9899': 'Programming languages - C'
+
+ieee:
+  '754': 'IEEE Standard for Floating-Point Arithmetic'
+
+iec:
+  '61966': 'sRGB color space'
+
+incits:
+  '4-1986': 'US-ASCII'
+
+# WHATWG and W3C use named standards (not numbered); their descriptions follow
+# the L2 named-standard template:
+#
+#   "Swift implementation of WHATWG {Standard Name}."
+#   "Swift implementation of W3C {Standard Name}."
+#
+# Stored here for completeness so generate-metadata.yml has a single lookup;
+# the rendering branch differs but the source-of-truth is unified.
+
+whatwg:
+  url: 'URL Standard'
+  html: 'HTML Living Standard'
+
+w3c:
+  cssom: 'CSSOM'
+  epub: 'EPUB 3.3'
+  svg: 'Scalable Vector Graphics 2'
+  css: 'CSS'
+
+# Add new entries below as new spec-id packages enter the ecosystem.
+# Maintainer authors the entry in the same PR that creates the new repo's
+# .github/metadata.yaml. Format: '{spec-id}': 'Canonical Title' (no leading
+# article, no terminal period).
