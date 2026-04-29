@@ -77,19 +77,46 @@ generate_one() {
     *)                  layer="" ;;
   esac
 
-  if [[ -n "$authority" && "$name" =~ ^swift-${authority}-(.+)$ ]]; then
+  # BCP variant: swift-bcp-N (in swift-ietf org). BCPs have authority "BCP" but
+  # the title may be in either bcp[N] or rfc[N] (since BCPs are RFCs with a
+  # parallel numbering — e.g., BCP 47 is RFC 5646). Try bcp first, fall back
+  # to a rfc-aliased title only if the user has manually populated.
+  if [[ "$owner" == "swift-ietf" && "$name" =~ ^swift-bcp-(.+)$ ]]; then
+    authority="bcp"
+    spec_id="${BASH_REMATCH[1]}"
+    class="L2-named-standard"  # BCPs are typically named standards
+    spec_title=$(yq ".bcp[\"${spec_id}\"] // \"\"" "$SPEC_TITLES")
+    if [[ -n "$spec_title" && "$spec_title" != "null" ]]; then
+      description="Swift implementation of BCP ${spec_id}: ${spec_title}."
+    else
+      description="Swift implementation of BCP ${spec_id}: TODO add title to spec-titles.yaml."
+    fi
+    topics_lines=("standards" "ietf" "bcp" "bcp-${spec_id}" "TODO-domain-tag")
+  elif [[ -n "$authority" && "$name" =~ ^swift-${authority}-(.+)$ ]]; then
     spec_id="${BASH_REMATCH[1]}"
     if [[ "$spec_id" =~ ^[0-9]+(-[0-9]+)?$ ]]; then
       class="L2-single-spec"
+      # Lookup primary; for iso fall back to iso-iec when joint.
       spec_title=$(yq ".${authority}[\"${spec_id}\"] // \"\"" "$SPEC_TITLES")
       local authority_full
       authority_full=$(echo "$authority" | tr '[:lower:]' '[:upper:]')
+      if [[ "$authority" == "iso" && ( -z "$spec_title" || "$spec_title" == "null" ) ]]; then
+        # Try iso-iec (joint specs).
+        spec_title=$(yq ".\"iso-iec\"[\"${spec_id}\"] // \"\"" "$SPEC_TITLES")
+        if [[ -n "$spec_title" && "$spec_title" != "null" ]]; then
+          authority_full="ISO/IEC"
+          topics_lines=("$layer" "iso" "iso-iec" "iso-${spec_id}" "TODO-domain-tag")
+        fi
+      fi
       if [[ -n "$spec_title" && "$spec_title" != "null" ]]; then
         description="Swift implementation of ${authority_full} ${spec_id}: ${spec_title}."
       else
         description="Swift implementation of ${authority_full} ${spec_id}: TODO add title to spec-titles.yaml."
       fi
-      topics_lines=("$layer" "$authority" "${authority}-${spec_id}" "TODO-domain-tag")
+      # Default topics if not already set by iso-iec branch.
+      if [[ ${#topics_lines[@]} -eq 0 ]]; then
+        topics_lines=("$layer" "$authority" "${authority}-${spec_id}" "TODO-domain-tag")
+      fi
     else
       class="L2-named-standard"
       spec_title=$(yq ".${authority}[\"${spec_id}\"] // \"\"" "$SPEC_TITLES")
