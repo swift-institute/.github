@@ -166,7 +166,16 @@ generate_one() {
 
     local pr_body
     pr_body=$(printf 'Heuristic-seeded `.github/metadata.yaml` draft for review. Class detected: `%s`.\n\nReplace any `TODO` entries with real values before merging. To preview the proposed sync, dispatch `sync-metadata.yml` with `dry-run=true` and `repo=%s`; the run summary will contain the diff.\n\nSee [Skills/github-repository](https://github.com/swift-institute/Skills/blob/main/github-repository/SKILL.md) for the standard, and [Research/github-metadata-harmonization.md § 3](https://github.com/swift-institute/Research/blob/main/github-metadata-harmonization.md) for the templates.\n' "${class}" "${target}")
-    gh pr create --title "metadata: add .github/metadata.yaml draft" --body "$pr_body"
+    # Use gh api directly so any failure prints a clear error.
+    local pr_url
+    pr_url=$(gh api "repos/${target}/pulls" \
+      --method POST \
+      --field title="metadata: add .github/metadata.yaml draft" \
+      --field head="$branch" \
+      --field base="main" \
+      --field body="$pr_body" \
+      --jq '.html_url')
+    echo "    PR: $pr_url"
   )
   rm -rf "$tmpdir"
   echo "  ${target}: PR opened (class=${class})"
