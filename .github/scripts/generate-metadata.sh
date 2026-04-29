@@ -37,9 +37,17 @@ generate_one() {
   local owner="${target%/*}"
   local name="${target#*/}"
 
-  # Skip if a metadata.yaml already exists.
+  # Skip if a metadata.yaml already exists on the default branch.
   if gh api "repos/${target}/contents/.github/metadata.yaml" --silent 2>/dev/null; then
-    echo "  ${target}: skipped (metadata.yaml already present)"
+    echo "  ${target}: skipped (metadata.yaml already on main)"
+    return 0
+  fi
+  # Skip if an open metadata-draft PR already exists (idempotency on retry).
+  local existing_pr
+  existing_pr=$(gh api "repos/${target}/pulls?state=open" \
+    --jq '[.[] | select(.head.ref | startswith("metadata/draft-"))] | .[0].html_url // ""')
+  if [[ -n "$existing_pr" ]]; then
+    echo "  ${target}: skipped (open draft PR already exists: $existing_pr)"
     return 0
   fi
 
