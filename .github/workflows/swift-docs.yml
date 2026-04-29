@@ -1,8 +1,18 @@
 name: Swift DocC (reusable)
 
-# Reusable DocC build workflow for Swift Institute packages using the
-# umbrella-module single-catalog pattern ([DOC-019a]). Consume from a caller
-# package's .github/workflows/docs.yml via:
+# Reusable DocC validation workflow for Swift Institute packages using
+# the umbrella-module single-catalog pattern ([DOC-019a]). Acts as a
+# build-time gate — if `xcrun docc convert` fails (broken cross-refs,
+# unresolved symbols, schema drift, tutorial syntax errors), the job
+# fails and CI goes red. The resulting .doccarchive is intentionally
+# NOT uploaded as an artifact: visitor-facing docs are served by Swift
+# Package Index from each tagged release; no other consumer of the
+# archive currently exists. If a consumer materializes (e.g. a future
+# swift-institute.org aggregation), add an upload step gated on a tar
+# wrapper (DocC slug filenames contain `:` for `init(_:)`-shaped symbols,
+# which `actions/upload-artifact@v4+` rejects).
+#
+# Consume from a caller package's .github/workflows/docs.yml via:
 #
 #   jobs:
 #     docs:
@@ -28,7 +38,6 @@ name: Swift DocC (reusable)
 #   4. `xcrun docc convert` on the umbrella catalog pointed at ONLY the
 #      isolated umbrella graph — single-archive output, clean cross-refs.
 #   5. (Optional) sanity-check that the archive contains non-empty abstracts.
-#   6. Upload as an artifact.
 #
 # Details: swift-institute/Research/docc-multi-target-documentation-aggregation.md
 
@@ -65,9 +74,6 @@ on:
         type: string
         default: ""
         description: "Optional relative path inside the archive to a JSON file whose 'abstract' field must be non-empty."
-      retention-days:
-        type: number
-        default: 14
       enable-private-repos:
         type: boolean
         default: false
@@ -174,10 +180,3 @@ jobs:
               sys.exit(1)
           print(f"verified: abstract present = {d['abstract'][0]['text']!r}")
           PY
-
-      - name: Upload distribution DocC archive
-        uses: actions/upload-artifact@v7
-        with:
-          name: docc-archive
-          path: ${{ env.DOCS_WORK }}/archives/${{ inputs.umbrella-display-name }}.doccarchive
-          retention-days: ${{ inputs.retention-days }}
