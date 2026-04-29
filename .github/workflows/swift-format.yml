@@ -5,63 +5,42 @@ name: Swift Format (reusable)
 #
 #   jobs:
 #     format:
-#       uses: swift-institute/.github/.github/workflows/swift-format.yml@main
-#       secrets: inherit
+#       uses: swift-institute/.github/.github/workflows/swift-format.yml@v1
 #
 # Behavior:
-#   - Runs inside the Swift container. swift-format is bundled in the Swift 6+
-#     toolchain (verified swift:6.3 ships swift-format 6.3.1 at /usr/bin/), so
-#     no install step is needed — the tool tracks the toolchain version.
+#   - Runs inside swift:6.3. swift-format is bundled in the Swift 6+ toolchain
+#     (verified swift:6.3 ships swift-format 6.3.1 at /usr/bin/), so no install
+#     step — the tool tracks the toolchain version.
 #   - Formats Sources/ and Tests/ in place using the caller repo's
 #     `.swift-format` config at its root.
-#   - Auto-commits changes to the target branch. Requires `contents: write`,
-#     declared at the job level here.
+#   - Auto-commits changes to main. Requires `contents: write`.
 #
 # Triggers are owned by the caller. Typical pattern: push to main only —
 # auto-commit on pull_request would create a feedback loop.
 
 on:
   workflow_call:
-    inputs:
-      linux-image:
-        type: string
-        default: "swift:6.3"
-        description: "Swift container image. swift-format is bundled in Swift 6+ toolchains."
-      paths:
-        type: string
-        default: "Sources Tests"
-        description: "Space-separated paths passed to swift-format format --recursive."
-      commit-message:
-        type: string
-        default: "Run swift-format"
-      branch:
-        type: string
-        default: "main"
-        description: "Branch the auto-commit action pushes to."
-    secrets:
-      PRIVATE_REPO_TOKEN:
-        required: false
 
 jobs:
   format:
     name: swift-format
     runs-on: ubuntu-latest
-    container: ${{ inputs.linux-image }}
+    container: swift:6.3
     timeout-minutes: 15
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ inputs.branch }}
+          ref: main
 
       - name: Print swift-format version
         run: swift-format --version
 
       - name: Format
-        run: swift-format format --recursive --in-place --ignore-unparsable-files ${{ inputs.paths }}
+        run: swift-format format --recursive --in-place --ignore-unparsable-files Sources Tests
 
       - uses: stefanzweifel/git-auto-commit-action@v7
         with:
-          commit_message: ${{ inputs.commit-message }}
-          branch: ${{ inputs.branch }}
+          commit_message: "Run swift-format"
+          branch: main

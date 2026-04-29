@@ -5,47 +5,24 @@ name: SwiftLint (reusable)
 #
 #   jobs:
 #     lint:
-#       uses: swift-institute/.github/.github/workflows/swiftlint.yml@main
-#       secrets: inherit
+#       uses: swift-institute/.github/.github/workflows/swiftlint.yml@v1
 #
 # Behavior:
-#   - Runs inside a Swift container. SwiftLint's dynamic binary needs the
-#     Swift runtime libraries that swift:6.3 provides (libswiftCore, etc.).
-#   - Downloads the prebuilt swiftlint_linux_amd64.zip from the GitHub release,
-#     caches the binary for subsequent runs, and executes against the caller
-#     repo using its own `.swiftlint.yml` config (including any remote
-#     `parent_config` URL).
-#   - Defaults to --strict so SwiftLint warnings fail the job.
-#
-# Callers typically trigger on push + pull_request to main.
+#   - Runs inside swift:6.3. SwiftLint's dynamic binary needs the Swift
+#     runtime libraries (libswiftCore, etc.) that the container provides.
+#   - Downloads SwiftLint 0.63.2 from the GitHub release, caches the binary
+#     for subsequent runs, executes against the caller repo using its own
+#     `.swiftlint.yml` config (including any remote `parent_config` URL).
+#   - --strict — SwiftLint warnings fail the job.
 
 on:
   workflow_call:
-    inputs:
-      linux-image:
-        type: string
-        default: "swift:6.3"
-        description: "Swift container. SwiftLint's dynamic binary requires libswiftCore from the Swift runtime."
-      swiftlint-version:
-        type: string
-        default: "0.63.2"
-        description: "SwiftLint release tag (must have a swiftlint_linux_amd64.zip asset)."
-      strict:
-        type: boolean
-        default: true
-        description: "Pass --strict to swiftlint lint (warnings fail the job)."
-      reporter:
-        type: string
-        default: "github-actions-logging"
-    secrets:
-      PRIVATE_REPO_TOKEN:
-        required: false
 
 jobs:
   lint:
     name: SwiftLint
     runs-on: ubuntu-latest
-    container: ${{ inputs.linux-image }}
+    container: swift:6.3
     timeout-minutes: 15
     permissions:
       contents: read
@@ -57,9 +34,9 @@ jobs:
         uses: actions/cache@v5
         with:
           path: /usr/local/bin/swiftlint
-          key: ${{ runner.os }}-swiftlint-${{ inputs.swiftlint-version }}
+          key: ${{ runner.os }}-swiftlint-0.63.2
 
-      - name: Install SwiftLint ${{ inputs.swiftlint-version }}
+      - name: Install SwiftLint 0.63.2
         if: steps.cache-swiftlint.outputs.cache-hit != 'true'
         shell: bash
         run: |
@@ -67,7 +44,7 @@ jobs:
           apt-get update -qq
           apt-get install -qq -y curl
           curl -fsSL -o /tmp/swiftlint.zip \
-            "https://github.com/realm/SwiftLint/releases/download/${{ inputs.swiftlint-version }}/swiftlint_linux_amd64.zip"
+            "https://github.com/realm/SwiftLint/releases/download/0.63.2/swiftlint_linux_amd64.zip"
           unzip -q /tmp/swiftlint.zip -d /tmp/swiftlint_extracted
           mv /tmp/swiftlint_extracted/swiftlint /usr/local/bin/
           chmod +x /usr/local/bin/swiftlint
@@ -77,4 +54,4 @@ jobs:
         run: swiftlint --version
 
       - name: Lint
-        run: swiftlint lint ${{ inputs.strict && '--strict' || '' }} --reporter ${{ inputs.reporter }}
+        run: swiftlint lint --strict --reporter github-actions-logging

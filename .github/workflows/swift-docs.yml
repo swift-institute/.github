@@ -37,19 +37,12 @@ name: Swift DocC (reusable)
 #      catches any future regression of @_exported preservation.
 #   4. `xcrun docc convert` on the umbrella catalog pointed at ONLY the
 #      isolated umbrella graph — single-archive output, clean cross-refs.
-#   5. (Optional) sanity-check that the archive contains non-empty abstracts.
 #
 # Details: swift-institute/Research/docc-multi-target-documentation-aggregation.md
 
 on:
   workflow_call:
     inputs:
-      xcode-version:
-        type: string
-        default: "26.4"
-      macos-runner:
-        type: string
-        default: "macos-26"
       umbrella-module:
         type: string
         required: true
@@ -70,10 +63,6 @@ on:
         type: string
         default: ""
         description: "Space-separated module names to exclude from the distribution symbol-graph pool (e.g. 'Test_Support_Module')."
-      sanity-check-json-path:
-        type: string
-        default: ""
-        description: "Optional relative path inside the archive to a JSON file whose 'abstract' field must be non-empty."
       enable-private-repos:
         type: boolean
         default: false
@@ -88,7 +77,7 @@ on:
 jobs:
   docs:
     name: DocC archive
-    runs-on: ${{ inputs.macos-runner }}
+    runs-on: macos-26
     timeout-minutes: 60
     permissions:
       contents: read
@@ -99,8 +88,8 @@ jobs:
         name: Configure git for private repos
         run: git config --global url."https://${{ secrets.PRIVATE_REPO_TOKEN }}@github.com/".insteadOf "https://github.com/"
 
-      - name: Select Xcode ${{ inputs.xcode-version }}
-        run: sudo xcode-select -s /Applications/Xcode_${{ inputs.xcode-version }}.app
+      - name: Select Xcode 26.4
+        run: sudo xcode-select -s /Applications/Xcode_26.4.app
 
       - name: Print Swift version
         run: swift --version
@@ -167,16 +156,3 @@ jobs:
             2>&1 | tail -20
           echo "Top-level documentation routes:"
           ls "${DOCS_WORK}/archives/${{ inputs.umbrella-display-name }}.doccarchive/data/documentation/" | sort
-
-      - if: inputs.sanity-check-json-path != ''
-        name: Sanity check — verify abstract present
-        run: |
-          python3 - "${DOCS_WORK}/archives/${{ inputs.umbrella-display-name }}.doccarchive/${{ inputs.sanity-check-json-path }}" <<'PY'
-          import json, sys
-          with open(sys.argv[1]) as f:
-              d = json.load(f)
-          if not d.get('abstract'):
-              print('error: sanity check failed — abstract missing on the specified symbol', file=sys.stderr)
-              sys.exit(1)
-          print(f"verified: abstract present = {d['abstract'][0]['text']!r}")
-          PY
