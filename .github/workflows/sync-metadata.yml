@@ -117,7 +117,7 @@ jobs:
           else
             mapfile -t targets < <(gh repo list "${{ inputs.org }}" --limit 500 \
               --json nameWithOwner,visibility,isArchived \
-              --jq '.[] | select(.visibility=="PUBLIC" and .isArchived==false) | .nameWithOwner')
+              --jq '.[] | select(.isArchived==false) | .nameWithOwner')
           fi
 
           echo "Targets: ${#targets[@]} repos"
