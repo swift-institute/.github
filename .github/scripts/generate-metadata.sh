@@ -134,6 +134,9 @@ generate_one() {
     cd "$tmpdir"
     gh repo clone "$target" repo -- --depth 1
     cd repo
+    # gh repo clone uses gh's auth for the clone; subsequent git operations
+    # need their own auth. Embed the App token in the remote URL.
+    git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${target}.git"
     git checkout -b "$branch"
     mkdir -p .github
     {

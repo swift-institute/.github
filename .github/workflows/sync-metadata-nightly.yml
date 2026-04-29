@@ -63,8 +63,7 @@ jobs:
           private-key: ${{ secrets.METADATA_APP_PRIVATE_KEY }}
           owner: swift-institute
           repositories: .github
-          permissions: |
-            issues: write
+          permission-issues: write
 
       - name: Open or update tracking issue
         env:

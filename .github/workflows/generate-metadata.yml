@@ -53,10 +53,9 @@ jobs:
           app-id: ${{ secrets.METADATA_APP_ID }}
           private-key: ${{ secrets.METADATA_APP_PRIVATE_KEY }}
           owner: ${{ inputs.org }}
-          permissions: |
-            metadata: read
-            contents: write
-            pull-requests: write
+          permission-metadata: read
+          permission-contents: write
+          permission-pull-requests: write
 
       - name: Generate per-repo drafts
         env:
