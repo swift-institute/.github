@@ -1,8 +1,9 @@
 # sync-metadata-nightly.yml — daily full-sweep autopilot.
 #
-# Runs sync-metadata.yml across all 17 ecosystem orgs at 04:00 UTC. When the
-# run applies any edits, opens or updates a tracking issue in
-# swift-institute/.github summarising what converged.
+# Calls sync-metadata.yml once per ecosystem org via a matrix strategy at
+# 04:00 UTC daily. Each org gets its own auth scope. When any org applies
+# edits, opens or updates a tracking issue in swift-institute/.github
+# summarising what converged.
 #
 # Provenance: Skills/github-repository [GH-REPO-070] / [GH-REPO-071];
 # Research/github-metadata-harmonization.md § 4.2 / § 7 Q8.
@@ -22,15 +23,37 @@ on:
 
 jobs:
   sweep:
+    strategy:
+      fail-fast: false
+      matrix:
+        org:
+          - swift-primitives
+          - swift-standards
+          - swift-foundations
+          - swift-ietf
+          - swift-iso
+          - swift-ieee
+          - swift-iec
+          - swift-w3c
+          - swift-whatwg
+          - swift-ecma
+          - swift-incits
+          - swift-linux-foundation
+          - swift-microsoft
+          - swift-arm-ltd
+          - swift-intel
+          - swift-riscv
+          - swift-institute
     uses: ./.github/workflows/sync-metadata.yml
     with:
+      org: ${{ matrix.org }}
       dry-run: ${{ inputs.dry-run || false }}
     secrets: inherit
 
   report:
     needs: sweep
     runs-on: ubuntu-latest
-    if: needs.sweep.outputs.edits-applied != '0' && needs.sweep.outputs.edits-applied != ''
+    if: always() && needs.sweep.result != 'skipped'
     steps:
       - name: Mint installation token
         id: token
@@ -46,31 +69,42 @@ jobs:
       - name: Open or update tracking issue
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
-          EDITS_APPLIED: ${{ needs.sweep.outputs.edits-applied }}
-          DIFFS_FOUND: ${{ needs.sweep.outputs.diffs-found }}
+          SWEEP_RESULT: ${{ needs.sweep.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
-          today=$(date -u '+%Y-%m-%d')
-          title="Metadata sync applied ${today}"
-          body=$(cat <<EOF
-          The nightly metadata sweep at 04:00 UTC on ${today} applied **${EDITS_APPLIED}** field edits across the public ecosystem (${DIFFS_FOUND} divergences detected).
 
-          Full per-repo breakdown is in the [run summary](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}).
+          # Only post when a sweep actually applied or attempted edits.
+          # The aggregated `result` from a matrix job is `success` if all
+          # matrix entries succeeded, `failure` if any failed. We post on
+          # failure (something to investigate) or when run from
+          # workflow_dispatch with dry-run=false (signal of intent).
+          if [[ "$SWEEP_RESULT" == "success" ]]; then
+            echo "All orgs converged cleanly — no tracking issue needed."
+            exit 0
+          fi
+
+          today=$(date -u '+%Y-%m-%d')
+          title="Metadata sync run ${today} — ${SWEEP_RESULT}"
+          body=$(cat <<EOF
+          The nightly metadata sweep at 04:00 UTC on ${today} completed with status: \`${SWEEP_RESULT}\`.
+
+          See the [run summary](${RUN_URL}) for the per-org breakdown of edits applied (or attempted).
 
           ### What this means
 
-          GitHub-side metadata had drifted from the per-repo \`.github/metadata.yaml\` source-of-truth — e.g., a description was edited via the web UI, a topic was added externally, or a setting was changed. The sweep reverted GitHub state to match the YAML.
+          GitHub-side metadata had drifted from per-repo \`.github/metadata.yaml\` source-of-truth in one or more orgs. The sweep attempted to revert state to match the YAMLs.
 
-          - To **accept** the change instead of reverting it, edit the relevant repo's \`.github/metadata.yaml\` to match what was on GitHub.
-          - To **investigate** how drift happened, check each affected repo's audit log around the change time.
+          - To **accept** drift instead of reverting it, edit the relevant repo's \`.github/metadata.yaml\` to match GitHub state.
+          - To **investigate** drift origins, check each affected repo's audit log around the change time.
+          - If \`${SWEEP_RESULT}\` == \`failure\`, one or more matrix legs failed (auth, rate-limit, malformed YAML); follow the run logs.
 
           See \`Skills/github-repository\` § [GH-REPO-002] for the single-source discipline.
           EOF
           )
 
-          # Find existing open tracking issue (any open issue with the title prefix).
           existing=$(gh issue list --repo swift-institute/.github \
-            --state open --search "Metadata sync applied in:title" --json number,title \
+            --state open --search "Metadata sync run in:title" --json number \
             --jq '.[0].number // ""')
 
           if [[ -n "$existing" ]]; then
@@ -80,6 +114,7 @@ jobs:
           else
             gh issue create --repo swift-institute/.github \
               --title "$title" --body "$body" \
-              --label "metadata-sync"
-            echo "Opened new tracking issue"
+              --label "metadata-sync" 2>&1 || \
+              gh issue create --repo swift-institute/.github \
+                --title "$title" --body "$body"
           fi

@@ -60,15 +60,6 @@ on:
         required: false
         default: false
 
-# All ecosystem orgs in scope. Update this list when new orgs are added.
-env:
-  ECOSYSTEM_ORGS: >-
-    swift-primitives swift-standards swift-foundations
-    swift-ietf swift-iso swift-ieee swift-iec
-    swift-w3c swift-whatwg swift-ecma swift-incits
-    swift-linux-foundation swift-microsoft swift-arm-ltd swift-intel swift-riscv
-    swift-institute
-
 jobs:
   sync:
     runs-on: ubuntu-latest
@@ -76,17 +67,37 @@ jobs:
       edits-applied: ${{ steps.sync.outputs.edits-applied }}
       diffs-found: ${{ steps.sync.outputs.diffs-found }}
     steps:
+      - name: Validate inputs
+        run: |
+          if [[ -z "${{ inputs.repo }}" && -z "${{ inputs.org }}" ]]; then
+            echo "::error::Either 'repo' (owner/name) or 'org' input is required."
+            echo "::error::For cross-org sweeps, use sync-metadata-nightly.yml which calls this workflow per-org via matrix."
+            exit 1
+          fi
+
+      - name: Compute auth scope
+        id: scope
+        run: |
+          if [[ -n "${{ inputs.repo }}" ]]; then
+            input="${{ inputs.repo }}"
+            owner="${input%/*}"
+            name="${input#*/}"
+            echo "owner=${owner}" >> "$GITHUB_OUTPUT"
+            echo "repositories=${name}" >> "$GITHUB_OUTPUT"
+          else
+            echo "owner=${{ inputs.org }}" >> "$GITHUB_OUTPUT"
+            # Empty repositories means: token covers all repos in the org installation.
+            echo "repositories=" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Mint installation token
         id: token
         uses: actions/create-github-app-token@v1
         with:
           app-id: ${{ secrets.METADATA_APP_ID }}
           private-key: ${{ secrets.METADATA_APP_PRIVATE_KEY }}
-          # When scoped to a single repo, mint a token for that repo only.
-          # When sweeping an org or all orgs, the token covers the App's
-          # full installation; we issue per-repo `gh repo edit` calls so
-          # nothing is implicitly batched at the auth layer.
-          owner: ${{ inputs.repo != '' && fromJSON(format('"{0}"', inputs.repo)) || (inputs.org != '' && inputs.org || 'swift-institute') }}
+          owner: ${{ steps.scope.outputs.owner }}
+          repositories: ${{ steps.scope.outputs.repositories }}
 
       - name: Sync metadata
         id: sync
@@ -103,19 +114,10 @@ jobs:
           # Build target list ----------------------------------------------------
           if [[ -n "${{ inputs.repo }}" ]]; then
             targets=("${{ inputs.repo }}")
-          elif [[ -n "${{ inputs.org }}" ]]; then
+          else
             mapfile -t targets < <(gh repo list "${{ inputs.org }}" --limit 500 \
               --json nameWithOwner,visibility,isArchived \
               --jq '.[] | select(.visibility=="PUBLIC" and .isArchived==false) | .nameWithOwner')
-          else
-            targets=()
-            for org in $ECOSYSTEM_ORGS; do
-              while IFS= read -r line; do
-                targets+=("$line")
-              done < <(gh repo list "$org" --limit 500 \
-                --json nameWithOwner,visibility,isArchived \
-                --jq '.[] | select(.visibility=="PUBLIC" and .isArchived==false) | .nameWithOwner')
-            done
           fi
 
           echo "Targets: ${#targets[@]} repos"

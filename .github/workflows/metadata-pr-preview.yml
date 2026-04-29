@@ -29,13 +29,23 @@ jobs:
   preview:
     runs-on: ubuntu-latest
     steps:
+      - name: Compute auth scope
+        id: scope
+        run: |
+          input="${{ inputs.repo }}"
+          owner="${input%/*}"
+          name="${input#*/}"
+          echo "owner=${owner}" >> "$GITHUB_OUTPUT"
+          echo "repositories=${name}" >> "$GITHUB_OUTPUT"
+
       - name: Mint installation token
         id: token
         uses: actions/create-github-app-token@v1
         with:
           app-id: ${{ secrets.METADATA_APP_ID }}
           private-key: ${{ secrets.METADATA_APP_PRIVATE_KEY }}
-          owner: ${{ fromJSON(format('"{0}"', inputs.repo)) }}
+          owner: ${{ steps.scope.outputs.owner }}
+          repositories: ${{ steps.scope.outputs.repositories }}
           permissions: |
             metadata: read
             contents: read
