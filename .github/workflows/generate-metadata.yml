@@ -1,22 +1,15 @@
 # generate-metadata.yml — heuristic-seeded YAML drafts for bulk authoring.
 #
 # Dispatched manually when starting a new wave. For each in-scope repo without
-# an existing .github/metadata.yaml, opens a PR with a draft YAML inferred from:
-#   - org name → layer tag (mechanical)
-#   - repo name → authority + spec-id (mechanical for swift-{authority}-{n})
-#   - spec-titles.yaml → spec title (mechanical lookup for L2 single-spec)
-#   - Package.swift `description:` → seed for the description content phrase
-#   - README first paragraph → fallback seed
-#   - org+name → homepage (SPI URL when available, else swift-institute.org)
-#   - settings → standard defaults
+# an existing .github/metadata.yaml, opens a PR with a draft YAML inferred from
+# the package class (mechanical from org + repo name) and the spec-titles.yaml
+# lookup table.
+#
+# Logic lives in .github/scripts/generate-metadata.sh — this workflow is the
+# thin trigger / auth / checkout shell.
 #
 # Provenance: Skills/github-repository [GH-REPO-070]; Research/github-metadata-
 # harmonization.md § 4.4 / § 3.1.
-#
-# This is a v1 scaffold — the heuristic logic is intentionally minimal and
-# focuses on the L2 spec-shaped repos (swift-{authority}-{n}) where rendering
-# is fully deterministic via spec-titles.yaml. L1 / L3 / L4 repos receive a
-# stub YAML the maintainer fills in.
 
 name: generate-metadata
 
@@ -47,7 +40,7 @@ jobs:
   generate:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout swift-institute/.github (for spec-titles.yaml)
+      - name: Checkout swift-institute/.github (for spec-titles.yaml + script)
         uses: actions/checkout@v4
         with:
           repository: swift-institute/.github
@@ -70,157 +63,5 @@ jobs:
           GH_TOKEN: ${{ steps.token.outputs.token }}
           ORG: ${{ inputs.org }}
           SINGLE_REPO: ${{ inputs.repo }}
-        run: |
-          set -euo pipefail
-
-          # Build target list.
-          if [[ -n "$SINGLE_REPO" ]]; then
-            targets=("$SINGLE_REPO")
-          else
-            mapfile -t targets < <(gh repo list "$ORG" --limit 500 \
-              --json nameWithOwner,visibility,isArchived \
-              --jq '.[] | select(.visibility=="PUBLIC" and .isArchived==false) | .nameWithOwner')
-          fi
-
-          spec_titles=institute-github/spec-titles.yaml
-
-          for target in "${targets[@]}"; do
-            owner="${target%/*}"
-            name="${target#*/}"
-
-            # Skip if a metadata.yaml already exists.
-            if gh api "repos/${target}/contents/.github/metadata.yaml" --silent 2>/dev/null; then
-              echo "  ${target}: skipped (metadata.yaml already present)"
-              continue
-            fi
-
-            # Detect package class -------------------------------------------------
-            class="unknown"
-            layer=""
-            authority=""
-            spec_id=""
-            spec_title=""
-            description=""
-            homepage="https://swift-institute.org"
-            topics_yaml=""
-
-            case "$owner" in
-              swift-primitives)   layer="primitives" ;;
-              swift-standards)    layer="standards" ;;
-              swift-foundations)  layer="foundations" ;;
-              swift-ietf)         layer="standards"; authority="rfc" ;;
-              swift-iso)          layer="standards"; authority="iso" ;;
-              swift-ieee)         layer="standards"; authority="ieee" ;;
-              swift-iec)          layer="standards"; authority="iec" ;;
-              swift-w3c)          layer="standards"; authority="w3c" ;;
-              swift-whatwg)       layer="standards"; authority="whatwg" ;;
-              swift-ecma)         layer="standards"; authority="ecma" ;;
-              swift-incits)       layer="standards"; authority="incits" ;;
-              swift-institute)    layer="" ;;  # institute meta repos handled separately
-              *)                  layer="" ;;
-            esac
-
-            # L2 spec-shaped: swift-{authority}-{n}
-            if [[ -n "$authority" && "$name" =~ ^swift-${authority}-(.+)$ ]]; then
-              spec_id="${BASH_REMATCH[1]}"
-              # Numeric or year-suffixed → single-spec
-              if [[ "$spec_id" =~ ^[0-9]+(-[0-9]+)?$ ]]; then
-                class="L2-single-spec"
-                spec_title=$(yq ".${authority}[\"${spec_id}\"] // \"\"" "$spec_titles")
-                authority_full=$(echo "$authority" | tr '[:lower:]' '[:upper:]')
-                if [[ -n "$spec_title" && "$spec_title" != "null" ]]; then
-                  description="Swift implementation of ${authority_full} ${spec_id}: ${spec_title}."
-                else
-                  description="Swift implementation of ${authority_full} ${spec_id}: TODO add title to spec-titles.yaml."
-                fi
-                topics_yaml="  - ${layer}
-  - ${authority}
-  - ${authority}-${spec_id}
-  - TODO-domain-tag"
-              else
-                # Named (non-numeric) — L2 named standard; look up by name.
-                class="L2-named-standard"
-                spec_title=$(yq ".${authority}[\"${spec_id}\"] // \"\"" "$spec_titles")
-                authority_full=$(echo "$authority" | tr '[:lower:]' '[:upper:]')
-                if [[ -n "$spec_title" && "$spec_title" != "null" ]]; then
-                  description="Swift implementation of ${authority_full} ${spec_title}."
-                else
-                  description="Swift implementation of ${authority_full} TODO-standard-name."
-                fi
-                topics_yaml="  - ${layer}
-  - ${authority}
-  - TODO-domain-tag"
-              fi
-            elif [[ "$name" == ".github" ]]; then
-              class="org-github"
-              description="Organization-level community-health defaults for ${owner}."
-              homepage=""
-              topics_yaml=""
-            elif [[ "$name" =~ ^swift-(.+)\.org$ ]]; then
-              class="org-website-stub"
-              layer_name="${BASH_REMATCH[1]}"
-              description="Stub for the future swift-${layer_name}.org website. Content will be developed; for now, see https://swift-institute.org."
-              homepage="https://swift-institute.org"
-              topics_yaml=""
-            elif [[ "$name" =~ -primitives$ ]]; then
-              class="L1-primitive"
-              # Use Package.swift description as a seed if available.
-              pkg_desc=$(gh api "repos/${target}/contents/Package.swift" --jq '.content' 2>/dev/null \
-                | base64 -d 2>/dev/null \
-                | grep -oE 'description:[[:space:]]*"[^"]*"' \
-                | head -1 \
-                | sed -E 's/.*"([^"]*)".*/\1/' || echo "")
-              if [[ -n "$pkg_desc" ]]; then
-                description="${pkg_desc} for Swift."
-              else
-                description="TODO content phrase for Swift."
-              fi
-              topics_yaml="  - primitives
-  - TODO-domain-tag"
-            else
-              # L3 / L4 fallback
-              class="L3-foundation-or-other"
-              description="TODO content phrase for Swift."
-              topics_yaml="  - ${layer:-foundations}
-  - TODO-domain-tag"
-            fi
-
-            # Compose YAML and open PR -------------------------------------------
-            branch="metadata/draft-$(date -u +%Y%m%d-%H%M%S)"
-            tmpdir=$(mktemp -d)
-            (
-              cd "$tmpdir"
-              gh repo clone "$target" repo -- --depth 1
-              cd repo
-              git checkout -b "$branch"
-              mkdir -p .github
-              {
-                echo "# .github/metadata.yaml"
-                echo "# Generated by swift-institute/.github generate-metadata.yml ($(date -u +%Y-%m-%d))."
-                echo "# Detected class: ${class}"
-                echo "# REVIEW BEFORE MERGE: replace any TODO entries with real values."
-                echo "description: \"${description}\""
-                echo "topics:"
-                printf '%s\n' "$topics_yaml"
-                echo "homepage: \"${homepage}\""
-              } > .github/metadata.yaml
-              git add .github/metadata.yaml
-              git -c user.name='swift-institute-bot' \
-                  -c user.email='swift-institute-bot@users.noreply.github.com' \
-                  commit -m "metadata: add .github/metadata.yaml draft
-
-Generated draft for review. Class: ${class}.
-
-See Skills/github-repository for the standard, and replace any TODO
-entries with real values before merging."
-              git push --set-upstream origin "$branch"
-              gh pr create --title "metadata: add .github/metadata.yaml draft" \
-                --body "Heuristic-seeded draft for review. Class detected: \`${class}\`.
-
-Replace any \`TODO\` entries with real values before merging. The PR-preview workflow will comment with the proposed sync diff once the draft is filled in.
-
-See [Skills/github-repository](https://github.com/swift-institute/Skills/blob/main/github-repository/SKILL.md) for the standard, and [Research/github-metadata-harmonization.md § 3](https://github.com/swift-institute/Research/blob/main/github-metadata-harmonization.md) for the templates."
-            )
-            rm -rf "$tmpdir"
-            echo "  ${target}: PR opened (class=${class})"
-          done
+          SPEC_TITLES: institute-github/spec-titles.yaml
+        run: bash institute-github/.github/scripts/generate-metadata.sh
