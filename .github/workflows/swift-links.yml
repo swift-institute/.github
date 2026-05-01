@@ -19,23 +19,22 @@ name: Link Check (reusable)
 #     workflow_dispatch:
 #
 #   jobs:
-#     # PR gate — block new broken links.
-#     pr-links:
-#       if: github.event_name == 'pull_request'
-#       uses: swift-institute/.github/.github/workflows/swift-links.yml@v1
-#       with:
-#         fail-on-error: true
-#
-#     # Scheduled rot detection — file/update an issue, don't redden main.
-#     scheduled-links:
-#       if: github.event_name != 'pull_request'
-#       uses: swift-institute/.github/.github/workflows/swift-links.yml@v1
-#       with:
-#         fail-on-error: false
-#         create-issue: true
+#     links:
 #       permissions:
 #         contents: read
 #         issues: write
+#       uses: swift-institute/.github/.github/workflows/swift-links.yml@v1
+#       with:
+#         fail-on-error: ${{ github.event_name == 'pull_request' }}
+#         create-issue: ${{ github.event_name != 'pull_request' }}
+#
+# Behavior is event-derived in one job:
+#   - pull_request    → fail-on-error=true (PR gate blocks bad links)
+#   - schedule / dispatch → create-issue=true (file/update tracking issue)
+#
+# (Earlier docs split this into two jobs gated on `if:`. That shape
+# produced workflow startup_failure on workflow_dispatch — the single-job
+# expression-input pattern parses cleanly.)
 #
 # Per-repo tuning: drop a `lychee.toml` at the caller root to set ignored
 # hosts, timeout, accept-codes, exclude patterns, etc. lychee picks it up
