@@ -42,6 +42,11 @@ on:
         type: boolean
         required: false
         default: false
+      visibility:
+        description: 'Filter targets by visibility: public | private | internal | all. Default public — running against private repos consumes billable Actions minutes on the private side, which the swift-institute billing tier does not currently support.'
+        type: string
+        required: false
+        default: 'public'
     outputs:
       repos-scanned:
         description: 'Number of repos scanned.'
@@ -65,6 +70,11 @@ on:
         type: boolean
         required: false
         default: false
+      visibility:
+        description: 'Filter targets by visibility (public | private | internal | all). Default public.'
+        type: string
+        required: false
+        default: 'public'
 
 jobs:
   scan:
@@ -124,15 +134,31 @@ jobs:
           set -euo pipefail
 
           # Build target list ----------------------------------------------------
+          # Visibility filter applied at gh CLI level: --visibility {public|
+          # private|internal} narrows the listing; --visibility=all (or any
+          # other value) means "no filter, list everything in the org".
           if [[ -n "${{ inputs.repo }}" ]]; then
             targets=("${{ inputs.repo }}")
           else
+            visibility_flag=()
+            case "${{ inputs.visibility }}" in
+              public|private|internal)
+                visibility_flag=(--visibility "${{ inputs.visibility }}")
+                ;;
+              all|"")
+                ;;
+              *)
+                echo "::error::Unknown visibility '${{ inputs.visibility }}' (expected: public, private, internal, all)"
+                exit 1
+                ;;
+            esac
             mapfile -t targets < <(gh repo list "${{ inputs.org }}" --limit 2000 \
+              "${visibility_flag[@]}" \
               --json nameWithOwner,isArchived \
               --jq '.[] | select(.isArchived==false) | .nameWithOwner')
           fi
 
-          echo "Targets: ${#targets[@]} repos"
+          echo "Targets: ${#targets[@]} repos (visibility filter: ${{ inputs.visibility }})"
 
           repos_scanned=0
           repos_with_broken=0

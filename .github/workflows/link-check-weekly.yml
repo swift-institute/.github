@@ -13,6 +13,11 @@
 # the pilot org. Legal sub-ecosystems (swift-nl-wetgever, swift-us-nv-
 # legislature) have ~1900 packages combined and likely need batched
 # treatment — defer until the pilot is green.
+#
+# Visibility default: public-only. The swift-institute Actions billing
+# tier does not currently support private-repo workflow time, and most
+# swift-primitives sub-repos are private. Override at dispatch time
+# (visibility=all) once billing supports it.
 
 name: link-check-weekly
 
@@ -26,6 +31,11 @@ on:
         type: boolean
         required: false
         default: false
+      visibility:
+        description: 'Filter targets by visibility (public | private | internal | all). Default public.'
+        type: string
+        required: false
+        default: 'public'
 
 jobs:
   sweep:
@@ -55,6 +65,7 @@ jobs:
     with:
       org: ${{ matrix.org }}
       dry-run: ${{ inputs.dry-run || false }}
+      visibility: ${{ inputs.visibility || 'public' }}
     secrets: inherit
 
   report:
