@@ -1,0 +1,128 @@
+# link-check-weekly.yml — weekly cross-org link rot sweep.
+#
+# Calls link-check.yml once per ecosystem org via a matrix strategy at
+# 06:00 UTC every Monday. Each org gets its own auth scope. When any
+# org reports broken links, opens or updates a tracking issue in
+# swift-institute/.github summarising which repos are affected.
+#
+# Pattern mirrors sync-metadata-nightly.yml deliberately so cross-repo
+# automation in this org has one shape, not two.
+#
+# Pilot scope: matrix begins with swift-primitives only. Expand to the
+# full 17-org matrix after one or two weekly runs validate the shape on
+# the pilot org. Legal sub-ecosystems (swift-nl-wetgever, swift-us-nv-
+# legislature) have ~1900 packages combined and likely need batched
+# treatment — defer until the pilot is green.
+
+name: link-check-weekly
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'   # weekly Monday 06:00 UTC
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: 'Run lychee but skip issue create/update.'
+        type: boolean
+        required: false
+        default: false
+
+jobs:
+  sweep:
+    strategy:
+      fail-fast: false
+      matrix:
+        org:
+          - swift-primitives
+          # Expansion candidates after pilot validates:
+          #   - swift-standards
+          #   - swift-foundations
+          #   - swift-ietf
+          #   - swift-iso
+          #   - swift-ieee
+          #   - swift-iec
+          #   - swift-w3c
+          #   - swift-whatwg
+          #   - swift-ecma
+          #   - swift-incits
+          #   - swift-linux-foundation
+          #   - swift-microsoft
+          #   - swift-arm-ltd
+          #   - swift-intel
+          #   - swift-riscv
+          #   - swift-institute
+    uses: ./.github/workflows/link-check.yml
+    with:
+      org: ${{ matrix.org }}
+      dry-run: ${{ inputs.dry-run || false }}
+    secrets: inherit
+
+  report:
+    needs: sweep
+    runs-on: ubuntu-latest
+    if: always() && needs.sweep.result != 'skipped'
+    steps:
+      - name: Mint installation token
+        id: token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.METADATA_APP_ID }}
+          private-key: ${{ secrets.METADATA_APP_PRIVATE_KEY }}
+          owner: swift-institute
+          repositories: .github
+          permission-issues: write
+
+      - name: Open or update tracking issue
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          SWEEP_RESULT: ${{ needs.sweep.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+
+          # Post when the matrix had any failures (= some org leg found
+          # broken links and per-repo issues were filed). On all-success,
+          # nothing rotted this week — silent.
+          if [[ "$SWEEP_RESULT" == "success" ]]; then
+            echo "All orgs converged cleanly — no tracking issue needed."
+            exit 0
+          fi
+
+          today=$(date -u '+%Y-%m-%d')
+          title="Link rot sweep ${today} — ${SWEEP_RESULT}"
+          body=$(cat <<EOF
+          The weekly link rot sweep at 06:00 UTC on ${today} completed with status: \`${SWEEP_RESULT}\`.
+
+          See the [run summary](${RUN_URL}) for the per-org breakdown.
+
+          ### What this means
+
+          One or more orgs in the matrix had repos with broken links. Per-repo
+          tracking issues titled "Link Check Report" have been filed (or updated)
+          in the affected repos by the swift-institute-bot.
+
+          - To **fix**, follow the per-repo issues — each lists exactly which
+            URLs failed and from which file.
+          - To **ignore** a host that legitimately rate-limits CI, add it to
+            that repo's \`lychee.toml\` accept-list.
+          - If \`${SWEEP_RESULT}\` == \`failure\`, one or more matrix legs
+            failed (auth, rate-limit, lychee install error); follow the run
+            logs.
+          EOF
+          )
+
+          existing=$(gh issue list --repo swift-institute/.github \
+            --state open --search "Link rot sweep in:title" --json number \
+            --jq '.[0].number // ""')
+
+          if [[ -n "$existing" ]]; then
+            gh issue edit "$existing" --repo swift-institute/.github \
+              --title "$title" --body "$body"
+            echo "Updated existing issue #${existing}"
+          else
+            gh issue create --repo swift-institute/.github \
+              --title "$title" --body "$body" \
+              --label "link-check" 2>&1 || \
+              gh issue create --repo swift-institute/.github \
+                --title "$title" --body "$body"
+          fi

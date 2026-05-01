@@ -1,0 +1,238 @@
+# link-check.yml — scan one ecosystem org for broken links, file per-repo
+# tracking issues.
+#
+# Reusable workflow. For the given `org` (or single `repo`), enumerates
+# non-archived repos, runs lychee against each (Markdown / DocC / HTML /
+# source-comment URLs), and on broken links opens or updates a single
+# "Link Check Report" issue in the affected repo. Idempotent — re-runs
+# update the existing issue rather than spamming new ones.
+#
+# Pattern mirrors sync-metadata.yml deliberately so cross-repo automation
+# in this org has one shape, not two. Authentication uses the
+# swift-institute-bot GitHub App (METADATA_APP_ID + METADATA_APP_PRIVATE_KEY)
+# already deployed across all 17 ecosystem orgs.
+#
+# Inputs:
+#   repo:    "owner/name" form. When set, scope to one repo.
+#   org:     org name. When set, scope to one org. Ignored if `repo` set.
+#   dry-run: when true, run lychee but skip issue create/update.
+# (When both repo and org are unset, validation fails — for cross-org
+# sweeps, use link-check-weekly.yml which calls this per-org via matrix.)
+#
+# Provenance: companion to sync-metadata.yml; carrier-primitives 25208641490
+# was the lychee proof-of-concept run.
+
+name: link-check
+
+on:
+  workflow_call:
+    inputs:
+      repo:
+        description: 'Owner/name of a single repo to scan.'
+        type: string
+        required: false
+        default: ''
+      org:
+        description: 'Org to sweep (ignored if repo is set).'
+        type: string
+        required: false
+        default: ''
+      dry-run:
+        description: 'Run lychee but skip issue create/update.'
+        type: boolean
+        required: false
+        default: false
+    outputs:
+      repos-scanned:
+        description: 'Number of repos scanned.'
+        value: ${{ jobs.scan.outputs.repos-scanned }}
+      repos-with-broken-links:
+        description: 'Number of repos with at least one broken link.'
+        value: ${{ jobs.scan.outputs.repos-with-broken-links }}
+
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: 'Owner/name of a single repo to scan (optional).'
+        type: string
+        required: false
+      org:
+        description: 'Org to sweep (optional; ignored if repo is set).'
+        type: string
+        required: false
+      dry-run:
+        description: 'Run lychee but skip issue create/update.'
+        type: boolean
+        required: false
+        default: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      repos-scanned: ${{ steps.scan.outputs.repos-scanned }}
+      repos-with-broken-links: ${{ steps.scan.outputs.repos-with-broken-links }}
+    steps:
+      - name: Validate inputs
+        run: |
+          if [[ -z "${{ inputs.repo }}" && -z "${{ inputs.org }}" ]]; then
+            echo "::error::Either 'repo' (owner/name) or 'org' input is required."
+            echo "::error::For cross-org sweeps, use link-check-weekly.yml which calls this workflow per-org via matrix."
+            exit 1
+          fi
+
+      - name: Compute auth scope
+        id: scope
+        run: |
+          if [[ -n "${{ inputs.repo }}" ]]; then
+            input="${{ inputs.repo }}"
+            owner="${input%/*}"
+            name="${input#*/}"
+            echo "owner=${owner}" >> "$GITHUB_OUTPUT"
+            echo "repositories=${name}" >> "$GITHUB_OUTPUT"
+          else
+            echo "owner=${{ inputs.org }}" >> "$GITHUB_OUTPUT"
+            # Empty repositories means: token covers all repos in the org installation.
+            echo "repositories=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Mint installation token
+        id: token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.METADATA_APP_ID }}
+          private-key: ${{ secrets.METADATA_APP_PRIVATE_KEY }}
+          owner: ${{ steps.scope.outputs.owner }}
+          repositories: ${{ steps.scope.outputs.repositories }}
+
+      - name: Install lychee
+        run: |
+          set -euo pipefail
+          version="0.20.1"
+          curl -sSL "https://github.com/lycheeverse/lychee/releases/download/lychee-v${version}/lychee-x86_64-unknown-linux-gnu.tar.gz" \
+            | tar -xz
+          sudo mv lychee /usr/local/bin/lychee
+          lychee --version
+
+      - name: Scan
+        id: scan
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          DRY_RUN: ${{ inputs.dry-run }}
+        run: |
+          set -euo pipefail
+
+          # Build target list ----------------------------------------------------
+          if [[ -n "${{ inputs.repo }}" ]]; then
+            targets=("${{ inputs.repo }}")
+          else
+            mapfile -t targets < <(gh repo list "${{ inputs.org }}" --limit 2000 \
+              --json nameWithOwner,isArchived \
+              --jq '.[] | select(.isArchived==false) | .nameWithOwner')
+          fi
+
+          echo "Targets: ${#targets[@]} repos"
+
+          repos_scanned=0
+          repos_with_broken=0
+          summary_lines=()
+          report_dir=$(mktemp -d)
+
+          for target in "${targets[@]}"; do
+            repos_scanned=$((repos_scanned + 1))
+            workdir=$(mktemp -d)
+
+            # Shallow clone via installation token. Skip on auth or 404.
+            if ! git clone --depth 1 --quiet \
+                "https://x-access-token:${GH_TOKEN}@github.com/${target}.git" \
+                "$workdir" 2>/dev/null; then
+              echo "  ${target}: skipped (clone failed)"
+              rm -rf "$workdir"
+              continue
+            fi
+
+            report="${report_dir}/${target//\//__}.md"
+
+            # Per-repo lychee.toml at the repo root is picked up automatically.
+            # Default: scan everything, treat fragments as significant. Caller
+            # repos tune via lychee.toml (ignored hosts, accept-codes, etc.).
+            if (cd "$workdir" && lychee \
+                  --no-progress \
+                  --include-fragments \
+                  --format markdown \
+                  --output "$report" \
+                  .); then
+              echo "  ${target}: clean"
+              rm -rf "$workdir"
+              continue
+            fi
+
+            echo "  ${target}: BROKEN LINKS"
+            repos_with_broken=$((repos_with_broken + 1))
+            summary_lines+=("- \`${target}\`: broken links")
+
+            if [[ "$DRY_RUN" == "true" ]]; then
+              echo "  (dry-run — skipping issue create/update)"
+              rm -rf "$workdir"
+              continue
+            fi
+
+            # File or update the tracking issue.
+            title="Link Check Report"
+            existing=$(gh issue list --repo "$target" \
+              --state open --search "Link Check Report in:title" \
+              --json number --jq '.[0].number // ""' 2>/dev/null || echo "")
+
+            body=$(cat <<EOF
+          Broken links detected by the centralized link-check workflow at
+          [\`swift-institute/.github\`](https://github.com/swift-institute/.github/blob/main/.github/workflows/link-check.yml).
+
+          ## Report
+
+          $(cat "$report")
+
+          ## What to do
+
+          - Investigate each error above. Common causes: link rot (404),
+            DNS error, TLS expiry, target moved.
+          - Update the offending file, or add the URL to a per-repo
+            \`lychee.toml\` ignore list if the link is intentionally
+            external/transient (rate-limited host, deliberately broken
+            example URL, etc.).
+          - Close this issue when fixed; the next weekly scan will
+            re-open it if any links remain broken.
+
+          *Idempotent: this issue is updated in place on each run, not
+          re-filed. Closing it acknowledges the report; reopens happen
+          only if subsequent scans find broken links.*
+          EOF
+            )
+
+            if [[ -n "$existing" ]]; then
+              gh issue edit "$existing" --repo "$target" --body "$body" >/dev/null
+              echo "    updated issue #${existing}"
+            else
+              created=$(gh issue create --repo "$target" \
+                --title "$title" --body "$body" --label "link-check" 2>/dev/null) || \
+                created=$(gh issue create --repo "$target" \
+                  --title "$title" --body "$body")
+              echo "    created issue: ${created}"
+            fi
+
+            rm -rf "$workdir"
+          done
+
+          echo "repos-scanned=${repos_scanned}" >> "$GITHUB_OUTPUT"
+          echo "repos-with-broken-links=${repos_with_broken}" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## link-check summary"
+            echo ""
+            echo "- scope: ${{ inputs.repo || inputs.org }}"
+            echo "- repos scanned: ${repos_scanned}"
+            echo "- repos with broken links: ${repos_with_broken}"
+            echo "- dry-run: ${DRY_RUN}"
+            echo ""
+            for line in "${summary_lines[@]}"; do echo "$line"; done
+          } >> "$GITHUB_STEP_SUMMARY"
