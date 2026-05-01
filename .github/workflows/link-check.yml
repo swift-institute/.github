@@ -125,37 +125,6 @@ jobs:
           sudo mv lychee /usr/local/bin/lychee
           lychee --version
 
-      - name: Write lychee XDG defaults
-        # Drop a default lychee.toml at the XDG location. Per-repo configs at
-        # the target's repo root (./lychee.toml) override these defaults, so
-        # repos retain full per-repo customization. Defaults exist to filter
-        # systematic false positives that affect every repo:
-        #
-        # - swiftpackageindex.com Cloudflare-blocks lychee's UA → 403 on
-        #   public package documentation pages. Real rot on SPI is rare
-        #   since it auto-generates from package metadata.
-        # - GitHub /security/advisories/new template URLs return 404 to
-        #   anonymous viewers and to authenticated users when the security
-        #   tab is disabled. Embedded in SECURITY.md by convention; cannot
-        #   be verified from CI without per-repo configuration.
-        run: |
-          set -euo pipefail
-          mkdir -p "${HOME}/.config/lychee"
-          cat > "${HOME}/.config/lychee/lychee.toml" <<'EOF'
-          # Default lychee config for the centralized link-check workflow.
-          # Override per-repo by adding a lychee.toml at the target repo root.
-
-          exclude = [
-            '^https?://swiftpackageindex\.com/',
-            '^https?://github\.com/[^/]+/[^/]+/security/advisories/new$',
-          ]
-
-          max_redirects = 10
-          timeout = 20
-          max_retries = 2
-          cache = true
-          max_cache_age = "1d"
-          EOF
 
       - name: Scan
         id: scan
@@ -212,14 +181,25 @@ jobs:
 
             report="${report_dir}/${target//\//__}.md"
 
-            # Per-repo lychee.toml at the repo root overrides the XDG
-            # defaults written above. --github-token authenticates lychee's
-            # github.com URL checks via the REST API, which uplifts:
+            # CLI excludes filter systematic false positives that would
+            # otherwise appear in every per-repo report:
+            #   - swiftpackageindex.com Cloudflare-blocks lychee's UA → 403
+            #     on every public package documentation page.
+            #   - github.com /security/advisories/new template URLs return
+            #     404 anonymously and when the security tab is disabled.
+            #     Embedded in SECURITY.md by convention.
+            # --github-token authenticates lychee's github.com checks via
+            # the REST API, which uplifts:
             #   - private-org sub-repo URLs (anonymous lychee gets 404,
             #     authenticated installation token sees them correctly)
             #   - rate limits (60 → 5000 req/hr for authenticated requests)
+            # Per-repo lychee.toml at the target's repo root layers ON TOP
+            # of these defaults — CLI excludes accumulate, they don't
+            # override per-repo config.
             if (cd "$workdir" && lychee \
                   --github-token "$GH_TOKEN" \
+                  --exclude '^https?://swiftpackageindex\.com/' \
+                  --exclude '^https?://github\.com/[^/]+/[^/]+/security/advisories/new$' \
                   --no-progress \
                   --include-fragments \
                   --format markdown \
