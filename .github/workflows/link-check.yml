@@ -198,6 +198,14 @@ jobs:
             repos_with_broken=$((repos_with_broken + 1))
             summary_lines+=("- \`${target}\`: broken links")
 
+            # Surface the per-repo lychee report in the run log. Wrapped in
+            # an Actions log group so the GH UI collapses it by default but
+            # keeps it expandable. Lets dry-run previews show exactly which
+            # URLs failed without filing any issues.
+            echo "::group::lychee report — ${target}"
+            cat "$report"
+            echo "::endgroup::"
+
             if [[ "$DRY_RUN" == "true" ]]; then
               echo "  (dry-run — skipping issue create/update)"
               rm -rf "$workdir"
