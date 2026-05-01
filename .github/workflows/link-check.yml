@@ -196,10 +196,17 @@ jobs:
             # Per-repo lychee.toml at the target's repo root layers ON TOP
             # of these defaults — CLI excludes accumulate, they don't
             # override per-repo config.
+            # file:// URLs are scoped out: lychee resolves relative
+            # markdown link paths against CWD and reports unresolved
+            # ones as errors, but for cross-repo doc references and
+            # DocC-routed paths this is a category mismatch — local
+            # link integrity is validated by the DocC build (gated by
+            # swift-docs.yml@v1), not by HTTP rot detection.
             if (cd "$workdir" && lychee \
                   --github-token "$GH_TOKEN" \
                   --exclude '^https?://swiftpackageindex\.com/' \
                   --exclude '^https?://github\.com/[^/]+/[^/]+/security/advisories/new$' \
+                  --exclude '^file://' \
                   --no-progress \
                   --include-fragments \
                   --format markdown \
