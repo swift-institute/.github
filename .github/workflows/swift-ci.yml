@@ -47,8 +47,8 @@ on:
         description: "Swift version for the macOS, Ubuntu release, and Windows jobs. The nightly job is always 6.4-dev."
       enable-private-repos:
         type: boolean
-        default: false
-        description: "If true, configure git to use PRIVATE_REPO_TOKEN for github.com clones."
+        default: true
+        description: "If true, configure git to use PRIVATE_REPO_TOKEN for github.com clones. Default true: most consumers in the swift-primitives ecosystem have private deps and need the token; public-only consumers may pass false explicitly."
     secrets:
       PRIVATE_REPO_TOKEN:
         required: false
