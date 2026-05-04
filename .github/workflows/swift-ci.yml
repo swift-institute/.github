@@ -141,3 +141,70 @@ jobs:
 
       - name: Test
         run: swift test -c debug
+
+  # ─── Ecosystem-wide quality gates ─────────────────────────────────────
+  # `format` and `lint` run on every consumer CI in parallel with the
+  # matrix. They read each consumer's own `.swift-format` and
+  # `.swiftlint.yml` configs (per-package customization preserved); the
+  # tools find their config by walking up from the working directory.
+  # Per-repo `swift-format.yml` / `swiftlint.yml` workflow files are
+  # forbidden once these absorbed jobs land — see [CI-031].
+  #
+  # Developer contract: CI runs `swift-format lint --strict` (NOT
+  # `format --in-place + auto-commit`). Run `swift-format format
+  # --in-place Sources Tests` locally before pushing.
+
+  format:
+    name: swift-format lint
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    container: swift:6.3
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Print swift-format version
+        run: swift-format --version
+
+      - name: Lint formatting (--strict)
+        run: swift-format lint --recursive --strict --ignore-unparsable-files Sources Tests
+
+  lint:
+    name: SwiftLint
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    container: swift:6.3
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Cache SwiftLint binary
+        id: cache-swiftlint
+        uses: actions/cache@v5
+        with:
+          path: /usr/local/bin/swiftlint
+          key: ${{ runner.os }}-swiftlint-0.63.2
+
+      - name: Install SwiftLint 0.63.2
+        if: steps.cache-swiftlint.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          apt-get update -qq
+          apt-get install -qq -y curl unzip
+          curl -fsSL -o /tmp/swiftlint.zip \
+            "https://github.com/realm/SwiftLint/releases/download/0.63.2/swiftlint_linux_amd64.zip"
+          unzip -q /tmp/swiftlint.zip -d /tmp/swiftlint_extracted
+          mv /tmp/swiftlint_extracted/swiftlint /usr/local/bin/
+          chmod +x /usr/local/bin/swiftlint
+          rm -rf /tmp/swiftlint.zip /tmp/swiftlint_extracted
+
+      - name: Print SwiftLint version
+        run: swiftlint --version
+
+      - name: Lint
+        run: swiftlint lint --strict --reporter github-actions-logging
