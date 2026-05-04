@@ -1,5 +1,12 @@
 name: Swift DocC (reusable)
 
+# ─── Acronym preservation list ────────────────────────────────────────
+# All-caps tokens preserved verbatim during the kebab→TitleCase derivation
+# (e.g. `swift-cpu-primitives` → `CPU_Primitives`, NOT `Cpu_Primitives`).
+# Extend when a new spec acronym appears in a package name.
+# Keep alphabetically sorted; space-separated; uppercase.
+# The list itself lives in the `Derive umbrella metadata` step below.
+
 # Reusable DocC validation workflow for Swift Institute packages using
 # the umbrella-module single-catalog pattern ([DOC-019a]). Acts as a
 # build-time gate — if `xcrun docc convert` fails (broken cross-refs,
@@ -23,8 +30,12 @@ name: Swift DocC (reusable)
 #         umbrella-bundle-id: "swift-property-primitives.Property-Primitives"
 #         umbrella-docc-path: "Sources/Property Primitives/Property Primitives.docc"
 #         exclude-modules: "Property_Primitives_Test_Support"
-#         sanity-check-json-path: "data/documentation/property_primitives/property/init(_:).json"
 #       secrets: inherit
+#
+# All `umbrella-*` and `exclude-modules` inputs are OPTIONAL — when
+# omitted (or empty), values are derived from `${{ github.event.repository.name }}`
+# per the convention above. Pass overrides only when the package's
+# layout deviates.
 #
 # Pipeline:
 #   1. `swift build` with symbol-graph emission (preserves @_exported doc comments)
@@ -45,31 +56,27 @@ on:
     inputs:
       umbrella-module:
         type: string
-        required: true
-        description: "Umbrella module name (underscore form, e.g. Property_Primitives)."
+        default: ""
+        description: "Override (default: derived from repo name per swift-{kebab}-primitives → {Title}_Primitives convention; preserves acronyms)."
       umbrella-display-name:
         type: string
-        required: true
-        description: "Human-readable module name (e.g. 'Property Primitives')."
+        default: ""
+        description: "Override (default: derived per convention)."
       umbrella-bundle-id:
         type: string
-        required: true
-        description: "DocC bundle identifier (e.g. swift-property-primitives.Property-Primitives)."
+        default: ""
+        description: "Override (default: <repo-name>.<DisplayHyphenated>)."
       umbrella-docc-path:
         type: string
-        required: true
-        description: "Path to the umbrella .docc catalog (e.g. 'Sources/Property Primitives/Property Primitives.docc')."
+        default: ""
+        description: "Override (default: Sources/<Display>/<Display>.docc)."
       exclude-modules:
         type: string
         default: ""
-        description: "Space-separated module names to exclude from the distribution symbol-graph pool (e.g. 'Test_Support_Module')."
+        description: "Override (default: <Module>_Test_Support; non-existent module names are no-op for `rm -f`)."
       enable-private-repos:
         type: boolean
         default: false
-      cache-key-prefix:
-        type: string
-        default: "swift63-docs-v1"
-        description: "Cache-key prefix for .build. Bump when invalidating caches is desired."
     secrets:
       PRIVATE_REPO_TOKEN:
         required: false
@@ -88,6 +95,65 @@ jobs:
       - if: inputs.enable-private-repos
         name: Configure git for private repos
         run: git config --global url."https://${{ secrets.PRIVATE_REPO_TOKEN }}@github.com/".insteadOf "https://github.com/"
+
+      - name: Derive umbrella metadata
+        env:
+          INPUT_UMBRELLA_MODULE: ${{ inputs.umbrella-module }}
+          INPUT_UMBRELLA_DISPLAY_NAME: ${{ inputs.umbrella-display-name }}
+          INPUT_UMBRELLA_BUNDLE_ID: ${{ inputs.umbrella-bundle-id }}
+          INPUT_UMBRELLA_DOCC_PATH: ${{ inputs.umbrella-docc-path }}
+          INPUT_EXCLUDE_MODULES: ${{ inputs.exclude-modules }}
+          REPO_NAME: ${{ github.event.repository.name }}
+        run: |
+          set -euo pipefail
+
+          # Acronym preservation list (see header comment for maintenance).
+          # Alphabetically sorted; space-separated; uppercase.
+          ACRONYMS="ABI ASCII AST CPU CSS HTML IETF IO IP IR ISO JSON RFC SSL TCP TLS UDP URI URL UUID XML YAML"
+
+          STEM="${REPO_NAME#swift-}"
+
+          # kebab → Title Case with acronym preservation
+          DISPLAY=""
+          IFS='-' read -ra PARTS <<< "$STEM"
+          for part in "${PARTS[@]}"; do
+            upper=$(printf '%s' "$part" | tr '[:lower:]' '[:upper:]')
+            cased="$(printf '%s' "${part:0:1}" | tr '[:lower:]' '[:upper:]')${part:1}"
+            for acr in $ACRONYMS; do
+              if [ "$upper" = "$acr" ]; then
+                cased="$upper"
+                break
+              fi
+            done
+            DISPLAY="${DISPLAY:+$DISPLAY }$cased"
+          done
+
+          MODULE="${DISPLAY// /_}"
+          BUNDLE_ID="${REPO_NAME}.${DISPLAY// /-}"
+          DOCC_PATH="Sources/${DISPLAY}/${DISPLAY}.docc"
+          DEFAULT_EXCLUDE="${MODULE}_Test_Support"
+
+          # Override-precedence: input non-empty → use input; else → derive.
+          UMBRELLA_MODULE="${INPUT_UMBRELLA_MODULE:-$MODULE}"
+          UMBRELLA_DISPLAY_NAME="${INPUT_UMBRELLA_DISPLAY_NAME:-$DISPLAY}"
+          UMBRELLA_BUNDLE_ID="${INPUT_UMBRELLA_BUNDLE_ID:-$BUNDLE_ID}"
+          UMBRELLA_DOCC_PATH="${INPUT_UMBRELLA_DOCC_PATH:-$DOCC_PATH}"
+          EXCLUDE_MODULES="${INPUT_EXCLUDE_MODULES:-$DEFAULT_EXCLUDE}"
+
+          {
+            echo "UMBRELLA_MODULE=$UMBRELLA_MODULE"
+            echo "UMBRELLA_DISPLAY_NAME=$UMBRELLA_DISPLAY_NAME"
+            echo "UMBRELLA_BUNDLE_ID=$UMBRELLA_BUNDLE_ID"
+            echo "UMBRELLA_DOCC_PATH=$UMBRELLA_DOCC_PATH"
+            echo "EXCLUDE_MODULES=$EXCLUDE_MODULES"
+          } >> "$GITHUB_ENV"
+
+          echo "Derived umbrella metadata for $REPO_NAME:"
+          echo "  module       = $UMBRELLA_MODULE"
+          echo "  display name = $UMBRELLA_DISPLAY_NAME"
+          echo "  bundle id    = $UMBRELLA_BUNDLE_ID"
+          echo "  docc path    = $UMBRELLA_DOCC_PATH"
+          echo "  exclude      = $EXCLUDE_MODULES"
 
       - name: Select Xcode 26.4
         run: sudo xcode-select -s /Applications/Xcode_26.4.app
@@ -112,7 +178,7 @@ jobs:
         run: |
           mkdir -p "${DOCS_WORK}/symbol-graphs"
           cp "${DOCS_WORK}/symbol-graphs-raw"/*.symbols.json "${DOCS_WORK}/symbol-graphs/"
-          for excluded in ${{ inputs.exclude-modules }}; do
+          for excluded in $EXCLUDE_MODULES; do
             rm -f "${DOCS_WORK}/symbol-graphs/${excluded}.symbols.json"
             rm -f "${DOCS_WORK}/symbol-graphs/${excluded}@"*.symbols.json
           done
@@ -132,7 +198,7 @@ jobs:
         run: |
           python3 .swift-institute-github/.github/scripts/patch-umbrella-symbol-graph.py \
             --symbol-graph-dir "${DOCS_WORK}/symbol-graphs" \
-            --umbrella-module "${{ inputs.umbrella-module }}" \
+            --umbrella-module "$UMBRELLA_MODULE" \
             --output-dir "${DOCS_WORK}/umbrella-symbol-graph"
           echo "Isolated umbrella graph(s):"
           ls "${DOCS_WORK}/umbrella-symbol-graph/"
@@ -140,12 +206,12 @@ jobs:
       - name: Build distribution archive (xcrun docc convert)
         run: |
           mkdir -p "${DOCS_WORK}/archives"
-          rm -rf "${DOCS_WORK}/archives/${{ inputs.umbrella-display-name }}.doccarchive"
-          xcrun docc convert "${{ inputs.umbrella-docc-path }}" \
+          rm -rf "${DOCS_WORK}/archives/$UMBRELLA_DISPLAY_NAME.doccarchive"
+          xcrun docc convert "$UMBRELLA_DOCC_PATH" \
             --additional-symbol-graph-dir "${DOCS_WORK}/umbrella-symbol-graph" \
-            --fallback-display-name "${{ inputs.umbrella-display-name }}" \
-            --fallback-bundle-identifier "${{ inputs.umbrella-bundle-id }}" \
-            --output-path "${DOCS_WORK}/archives/${{ inputs.umbrella-display-name }}.doccarchive" \
+            --fallback-display-name "$UMBRELLA_DISPLAY_NAME" \
+            --fallback-bundle-identifier "$UMBRELLA_BUNDLE_ID" \
+            --output-path "${DOCS_WORK}/archives/$UMBRELLA_DISPLAY_NAME.doccarchive" \
             2>&1 | tail -20
           echo "Top-level documentation routes:"
-          ls "${DOCS_WORK}/archives/${{ inputs.umbrella-display-name }}.doccarchive/data/documentation/" | sort
+          ls "${DOCS_WORK}/archives/$UMBRELLA_DISPLAY_NAME.doccarchive/data/documentation/" | sort
