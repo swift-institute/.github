@@ -1,11 +1,9 @@
 name: Swift CI (reusable)
 
-# Reusable CI workflow for Swift Institute packages. Provides the test
-# matrix: macOS 26 (Swift 6.3 debug) + Ubuntu (Swift 6.3 release) +
-# Ubuntu (Swift 6.4-dev nightly, continue-on-error) + Windows (Swift 6.3),
-# plus an opt-in Ubuntu Embedded Swift build job (Swift 6.4-dev,
-# continue-on-error) for Foundation-free packages that maintain embedded
-# compatibility per swift-package-build [PKG-BUILD-007]–[PKG-BUILD-008].
+# Reusable CI workflow for Swift Institute packages. Provides the universal
+# test matrix that applies across all five layers: macOS 26 (Swift 6.3 debug)
+# + Ubuntu (Swift 6.3 release) + Ubuntu (Swift 6.4-dev nightly,
+# continue-on-error) + Windows (Swift 6.3).
 #
 # Consume from a caller package's .github/workflows/ci.yml via:
 #
@@ -14,8 +12,7 @@ name: Swift CI (reusable)
 #       uses: swift-institute/.github/.github/workflows/swift-ci.yml@main
 #       with:
 #         cache-key-prefix: swift63-spm-v1
-#         enable-private-repos: true       # only if package depends on private repos
-#         enable-embedded-check: true      # only if package is Foundation-free and embedded-buildable
+#         enable-private-repos: true   # only if package depends on private repos
 #       secrets:
 #         PRIVATE_REPO_TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }}
 #
@@ -27,14 +24,10 @@ name: Swift CI (reusable)
 # PRIVATE_REPO_TOKEN so `swift package resolve` can clone private deps.
 # Omit when the package has no private dependencies.
 #
-# `enable-embedded-check: true` runs an additional `swift build` under
-# `-enable-experimental-feature Embedded` against the Swift 6.4-dev
-# nightly Linux container. Build-only (no `swift test` — no embedded
-# test runner). continue-on-error: true (matches linux-nightly precedent;
-# the embedded job uses the nightly container and inherits its instability
-# profile). Opt in only when the package satisfies [PRIM-FOUND-001]
-# (Foundation-free) and uses `#if !hasFeature(Embedded)` source guards
-# per [PKG-BUILD-007]; opt out for L3+ packages with Foundation deps.
+# Layer-specific verification jobs (e.g. embedded-build verification for L1
+# primitives) live in per-layer wrapper workflows under
+# `<layer>/.github/.github/workflows/`, not here. swift-institute owns the
+# universal floor; layers own their own invariants.
 
 on:
   workflow_call:
@@ -51,10 +44,6 @@ on:
         type: boolean
         default: false
         description: "If true, configure git to use PRIVATE_REPO_TOKEN for github.com clones."
-      enable-embedded-check:
-        type: boolean
-        default: false
-        description: "If true, run an additional `swift build` under `-enable-experimental-feature Embedded` against the 6.4-dev nightly Linux container. Opt in only for Foundation-free, embedded-buildable packages per [PKG-BUILD-007]/[PKG-BUILD-008]."
     secrets:
       PRIVATE_REPO_TOKEN:
         required: false
@@ -141,35 +130,6 @@ jobs:
 
       - name: Test (release)
         run: swift test -c release
-
-  embedded-check:
-    name: Ubuntu (Swift 6.4-dev nightly, Embedded build)
-    runs-on: ubuntu-latest
-    container: swiftlang/swift:nightly-main-jammy
-    if: inputs.enable-embedded-check
-    continue-on-error: true
-    timeout-minutes: 45
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v6
-
-      - if: inputs.enable-private-repos
-        name: Configure git for private repos
-        run: git config --global url."https://${{ secrets.PRIVATE_REPO_TOKEN }}@github.com/".insteadOf "https://github.com/"
-
-      - name: Print Swift version
-        run: swift --version
-
-      - name: Cache Swift packages
-        uses: actions/cache@v5
-        with:
-          path: .build
-          key: linux-embedded-${{ inputs.cache-key-prefix }}-${{ hashFiles('Package.swift', 'Package@*.swift') }}
-          restore-keys: linux-embedded-${{ inputs.cache-key-prefix }}-
-
-      - name: Build (Embedded)
-        run: swift build -Xswiftc -enable-experimental-feature -Xswiftc Embedded
 
   windows-release:
     name: Windows (Swift ${{ inputs.swift-version }})
