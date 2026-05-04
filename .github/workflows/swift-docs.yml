@@ -76,7 +76,8 @@ on:
         description: "Override (default: <Module>_Test_Support; non-existent module names are no-op for `rm -f`)."
       enable-private-repos:
         type: boolean
-        default: false
+        default: true
+        description: "If true, configure git to use PRIVATE_REPO_TOKEN for github.com clones during DocC's `swift build`. Default true: most consumers depend on private deps; public-only consumers may pass false explicitly."
     secrets:
       PRIVATE_REPO_TOKEN:
         required: false
