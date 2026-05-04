@@ -201,7 +201,7 @@ jobs:
             # ones as errors, but for cross-repo doc references and
             # DocC-routed paths this is a category mismatch — local
             # link integrity is validated by the DocC build (gated by
-            # swift-docs.yml@v1), not by HTTP rot detection.
+            # swift-docs.yml@main), not by HTTP rot detection.
             if (cd "$workdir" && lychee \
                   --github-token "$GH_TOKEN" \
                   --exclude '^https?://swiftpackageindex\.com/' \

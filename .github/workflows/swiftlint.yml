@@ -5,7 +5,7 @@ name: SwiftLint (reusable)
 #
 #   jobs:
 #     lint:
-#       uses: swift-institute/.github/.github/workflows/swiftlint.yml@v1
+#       uses: swift-institute/.github/.github/workflows/swiftlint.yml@main
 #
 # Behavior:
 #   - Runs inside swift:6.3. SwiftLint's dynamic binary needs the Swift

@@ -16,7 +16,7 @@ name: Swift DocC (reusable)
 #
 #   jobs:
 #     docs:
-#       uses: swift-institute/.github/.github/workflows/swift-docs.yml@v1
+#       uses: swift-institute/.github/.github/workflows/swift-docs.yml@main
 #       with:
 #         umbrella-module: Property_Primitives
 #         umbrella-display-name: "Property Primitives"

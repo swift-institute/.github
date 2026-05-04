@@ -5,7 +5,7 @@ name: Swift Format (reusable)
 #
 #   jobs:
 #     format:
-#       uses: swift-institute/.github/.github/workflows/swift-format.yml@v1
+#       uses: swift-institute/.github/.github/workflows/swift-format.yml@main
 #
 # Behavior:
 #   - Runs inside swift:6.3. swift-format is bundled in the Swift 6+ toolchain
