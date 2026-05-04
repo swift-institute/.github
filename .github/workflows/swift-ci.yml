@@ -11,7 +11,6 @@ name: Swift CI (reusable)
 #     ci:
 #       uses: swift-institute/.github/.github/workflows/swift-ci.yml@main
 #       with:
-#         cache-key-prefix: swift63-spm-v1
 #         enable-private-repos: true   # only if package depends on private repos
 #       secrets:
 #         PRIVATE_REPO_TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }}
@@ -24,6 +23,16 @@ name: Swift CI (reusable)
 # PRIVATE_REPO_TOKEN so `swift package resolve` can clone private deps.
 # Omit when the package has no private dependencies.
 #
+# Caching policy: this workflow does NOT cache `.build/`. Every run does
+# a fresh `swift package resolve` + clone + compile. This matches Apple's
+# canonical `swiftlang/github-workflows/swift_package_test.yml` (995 lines,
+# zero `actions/cache` uses) and is the right answer for our constraint
+# set: `Package.resolved` is gitignored ecosystem-wide as a permanent
+# library convention, so cache invalidation cannot key on resolved-graph
+# state, and `restore-keys` partial-prefix matching silently serves stale
+# branch-pinned dep checkouts. See
+# `swift-institute/Research/ci-cache-strategy-branch-pinned-dependencies.md`.
+#
 # Layer-specific verification jobs (e.g. embedded-build verification for L1
 # primitives) live in per-layer wrapper workflows under
 # `<layer>/.github/.github/workflows/`, not here. swift-institute owns the
@@ -32,10 +41,6 @@ name: Swift CI (reusable)
 on:
   workflow_call:
     inputs:
-      cache-key-prefix:
-        type: string
-        default: "swift63-spm-v1"
-        description: "Cache-key prefix, typically '{swift-version tag}-spm-v{cache bump}'."
       swift-version:
         type: string
         default: "6.3"
@@ -68,14 +73,6 @@ jobs:
       - name: Print Swift version
         run: swift --version
 
-      - name: Cache Swift packages
-        uses: actions/cache@v5
-        with:
-          path: .build
-          key: macos-${{ inputs.cache-key-prefix }}-${{ hashFiles('Package.swift', 'Package@*.swift') }}
-          restore-keys: |
-            macos-${{ inputs.cache-key-prefix }}-
-
       - name: Test
         run: swift test -c debug
 
@@ -92,13 +89,6 @@ jobs:
       - if: inputs.enable-private-repos
         name: Configure git for private repos
         run: git config --global url."https://${{ secrets.PRIVATE_REPO_TOKEN }}@github.com/".insteadOf "https://github.com/"
-
-      - name: Cache Swift packages
-        uses: actions/cache@v5
-        with:
-          path: .build
-          key: linux-${{ inputs.cache-key-prefix }}-${{ hashFiles('Package.swift', 'Package@*.swift') }}
-          restore-keys: linux-${{ inputs.cache-key-prefix }}-
 
       - name: Test (release)
         run: swift test -c release
@@ -120,13 +110,6 @@ jobs:
 
       - name: Print Swift version
         run: swift --version
-
-      - name: Cache Swift packages
-        uses: actions/cache@v5
-        with:
-          path: .build
-          key: linux-nightly-${{ inputs.cache-key-prefix }}-${{ hashFiles('Package.swift', 'Package@*.swift') }}
-          restore-keys: linux-nightly-${{ inputs.cache-key-prefix }}-
 
       - name: Test (release)
         run: swift test -c release
@@ -151,13 +134,6 @@ jobs:
 
       - name: Print Swift version
         run: swift --version
-
-      - name: Cache Swift packages
-        uses: actions/cache@v5
-        with:
-          path: .build
-          key: windows-${{ inputs.cache-key-prefix }}-${{ hashFiles('Package.swift', 'Package@*.swift') }}
-          restore-keys: windows-${{ inputs.cache-key-prefix }}-
 
       - name: Test
         run: swift test -c debug
