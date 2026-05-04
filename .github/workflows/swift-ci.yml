@@ -56,6 +56,7 @@ on:
 jobs:
   macos-release:
     name: macOS (Swift ${{ inputs.swift-version }}, debug)
+    if: ${{ !github.event.repository.private }}
     runs-on: macos-26
     timeout-minutes: 45
     permissions:
@@ -78,6 +79,7 @@ jobs:
 
   linux-release:
     name: Ubuntu (Swift ${{ inputs.swift-version }}, release)
+    if: ${{ !github.event.repository.private }}
     runs-on: ubuntu-latest
     container: swift:6.3
     timeout-minutes: 45
@@ -95,6 +97,7 @@ jobs:
 
   linux-nightly:
     name: Ubuntu (Swift 6.4-dev nightly, release)
+    if: ${{ !github.event.repository.private }}
     runs-on: ubuntu-latest
     container: swiftlang/swift:nightly-main-jammy
     continue-on-error: true
@@ -116,6 +119,7 @@ jobs:
 
   windows-release:
     name: Windows (Swift ${{ inputs.swift-version }})
+    if: ${{ !github.event.repository.private }}
     runs-on: windows-latest
     timeout-minutes: 45
     permissions:
