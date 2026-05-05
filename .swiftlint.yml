@@ -52,6 +52,11 @@ opt_in_rules:
   - joined_default_parameter
   - operator_usage_whitespace
   - overridden_super_call
+  # Tier A cohort (2026-05-05): consistency / harness rules.
+  - direct_return
+  - redundant_self
+  - prefer_self_in_static_references
+  - vertical_whitespace_between_cases
 
 included:
   - Sources
