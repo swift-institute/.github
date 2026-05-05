@@ -200,7 +200,7 @@ jobs:
           repositories: .github
           permission-issues: write
 
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@v4
         with:
           path: /tmp/counts
 
