@@ -96,13 +96,16 @@ custom_rules:
     included:
       - 'Sources/.*/exports\.swift'
       - 'Tests/.*/exports\.swift'
-  test_support_module_in_tests:
-    name: "Test Support Module Required in Tests ([TEST-025])"
-    regex: '@testable[ \t]+import[ \t]+([a-zA-Z_]+[a-zA-Z0-9_]*?)\b(?<!_Test_Support)(?!\.)'
-    message: "Test files SHOULD '@testable import <Module>_Test_Support' (re-exports the main module + adds test fixtures) rather than '@testable import <Module>' directly ([TEST-025])."
-    severity: warning
-    included:
-      - 'Tests/.*\.swift'
+  # [TEST-025] test_support_module_in_tests was authored 2026-05-05 but
+  # canary surfaced a structural false-positive class: test files routinely
+  # need BOTH `import <Module>_Test_Support` (for fixtures) AND
+  # `@testable import <Module>` (for internal access — `@_exported public`
+  # re-exports don't propagate @testable). The regex flags the @testable
+  # import even when Test_Support is also imported in the same file (3/7
+  # such legitimate-dual-import false positives observed on swift-tagged-primitives).
+  # Rule needs file-context-aware design (e.g., flag @testable import X only
+  # when import X_Test_Support is NOT also in the file). Deferred pending
+  # redesign — likely a SwiftSyntax-based custom rule or per-file shape check.
   swift_error_qualification:
     name: "Swift.Error Qualification ([PLAT-ARCH-011])"
     regex: '\b(?<!Swift\.)(?<!\.)Error\b(?!\.)'
