@@ -221,5 +221,6 @@ jobs:
           if [[ -n "$existing" ]]; then
             gh issue edit "$existing" --repo swift-institute/.github --title "$title" --body "$body"
           else
-            gh issue create --repo swift-institute/.github --title "$title" --body "$body" --label "spine-audit"
+            gh issue create --repo swift-institute/.github --title "$title" --body "$body" --label "spine-audit" 2>&1 || \
+              gh issue create --repo swift-institute/.github --title "$title" --body "$body"
           fi

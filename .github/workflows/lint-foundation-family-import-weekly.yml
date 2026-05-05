@@ -193,5 +193,6 @@ jobs:
           if [[ -n "$existing" ]]; then
             gh issue edit "$existing" --repo swift-institute/.github --title "$title" --body "$body"
           else
-            gh issue create --repo swift-institute/.github --title "$title" --body "$body" --label "foundation-audit"
+            gh issue create --repo swift-institute/.github --title "$title" --body "$body" --label "foundation-audit" 2>&1 || \
+              gh issue create --repo swift-institute/.github --title "$title" --body "$body"
           fi
