@@ -78,9 +78,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - if: inputs.enable-private-repos
-        name: Configure git for private repos
-        run: git config --global url."https://${{ secrets.PRIVATE_REPO_TOKEN }}@github.com/".insteadOf "https://github.com/"
+      - uses: swift-institute/.github/.github/actions/configure-private-repos@main
+        with:
+          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+          enabled: ${{ inputs.enable-private-repos }}
 
       - name: Select Xcode ${{ env.XCODE_VERSION }}
         run: sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
@@ -102,9 +103,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - if: inputs.enable-private-repos
-        name: Configure git for private repos
-        run: git config --global url."https://${{ secrets.PRIVATE_REPO_TOKEN }}@github.com/".insteadOf "https://github.com/"
+      - uses: swift-institute/.github/.github/actions/configure-private-repos@main
+        with:
+          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+          enabled: ${{ inputs.enable-private-repos }}
 
       - name: Test (release)
         run: swift test -c release
@@ -121,9 +123,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - if: inputs.enable-private-repos
-        name: Configure git for private repos
-        run: git config --global url."https://${{ secrets.PRIVATE_REPO_TOKEN }}@github.com/".insteadOf "https://github.com/"
+      - uses: swift-institute/.github/.github/actions/configure-private-repos@main
+        with:
+          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+          enabled: ${{ inputs.enable-private-repos }}
 
       - name: Print Swift version
         run: swift --version
@@ -141,9 +144,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - if: inputs.enable-private-repos
-        name: Configure git for private repos
-        run: git config --global url."https://${{ secrets.PRIVATE_REPO_TOKEN }}@github.com/".insteadOf "https://github.com/"
+      - uses: swift-institute/.github/.github/actions/configure-private-repos@main
+        with:
+          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+          enabled: ${{ inputs.enable-private-repos }}
 
       - name: Install Swift
         uses: SwiftyLab/setup-swift@v1
