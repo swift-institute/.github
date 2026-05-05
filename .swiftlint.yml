@@ -67,6 +67,48 @@ function_parameter_count:
   warning: 6
   error: 8
 
+# ── Custom rules ─────────────────────────────────────────────────────────────
+#
+# Phase 1.5 (2026-05-05): Tier 1 ecosystem-wide custom rules. Each is a
+# one-liner regex catching a specific violation pattern from the institute's
+# code-surface / testing skills.
+custom_rules:
+  typed_throws_required:
+    name: "Typed Throws Required ([API-ERR-001])"
+    regex: '\bthrows\b\s*(?!\()'
+    message: "Throwing functions/methods/inits MUST use typed throws ([API-ERR-001]). Use 'throws(SomeError)' rather than untyped 'throws'."
+    severity: warning
+  no_xctest_import:
+    name: "No XCTest Import ([TEST-001])"
+    regex: '^[ \t]*(?:@[a-zA-Z_]+[ \t]+)*(?:public[ \t]+|package[ \t]+|internal[ \t]+|fileprivate[ \t]+|private[ \t]+)?(?:@testable[ \t]+)?import[ \t]+XCTest\b'
+    message: "Tests must use 'import Testing' (Apple Swift Testing framework), not 'import XCTest' ([TEST-001])."
+    severity: error
+  no_xctestcase_subclass:
+    name: "No XCTestCase Subclass ([TEST-001])"
+    regex: '\bclass\s+\w+\s*:\s*XCTestCase\b'
+    message: "Tests must use Swift Testing @Suite, not XCTestCase subclasses ([TEST-001])."
+    severity: error
+  exports_swift_strict_shape:
+    name: "exports.swift Strict @_exported public Shape ([TEST-020])"
+    regex: '^[ \t]*(?:public[ \t]+|package[ \t]+|internal[ \t]+|fileprivate[ \t]+|private[ \t]+)?import[ \t]+\w+'
+    message: "exports.swift files must use '@_exported public import' shape; plain 'import' or non-canonical access modifiers are forbidden ([TEST-020])."
+    severity: error
+    included:
+      - 'Sources/.*/exports\.swift'
+      - 'Tests/.*/exports\.swift'
+  test_support_module_in_tests:
+    name: "Test Support Module Required in Tests ([TEST-025])"
+    regex: '@testable[ \t]+import[ \t]+([a-zA-Z_]+[a-zA-Z0-9_]*?)\b(?<!_Test_Support)(?!\.)'
+    message: "Test files SHOULD '@testable import <Module>_Test_Support' (re-exports the main module + adds test fixtures) rather than '@testable import <Module>' directly ([TEST-025])."
+    severity: warning
+    included:
+      - 'Tests/.*\.swift'
+  swift_error_qualification:
+    name: "Swift.Error Qualification ([PLAT-ARCH-011])"
+    regex: '\b(?<!Swift\.)(?<!\.)Error\b(?!\.)'
+    message: "Conformances to / references to 'Error' should be qualified as 'Swift.Error' inside .Error namespaces to avoid ambiguity ([PLAT-ARCH-011]). Consider also if the broader regex over-matches in your context."
+    severity: warning
+
 # ── Disabling a rule ──────────────────────────────────────────────────────────
 #
 # When you must disable a rule on a specific line, prefer:
