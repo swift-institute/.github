@@ -269,6 +269,7 @@ jobs:
     uses: ./.github/workflows/lint-test-support-spine.yml
     with:
       advisory: true     # Phase β. Drop in Phase γ.
+      swift-version: ${{ inputs.swift-version }}
 
   # ─── PR-only conventions ─────────────────────────────────────────────────
   # Fire on pull_request events only; skipped on push/dispatch.
@@ -279,6 +280,7 @@ jobs:
     uses: ./.github/workflows/lint-api-breakage.yml
     with:
       advisory: true
+      swift-version: ${{ inputs.swift-version }}
     secrets: inherit
 
   lint-pr-title:

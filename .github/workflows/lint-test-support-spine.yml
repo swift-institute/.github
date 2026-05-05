@@ -46,6 +46,14 @@ on:
           regardless of VIOLATION/MISSING counts. Used during Phase β.
           Phase γ flip omits this input (default false) → workflow
           exits 1 on findings (gating).
+      swift-version:
+        type: string
+        default: "6.3"
+        description: |
+          Swift toolchain pin (per [CI-011]). Used as the container tag
+          since this audit invokes `swift package dump-package`. Mirrors
+          the universal reusable's input so callers bumping the floor
+          flip every container reference in lockstep.
     outputs:
       ok-count:
         description: 'Number of OK findings (TS targets that satisfy [MOD-024]).'
@@ -64,7 +72,7 @@ jobs:
     name: Test Support Spine audit
     if: ${{ !github.event.repository.private }}     # [CI-032]
     runs-on: ubuntu-latest
-    container: swift:6.3                            # [CI-011] toolchain pin
+    container: swift:${{ inputs.swift-version }}    # [CI-011] toolchain pin
     timeout-minutes: 10
     permissions:
       contents: read

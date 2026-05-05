@@ -32,6 +32,14 @@ on:
         description: |
           If true, breakage findings emit warnings only and the workflow
           exits 0. Used during the γ-1c 4-week observation pilot.
+      swift-version:
+        type: string
+        default: "6.3"
+        description: |
+          Swift toolchain pin (per [CI-011]). Used as the container tag
+          since this audit invokes `swift package diagnose-api-breaking-changes`.
+          Mirrors the universal reusable's input so callers bumping the
+          floor flip every container reference in lockstep.
     secrets:
       PRIVATE_REPO_TOKEN:
         required: false
@@ -44,7 +52,7 @@ jobs:
     name: API breakage diagnose
     if: ${{ github.event_name == 'pull_request' && !github.event.repository.private }}
     runs-on: ubuntu-latest
-    container: swift:6.3
+    container: swift:${{ inputs.swift-version }}
     timeout-minutes: 20
     permissions:
       contents: read
