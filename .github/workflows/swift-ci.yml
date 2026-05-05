@@ -49,6 +49,10 @@ on:
         type: boolean
         default: true
         description: "If true, configure git to use PRIVATE_REPO_TOKEN for github.com clones. Default true: most consumers in the swift-primitives ecosystem have private deps and need the token; public-only consumers may pass false explicitly."
+      macos-runner:
+        type: string
+        default: "macos-26"
+        description: "macOS runner image. Bump annually when GitHub adds a new image version. env.* is invalid in runs-on: per Actions context-availability rules — input is the working centralization mechanism."
     secrets:
       PRIVATE_REPO_TOKEN:
         required: false
@@ -61,12 +65,13 @@ on:
 # release exists.
 env:
   SWIFTLINT_VERSION: "0.63.2"
+  XCODE_VERSION: "26.4"
 
 jobs:
   macos-release:
     name: macOS (Swift ${{ inputs.swift-version }}, debug)
     if: ${{ !github.event.repository.private }}
-    runs-on: macos-26
+    runs-on: ${{ inputs.macos-runner }}
     timeout-minutes: 45
     permissions:
       contents: read
@@ -77,8 +82,8 @@ jobs:
         name: Configure git for private repos
         run: git config --global url."https://${{ secrets.PRIVATE_REPO_TOKEN }}@github.com/".insteadOf "https://github.com/"
 
-      - name: Select Xcode 26.4
-        run: sudo xcode-select -s /Applications/Xcode_26.4.app
+      - name: Select Xcode ${{ env.XCODE_VERSION }}
+        run: sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
 
       - name: Print Swift version
         run: swift --version
