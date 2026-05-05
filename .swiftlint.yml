@@ -57,6 +57,11 @@ opt_in_rules:
   - redundant_self
   - prefer_self_in_static_references
   - vertical_whitespace_between_cases
+  # Tier A.5 cohort (2026-05-05): additional pure-consistency opt-ins.
+  - modifier_order                          # consistent attribute / access-modifier ordering
+  - redundant_nil_coalescing                # `?? nil` is dead code
+  - shorthand_optional_binding              # `if let x` over `if let x = x` (Swift 5.7+)
+  - unneeded_parentheses_in_closure_argument  # `{ x in }` over `{ (x) in }`
 
 included:
   - Sources
