@@ -67,9 +67,8 @@ jobs:
           repositories: .github
           permission-issues: write
 
-      - name: Open or update tracking issue
+      - name: Build issue body
         env:
-          GH_TOKEN: ${{ steps.token.outputs.token }}
           SWEEP_RESULT: ${{ needs.sweep.result }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
@@ -82,12 +81,12 @@ jobs:
           # workflow_dispatch with dry-run=false (signal of intent).
           if [[ "$SWEEP_RESULT" == "success" ]]; then
             echo "All orgs converged cleanly — no tracking issue needed."
+            echo "FILE_ISSUE=false" >> "$GITHUB_ENV"
             exit 0
           fi
 
           today=$(date -u '+%Y-%m-%d')
-          title="Metadata sync run ${today} — ${SWEEP_RESULT}"
-          body=$(cat <<EOF
+          cat > "${RUNNER_TEMP}/issue-body.md" <<EOF
           The nightly metadata sweep at 04:00 UTC on ${today} completed with status: \`${SWEEP_RESULT}\`.
 
           See the [run summary](${RUN_URL}) for the per-org breakdown of edits applied (or attempted).
@@ -102,20 +101,18 @@ jobs:
 
           See \`Skills/github-repository\` § [GH-REPO-002] for the single-source discipline.
           EOF
-          )
+          {
+            echo "ISSUE_TITLE=Metadata sync run ${today} — ${SWEEP_RESULT}"
+            echo "FILE_ISSUE=true"
+          } >> "$GITHUB_ENV"
 
-          existing=$(gh issue list --repo swift-institute/.github \
-            --state open --search "Metadata sync run in:title" --json number \
-            --jq '.[0].number // ""')
-
-          if [[ -n "$existing" ]]; then
-            gh issue edit "$existing" --repo swift-institute/.github \
-              --title "$title" --body "$body"
-            echo "Updated existing issue #${existing}"
-          else
-            gh issue create --repo swift-institute/.github \
-              --title "$title" --body "$body" \
-              --label "metadata-sync" 2>&1 || \
-              gh issue create --repo swift-institute/.github \
-                --title "$title" --body "$body"
-          fi
+      - name: Upsert tracking issue
+        if: env.FILE_ISSUE == 'true'
+        uses: swift-institute/.github/.github/actions/upsert-tracking-issue@main
+        with:
+          repo: swift-institute/.github
+          title: ${{ env.ISSUE_TITLE }}
+          title-prefix: 'Metadata sync run'
+          body-file: ${{ runner.temp }}/issue-body.md
+          label: 'metadata-sync'
+          gh-token: ${{ steps.token.outputs.token }}
