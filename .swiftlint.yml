@@ -75,7 +75,7 @@ function_parameter_count:
 custom_rules:
   typed_throws_required:
     name: "Typed Throws Required ([API-ERR-001])"
-    regex: '(?<!\()\bthrows\b\s*(?!\()'
+    regex: '\bthrows\b\s*(?![\(:])'
     message: "Throwing functions/methods/inits MUST use typed throws ([API-ERR-001]). Use 'throws(SomeError)' rather than untyped 'throws'."
     severity: warning
     match_kinds:
