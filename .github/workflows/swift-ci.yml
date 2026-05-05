@@ -10,18 +10,19 @@ name: Swift CI (reusable)
 #   jobs:
 #     ci:
 #       uses: swift-institute/.github/.github/workflows/swift-ci.yml@main
-#       with:
-#         enable-private-repos: true   # only if package depends on private repos
-#       secrets:
-#         PRIVATE_REPO_TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }}
+#       secrets: inherit
+#
+# Default `enable-private-repos: true` covers the canonical case (the
+# vast majority of consumers depend on private intra-Institute siblings
+# and need PRIVATE_REPO_TOKEN-rewritten github.com URLs for
+# `swift package resolve`); pass `with: { enable-private-repos: false }`
+# only for the rare public-deps-only consumer that wants to suppress
+# the configure-git step. `secrets: inherit` is uniform across all
+# consumers per [CI-031]/[CI-058]/[CI-059] post-uniformity-sweep.
 #
 # Inputs are deliberately minimal. Toolchain versions, runner images, and
 # the matrix shape are hard-coded ecosystem-wide; if a package needs a
 # different shape, fork the workflow rather than parameterizing this one.
-#
-# `enable-private-repos: true` rewrites github.com URLs to embed
-# PRIVATE_REPO_TOKEN so `swift package resolve` can clone private deps.
-# Omit when the package has no private dependencies.
 #
 # Caching policy: this workflow does NOT cache `.build/`. Every run does
 # a fresh `swift package resolve` + clone + compile. This matches Apple's
