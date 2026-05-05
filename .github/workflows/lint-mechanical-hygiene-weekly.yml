@@ -44,11 +44,24 @@ on:
         default: false
 
 jobs:
+  config:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      orgs: ${{ steps.read.outputs.orgs }}
+    steps:
+      - id: read
+        uses: swift-institute/.github/.github/actions/read-orgs@main
+        with:
+          filter: 'select(.name=="swift-primitives" or .name=="swift-institute") | .name'
+
   audit:
+    needs: config
     uses: ./.github/workflows/cron-audit-base.yml
     secrets: inherit
     with:
-      matrix-orgs: '["swift-primitives", "swift-institute"]'
+      matrix-orgs: ${{ needs.config.outputs.orgs }}
       count-labels: yaml,links
       issue-title-prefix: Mechanical hygiene sweep
       issue-label: mechanical-hygiene
