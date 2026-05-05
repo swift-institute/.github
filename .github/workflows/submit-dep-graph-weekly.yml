@@ -42,15 +42,27 @@ on:
         default: false
 
 jobs:
+  config:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      orgs: ${{ steps.read.outputs.orgs }}
+    steps:
+      - id: read
+        uses: swift-institute/.github/.github/actions/read-orgs@main
+        with:
+          # Pilot scope: swift-primitives only. Expansion candidates as
+          # ecosystem orgs accept dep-graph submission: swift-standards,
+          # swift-foundations. Widen by changing this filter.
+          filter: 'select(.name=="swift-primitives") | .name'
+
   sweep:
+    needs: config
     strategy:
       fail-fast: false
       matrix:
-        org:
-          - swift-primitives
-          # Expansion candidates as ecosystem orgs accept dep-graph submission:
-          # - swift-standards
-          # - swift-foundations
+        org: ${{ fromJSON(needs.config.outputs.orgs) }}
     runs-on: ubuntu-latest
     # Swift toolchain pin per [CI-011]; bump in lockstep with the universal reusable's default.
     # Hardcoded literal: env.* and workflow-level env: are not bound when GitHub Actions
