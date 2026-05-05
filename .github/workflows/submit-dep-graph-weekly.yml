@@ -91,18 +91,29 @@ jobs:
           curl -fsSL -o /tmp/build-dep-graph-snapshot.py \
             https://raw.githubusercontent.com/swift-institute/.github/main/.github/scripts/build-dep-graph-snapshot.py
 
+      - name: Enumerate org repos
+        id: enum
+        uses: ./.github/actions/enumerate-org-public-repos
+        with:
+          org: ${{ matrix.org }}
+          visibility: 'public'
+          exclude-forks: 'true'
+          gh-token: ${{ steps.token.outputs.token }}
+
       - name: Sweep org
         shell: bash
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
           ORG: ${{ matrix.org }}
           DRY_RUN: ${{ inputs.dry-run || 'false' }}
+          ENUM_REPOS: ${{ steps.enum.outputs.repos }}
         run: |
           set -euo pipefail
-          mapfile -t targets < <(gh repo list "$ORG" --limit 2000 \
-            --visibility public \
-            --json nameWithOwner,isArchived,isFork \
-            --jq '.[] | select(.isArchived==false and .isFork==false) | .nameWithOwner')
+          # Read repos from composite output; drop any blank lines defensively.
+          targets=()
+          while IFS= read -r line; do
+            [[ -n "$line" ]] && targets+=("$line")
+          done <<< "$ENUM_REPOS"
           echo "Targets enumerated: ${#targets[@]}"
           successes=0
           failures=0
