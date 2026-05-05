@@ -188,15 +188,25 @@ jobs:
         run: swift-format --version
 
       - name: Lint formatting (--strict)
-        # Excludes *.docc/Resources/ — DocC tutorial code samples are
-        # didactic fixtures, not API surface, and rules like
-        # AllPublicDeclarationsHaveDocumentation / one_declaration_per_file
-        # produce systemic false positives there ([Phase 1.5] 2026-05-05).
+        # Path exclusions ([Phase 1.5] 2026-05-05):
+        #   *.docc/Resources/  — DocC tutorial code samples are didactic
+        #                        fixtures, not API surface
+        #   Tests/Support/     — Test_Support modules expose test-infrastructure
+        #                        types (fixtures, factories), not API surface;
+        #                        AllPublicDeclarationsHaveDocumentation et al.
+        #                        produce systemic false positives there
+        # Other Tests/** paths are still linted — rules like NeverForceUnwrap,
+        # NeverUseForceTry, ValidateDocumentationComments remain valuable on
+        # test code outside of Test_Support fixture modules.
         shell: bash
         run: |
           set -euo pipefail
-          # Collect Sources + Tests Swift files, excluding DocC tutorial samples.
-          mapfile -d '' files < <(find Sources Tests -name '*.swift' -not -path '*/*.docc/Resources/*' -print0 2>/dev/null || true)
+          # Collect Sources + Tests Swift files, excluding DocC tutorial
+          # samples and Test_Support fixture modules.
+          mapfile -d '' files < <(find Sources Tests -name '*.swift' \
+            -not -path '*/*.docc/Resources/*' \
+            -not -path '*/Tests/Support/*' \
+            -print0 2>/dev/null || true)
           if [ "${#files[@]}" -eq 0 ]; then
             echo "No Swift files to lint."
             exit 0
