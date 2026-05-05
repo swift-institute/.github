@@ -1,0 +1,98 @@
+# Canonical Swift Institute ecosystem orgs manifest.
+#
+# This file is the single source of truth for the org list consumed by
+# cross-org sweep workflows (sync-metadata-nightly, link-check-weekly,
+# the cron-audit-base family, submit-dep-graph-weekly, and any future
+# orchestrator that operates per-org).
+#
+# Schema:
+#   - name:   GitHub org slug (kebab-case)
+#     layer:  Architectural layer assignment (L1 | L2 | L3 | meta)
+#     status: active | archived  (default active; archived orgs are filtered
+#             out by default in the read-orgs composite)
+#
+# Layer assignment per swift-institute/Skills/swift-institute/SKILL.md
+# five-layer architecture:
+#   L1 Primitives — atomic building blocks
+#   L2 Standards  — specification implementations (incl. spec-authority orgs
+#                   like swift-ietf, swift-iso, etc.; CPU spec orgs like
+#                   swift-arm-ltd, swift-intel, swift-riscv)
+#   L3 Foundations — composed building blocks (incl. foundation-specific
+#                    deps orgs like swift-linux-foundation, swift-microsoft)
+#   meta          — institute-meta repos (Skills, Research, Audits, etc.)
+#
+# Adding an org: append a new record here. The change propagates to every
+# orchestrator on the next workflow_dispatch / scheduled run via the
+# read-orgs composite — no per-orchestrator edit required.
+#
+# Removing or archiving an org: set `status: archived`. Orgs at archived
+# status are filtered out by default; orchestrators wanting them can
+# pass `include-archived: 'true'` (or filter explicitly).
+
+- name: swift-primitives
+  layer: L1
+  status: active
+
+- name: swift-standards
+  layer: L2
+  status: active
+
+- name: swift-foundations
+  layer: L3
+  status: active
+
+- name: swift-ietf
+  layer: L2
+  status: active
+
+- name: swift-iso
+  layer: L2
+  status: active
+
+- name: swift-ieee
+  layer: L2
+  status: active
+
+- name: swift-iec
+  layer: L2
+  status: active
+
+- name: swift-w3c
+  layer: L2
+  status: active
+
+- name: swift-whatwg
+  layer: L2
+  status: active
+
+- name: swift-ecma
+  layer: L2
+  status: active
+
+- name: swift-incits
+  layer: L2
+  status: active
+
+- name: swift-arm-ltd
+  layer: L2
+  status: active
+
+- name: swift-intel
+  layer: L2
+  status: active
+
+- name: swift-riscv
+  layer: L2
+  status: active
+
+- name: swift-linux-foundation
+  layer: L3
+  status: active
+
+- name: swift-microsoft
+  layer: L3
+  status: active
+
+- name: swift-institute
+  layer: meta
+  status: active

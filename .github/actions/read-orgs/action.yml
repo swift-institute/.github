@@ -1,0 +1,97 @@
+# Read the canonical Swift Institute ecosystem orgs manifest and emit a
+# JSON array of org names matching a jq filter expression.
+#
+# Replaces the inline matrix.org enumerations across 7+ orchestrators.
+# Each previously hardcoded its own org list (sync-metadata-nightly: all
+# 17, others: 1-pilot or 2-org subset). After extraction, each orchestrator
+# adds a single config job that calls this composite to populate the
+# matrix via fromJSON.
+#
+# Manifest source-of-truth: ${github.action_path}/orgs.yaml in the same
+# action directory. Adding an ecosystem org is an edit to that one file
+# rather than to N orchestrators.
+#
+# Filter is a per-record jq expression (operates on one record at a time;
+# composite handles iteration and array-wrapping). Use `select(...)` to
+# narrow records and a final `.name` (or other field) to project the
+# desired value. Examples:
+#   '.name'                                          (all orgs by name)
+#   'select(.layer=="L1") | .name'                   (L1 only)
+#   'select(.name=="swift-primitives") | .name'      (single org)
+#   'select(.layer=="L1" or .name=="swift-institute") | .name'
+#
+# By default, archived orgs are filtered out via an automatic pre-filter
+# `select(.status!="archived")`. Pass `include-archived: 'true'` to skip
+# that pre-filter.
+#
+# Per [CI-030] @main pinning during active dev. Container compatibility:
+# yq (mikefarah/yq v4) and jq are installed if not already present;
+# ubuntu-latest runners pre-install jq, but swift:* containers may need
+# the install path.
+
+name: 'Read orgs manifest'
+description: >
+  Read the canonical Swift Institute ecosystem orgs manifest at
+  ${github.action_path}/orgs.yaml and emit a JSON array of matching
+  org names suitable for matrix:org via fromJSON.
+
+inputs:
+  filter:
+    description: >
+      Per-record jq expression. The composite handles iteration over
+      records and wraps the result in a JSON array; the filter operates
+      on one record at a time. Use `select(...)` to narrow records and
+      a final `.name` (or other field) to project the value. Default
+      `.name` emits all (active) org names. Examples in header.
+    required: false
+    default: '.name'
+  include-archived:
+    description: >
+      When the literal string `true`, archived orgs are NOT filtered out.
+      Default `false` (archived orgs excluded by an automatic
+      `select(.status!="archived")` pre-filter).
+    required: false
+    default: 'false'
+
+outputs:
+  orgs:
+    description: 'JSON array of matching org names. Suitable for fromJSON in matrix:org.'
+    value: ${{ steps.read.outputs.orgs }}
+
+runs:
+  using: 'composite'
+  steps:
+    - id: read
+      shell: bash
+      env:
+        FILTER: ${{ inputs.filter }}
+        INCLUDE_ARCHIVED: ${{ inputs.include-archived }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        set -euo pipefail
+        # Install yq if not present. ubuntu-latest doesn't pre-install yq;
+        # swift:* containers don't either. mikefarah/yq v4 is the Go binary;
+        # single static download.
+        if ! command -v yq >/dev/null 2>&1; then
+          curl -fsSL "https://github.com/mikefarah/yq/releases/download/v4.45.4/yq_linux_amd64" -o /tmp/yq
+          chmod +x /tmp/yq
+          YQ=/tmp/yq
+        else
+          YQ=$(command -v yq)
+        fi
+        # Install jq if not present (swift:6.3 container doesn't ship jq).
+        if ! command -v jq >/dev/null 2>&1; then
+          apt-get update -qq && apt-get install -qq -y jq
+        fi
+        # Compose the full jq pipeline: iterate records, apply status
+        # pre-filter (unless include-archived), apply caller filter,
+        # wrap result in array.
+        if [[ "$INCLUDE_ARCHIVED" == "true" ]]; then
+          status_prefilter=""
+        else
+          status_prefilter='select(.status!="archived") |'
+        fi
+        result=$("$YQ" -o=json -I=0 "${ACTION_PATH}/orgs.yaml" \
+          | jq -c "[ .[] | ${status_prefilter} ${FILTER} ]")
+        echo "orgs=${result}" >> "$GITHUB_OUTPUT"
+        echo "Resolved orgs: ${result}"
