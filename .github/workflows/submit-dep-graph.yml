@@ -1,0 +1,82 @@
+# submit-dep-graph.yml — GitHub dependency-graph submission (γ-2b advisory).
+#
+# Submits the consumer's resolved Swift Package Manager dependency graph
+# to GitHub via the vapor-community/swift-dependency-submission action.
+# This populates the GitHub UI's "Dependents" tab and feeds Dependabot's
+# vulnerability alerts. push-to-main only (PRs don't update dep graphs).
+#
+# Forks excluded; public-only via [CI-032]. SHA-pinned third-party action
+# per `feedback_latest_versions_only.md`'s hardening rule.
+#
+# Reusable workflow. Transitively called from swift-ci.yml on push events.
+# Advisory switch lives as the `advisory` input — failures are infrastructure
+# concerns (briefly stale dep graph) not contributor-correctable.
+#
+# Graduation: judgment-based at month-1 + month-3 review (success rate >95%,
+# Dependabot signal-to-noise ≥1 actionable advisory/quarter). Drop the
+# advisory input when healthy; no deterministic flip in the γ-1a/b sense.
+#
+# Provenance: research §3.4.5b (the rule), [CI-001]+[CI-002], [CI-026]
+# Path B per-caller permissions, [CI-031], [CI-032], [CI-040].
+
+name: submit-dep-graph
+
+on:
+  workflow_call:
+    inputs:
+      advisory:
+        type: boolean
+        default: false
+        description: |
+          If true, submission failures emit warnings only and the workflow
+          exits 0. Used during the γ-2b month-1/month-3 observation period.
+    secrets:
+      PRIVATE_REPO_TOKEN:
+        required: false
+        description: |
+          Forwarded via `secrets: inherit` from per-package ci.yml. Used
+          to clone private intra-Institute deps during SwiftPM resolve.
+
+jobs:
+  submit:
+    name: Submit GitHub dependency graph
+    if: ${{ !github.event.repository.private && github.event.repository.fork == false }}
+    runs-on: ubuntu-latest
+    container: swift:6.3
+    timeout-minutes: 15
+    permissions:
+      contents: write    # required by github-dependency-submission [CI-026] Path B
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Configure git for private repos
+        shell: bash
+        env:
+          PRIVATE_REPO_TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }}
+        run: |
+          if [[ -n "$PRIVATE_REPO_TOKEN" ]]; then
+            git config --global url."https://${PRIVATE_REPO_TOKEN}@github.com/".insteadOf "https://github.com/"
+          fi
+
+      - name: Submit dependency graph
+        id: submit
+        continue-on-error: ${{ inputs.advisory }}
+        uses: vapor-community/swift-dependency-submission@b3073f8c070033ab550b2e02d90d9ff1e426f123  # v0.2.0
+        with:
+          path: ${{ github.workspace }}
+
+      - name: Report
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "## GitHub dependency graph submission (γ-2b advisory)"
+            echo ""
+            if [[ "${{ steps.submit.outcome }}" == "success" ]]; then
+              echo "- Result: **submitted successfully**"
+            else
+              echo "- Result: **submission failed**"
+              echo ""
+              echo "Advisory mode: \`${{ inputs.advisory }}\`. Track in next weekly review."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -209,15 +209,54 @@ jobs:
       - name: Lint
         run: swiftlint lint --strict --reporter github-actions-logging
 
-  # [MOD-024] Test Support Spine — advisory in Phase β; gating in Phase γ
-  # (after two consecutive zero-violation weekly runs of
-  # lint-test-support-spine-weekly.yml). Audit body in
-  # lint-test-support-spine.yml. Phase γ flip = drop the `with:` block
-  # (advisory defaults to false → gating). `continue-on-error` is NOT
-  # permitted on workflow_call jobs in GitHub Actions, hence the input.
+  # ─── Advisory CI gates (per-PR) ───────────────────────────────────────
+  # All advisory in their respective Phase-β/γ-* observation windows.
+  # Each takes an `advisory: bool` input; flip to gating = drop the
+  # `with:` block at the calling site (default false = gating).
+
+  # [MOD-024] Test Support Spine — Phase β advisory; γ flip after two
+  # consecutive zero-violation weekly runs of lint-test-support-spine-weekly.
   lint-test-support-spine:
     name: Test Support Spine ([MOD-024], advisory)
     if: ${{ !github.event.repository.private }}
     uses: ./.github/workflows/lint-test-support-spine.yml
     with:
       advisory: true     # Phase β. Drop in Phase γ.
+
+  # γ-4 PR-title format — pull_request events only. Advisory by design
+  # (monthly noise:value review; drop entirely if friction-theater per §3.4.7).
+  lint-pr-title:
+    name: PR title format (γ-4, advisory)
+    if: ${{ github.event_name == 'pull_request' && !github.event.repository.private }}
+    uses: ./.github/workflows/lint-pr-title.yml
+    with:
+      advisory: true
+
+  # γ-2 broken-symlink scan. Advisory; γ-2 flip after two consecutive clean
+  # weekly cron sweeps (consolidated mechanical-hygiene tracking issue).
+  lint-broken-symlink:
+    name: Broken symlinks (γ-2, advisory)
+    if: ${{ !github.event.repository.private }}
+    uses: ./.github/workflows/lint-broken-symlink.yml
+    with:
+      advisory: true
+
+  # γ-1c API-breakage advisory pilot. PR-only; baseline = PR base SHA.
+  # 4-week observation; flip decision after A:B:C:D ratio review per §3.4.4.
+  lint-api-breakage:
+    name: API breakage (γ-1c, advisory pilot)
+    if: ${{ github.event_name == 'pull_request' && !github.event.repository.private }}
+    uses: ./.github/workflows/lint-api-breakage.yml
+    with:
+      advisory: true
+    secrets: inherit
+
+  # γ-2b GitHub dependency-graph submission. push-to-main only. Advisory;
+  # judgment-based graduation at month-1 + month-3 review per §3.4.5b.
+  submit-dep-graph:
+    name: Submit dep graph (γ-2b, advisory)
+    if: ${{ github.event_name == 'push' && !github.event.repository.private && github.event.repository.fork == false }}
+    uses: ./.github/workflows/submit-dep-graph.yml
+    with:
+      advisory: true
+    secrets: inherit

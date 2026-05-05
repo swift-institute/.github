@@ -1,0 +1,66 @@
+# lint-broken-symlink.yml — broken-symlink linter (γ-2 advisory).
+#
+# Walks the consumer's working tree for symlinks whose targets don't exist
+# (`find -L . -type l ! -exec test -e {} \; -print`). Single shell
+# invocation; advisory in Phase γ-2; consolidated into the mechanical-
+# hygiene weekly tracking issue per research §3.4.5.
+#
+# Reusable workflow. Transitively called from swift-ci.yml. The advisory
+# switch lives as the `advisory` input (default false → gating; pass
+# advisory: true to surface as warnings only).
+#
+# Phase γ-2 graduation: 2 consecutive clean weekly cron sweeps → drop
+# `with: { advisory: true }` at the calling site.
+#
+# Provenance: research §3.4.5 (the rule), [CI-001]+[CI-002] (architecture),
+# [CI-031] (per-package caller minimum), [CI-032] (visibility gate).
+
+name: lint-broken-symlink
+
+on:
+  workflow_call:
+    inputs:
+      advisory:
+        type: boolean
+        default: false
+        description: |
+          If true, broken symlinks emit warnings only and the workflow
+          exits 0. Used during Phase γ-2 advisory observation.
+
+jobs:
+  scan:
+    name: Broken symlink scan
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Scan for broken symlinks
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Find symlinks whose target does not exist. Uses GNU find idiom;
+          # ubuntu-latest runners ship GNU coreutils.
+          mapfile -t broken < <(find -L . -type l ! -exec test -e {} \; -print 2>/dev/null || true)
+          {
+            echo "## Broken symlink scan"
+            echo ""
+            echo "- Broken symlinks found: ${#broken[@]}"
+            if (( ${#broken[@]} > 0 )); then
+              echo ""
+              echo "### Findings"
+              echo ""
+              echo '```'
+              printf '%s\n' "${broken[@]}"
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          if (( ${#broken[@]} > 0 )); then
+            echo "::warning::Broken symlink(s) detected (${#broken[@]} total) — see step summary"
+            if [[ "${{ inputs.advisory }}" != "true" ]]; then
+              exit 1
+            fi
+          fi

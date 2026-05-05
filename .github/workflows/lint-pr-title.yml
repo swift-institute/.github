@@ -1,0 +1,75 @@
+# lint-pr-title.yml — PR-title shape linter (γ-4 advisory).
+#
+# Triggers on PR open/edit/synchronize. Reads the PR title from the event
+# payload and checks it against the existing internal `<scope>: <imperative>`
+# convention. NOT per-commit (squash-merge alignment: PR title becomes the
+# commit-on-main subject).
+#
+# Format regex (intent: <scope>: <Imperative>):
+#   ^[a-z0-9-]+(\(.+\))?: [A-Z].*$
+#
+# Examples that PASS:
+#   ci(swift-ci): absorb format + lint as parallel jobs
+#   ci: wire Phase β [MOD-024] Test Support Spine advisory gate
+#   docs: clarify cron orchestrator layering
+#
+# Examples that FAIL (advisory warning only):
+#   wip stuff
+#   Add new feature
+#   feat: lowercase imperative
+#
+# Phase γ-4 is advisory-only by design — never gating, monthly noise:value
+# review. Drop the workflow entirely if friction-theater per
+# `centralized-swift-ci-and-spine-gate.md` §3.4.7.
+#
+# This workflow runs as a workflow_call reusable (transitively from
+# swift-ci.yml). The advisory/gating switch lives as the `advisory` input
+# (default false → gating; pass advisory: true to surface as warnings only).
+#
+# Provenance: research §3.4.7 (the rule), [CI-001]+[CI-002] (architecture),
+# [CI-031] (per-package caller minimum), [CI-032] (visibility gate).
+
+name: lint-pr-title
+
+on:
+  workflow_call:
+    inputs:
+      advisory:
+        type: boolean
+        default: false
+        description: |
+          If true, format violations emit warnings only and the workflow
+          exits 0. Used during the γ-4 advisory observation period.
+
+jobs:
+  check:
+    name: PR title format
+    if: ${{ github.event_name == 'pull_request' && !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Lint PR title
+        shell: bash
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          set -euo pipefail
+          # Pattern: <kebab-scope>(<optional-parenthetical>): <Capital imperative>
+          pattern='^[a-z0-9-]+(\(.+\))?: [A-Z].*$'
+          {
+            echo "## PR title check"
+            echo ""
+            echo "Title: \`${PR_TITLE}\`"
+            echo ""
+            echo "Expected pattern: \`<scope>: <Imperative>\` (e.g. \`ci: …\`, \`docs: …\`, \`feat(parser): …\`)"
+            echo ""
+            echo "_Note: This title becomes the squash-merge commit subject._"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if ! [[ "$PR_TITLE" =~ $pattern ]]; then
+            echo "::warning::PR title does not match \`<scope>: <Imperative>\` convention — see step summary"
+            if [[ "${{ inputs.advisory }}" != "true" ]]; then
+              exit 1
+            fi
+          fi

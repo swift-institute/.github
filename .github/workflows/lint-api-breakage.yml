@@ -1,0 +1,98 @@
+# lint-api-breakage.yml — API-breakage detector (γ-1c advisory pilot).
+#
+# Runs `swift package diagnose-api-breaking-changes <PR-base-SHA>` against
+# the consumer's PR-base commit. PR-only trigger; advisory pilot per
+# research §3.4.4 with four-class tracking on the weekly tracking issue:
+#
+#   A. Own public API change       (genuine drift; the rule's intended catch)
+#   B. Dependency drift            (re-exported branch-pinned dep changed)
+#   C. Toolchain/parser issue      (swift-api-digester false positive)
+#   D. Workflow/setup issue        (CI infra defect; baseline build failed)
+#
+# After 4 weeks: review A:B:C:D ratio. If A dominant, plan γ-1c → δ flip.
+# If B/C dominate, decide: add dependency freezing or stay advisory longer.
+#
+# Branch-pinned-dep caveat: both PR-base and PR-head builds resolve
+# `branch: "main"` deps to the same current state, so a downstream-changed
+# upstream type may surface as a false positive in class B.
+#
+# Reusable workflow. Transitively called from swift-ci.yml. Advisory switch
+# lives as the `advisory` input.
+#
+# Provenance: research §3.4.4, [CI-001]+[CI-002], [CI-031], [CI-032].
+
+name: lint-api-breakage
+
+on:
+  workflow_call:
+    inputs:
+      advisory:
+        type: boolean
+        default: false
+        description: |
+          If true, breakage findings emit warnings only and the workflow
+          exits 0. Used during the γ-1c 4-week observation pilot.
+    secrets:
+      PRIVATE_REPO_TOKEN:
+        required: false
+        description: |
+          Forwarded via `secrets: inherit` from per-package ci.yml. Used
+          to clone private intra-Institute deps during SwiftPM resolve.
+
+jobs:
+  diagnose:
+    name: API breakage diagnose
+    if: ${{ github.event_name == 'pull_request' && !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    container: swift:6.3
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # Need full enough history to reach the PR base SHA.
+          fetch-depth: 0
+
+      - name: Configure git for private repos
+        shell: bash
+        env:
+          PRIVATE_REPO_TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }}
+        run: |
+          if [[ -n "$PRIVATE_REPO_TOKEN" ]]; then
+            git config --global url."https://${PRIVATE_REPO_TOKEN}@github.com/".insteadOf "https://github.com/"
+          fi
+
+      - name: Diagnose API breaking changes
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          {
+            echo "## API breakage diagnose — γ-1c (advisory pilot)"
+            echo ""
+            echo "- Baseline: \`${BASE_SHA}\` (PR base)"
+            echo "- Head:     \`${GITHUB_SHA}\`"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+          if swift package diagnose-api-breaking-changes "$BASE_SHA" 2>&1 | tee /tmp/diagnose.log; then
+            echo "- Result: **clean** (no breaking changes)" >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "- Result: **breaking changes detected**"
+              echo ""
+              echo "### Findings"
+              echo ""
+              echo '```'
+              cat /tmp/diagnose.log
+              echo '```'
+              echo ""
+              echo "Classify the breakage on the next weekly tracking issue:"
+              echo "A (own change), B (dep drift), C (toolchain), D (workflow)."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::warning::API breakage detected against PR base — see step summary"
+            if [[ "${{ inputs.advisory }}" != "true" ]]; then
+              exit 1
+            fi
+          fi
