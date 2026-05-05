@@ -1,7 +1,7 @@
 # lint-test-support-spine-weekly.yml — scheduled cross-org Test Support spine
 # sweep.
 #
-# Calls preflight-test-support-spine.py against every public, non-archived
+# Calls audit-test-support-spine.py against every public, non-archived
 # repo in each in-scope org via a matrix strategy at 06:30 UTC every Monday
 # (offset from link-check + readme-presence sweeps which run at 06:00). When
 # any org has spine drift (VIOLATION or MISSING), opens or updates a single
@@ -14,9 +14,9 @@
 # land.
 #
 # Audit script source:
-#   swift-institute/.github/.github/scripts/preflight-test-support-spine.py
+#   swift-institute/.github/.github/scripts/audit-test-support-spine.py
 # Public fetch URL (used by the sweep job):
-#   https://raw.githubusercontent.com/swift-institute/.github/main/.github/scripts/preflight-test-support-spine.py
+#   https://raw.githubusercontent.com/swift-institute/.github/main/.github/scripts/audit-test-support-spine.py
 #
 # β→γ flip trigger: this orchestrator's tracking issue MUST NOT be opened
 # (or must remain closed) for two consecutive Monday runs before Phase γ
@@ -84,8 +84,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          curl -fsSL -o /tmp/preflight-test-support-spine.py \
-            https://raw.githubusercontent.com/swift-institute/.github/main/.github/scripts/preflight-test-support-spine.py
+          curl -fsSL -o /tmp/audit-test-support-spine.py \
+            https://raw.githubusercontent.com/swift-institute/.github/main/.github/scripts/audit-test-support-spine.py
 
       - name: Sweep org
         shell: bash
@@ -106,7 +106,7 @@ jobs:
             git clone --depth 1 --quiet \
               "https://x-access-token:${GH_TOKEN}@github.com/${target}.git" \
               "$workdir" 2>/dev/null || { rm -rf "$workdir"; continue; }
-            python3 /tmp/preflight-test-support-spine.py \
+            python3 /tmp/audit-test-support-spine.py \
               --package-dir "$workdir" \
               --json "$json" 2>/dev/null || true
             counts=$(python3 -c "import json; t=json.load(open('$json'))['aggregate']['totals']; print(t['violation_findings'], t['missing_findings'])" 2>/dev/null || echo "0 0")
@@ -195,7 +195,7 @@ jobs:
 
           - Run the audit script locally to identify the drifted packages:
             \`\`\`
-            python3 swift-institute/.github/.github/scripts/preflight-test-support-spine.py --org primitives
+            python3 swift-institute/.github/.github/scripts/audit-test-support-spine.py --org primitives
             \`\`\`
           - For VIOLATION: replace the non-TS cross-package dep with the
             corresponding \`* Test Support\` product. The spine-anchor

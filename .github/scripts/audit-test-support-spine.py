@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-Pre-flight audit script for the Test Support spine rule.
+Audit script for the Test Support spine rule ([MOD-024]).
 
 Walks each org-dir's Package.swift via `swift package dump-package`, audits
 every `* Test Support` target against the rule "TS target deps subset of
 {TS modules, own product}", and emits per-target findings plus a
-strict-vs-pragmatic shell-candidate analysis to inform Open Question 2.
+strict-vs-pragmatic shell-candidate analysis.
 
 Outputs (stdout):
   - Per-package findings (OK / VIOLATION / MISSING)
@@ -17,10 +17,10 @@ Outputs (stdout):
 Optional JSON output via --json <path>.
 
 Usage:
-  preflight-test-support-spine.py                              # all four org-dirs (principal mode)
-  preflight-test-support-spine.py --org primitives             # single org (principal mode)
-  preflight-test-support-spine.py --package-dir <path>         # single package (CI mode)
-  preflight-test-support-spine.py --json /tmp/spine-audit.json
+  audit-test-support-spine.py                              # all four org-dirs (principal mode)
+  audit-test-support-spine.py --org primitives             # single org (principal mode)
+  audit-test-support-spine.py --package-dir <path>         # single package (CI mode)
+  audit-test-support-spine.py --json /tmp/spine-audit.json
 """
 
 import argparse

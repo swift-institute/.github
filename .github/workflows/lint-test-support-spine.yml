@@ -2,7 +2,7 @@
 # Spine Discipline.
 #
 # Reusable workflow. For the checked-out package, runs the per-package audit
-# (preflight-test-support-spine.py --package-dir .) and exits 1 on VIOLATION
+# (audit-test-support-spine.py --package-dir .) and exits 1 on VIOLATION
 # or MISSING findings. The advisory-vs-gating decision is made at the CALLING
 # site via the `advisory` input: `with: { advisory: true }` for Phase β
 # (warnings only, exit 0); omitted for Phase γ (default false, exit 1 on
@@ -24,9 +24,9 @@
 # therefore lives as a workflow input that gates the `exit 1` line below.
 #
 # Audit script source:
-#   swift-institute/.github/.github/scripts/preflight-test-support-spine.py
+#   swift-institute/.github/.github/scripts/audit-test-support-spine.py
 # Public fetch URL (used by the run step below):
-#   https://raw.githubusercontent.com/swift-institute/.github/main/.github/scripts/preflight-test-support-spine.py
+#   https://raw.githubusercontent.com/swift-institute/.github/main/.github/scripts/audit-test-support-spine.py
 #
 # Provenance: [MOD-024] (the rule); [CI-001]+[CI-002] (architecture);
 # [CI-021] (continue-on-error precedent); [README-167] (tracking-issue
@@ -86,16 +86,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          curl -fsSL -o /tmp/preflight-test-support-spine.py \
-            https://raw.githubusercontent.com/swift-institute/.github/main/.github/scripts/preflight-test-support-spine.py
-          chmod +x /tmp/preflight-test-support-spine.py
+          curl -fsSL -o /tmp/audit-test-support-spine.py \
+            https://raw.githubusercontent.com/swift-institute/.github/main/.github/scripts/audit-test-support-spine.py
+          chmod +x /tmp/audit-test-support-spine.py
 
       - name: Run audit
         id: audit
         shell: bash
         run: |
           set -euo pipefail
-          python3 /tmp/preflight-test-support-spine.py \
+          python3 /tmp/audit-test-support-spine.py \
             --package-dir . \
             --json /tmp/audit.json \
             | tee /tmp/audit.log
