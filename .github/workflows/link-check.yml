@@ -27,7 +27,7 @@ name: link-check
 # Tool version pin. Per feedback_latest_versions_only.md, bump on every
 # touch where a newer release exists.
 env:
-  LYCHEE_VERSION: "0.20.1"
+  LYCHEE_VERSION: "0.24.2"
 
 on:
   workflow_call:
