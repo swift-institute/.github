@@ -63,6 +63,8 @@ on:
 jobs:
   sync:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       edits-applied: ${{ steps.sync.outputs.edits-applied }}
       diffs-found: ${{ steps.sync.outputs.diffs-found }}

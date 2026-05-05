@@ -80,6 +80,8 @@ jobs:
   scan:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    permissions:
+      contents: read
     outputs:
       repos-scanned: ${{ steps.scan.outputs.repos-scanned }}
       repos-with-broken-links: ${{ steps.scan.outputs.repos-with-broken-links }}

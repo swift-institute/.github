@@ -72,6 +72,8 @@ jobs:
     needs: sweep
     runs-on: ubuntu-latest
     if: always() && needs.sweep.result != 'skipped'
+    permissions:
+      contents: read
     steps:
       - name: Mint installation token
         id: token

@@ -39,6 +39,8 @@ on:
 jobs:
   generate:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout swift-institute/.github (for spec-titles.yaml + script)
         uses: actions/checkout@v6
