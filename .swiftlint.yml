@@ -63,7 +63,7 @@ opt_in_rules:
   - shorthand_optional_binding              # `if let x` over `if let x = x` (Swift 5.7+)
   - unneeded_parentheses_in_closure_argument  # `{ x in }` over `{ (x) in }`
   # Tier A.6 cohort (2026-05-05): perf / clarity opt-ins.
-  - toggle_bool                             # `x = !x` → `x.toggle()` when applicable
+  # toggle_bool deliberately NOT enabled — user prefers `x = !x` over `x.toggle()`.
   - last_where                              # `.reversed().first(where:)` → `.last(where:)` (perf)
   - flatmap_over_map_reduce                 # `.map().reduce(into: [], +=)` → `.flatMap()` (perf+clarity)
   - prefer_zero_over_explicit_init          # `Int(0)` → `0`
