@@ -207,7 +207,7 @@ jobs:
         with:
           path: /tmp/counts
 
-      - name: Aggregate + render + (optionally) post issue
+      - name: Aggregate + render
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
           DRY_RUN: ${{ inputs.dry-run }}
@@ -268,11 +268,13 @@ jobs:
           done
           if [[ "$any_nonzero" -eq 0 ]]; then
             echo "All counts zero across orgs — no tracking issue needed."
+            echo "FILE_ISSUE=false" >> "$GITHUB_ENV"
             exit 0
           fi
 
           if [[ "${DRY_RUN}" == "true" ]]; then
             echo "(dry-run; would have opened/updated issue)"
+            echo "FILE_ISSUE=false" >> "$GITHUB_ENV"
             exit 0
           fi
 
@@ -288,17 +290,20 @@ jobs:
             envsubst_vars="${envsubst_vars} \${${varname}}"
           done
 
-          # Render the body via envsubst.
-          body=$(echo "${ISSUE_BODY_TEMPLATE}" | envsubst "${envsubst_vars}")
-          title="${ISSUE_TITLE_PREFIX} ${today}"
+          # Render the body via envsubst, write to file for upsert composite.
+          echo "${ISSUE_BODY_TEMPLATE}" | envsubst "${envsubst_vars}" > "${RUNNER_TEMP}/issue-body.md"
+          {
+            echo "ISSUE_TITLE=${ISSUE_TITLE_PREFIX} ${today}"
+            echo "FILE_ISSUE=true"
+          } >> "$GITHUB_ENV"
 
-          # Issue create-or-update with label-fallback (mirrors link-check pattern).
-          existing=$(gh issue list --repo swift-institute/.github \
-            --state open --search "${ISSUE_TITLE_PREFIX} in:title" \
-            --json number --jq '.[0].number // ""')
-          if [[ -n "$existing" ]]; then
-            gh issue edit "$existing" --repo swift-institute/.github --title "$title" --body "$body"
-          else
-            gh issue create --repo swift-institute/.github --title "$title" --body "$body" --label "${ISSUE_LABEL}" 2>&1 || \
-              gh issue create --repo swift-institute/.github --title "$title" --body "$body"
-          fi
+      - name: Upsert tracking issue
+        if: env.FILE_ISSUE == 'true'
+        uses: swift-institute/.github/.github/actions/upsert-tracking-issue@main
+        with:
+          repo: swift-institute/.github
+          title: ${{ env.ISSUE_TITLE }}
+          title-prefix: ${{ inputs.issue-title-prefix }}
+          body-file: ${{ runner.temp }}/issue-body.md
+          label: ${{ inputs.issue-label }}
+          gh-token: ${{ steps.token.outputs.token }}
