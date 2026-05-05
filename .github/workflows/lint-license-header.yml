@@ -1,0 +1,106 @@
+# lint-license-header.yml — Apache 2.0 license-header audit (γ-1b Stage 1).
+#
+# Runs audit-license-header.py against the calling consumer. Scans
+# Sources/**/*.swift for Apache 2.0 license header presence in the first
+# 30 lines (case-insensitive substring "apache" AND "2.0"). Tests/**,
+# Package.swift, and Package@*.swift are excluded.
+#
+# Phase γ-1b is a THREE-stage rollout (per research §3.4.3):
+#   Stage 1 (this file, current): advisory; surface ecosystem-wide gap.
+#   Stage 2 (separate auth): mass codemod adds headers to all in-scope
+#           Sources/**/*.swift across orgs.
+#   Stage 3 (separate auth): drop the `with: { advisory: true }` →
+#           workflow becomes gating.
+#
+# Empirical Stage 1 expectation: spot-checks at swift-witness-primitives
+# (4/4 files have headers) and swift-tagged-primitives (1/9 files have
+# headers) show partial coverage — the cron will surface the precise gap
+# rather than a uniform "everything missing" finding.
+#
+# Reusable workflow. Transitively called from swift-ci.yml. Advisory
+# switch lives as the `advisory` input.
+#
+# Audit script source:
+#   swift-institute/.github/.github/scripts/audit-license-header.py
+# Public fetch URL:
+#   https://raw.githubusercontent.com/swift-institute/.github/main/.github/scripts/audit-license-header.py
+#
+# Provenance: research §3.4.3, [CI-001]+[CI-002], [CI-031], [CI-032].
+
+name: lint-license-header
+
+on:
+  workflow_call:
+    inputs:
+      advisory:
+        type: boolean
+        default: false
+        description: |
+          If true, missing-header findings emit warnings only and the
+          workflow exits 0. Used during γ-1b Stage 1 (advisory). Stage 3
+          flip omits the input → workflow exits 1 on findings (gating).
+
+jobs:
+  audit:
+    name: License-header audit
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    container: swift:6.3
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      missing-count: ${{ steps.audit.outputs.missing-count }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install dependencies (curl, python3)
+        shell: bash
+        run: |
+          set -euo pipefail
+          apt-get update -qq
+          apt-get install -qq -y curl python3
+
+      - name: Fetch audit script
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/audit-license-header.py \
+            https://raw.githubusercontent.com/swift-institute/.github/main/.github/scripts/audit-license-header.py
+
+      - name: Run audit
+        id: audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 /tmp/audit-license-header.py \
+            --package-dir . \
+            --json /tmp/audit.json \
+            | tee /tmp/audit.log
+          read -r missing files < <(python3 - <<'PYEOF'
+          import json
+          t = json.load(open('/tmp/audit.json'))['totals']
+          print(t['missing'], t['files_scanned'])
+          PYEOF
+          )
+          echo "missing-count=$missing" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Apache 2.0 license-header audit — γ-1b (Stage 1, advisory)"
+            echo ""
+            echo "- Files scanned: $files"
+            echo "- Missing:       $missing"
+            echo ""
+            if [[ "$missing" -gt 0 ]]; then
+              echo "### Files missing header"
+              echo ""
+              echo '```'
+              cat /tmp/audit.log
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$missing" -gt 0 ]]; then
+            echo "::warning::License-header missing on $missing of $files Sources/**/*.swift files"
+            if [[ "${{ inputs.advisory }}" != "true" ]]; then
+              exit 1
+            fi
+          fi

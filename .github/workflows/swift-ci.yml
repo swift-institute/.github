@@ -251,6 +251,26 @@ jobs:
     with:
       advisory: true
 
+  # γ-1a Foundation-family import audit. Two-track flip after 2 clean
+  # weekly cron runs (BOTH public CI sweep AND principal-side audit per
+  # Decision #8). Catches all attribute/access-modifier permutations.
+  lint-foundation-family-import:
+    name: Foundation import (γ-1a, advisory)
+    if: ${{ !github.event.repository.private }}
+    uses: ./.github/workflows/lint-foundation-family-import.yml
+    with:
+      advisory: true
+
+  # γ-1b Apache 2.0 license-header audit (Stage 1 advisory). Stage 2 codemod
+  # and Stage 3 gating-flip require separate per-action authorization per
+  # research §3.4.3 + [HANDOFF-023] bulk-push class.
+  lint-license-header:
+    name: License header (γ-1b Stage 1, advisory)
+    if: ${{ !github.event.repository.private }}
+    uses: ./.github/workflows/lint-license-header.yml
+    with:
+      advisory: true
+
   # γ-1c API-breakage advisory pilot. PR-only; baseline = PR base SHA.
   # 4-week observation; flip decision after A:B:C:D ratio review per §3.4.4.
   lint-api-breakage:

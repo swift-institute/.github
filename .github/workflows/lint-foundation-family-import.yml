@@ -1,0 +1,100 @@
+# lint-foundation-family-import.yml — Foundation-family import audit (γ-1a).
+#
+# Runs audit-foundation-import.py against the calling consumer. Forbids
+# `import Foundation` (and FoundationEssentials, FoundationInternationalization)
+# in Sources/** and Tests/Support/** (ERROR); warns in Tests/** elsewhere.
+# Catches all attribute permutations (@_exported, @preconcurrency, etc.) and
+# access modifiers (public/package/internal/fileprivate/private).
+#
+# Reusable workflow. Transitively called from swift-ci.yml. Advisory switch
+# lives as the `advisory` input. Phase γ-1a flip after 2 consecutive clean
+# weekly cron runs (BOTH public CI sweep AND principal-side on-disk audit
+# clean per Decision #8 two-track audit model).
+#
+# Audit script source:
+#   swift-institute/.github/.github/scripts/audit-foundation-import.py
+# Public fetch URL:
+#   https://raw.githubusercontent.com/swift-institute/.github/main/.github/scripts/audit-foundation-import.py
+#
+# Provenance: research §3.4.2, [CI-022] (Foundation forbidden), [CI-001]+
+# [CI-002], [CI-031], [CI-032], [PRIM-FOUND-001].
+
+name: lint-foundation-family-import
+
+on:
+  workflow_call:
+    inputs:
+      advisory:
+        type: boolean
+        default: false
+        description: |
+          If true, ERROR-level findings emit warnings only and the workflow
+          exits 0. Used during Phase γ-1a advisory observation.
+
+jobs:
+  audit:
+    name: Foundation import audit
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    container: swift:6.3
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      error-count: ${{ steps.audit.outputs.error-count }}
+      warning-count: ${{ steps.audit.outputs.warning-count }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install dependencies (curl, python3)
+        shell: bash
+        run: |
+          set -euo pipefail
+          apt-get update -qq
+          apt-get install -qq -y curl python3
+
+      - name: Fetch audit script
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/audit-foundation-import.py \
+            https://raw.githubusercontent.com/swift-institute/.github/main/.github/scripts/audit-foundation-import.py
+
+      - name: Run audit
+        id: audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 /tmp/audit-foundation-import.py \
+            --package-dir . \
+            --json /tmp/audit.json \
+            | tee /tmp/audit.log
+          read -r errors warnings files < <(python3 - <<'PYEOF'
+          import json
+          t = json.load(open('/tmp/audit.json'))['totals']
+          print(t['errors'], t['warnings'], t['files_scanned'])
+          PYEOF
+          )
+          echo "error-count=$errors"     >> "$GITHUB_OUTPUT"
+          echo "warning-count=$warnings" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Foundation-family import audit — γ-1a [CI-022]"
+            echo ""
+            echo "- Files scanned: $files"
+            echo "- ERRORS:        $errors"
+            echo "- WARNINGS:      $warnings"
+            echo ""
+            if [[ "$errors" -gt 0 || "$warnings" -gt 0 ]]; then
+              echo "### Findings"
+              echo ""
+              echo '```'
+              cat /tmp/audit.log
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$errors" -gt 0 ]]; then
+            echo "::warning::[CI-022] Foundation-family import detected — $errors errors, $warnings warnings"
+            if [[ "${{ inputs.advisory }}" != "true" ]]; then
+              exit 1
+            fi
+          fi
