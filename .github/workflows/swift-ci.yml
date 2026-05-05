@@ -279,17 +279,10 @@ jobs:
     with:
       advisory: true
 
-  # ─── γ-2b GitHub dep-graph — TEMPORARILY DISABLED ────────────────────────
-  # The submit-dep-graph.yml reusable declares `permissions: contents: write`
-  # which the consumer-→layer-→universal call chain doesn't grant by default,
-  # causing startup_failure across every consumer CI run. Re-enable once a
-  # permissions-chain spike establishes the right pattern (per [CI-026]
-  # Path B). The reusable file itself stays in place; only this caller is
-  # commented out.
-  # submit-dep-graph:
-  #   name: Submit dep graph (γ-2b, advisory)
-  #   if: ${{ github.event_name == 'push' && !github.event.repository.private && github.event.repository.fork == false }}
-  #   uses: ./.github/workflows/submit-dep-graph.yml
-  #   with:
-  #     advisory: true
-  #   secrets: inherit
+  # γ-2b dep-graph submission lives in submit-dep-graph-weekly.yml (a
+  # centralized per-org cron orchestrator), not as a per-PR caller here.
+  # The transitive consumer-→layer-→universal call chain can't grant
+  # `contents: write` cleanly under [CI-031] minimum (v1.3.0 §3.5.4),
+  # so the architecture is centralized: one workflow at swift-institute/
+  # .github fires Monday 06:50 UTC and submits dep-graphs for all public
+  # consumer repos via `gh api -X POST /repos/<target>/dependency-graph/snapshots`.
