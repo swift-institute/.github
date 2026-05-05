@@ -76,6 +76,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Fetch audit script
+        shell: bash
         run: |
           set -euo pipefail
           curl -fsSL -o /tmp/preflight-test-support-spine.py \

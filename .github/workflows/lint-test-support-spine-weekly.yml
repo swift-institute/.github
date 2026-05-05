@@ -65,12 +65,14 @@ jobs:
           repositories: ''  # all repos in the org installation
 
       - name: Fetch audit script
+        shell: bash
         run: |
           set -euo pipefail
           curl -fsSL -o /tmp/preflight-test-support-spine.py \
             https://raw.githubusercontent.com/swift-institute/.github/main/.github/scripts/preflight-test-support-spine.py
 
       - name: Sweep org
+        shell: bash
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
           ORG: ${{ matrix.org }}
