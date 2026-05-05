@@ -79,6 +79,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          apt-get update -qq
+          apt-get install -qq -y curl
           curl -fsSL -o /tmp/preflight-test-support-spine.py \
             https://raw.githubusercontent.com/swift-institute/.github/main/.github/scripts/preflight-test-support-spine.py
           chmod +x /tmp/preflight-test-support-spine.py
