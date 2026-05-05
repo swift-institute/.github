@@ -217,7 +217,7 @@ jobs:
         with:
           path: /tmp/counts
 
-      - name: Open or update tracking issue
+      - name: Aggregate + build body
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
           DRY_RUN: ${{ inputs.dry-run || 'false' }}
@@ -249,11 +249,16 @@ jobs:
           done < <(find /tmp/counts -type f -name '*-failures.txt' 2>/dev/null)
           if [[ "$total_f" -eq 0 ]]; then
             echo "Dep-graph submission clean across all orgs — no tracking issue."
+            echo "FILE_ISSUE=false" >> "$GITHUB_ENV"
             exit 0
           fi
-          [[ "$DRY_RUN" == "true" ]] && { echo "(dry-run; would have opened/updated issue)"; exit 0; }
-          title="Dep-graph submission sweep ${today}"
-          body=$(cat <<EOF
+          if [[ "$DRY_RUN" == "true" ]]; then
+            echo "(dry-run; would have opened/updated issue)"
+            echo "FILE_ISSUE=false" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          # Write body to a file for the upsert-tracking-issue composite.
+          cat > "${RUNNER_TEMP}/issue-body.md" <<EOF
           The weekly γ-2b dep-graph submission sweep at 06:50 UTC on ${today}
           had failures.
 
@@ -293,13 +298,18 @@ jobs:
 
           *Idempotent: this issue is updated in place.*
           EOF
-          )
-          existing=$(gh issue list --repo swift-institute/.github \
-            --state open --search "Dep-graph submission sweep in:title" \
-            --json number --jq '.[0].number // ""')
-          if [[ -n "$existing" ]]; then
-            gh issue edit "$existing" --repo swift-institute/.github --title "$title" --body "$body"
-          else
-            gh issue create --repo swift-institute/.github --title "$title" --body "$body" --label "dep-graph" 2>&1 || \
-              gh issue create --repo swift-institute/.github --title "$title" --body "$body"
-          fi
+          {
+            echo "ISSUE_TITLE=Dep-graph submission sweep ${today}"
+            echo "FILE_ISSUE=true"
+          } >> "$GITHUB_ENV"
+
+      - name: Upsert tracking issue
+        if: env.FILE_ISSUE == 'true'
+        uses: swift-institute/.github/.github/actions/upsert-tracking-issue@main
+        with:
+          repo: swift-institute/.github
+          title: ${{ env.ISSUE_TITLE }}
+          title-prefix: 'Dep-graph submission sweep'
+          body-file: ${{ runner.temp }}/issue-body.md
+          label: 'dep-graph'
+          gh-token: ${{ steps.token.outputs.token }}
