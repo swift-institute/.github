@@ -1,0 +1,138 @@
+# Dynamically resolve and install a swift.org Swift SDK matching the
+# container's running Swift version.
+#
+# Fetches https://www.swift.org/api/v1/install/releases.json, filters to
+# the record whose `name` matches the container's Swift version, then:
+#
+#   1. Extracts the release `tag` (e.g. swift-6.3.1-RELEASE).
+#   2. Looks up the platform record by the input `platform` key
+#      (releases.json `.platforms[].platform` — wasm-sdk / android-sdk /
+#      static-sdk are the currently exercised values).
+#   3. Reads the platform `checksum`.
+#   4. Optionally reads the platform `version` field and appends it to
+#      `bundle-suffix` as `${bundle-suffix}-${version}` when
+#      `use-platform-version: 'true'` (static-sdk's bundle URL convention).
+#   5. Constructs:
+#        ${TAG}_${bundle-suffix-final}.artifactbundle.tar.gz
+#      under https://download.swift.org/swift-${SWIFT}-release/${platform}/${TAG}/.
+#   6. Runs `swift sdk install <url> --checksum <checksum>`.
+#   7. Resolves the sdk-id input by replacing the literal token `${TAG}`
+#      with the resolved tag (a string-substitution, NOT GitHub Actions
+#      expression syntax). Inputs lacking `${TAG}` pass through unchanged
+#      (e.g. static-sdk's `x86_64-swift-linux-musl` triple).
+#   8. When `output-env-var` is non-empty, writes `<NAME>=<resolved-id>`
+#      to $GITHUB_ENV so the caller's downstream `swift build` step can
+#      reference env.<NAME>.
+#
+# Constraint: invokable only from container-using jobs that ship as root
+# (e.g. the swift:6.3 family). The composite calls `apt-get install`
+# without sudo; bare ubuntu-latest runners would need a sudo prefix.
+# All current call sites in the swift-primitives layer wrapper satisfy
+# this constraint.
+#
+# Provenance: extracts the dynamic-resolution shell block inlined in 3
+# layer-wrapper jobs (embedded-wasm-sdk, android-build,
+# static-linux-musl-build). Same authority as the inline pattern —
+# Research/wasm-ci-strategy-and-sdk-toolchain-coupling.md v1.0.0 §Q4
+# Option α; eliminates soak-taxonomy class C.2 by construction.
+#
+# Per [CI-030] callers reference @main during active dev:
+#   uses: swift-institute/.github/.github/actions/install-swift-sdk@main
+
+name: 'Install Swift SDK'
+description: >
+  Dynamically resolve and install a swift.org Swift SDK matching the
+  container's running Swift version. Fetches releases.json, extracts
+  the matching release record, optionally appends the platform's version
+  field to the bundle suffix, constructs the bundle URL, and runs
+  `swift sdk install` with the published checksum. Optionally writes
+  the resolved SDK ID to GITHUB_ENV.
+
+inputs:
+  platform:
+    description: >
+      releases.json platform key. Selects the platforms-array entry from
+      the matching release. Currently exercised values: `wasm-sdk`,
+      `android-sdk`, `static-sdk`. Also forms the URL path component
+      `/swift-X.Y-release/<platform>/`.
+    required: true
+  bundle-suffix:
+    description: >
+      Bundle filename suffix. Forms the artifact name as
+      `TAG_<suffix>.artifactbundle.tar.gz` when use-platform-version is
+      false, or `TAG_<suffix>-<platform-version>.artifactbundle.tar.gz`
+      when true. Examples: `wasm`, `android`, `static-linux`.
+    required: true
+  use-platform-version:
+    description: >
+      When the literal string `true`, append the platform record's
+      `version` field from releases.json to bundle-suffix as
+      `<bundle-suffix>-<platform-version>`. Default `false` (no append).
+      Used by static-sdk whose bundle URL embeds the SDK's own version
+      (e.g. 0.1.0).
+    required: false
+    default: 'false'
+  sdk-id:
+    description: >
+      The SDK identifier passed to downstream `swift build --swift-sdk`.
+      The literal token `$\{TAG\}` (six characters dollar-curly-TAG-curly)
+      is replaced with the resolved release tag after releases.json
+      lookup. Inputs without that token pass through unchanged. Examples:
+      `$\{TAG\}_wasm-embedded`, `$\{TAG\}_android`,
+      `x86_64-swift-linux-musl`.
+    required: true
+  output-env-var:
+    description: >
+      Optional GITHUB_ENV variable name. When non-empty, writes
+      `<NAME>=<resolved-sdk-id>` to $GITHUB_ENV so the caller's build
+      step can reference env.<NAME>. Default empty (no env write).
+    required: false
+    default: ''
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Resolve and install Swift SDK
+      shell: bash
+      env:
+        INPUT_PLATFORM: ${{ inputs.platform }}
+        INPUT_BUNDLE_SUFFIX: ${{ inputs.bundle-suffix }}
+        INPUT_USE_PLATFORM_VERSION: ${{ inputs.use-platform-version }}
+        INPUT_SDK_ID: ${{ inputs.sdk-id }}
+        INPUT_OUTPUT_ENV_VAR: ${{ inputs.output-env-var }}
+      run: |
+        set -euo pipefail
+        apt-get update -qq && apt-get install -qq -y curl jq
+        SWIFT_VERSION="$(swift --version | head -n1 | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -n1)"
+        echo "Container Swift version: ${SWIFT_VERSION}"
+        REC=$(curl -sf "https://www.swift.org/api/v1/install/releases.json" \
+          | jq --arg v "${SWIFT_VERSION}" '.[] | select(.name == $v)')
+        if [[ -z "$REC" ]]; then
+          echo "No swift.org release matching Swift ${SWIFT_VERSION}" >&2
+          exit 1
+        fi
+        TAG=$(echo "$REC" | jq -r '.tag')
+        PLATFORM_REC=$(echo "$REC" | jq --arg p "${INPUT_PLATFORM}" '.platforms[] | select(.platform == $p)')
+        CHECKSUM=$(echo "$PLATFORM_REC" | jq -r '.checksum')
+        if [[ -z "$CHECKSUM" || "$CHECKSUM" == "null" ]]; then
+          echo "No ${INPUT_PLATFORM} published for Swift ${SWIFT_VERSION}" >&2
+          exit 1
+        fi
+        BUNDLE_SUFFIX="${INPUT_BUNDLE_SUFFIX}"
+        if [[ "${INPUT_USE_PLATFORM_VERSION}" == "true" ]]; then
+          PLATFORM_VERSION=$(echo "${PLATFORM_REC}" | jq -r '.version')
+          BUNDLE_SUFFIX="${BUNDLE_SUFFIX}-${PLATFORM_VERSION}"
+          echo "Resolved version:  ${PLATFORM_VERSION}"
+        fi
+        SDK_URL="https://download.swift.org/swift-${SWIFT_VERSION}-release/${INPUT_PLATFORM}/${TAG}/${TAG}_${BUNDLE_SUFFIX}.artifactbundle.tar.gz"
+        # Resolve sdk-id by replacing the literal token ${TAG} with the resolved tag.
+        # Use sed with `|` delimiter (TAG values may contain `/` in pathological cases).
+        RESOLVED_SDK_ID=$(echo "${INPUT_SDK_ID}" | sed 's|${TAG}|'"${TAG}"'|g')
+        echo "Resolved tag:      ${TAG}"
+        echo "Resolved checksum: ${CHECKSUM}"
+        echo "Resolved URL:      ${SDK_URL}"
+        echo "Resolved SDK ID:   ${RESOLVED_SDK_ID}"
+        swift sdk install "${SDK_URL}" --checksum "${CHECKSUM}"
+        if [[ -n "${INPUT_OUTPUT_ENV_VAR}" ]]; then
+          echo "${INPUT_OUTPUT_ENV_VAR}=${RESOLVED_SDK_ID}" >> "${GITHUB_ENV}"
+        fi
