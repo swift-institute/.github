@@ -1,0 +1,120 @@
+# Idempotent issue tracking: find an open issue by title-prefix search,
+# create new or edit existing.
+#
+# Replaces the recurring inline pattern at 4 in-scope callers
+# (cron-audit-base.yml report job, link-check-weekly.yml report job,
+# sync-metadata-nightly.yml report job, submit-dep-graph-weekly.yml
+# report job). Each was ~12-20 lines of `gh issue list ... → gh issue
+# edit OR gh issue create --label X` with a label-fallback double-create.
+#
+# Body-via-file input: callers pass a file path rather than a multiline
+# string, avoiding the GITHUB_OUTPUT heredoc-delimiter dance that an
+# `inputs.body: string` alternative would require. Callers write the body
+# to $RUNNER_TEMP/<name>.md (or any path) before this composite runs.
+#
+# Label-fallback contract: when a label is supplied, the composite first
+# tries to create the issue WITH the label, falling back to label-less
+# create if the repo doesn't have the label defined. This matches the
+# existing inline pattern across all 4 callers; missing labels are not
+# an error condition because labels are per-repo and not synced ecosystem-
+# wide.
+#
+# Per [README-167] tracking-issue reporting + [CI-030] @main pinning.
+# Out of scope: link-check.yml's per-target tracking issue (line ~246)
+# is inside a shell for-loop and cannot use a composite call (Axis 2 of
+# the refactor framework — composites can't be inside shell loops).
+
+name: 'Upsert tracking issue'
+description: >
+  Idempotent issue tracking: find an open issue by title-prefix search;
+  create new or edit existing. Reads body from a file (caller writes the
+  file before invocation). Falls back to label-less creation when the
+  label doesn't exist on the target repo.
+
+inputs:
+  repo:
+    description: 'Owner/name of the repo to file the issue in.'
+    required: true
+  title:
+    description: 'Full issue title used for both create and edit.'
+    required: true
+  title-prefix:
+    description: >
+      Prefix used to search for an existing issue (`<prefix> in:title`).
+      Typically the title with any trailing date or status suffix removed.
+    required: true
+  body-file:
+    description: >
+      Path to a file containing the issue body (Markdown). Callers write
+      this file in a preceding shell step (e.g., `cat > $RUNNER_TEMP/body.md
+      <<EOF ... EOF`); the composite reads it. Avoids passing multi-line
+      strings through composite inputs, which require GITHUB_OUTPUT
+      heredoc delimiters at the caller side.
+    required: true
+  label:
+    description: >
+      Label applied on creation. When the label doesn't exist on the
+      target repo, the composite falls back to a label-less create —
+      matching the corpus's existing pattern for cross-repo issue
+      filing where labels are per-repo and not synced ecosystem-wide.
+      Default empty (no label).
+    required: false
+    default: ''
+  gh-token:
+    description: >
+      gh CLI token. Caller passes via `with:` since composites cannot
+      read `secrets` directly. Token must have issues:write on the
+      target repo.
+    required: true
+
+outputs:
+  issue-number:
+    description: 'The issue number after upsert (existing or newly created).'
+    value: ${{ steps.upsert.outputs.issue-number }}
+  action:
+    description: '"created" or "updated" — which path was taken.'
+    value: ${{ steps.upsert.outputs.action }}
+
+runs:
+  using: 'composite'
+  steps:
+    - id: upsert
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.gh-token }}
+        REPO: ${{ inputs.repo }}
+        TITLE: ${{ inputs.title }}
+        TITLE_PREFIX: ${{ inputs.title-prefix }}
+        BODY_FILE: ${{ inputs.body-file }}
+        LABEL: ${{ inputs.label }}
+      run: |
+        set -euo pipefail
+        if [[ ! -f "$BODY_FILE" ]]; then
+          echo "::error::body-file '$BODY_FILE' does not exist."
+          exit 1
+        fi
+        existing=$(gh issue list --repo "$REPO" --state open \
+          --search "$TITLE_PREFIX in:title" --json number \
+          --jq '.[0].number // ""')
+        if [[ -n "$existing" ]]; then
+          gh issue edit "$existing" --repo "$REPO" \
+            --title "$TITLE" --body-file "$BODY_FILE" >/dev/null
+          echo "issue-number=${existing}" >> "$GITHUB_OUTPUT"
+          echo "action=updated"           >> "$GITHUB_OUTPUT"
+          echo "Updated existing issue #${existing}"
+        else
+          if [[ -n "$LABEL" ]]; then
+            url=$(gh issue create --repo "$REPO" \
+                    --title "$TITLE" --body-file "$BODY_FILE" \
+                    --label "$LABEL" 2>&1) || \
+              url=$(gh issue create --repo "$REPO" \
+                      --title "$TITLE" --body-file "$BODY_FILE")
+          else
+            url=$(gh issue create --repo "$REPO" \
+                    --title "$TITLE" --body-file "$BODY_FILE")
+          fi
+          number="${url##*/}"
+          echo "issue-number=${number}" >> "$GITHUB_OUTPUT"
+          echo "action=created"         >> "$GITHUB_OUTPUT"
+          echo "Created issue: ${url}"
+        fi
