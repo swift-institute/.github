@@ -110,7 +110,7 @@ jobs:
           echo "${total_missing},${total_files}" > "/tmp/${ORG}-counts.txt"
           printf '%s\n' "${per_pkg[@]}" > "/tmp/${ORG}-pkgs.txt" 2>/dev/null || true
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: license-counts-${{ matrix.org }}
           path: |

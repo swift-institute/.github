@@ -128,7 +128,7 @@ jobs:
           # Persist counts as artifacts for the report job
           echo "${total_viol},${total_miss}" > "/tmp/${ORG}-counts.txt"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: spine-counts-${{ matrix.org }}
           path: /tmp/${{ matrix.org }}-counts.txt
