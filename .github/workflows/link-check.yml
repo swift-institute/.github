@@ -144,7 +144,7 @@ jobs:
       - name: Enumerate org repos
         if: ${{ inputs.repo == '' }}
         id: enum
-        uses: ./.github/actions/enumerate-org-public-repos
+        uses: swift-institute/.github/.github/actions/enumerate-org-public-repos@main
         with:
           org: ${{ inputs.org }}
           visibility: ${{ inputs.visibility }}
