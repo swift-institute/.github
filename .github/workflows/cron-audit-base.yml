@@ -1,0 +1,299 @@
+# cron-audit-base.yml — reusable orchestrator skeleton for cross-org cron
+# audits.
+#
+# Encodes the shared shape of the lint-foundation-family-import-weekly,
+# lint-license-header-weekly, lint-test-support-spine-weekly, and
+# lint-mechanical-hygiene-weekly orchestrators (~80% structurally
+# identical). Each caller provides:
+#
+#   - The audit-step shell snippet that produces /tmp/<ORG>-counts.txt
+#     (and optionally /tmp/<ORG>-extra.txt for auxiliary detail
+#     surfaced as ${EXTRA} in the issue body).
+#   - The matrix-orgs to sweep.
+#   - An optional container override (e.g. swift:6.3 when the audit
+#     needs `swift package dump-package`).
+#   - An optional audit-script-url; when set, the reusable curl-fetches
+#     the script to /tmp/audit-script.py before running audit-step.
+#   - The issue title prefix, label, and body-template Markdown.
+#
+# Substitutions in issue-body-template (envsubst with ${...} syntax):
+#   ${TODAY}            UTC date YYYY-MM-DD
+#   ${COUNT_<LABEL>}    Total across orgs for each label in count-labels
+#                       (uppercased; e.g. count-labels=errors,warnings →
+#                       ${COUNT_ERRORS}, ${COUNT_WARNINGS}).
+#   ${PER_ORG_LIST}     Multi-line per-org breakdown built from
+#                       /tmp/<ORG>-counts.txt files.
+#   ${EXTRA}            Concatenated content of all /tmp/<ORG>-extra.txt
+#                       artifact files (empty when no caller writes them).
+#
+# Per-org artifact convention: the audit-step MUST write a comma-
+# separated counts file at /tmp/<ORG>-counts.txt, with values in the
+# same order as count-labels. Optional auxiliary content goes to
+# /tmp/<ORG>-extra.txt and is surfaced via the ${EXTRA} substitution.
+#
+# Out of scope: submit-dep-graph-weekly's per-target POST-to-API
+# pattern is structurally different and remains inline. link-check-
+# weekly is also outside this template (different shape — matrix
+# delegating to link-check.yml).
+#
+# Provenance: extracts the cron orchestrator skeleton repeated across
+# 4 weekly orchestrators. Per [CI-030] callers reference @main during
+# active dev. Per [README-167] tracking-issue pattern preserved.
+
+name: cron-audit-base
+
+on:
+  workflow_call:
+    inputs:
+      matrix-orgs:
+        type: string
+        required: true
+        description: >
+          JSON array of org names to sweep (e.g. '["swift-primitives"]'
+          or '["swift-primitives","swift-standards"]'). Parsed by
+          fromJSON() at runtime.
+      container:
+        type: string
+        required: false
+        default: ''
+        description: >
+          Optional container image for the sweep job (e.g. swift:6.3
+          when the audit invokes `swift package dump-package`). Default
+          empty means run on bare ubuntu-latest. Accepts literal image
+          names; env.* and matrix.* are unavailable at the container
+          field per Actions context-availability rules.
+      audit-script-url:
+        type: string
+        required: false
+        default: ''
+        description: >
+          Optional. When non-empty, the reusable curl-fetches the URL
+          to /tmp/audit-script.py before running audit-step. When empty,
+          the audit-step is responsible for any setup it needs.
+      audit-step:
+        type: string
+        required: true
+        description: >
+          Shell snippet that runs once per matrix org. Has access to
+          env vars ORG (the matrix org name), GH_TOKEN (org-scoped
+          installation token), and /tmp/audit-script.py (when
+          audit-script-url was provided). MUST write a comma-separated
+          counts file at /tmp/<ORG>-counts.txt in the same column order
+          as count-labels. MAY write auxiliary content to
+          /tmp/<ORG>-extra.txt (surfaced as ${EXTRA} in body).
+      count-labels:
+        type: string
+        required: true
+        description: >
+          Comma-separated list of count names (e.g. errors,warnings).
+          Each label generates a ${COUNT_<LABEL>} substitution
+          (uppercased) summed across orgs. The number of labels must
+          match the column count in each /tmp/<ORG>-counts.txt file.
+      issue-title-prefix:
+        type: string
+        required: true
+        description: >
+          Title prefix for the tracking issue. Final title appends
+          ' <YYYY-MM-DD>' (e.g. 'Foundation-import sweep 2026-05-12').
+          Also used to search for an existing open issue to update
+          (rather than creating a duplicate) — searched as
+          '<prefix> in:title'.
+      issue-label:
+        type: string
+        required: true
+        description: >
+          Label applied on issue creation (e.g. 'foundation-audit').
+          When the label does not exist on swift-institute/.github,
+          the reusable falls back to creating the issue without a
+          label (matching the link-check.yml + sync-metadata-nightly
+          fallback pattern).
+      issue-body-template:
+        type: string
+        required: true
+        description: >
+          Markdown template body. Pre-substitution: may reference
+          ${TODAY}, ${COUNT_<LABEL>} for each count-labels entry,
+          ${PER_ORG_LIST}, and ${EXTRA}. Post-substitution: rendered
+          via envsubst with explicit variable list.
+      dry-run:
+        type: boolean
+        required: false
+        default: false
+        description: >
+          When true, the reusable still runs the audit and aggregation,
+          but skips the gh issue create/update. Used for canary runs
+          to verify the audit logic without filing tracking issues.
+
+jobs:
+  sweep:
+    strategy:
+      fail-fast: false
+      matrix:
+        org: ${{ fromJSON(inputs.matrix-orgs) }}
+    runs-on: ubuntu-latest
+    container: ${{ inputs.container }}
+    permissions:
+      contents: read
+    steps:
+      - name: Install dependencies
+        if: ${{ inputs.container != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          apt-get update -qq
+          apt-get install -qq -y curl python3 git
+          # gh CLI install on swift:* container (not in base; required for `gh repo list`)
+          type -p curl >/dev/null
+          mkdir -p -m 755 /etc/apt/keyrings
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+            | tee /etc/apt/keyrings/githubcli-archive-keyring.gpg >/dev/null
+          chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+            | tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+          apt-get update -qq
+          apt-get install -qq -y gh
+
+      - name: Mint installation token
+        id: token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: ${{ matrix.org }}
+          repositories: ''
+
+      - name: Fetch audit script
+        if: ${{ inputs.audit-script-url != '' }}
+        shell: bash
+        env:
+          AUDIT_SCRIPT_URL: ${{ inputs.audit-script-url }}
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/audit-script.py "${AUDIT_SCRIPT_URL}"
+
+      - name: Run audit
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          ORG: ${{ matrix.org }}
+        run: ${{ inputs.audit-step }}
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cron-audit-counts-${{ matrix.org }}
+          path: |
+            /tmp/${{ matrix.org }}-counts.txt
+            /tmp/${{ matrix.org }}-extra.txt
+          if-no-files-found: ignore
+
+  report:
+    needs: sweep
+    runs-on: ubuntu-latest
+    if: always() && needs.sweep.result != 'skipped'
+    permissions:
+      contents: read
+    steps:
+      - name: Mint installation token
+        id: token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: swift-institute
+          repositories: .github
+          permission-issues: write
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: /tmp/counts
+
+      - name: Aggregate + render + (optionally) post issue
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          DRY_RUN: ${{ inputs.dry-run }}
+          COUNT_LABELS: ${{ inputs.count-labels }}
+          ISSUE_TITLE_PREFIX: ${{ inputs.issue-title-prefix }}
+          ISSUE_LABEL: ${{ inputs.issue-label }}
+          ISSUE_BODY_TEMPLATE: ${{ inputs.issue-body-template }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          today=$(date -u '+%Y-%m-%d')
+
+          # Parse count-labels into an array; uppercase-form for env-var names.
+          IFS=',' read -ra labels <<< "${COUNT_LABELS}"
+          declare -A totals
+          for label in "${labels[@]}"; do
+            totals["$label"]=0
+          done
+
+          # Aggregate counts across orgs by walking artifact directories.
+          per_org_lines=()
+          for f in /tmp/counts/*/*-counts.txt; do
+            [[ -e "$f" ]] || continue
+            artifact_dir=$(basename "$(dirname "$f")")
+            org="${artifact_dir#cron-audit-counts-}"
+            IFS=',' read -ra values < "$f"
+            line="- \`${org}\`:"
+            for i in "${!labels[@]}"; do
+              label="${labels[$i]}"
+              value="${values[$i]:-0}"
+              totals["$label"]=$((totals["$label"] + value))
+              line="${line} ${value} ${label}"
+              [[ $i -lt $((${#labels[@]} - 1)) ]] && line="${line},"
+            done
+            per_org_lines+=("$line")
+          done
+          per_org_list=$(printf '%s\n' "${per_org_lines[@]}")
+
+          # Concatenate any /tmp/counts/*/*-extra.txt files into ${EXTRA}.
+          extra=""
+          for f in /tmp/counts/*/*-extra.txt; do
+            [[ -s "$f" ]] && extra="${extra}$(cat "$f")"$'\n'
+          done
+
+          # Decide whether anything is non-zero.
+          any_nonzero=0
+          for label in "${labels[@]}"; do
+            if [[ "${totals[$label]}" -gt 0 ]]; then
+              any_nonzero=1
+              break
+            fi
+          done
+          if [[ "$any_nonzero" -eq 0 ]]; then
+            echo "All counts zero across orgs — no tracking issue needed."
+            exit 0
+          fi
+
+          if [[ "${DRY_RUN}" == "true" ]]; then
+            echo "(dry-run; would have opened/updated issue)"
+            exit 0
+          fi
+
+          # Build envsubst variable list + export the values.
+          export TODAY="$today"
+          export PER_ORG_LIST="$per_org_list"
+          export EXTRA="$extra"
+          envsubst_vars='${TODAY} ${PER_ORG_LIST} ${EXTRA}'
+          for label in "${labels[@]}"; do
+            upper=$(echo "$label" | tr '[:lower:]' '[:upper:]')
+            varname="COUNT_${upper}"
+            export "${varname}=${totals[$label]}"
+            envsubst_vars="${envsubst_vars} \${${varname}}"
+          done
+
+          # Render the body via envsubst.
+          body=$(echo "${ISSUE_BODY_TEMPLATE}" | envsubst "${envsubst_vars}")
+          title="${ISSUE_TITLE_PREFIX} ${today}"
+
+          # Issue create-or-update with label-fallback (mirrors link-check pattern).
+          existing=$(gh issue list --repo swift-institute/.github \
+            --state open --search "${ISSUE_TITLE_PREFIX} in:title" \
+            --json number --jq '.[0].number // ""')
+          if [[ -n "$existing" ]]; then
+            gh issue edit "$existing" --repo swift-institute/.github --title "$title" --body "$body"
+          else
+            gh issue create --repo swift-institute/.github --title "$title" --body "$body" --label "${ISSUE_LABEL}" 2>&1 || \
+              gh issue create --repo swift-institute/.github --title "$title" --body "$body"
+          fi
