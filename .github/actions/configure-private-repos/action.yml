@@ -33,18 +33,18 @@ description: >
 inputs:
   token:
     description: >
-      PRIVATE_REPO_TOKEN value. Pass via `${{ secrets.PRIVATE_REPO_TOKEN }}`
-      (composite actions cannot read `secrets.*` directly). Empty string
-      is permitted and produces the anonymous-fetch fallback.
+      PRIVATE_REPO_TOKEN value. Caller passes the secret via `with:` since
+      composite actions cannot read `secrets` context directly. Empty
+      string is permitted and produces the anonymous-fetch fallback.
     required: false
     default: ''
   enabled:
     description: >
-      When 'false' the step is a no-op. Default 'true' mirrors the universal
-      reusable input default (most consumers depend on private deps).
-      Composite-action booleans are strings — pass 'true' / 'false' or
-      `${{ inputs.enable-private-repos }}` from the caller's workflow_call
-      input (which serializes correctly).
+      When the literal string 'false' the step is a no-op. Default 'true'
+      mirrors the universal reusable input default (most consumers depend
+      on private deps). Composite-action booleans are strings — pass
+      'true' / 'false', or forward the caller's workflow_call boolean
+      input which serializes correctly.
     required: false
     default: 'true'
 
