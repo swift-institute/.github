@@ -1,0 +1,59 @@
+# Configure git so `swift package resolve` can clone private deps.
+#
+# Sets `git config --global url."https://<token>@github.com/".insteadOf
+# "https://github.com/"`, embedding PRIVATE_REPO_TOKEN in the substituted
+# URL. When the token is empty (consumer didn't forward `secrets: inherit`,
+# or the org-level secret isn't visible per [CI-060] free-plan visibility
+# rules), the substitution becomes `https://@github.com/` and git falls
+# back to anonymous fetch — viable on public-only deps. See [CI-058] for
+# the empty-token / anonymous-fetch fallback contract.
+#
+# Composite action contract: secrets cannot be referenced via `secrets.*`
+# inside a composite — the caller must pass the token value through `with:`.
+# The canonical caller shape is:
+#
+#   - uses: swift-institute/.github/.github/actions/configure-private-repos@main
+#     with:
+#       token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+#       enabled: ${{ inputs.enable-private-repos }}
+#
+# Provenance: extracted from 11 inline `git config --global url …` blocks
+# across 4 workflows in the swift-institute + swift-primitives `.github`
+# repos (lint-api-breakage.yml × 1, swift-docs.yml × 1, universal
+# swift-ci.yml × 4, layer-wrapper swift-ci.yml × 5). Per [CI-030],
+# consumers reference this composite via `@main` during active dev.
+
+name: 'Configure private repos'
+description: >
+  Set git insteadOf for github.com to embed PRIVATE_REPO_TOKEN, enabling
+  swift package resolve to clone private dependencies. No-op when
+  enabled=false. Empty token falls back to anonymous fetch (works on
+  public-only deps).
+
+inputs:
+  token:
+    description: >
+      PRIVATE_REPO_TOKEN value. Pass via `${{ secrets.PRIVATE_REPO_TOKEN }}`
+      (composite actions cannot read `secrets.*` directly). Empty string
+      is permitted and produces the anonymous-fetch fallback.
+    required: false
+    default: ''
+  enabled:
+    description: >
+      When 'false' the step is a no-op. Default 'true' mirrors the universal
+      reusable input default (most consumers depend on private deps).
+      Composite-action booleans are strings — pass 'true' / 'false' or
+      `${{ inputs.enable-private-repos }}` from the caller's workflow_call
+      input (which serializes correctly).
+    required: false
+    default: 'true'
+
+runs:
+  using: 'composite'
+  steps:
+    - if: ${{ inputs.enabled == 'true' }}
+      name: Configure git for private repos
+      shell: bash
+      env:
+        TOKEN: ${{ inputs.token }}
+      run: git config --global url."https://${TOKEN}@github.com/".insteadOf "https://github.com/"
