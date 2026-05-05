@@ -85,9 +85,8 @@ jobs:
           repositories: .github
           permission-issues: write
 
-      - name: Open or update tracking issue
+      - name: Build issue body
         env:
-          GH_TOKEN: ${{ steps.token.outputs.token }}
           SWEEP_RESULT: ${{ needs.sweep.result }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
@@ -98,12 +97,12 @@ jobs:
           # nothing rotted this week — silent.
           if [[ "$SWEEP_RESULT" == "success" ]]; then
             echo "All orgs converged cleanly — no tracking issue needed."
+            echo "FILE_ISSUE=false" >> "$GITHUB_ENV"
             exit 0
           fi
 
           today=$(date -u '+%Y-%m-%d')
-          title="Link rot sweep ${today} — ${SWEEP_RESULT}"
-          body=$(cat <<EOF
+          cat > "${RUNNER_TEMP}/issue-body.md" <<EOF
           The weekly link rot sweep at 06:00 UTC on ${today} completed with status: \`${SWEEP_RESULT}\`.
 
           See the [run summary](${RUN_URL}) for the per-org breakdown.
@@ -122,20 +121,18 @@ jobs:
             failed (auth, rate-limit, lychee install error); follow the run
             logs.
           EOF
-          )
+          {
+            echo "ISSUE_TITLE=Link rot sweep ${today} — ${SWEEP_RESULT}"
+            echo "FILE_ISSUE=true"
+          } >> "$GITHUB_ENV"
 
-          existing=$(gh issue list --repo swift-institute/.github \
-            --state open --search "Link rot sweep in:title" --json number \
-            --jq '.[0].number // ""')
-
-          if [[ -n "$existing" ]]; then
-            gh issue edit "$existing" --repo swift-institute/.github \
-              --title "$title" --body "$body"
-            echo "Updated existing issue #${existing}"
-          else
-            gh issue create --repo swift-institute/.github \
-              --title "$title" --body "$body" \
-              --label "link-check" 2>&1 || \
-              gh issue create --repo swift-institute/.github \
-                --title "$title" --body "$body"
-          fi
+      - name: Upsert tracking issue
+        if: env.FILE_ISSUE == 'true'
+        uses: swift-institute/.github/.github/actions/upsert-tracking-issue@main
+        with:
+          repo: swift-institute/.github
+          title: ${{ env.ISSUE_TITLE }}
+          title-prefix: 'Link rot sweep'
+          body-file: ${{ runner.temp }}/issue-body.md
+          label: 'link-check'
+          gh-token: ${{ steps.token.outputs.token }}
