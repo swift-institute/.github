@@ -96,7 +96,7 @@ jobs:
         id: token
         uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
+          client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
           private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
           owner: ${{ steps.scope.outputs.owner }}
           repositories: ${{ steps.scope.outputs.repositories }}
