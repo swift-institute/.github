@@ -22,28 +22,23 @@ on:
         default: false
 
 jobs:
+  config:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      orgs: ${{ steps.read.outputs.orgs }}
+    steps:
+      - id: read
+        uses: swift-institute/.github/.github/actions/read-orgs@main
+        # Default filter `.name` emits all active orgs.
+
   sweep:
+    needs: config
     strategy:
       fail-fast: false
       matrix:
-        org:
-          - swift-primitives
-          - swift-standards
-          - swift-foundations
-          - swift-ietf
-          - swift-iso
-          - swift-ieee
-          - swift-iec
-          - swift-w3c
-          - swift-whatwg
-          - swift-ecma
-          - swift-incits
-          - swift-linux-foundation
-          - swift-microsoft
-          - swift-arm-ltd
-          - swift-intel
-          - swift-riscv
-          - swift-institute
+        org: ${{ fromJSON(needs.config.outputs.orgs) }}
     uses: ./.github/workflows/sync-metadata.yml
     with:
       org: ${{ matrix.org }}
