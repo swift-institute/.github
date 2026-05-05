@@ -111,6 +111,9 @@ custom_rules:
     regex: '\b(?<!Swift\.)(?<!\.)Error\b(?!\.)'
     message: "Always qualify as 'Swift.Error', not bare 'Error' ([PLAT-ARCH-011]; user-confirmed 2026-05-05). Applies to generic constraints (`<E: Swift.Error>`), conformances (`: Swift.Error`), and any other reference. Avoids ambiguity with namespace-scoped Error types and is the institute's convention everywhere."
     severity: warning
+    match_kinds:
+      - identifier
+      - typeidentifier
 
 # ── Disabling a rule ──────────────────────────────────────────────────────────
 #
