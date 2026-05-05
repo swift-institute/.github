@@ -200,7 +200,7 @@ jobs:
           repositories: .github
           permission-issues: write
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: /tmp/counts
 
@@ -217,17 +217,23 @@ jobs:
           total_skip=0
           per_org=()
           all_failures=""
-          for f in /tmp/counts/*/*-counts.txt; do
-            org=$(basename "$(dirname "$f")" | sed 's/^depgraph-counts-//')
+          # Layout-agnostic per Path A: download-artifact@v8 flattens to
+          # /tmp/counts/<file> when only one artifact matches and nests
+          # to /tmp/counts/<artifact>/<file> otherwise. See
+          # Research/download-artifact-ladder-migration.md.
+          while IFS= read -r f; do
+            [[ -z "$f" ]] && continue
+            org=$(basename "$f" | sed 's/-counts\.txt$//')
             IFS=',' read -r s fl sk < "$f"
             total_s=$((total_s + s))
             total_f=$((total_f + fl))
             total_skip=$((total_skip + sk))
             per_org+=("- \`${org}\`: $s succeeded, $fl failed, $sk skipped")
-          done
-          for f in /tmp/counts/*/*-failures.txt; do
+          done < <(find /tmp/counts -type f -name '*-counts.txt' 2>/dev/null)
+          while IFS= read -r f; do
+            [[ -z "$f" ]] && continue
             [[ -s "$f" ]] && all_failures="${all_failures}$(cat "$f")"$'\n'
-          done
+          done < <(find /tmp/counts -type f -name '*-failures.txt' 2>/dev/null)
           if [[ "$total_f" -eq 0 ]]; then
             echo "Dep-graph submission clean across all orgs — no tracking issue."
             exit 0
