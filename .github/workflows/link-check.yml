@@ -141,37 +141,35 @@ jobs:
           lychee --version
 
 
+      - name: Enumerate org repos
+        if: ${{ inputs.repo == '' }}
+        id: enum
+        uses: ./.github/actions/enumerate-org-public-repos
+        with:
+          org: ${{ inputs.org }}
+          visibility: ${{ inputs.visibility }}
+          gh-token: ${{ steps.token.outputs.token }}
+
       - name: Scan
         id: scan
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
           DRY_RUN: ${{ inputs.dry-run }}
+          SINGLE_REPO: ${{ inputs.repo }}
+          ENUM_REPOS: ${{ steps.enum.outputs.repos }}
         run: |
           set -euo pipefail
 
-          # Build target list ----------------------------------------------------
-          # Visibility filter applied at gh CLI level: --visibility {public|
-          # private|internal} narrows the listing; --visibility=all (or any
-          # other value) means "no filter, list everything in the org".
-          if [[ -n "${{ inputs.repo }}" ]]; then
-            targets=("${{ inputs.repo }}")
+          # Build target list — single-repo mode bypasses enumeration; org-mode
+          # reads from the enumerate-org-public-repos composite output. The
+          # composite validates the visibility input and applies the filter.
+          if [[ -n "$SINGLE_REPO" ]]; then
+            targets=("$SINGLE_REPO")
           else
-            visibility_flag=()
-            case "${{ inputs.visibility }}" in
-              public|private|internal)
-                visibility_flag=(--visibility "${{ inputs.visibility }}")
-                ;;
-              all|"")
-                ;;
-              *)
-                echo "::error::Unknown visibility '${{ inputs.visibility }}' (expected: public, private, internal, all)"
-                exit 1
-                ;;
-            esac
-            mapfile -t targets < <(gh repo list "${{ inputs.org }}" --limit 2000 \
-              "${visibility_flag[@]}" \
-              --json nameWithOwner,isArchived \
-              --jq '.[] | select(.isArchived==false) | .nameWithOwner')
+            targets=()
+            while IFS= read -r line; do
+              [[ -n "$line" ]] && targets+=("$line")
+            done <<< "$ENUM_REPOS"
           fi
 
           echo "Targets: ${#targets[@]} repos (visibility filter: ${{ inputs.visibility }})"
