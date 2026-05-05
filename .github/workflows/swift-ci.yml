@@ -209,32 +209,17 @@ jobs:
       - name: Lint
         run: swiftlint lint --strict --reporter github-actions-logging
 
-  # ─── Advisory CI gates (per-PR) ───────────────────────────────────────
-  # All advisory in their respective Phase-β/γ-* observation windows.
-  # Each takes an `advisory: bool` input; flip to gating = drop the
-  # `with:` block at the calling site (default false = gating).
+  # ════════════════════════════════════════════════════════════════════════
+  # Advisory CI gates — grouped by category for UI clarity.
+  # Each gate takes an `advisory: bool` input; γ flip = drop the `with:`
+  # block at the calling site (default false = gating). Job declaration
+  # order here drives the order in the consumer's CI sidebar.
+  # ════════════════════════════════════════════════════════════════════════
 
-  # [MOD-024] Test Support Spine — Phase β advisory; γ flip after two
-  # consecutive zero-violation weekly runs of lint-test-support-spine-weekly.
-  lint-test-support-spine:
-    name: Test Support Spine ([MOD-024], advisory)
-    if: ${{ !github.event.repository.private }}
-    uses: ./.github/workflows/lint-test-support-spine.yml
-    with:
-      advisory: true     # Phase β. Drop in Phase γ.
+  # ─── γ-2 Mechanical hygiene ──────────────────────────────────────────────
+  # Workflow YAML + filesystem checks. Cheap, run on ubuntu-latest no-container.
+  # γ-2 flip after 2 clean weekly cron sweeps (consolidated tracking issue).
 
-  # γ-4 PR-title format — pull_request events only. Advisory by design
-  # (monthly noise:value review; drop entirely if friction-theater per §3.4.7).
-  lint-pr-title:
-    name: PR title format (γ-4, advisory)
-    if: ${{ github.event_name == 'pull_request' && !github.event.repository.private }}
-    uses: ./.github/workflows/lint-pr-title.yml
-    with:
-      advisory: true
-
-  # γ-2 yamllint scan. Advisory; γ-2 flip after two consecutive clean
-  # weekly cron sweeps (consolidated mechanical-hygiene tracking issue).
-  # Scope per §3.4.5: workflows + dependabot.yml + metadata.yaml + top-level metadata.yaml.
   lint-yaml:
     name: yamllint (γ-2, advisory)
     if: ${{ !github.event.repository.private }}
@@ -242,8 +227,6 @@ jobs:
     with:
       advisory: true
 
-  # γ-2 broken-symlink scan. Advisory; γ-2 flip after two consecutive clean
-  # weekly cron sweeps (consolidated mechanical-hygiene tracking issue).
   lint-broken-symlink:
     name: Broken symlinks (γ-2, advisory)
     if: ${{ !github.event.repository.private }}
@@ -251,9 +234,12 @@ jobs:
     with:
       advisory: true
 
-  # γ-1a Foundation-family import audit. Two-track flip after 2 clean
-  # weekly cron runs (BOTH public CI sweep AND principal-side audit per
-  # Decision #8). Catches all attribute/access-modifier permutations.
+  # ─── γ-1 L1 identity invariants + Phase β [MOD-024] ──────────────────────
+  # Per-package source-content audits. Foundation-import + license-header
+  # run on ubuntu-latest no-container (pure Python). Test Support Spine
+  # uses swift:6.3 because it invokes `swift package dump-package`.
+  # Each has its own flip schedule per research §3.4.
+
   lint-foundation-family-import:
     name: Foundation import (γ-1a, advisory)
     if: ${{ !github.event.repository.private }}
@@ -261,9 +247,6 @@ jobs:
     with:
       advisory: true
 
-  # γ-1b Apache 2.0 license-header audit (Stage 1 advisory). Stage 2 codemod
-  # and Stage 3 gating-flip require separate per-action authorization per
-  # research §3.4.3 + [HANDOFF-023] bulk-push class.
   lint-license-header:
     name: License header (γ-1b Stage 1, advisory)
     if: ${{ !github.event.repository.private }}
@@ -271,8 +254,16 @@ jobs:
     with:
       advisory: true
 
-  # γ-1c API-breakage advisory pilot. PR-only; baseline = PR base SHA.
-  # 4-week observation; flip decision after A:B:C:D ratio review per §3.4.4.
+  lint-test-support-spine:
+    name: Test Support Spine ([MOD-024], advisory)
+    if: ${{ !github.event.repository.private }}
+    uses: ./.github/workflows/lint-test-support-spine.yml
+    with:
+      advisory: true     # Phase β. Drop in Phase γ.
+
+  # ─── PR-only conventions ─────────────────────────────────────────────────
+  # Fire on pull_request events only; skipped on push/dispatch.
+
   lint-api-breakage:
     name: API breakage (γ-1c, advisory pilot)
     if: ${{ github.event_name == 'pull_request' && !github.event.repository.private }}
@@ -281,8 +272,14 @@ jobs:
       advisory: true
     secrets: inherit
 
-  # γ-2b GitHub dependency-graph submission — TEMPORARILY DISABLED.
-  #
+  lint-pr-title:
+    name: PR title format (γ-4, advisory)
+    if: ${{ github.event_name == 'pull_request' && !github.event.repository.private }}
+    uses: ./.github/workflows/lint-pr-title.yml
+    with:
+      advisory: true
+
+  # ─── γ-2b GitHub dep-graph — TEMPORARILY DISABLED ────────────────────────
   # The submit-dep-graph.yml reusable declares `permissions: contents: write`
   # which the consumer-→layer-→universal call chain doesn't grant by default,
   # causing startup_failure across every consumer CI run. Re-enable once a
