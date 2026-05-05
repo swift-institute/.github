@@ -105,9 +105,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - if: inputs.enable-private-repos
-        name: Configure git for private repos
-        run: git config --global url."https://${{ secrets.PRIVATE_REPO_TOKEN }}@github.com/".insteadOf "https://github.com/"
+      - uses: swift-institute/.github/.github/actions/configure-private-repos@main
+        with:
+          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+          enabled: ${{ inputs.enable-private-repos }}
 
       - name: Derive umbrella metadata
         env:

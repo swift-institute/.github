@@ -62,14 +62,9 @@ jobs:
           # Need full enough history to reach the PR base SHA.
           fetch-depth: 0
 
-      - name: Configure git for private repos
-        shell: bash
-        env:
-          PRIVATE_REPO_TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }}
-        run: |
-          if [[ -n "$PRIVATE_REPO_TOKEN" ]]; then
-            git config --global url."https://${PRIVATE_REPO_TOKEN}@github.com/".insteadOf "https://github.com/"
-          fi
+      - uses: swift-institute/.github/.github/actions/configure-private-repos@main
+        with:
+          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
 
       - name: Diagnose API breaking changes
         shell: bash
