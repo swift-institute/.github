@@ -35,8 +35,10 @@ jobs:
   audit:
     name: Foundation import audit
     if: ${{ !github.event.repository.private }}
+    # Pure-Python regex audit; no `swift package dump-package` needed,
+    # so we skip the swift:6.3 container (which costs ~3-5 minutes for
+    # pull + apt-install). ubuntu-latest ships python3 + curl by default.
     runs-on: ubuntu-latest
-    container: swift:6.3
     timeout-minutes: 5
     permissions:
       contents: read
@@ -45,13 +47,6 @@ jobs:
       warning-count: ${{ steps.audit.outputs.warning-count }}
     steps:
       - uses: actions/checkout@v6
-
-      - name: Install dependencies (curl, python3)
-        shell: bash
-        run: |
-          set -euo pipefail
-          apt-get update -qq
-          apt-get install -qq -y curl python3
 
       - name: Fetch audit script
         shell: bash
