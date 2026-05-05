@@ -232,6 +232,16 @@ jobs:
     with:
       advisory: true
 
+  # γ-2 yamllint scan. Advisory; γ-2 flip after two consecutive clean
+  # weekly cron sweeps (consolidated mechanical-hygiene tracking issue).
+  # Scope per §3.4.5: workflows + dependabot.yml + metadata.yaml + top-level metadata.yaml.
+  lint-yaml:
+    name: yamllint (γ-2, advisory)
+    if: ${{ !github.event.repository.private }}
+    uses: ./.github/workflows/lint-yaml.yml
+    with:
+      advisory: true
+
   # γ-2 broken-symlink scan. Advisory; γ-2 flip after two consecutive clean
   # weekly cron sweeps (consolidated mechanical-hygiene tracking issue).
   lint-broken-symlink:

@@ -1,0 +1,110 @@
+# lint-yaml.yml — yamllint check (γ-2 advisory).
+#
+# Validates yaml files in scope per research §3.4.5:
+#   .github/workflows/**/*.yml
+#   .github/workflows/**/*.yaml
+#   .github/dependabot.yml
+#   .github/metadata.yaml
+#   metadata.yaml
+#
+# Excludes `.swiftlint.yml`, `.swift-format`, package-local tool config
+# (per [CI-057] per-package autonomy). Permissive starter rules; can
+# tighten over observation cycles.
+#
+# Reusable workflow. Transitively called from swift-ci.yml. Advisory
+# switch lives as the `advisory` input. Phase γ-2 flip after 2 clean
+# weekly cron sweeps (consolidated mechanical-hygiene tracking issue).
+#
+# Provenance: research §3.4.5, [CI-001]+[CI-002], [CI-031], [CI-032],
+# [CI-057] per-package autonomy of `.swift-format`/`.swiftlint.yml`.
+
+name: lint-yaml
+
+on:
+  workflow_call:
+    inputs:
+      advisory:
+        type: boolean
+        default: false
+        description: |
+          If true, yamllint findings emit warnings only and the workflow
+          exits 0. Used during Phase γ-2 advisory observation.
+
+jobs:
+  yamllint:
+    name: yamllint scan
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install yamllint
+        shell: bash
+        run: |
+          set -euo pipefail
+          pip install --quiet yamllint
+
+      - name: Write yamllint config
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/yamllint.yml <<'YAMLLINT_EOF'
+          extends: default
+          rules:
+            document-start: disable
+            line-length:
+              max: 200
+              level: warning
+            truthy:
+              allowed-values: ["true", "false"]
+              check-keys: false
+            indentation:
+              spaces: 2
+            comments:
+              require-starting-space: false
+          YAMLLINT_EOF
+
+      - name: Run yamllint
+        id: lint
+        shell: bash
+        run: |
+          set -euo pipefail
+          # In-scope paths per §3.4.5. Use a temp file to capture the
+          # exit code without `set -e` aborting the step prematurely.
+          paths=()
+          [[ -d .github/workflows ]] && paths+=(".github/workflows")
+          [[ -f .github/dependabot.yml ]] && paths+=(".github/dependabot.yml")
+          [[ -f .github/metadata.yaml ]] && paths+=(".github/metadata.yaml")
+          [[ -f metadata.yaml ]] && paths+=("metadata.yaml")
+          if (( ${#paths[@]} == 0 )); then
+            echo "## yamllint" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "_No in-scope YAML files found in this repo._" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if yamllint -c /tmp/yamllint.yml "${paths[@]}" 2>&1 | tee /tmp/yamllint.log; then
+            {
+              echo "## yamllint"
+              echo ""
+              echo "- Result: **clean** (paths scanned: ${paths[*]})"
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "## yamllint"
+              echo ""
+              echo "- Result: **issues detected**"
+              echo ""
+              echo "### Findings"
+              echo ""
+              echo '```'
+              cat /tmp/yamllint.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::warning::yamllint flagged YAML issues — see step summary"
+            if [[ "${{ inputs.advisory }}" != "true" ]]; then
+              exit 1
+            fi
+          fi
