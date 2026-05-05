@@ -53,6 +53,15 @@ on:
       PRIVATE_REPO_TOKEN:
         required: false
 
+# ─── Tool-version pins ──────────────────────────────────────────────────
+# Workflow-level env vars centralize tool versions so each release bump
+# is a single edit instead of N grep-and-replace sites. Per
+# feedback_latest_versions_only.md these MUST track the latest stable
+# release of each tool; bump on every workflow touch where a newer
+# release exists.
+env:
+  SWIFTLINT_VERSION: "0.63.2"
+
 jobs:
   macos-release:
     name: macOS (Swift ${{ inputs.swift-version }}, debug)
@@ -187,9 +196,9 @@ jobs:
         uses: actions/cache@v5
         with:
           path: /usr/local/bin/swiftlint
-          key: ${{ runner.os }}-swiftlint-0.63.2
+          key: ${{ runner.os }}-swiftlint-${{ env.SWIFTLINT_VERSION }}
 
-      - name: Install SwiftLint 0.63.2
+      - name: Install SwiftLint ${{ env.SWIFTLINT_VERSION }}
         if: steps.cache-swiftlint.outputs.cache-hit != 'true'
         shell: bash
         run: |
@@ -197,7 +206,7 @@ jobs:
           apt-get update -qq
           apt-get install -qq -y curl unzip
           curl -fsSL -o /tmp/swiftlint.zip \
-            "https://github.com/realm/SwiftLint/releases/download/0.63.2/swiftlint_linux_amd64.zip"
+            "https://github.com/realm/SwiftLint/releases/download/${{ env.SWIFTLINT_VERSION }}/swiftlint_linux_amd64.zip"
           unzip -q /tmp/swiftlint.zip -d /tmp/swiftlint_extracted
           mv /tmp/swiftlint_extracted/swiftlint /usr/local/bin/
           chmod +x /usr/local/bin/swiftlint
