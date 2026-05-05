@@ -50,8 +50,8 @@ jobs:
         id: token
         uses: actions/create-github-app-token@v1
         with:
-          app-id: ${{ secrets.METADATA_APP_ID }}
-          private-key: ${{ secrets.METADATA_APP_PRIVATE_KEY }}
+          app-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
           owner: ${{ inputs.org }}
           permission-metadata: read
           permission-contents: write

@@ -13,7 +13,7 @@
 # (When both repo and org are unset, sweeps all 17 ecosystem orgs.)
 #
 # Authentication: swift-institute-bot GitHub App (per Skills/github-repository
-# [GH-REPO-073]). App secrets METADATA_APP_ID + METADATA_APP_PRIVATE_KEY at
+# [GH-REPO-073]). App secrets SWIFT_INSTITUTE_BOT_APP_ID + SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY at
 # org level on swift-institute/.github.
 
 name: sync-metadata
@@ -94,8 +94,8 @@ jobs:
         id: token
         uses: actions/create-github-app-token@v1
         with:
-          app-id: ${{ secrets.METADATA_APP_ID }}
-          private-key: ${{ secrets.METADATA_APP_PRIVATE_KEY }}
+          app-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
           owner: ${{ steps.scope.outputs.owner }}
           repositories: ${{ steps.scope.outputs.repositories }}
 
