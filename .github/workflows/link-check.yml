@@ -24,6 +24,11 @@
 
 name: link-check
 
+# Tool version pin. Per feedback_latest_versions_only.md, bump on every
+# touch where a newer release exists.
+env:
+  LYCHEE_VERSION: "0.20.1"
+
 on:
   workflow_call:
     inputs:
@@ -118,11 +123,10 @@ jobs:
           owner: ${{ steps.scope.outputs.owner }}
           repositories: ${{ steps.scope.outputs.repositories }}
 
-      - name: Install lychee
+      - name: Install lychee ${{ env.LYCHEE_VERSION }}
         run: |
           set -euo pipefail
-          version="0.20.1"
-          curl -sSL "https://github.com/lycheeverse/lychee/releases/download/lychee-v${version}/lychee-x86_64-unknown-linux-gnu.tar.gz" \
+          curl -sSL "https://github.com/lycheeverse/lychee/releases/download/lychee-v${{ env.LYCHEE_VERSION }}/lychee-x86_64-unknown-linux-gnu.tar.gz" \
             | tar -xz
           sudo mv lychee /usr/local/bin/lychee
           lychee --version
