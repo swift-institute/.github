@@ -1,0 +1,118 @@
+# List nameWithOwner of repos in an org via gh CLI, filtered by visibility,
+# fork status, and archive status. Returns the list as the output `repos`
+# (newline-separated).
+#
+# Replaces the inline `gh repo list "$ORG" --limit 2000 ... --jq '.[] |
+# select(.isArchived==false) | .nameWithOwner'` block that recurred across
+# 7 in-scope cross-org sweep workflows. After extraction:
+#   - link-check.yml, sync-metadata.yml, submit-dep-graph-weekly.yml call
+#     this composite directly.
+#   - The 4 cron-audit-base.yml callers continue to inline the enumeration
+#     in their audit-step shell input until cron-audit-base's contract is
+#     restructured to do enumeration internally (separate cohort).
+#
+# Composite-action contract: the gh-token input is passed via `with:` since
+# composite actions cannot read `secrets` context directly. Caller mints
+# the installation token via actions/create-github-app-token@v3 and forwards
+# the value here. Same pattern as configure-private-repos.
+#
+# Per [CI-030] callers reference @main during active dev:
+#   uses: swift-institute/.github/.github/actions/enumerate-org-public-repos@main
+# (or `uses: ./.github/actions/enumerate-org-public-repos` when called from
+# within swift-institute/.github itself.)
+
+name: 'Enumerate org public repos'
+description: >
+  List nameWithOwner of repos in an org filtered by visibility, fork
+  status, and archive status. Returns the list newline-separated as
+  output `repos`. Caller passes a gh installation token via `with:`
+  since composites cannot read `secrets` directly.
+
+inputs:
+  org:
+    description: 'Org name (e.g. swift-primitives).'
+    required: true
+  visibility:
+    description: >
+      Filter targets by visibility: `public` | `private` | `internal` |
+      `all`. Default `public`. Empty string is treated as `all` (matches
+      gh CLI semantics — no `--visibility` flag means "no filter").
+    required: false
+    default: 'public'
+  exclude-forks:
+    description: >
+      When the literal string `true`, fork repos are excluded
+      (`select(.isFork==false)`). Default `false`. Composite-action
+      booleans are strings; pass `'true'` / `'false'`, or forward the
+      caller's workflow_call boolean input which serializes correctly.
+    required: false
+    default: 'false'
+  exclude-archived:
+    description: >
+      When the literal string `true` (default), archived repos are
+      excluded. Set `false` to include archived repos in the listing.
+    required: false
+    default: 'true'
+  gh-token:
+    description: >
+      gh CLI token used for `gh repo list`. Caller passes the
+      installation token via `with:` since composites cannot read
+      `secrets` directly. Empty string fails the gh call —
+      authentication is required.
+    required: true
+
+outputs:
+  repos:
+    description: 'Newline-separated list of nameWithOwner for matching repos.'
+    value: ${{ steps.enumerate.outputs.repos }}
+
+runs:
+  using: 'composite'
+  steps:
+    - id: enumerate
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.gh-token }}
+        ORG: ${{ inputs.org }}
+        VISIBILITY: ${{ inputs.visibility }}
+        EXCLUDE_FORKS: ${{ inputs.exclude-forks }}
+        EXCLUDE_ARCHIVED: ${{ inputs.exclude-archived }}
+      run: |
+        set -euo pipefail
+        # Build visibility flag.
+        viz_flag=()
+        case "$VISIBILITY" in
+          public|private|internal) viz_flag=(--visibility "$VISIBILITY") ;;
+          all|"") ;;
+          *) echo "::error::Unknown visibility '$VISIBILITY' (expected: public, private, internal, all)"; exit 1 ;;
+        esac
+        # Build json fields list. Always include nameWithOwner+isArchived;
+        # add isFork only when filtering by it.
+        json_fields="nameWithOwner,isArchived"
+        if [[ "$EXCLUDE_FORKS" == "true" ]]; then
+          json_fields="${json_fields},isFork"
+        fi
+        # Build jq filter pipeline.
+        jq_filter='.[]'
+        if [[ "$EXCLUDE_ARCHIVED" == "true" ]]; then
+          jq_filter="${jq_filter} | select(.isArchived==false)"
+        fi
+        if [[ "$EXCLUDE_FORKS" == "true" ]]; then
+          jq_filter="${jq_filter} | select(.isFork==false)"
+        fi
+        jq_filter="${jq_filter} | .nameWithOwner"
+        repos=$(gh repo list "$ORG" --limit 2000 "${viz_flag[@]}" \
+          --json "$json_fields" --jq "$jq_filter")
+        # Multiline output via heredoc-shaped delimiter.
+        delim="EOF_$$_$(date +%s)"
+        {
+          echo "repos<<${delim}"
+          echo "$repos"
+          echo "${delim}"
+        } >> "$GITHUB_OUTPUT"
+        if [[ -n "$repos" ]]; then
+          count=$(printf '%s\n' "$repos" | grep -c '^.')
+        else
+          count=0
+        fi
+        echo "Enumerated ${count} repos from org '$ORG' (visibility=$VISIBILITY, exclude-forks=$EXCLUDE_FORKS, exclude-archived=$EXCLUDE_ARCHIVED)."
