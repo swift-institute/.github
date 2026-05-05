@@ -126,9 +126,18 @@ jobs:
       - name: Install lychee ${{ env.LYCHEE_VERSION }}
         run: |
           set -euo pipefail
+          # 0.24+ tarballs nest the binary under
+          # `lychee-x86_64-unknown-linux-gnu/lychee` (alongside docs/
+          # and shell completions); the 0.24.0 release notes described
+          # the change as breaking, and 0.24.1 restored the FILENAME
+          # convention (asset URL identical to 0.20.x) but NOT the
+          # internal structure. Extract to a tmpdir and move just the
+          # binary to keep /usr/local/bin clean.
+          tmpdir=$(mktemp -d)
           curl -sSL "https://github.com/lycheeverse/lychee/releases/download/lychee-v${{ env.LYCHEE_VERSION }}/lychee-x86_64-unknown-linux-gnu.tar.gz" \
-            | tar -xz
-          sudo mv lychee /usr/local/bin/lychee
+            | tar -xz -C "$tmpdir"
+          sudo mv "$tmpdir/lychee-x86_64-unknown-linux-gnu/lychee" /usr/local/bin/lychee
+          rm -rf "$tmpdir"
           lychee --version
 
 
