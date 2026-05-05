@@ -123,7 +123,18 @@ jobs:
           owner: ${{ steps.scope.outputs.owner }}
           repositories: ${{ steps.scope.outputs.repositories }}
 
+      # Tool-binary cache per [CI-044]: keyed exact-match-only on
+      # LYCHEE_VERSION. Cache hit → /usr/local/bin/lychee already there.
+      # Miss → install step below writes it.
+      - name: Cache lychee binary
+        id: cache-lychee
+        uses: actions/cache@v5
+        with:
+          path: /usr/local/bin/lychee
+          key: ${{ runner.os }}-lychee-${{ env.LYCHEE_VERSION }}
+
       - name: Install lychee ${{ env.LYCHEE_VERSION }}
+        if: steps.cache-lychee.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
           # 0.24+ tarballs nest the binary under
@@ -138,7 +149,9 @@ jobs:
             | tar -xz -C "$tmpdir"
           sudo mv "$tmpdir/lychee-x86_64-unknown-linux-gnu/lychee" /usr/local/bin/lychee
           rm -rf "$tmpdir"
-          lychee --version
+
+      - name: Print lychee version
+        run: lychee --version
 
 
       - name: Enumerate org repos
