@@ -117,7 +117,7 @@ jobs:
           if [[ -n "${{ inputs.repo }}" ]]; then
             targets=("${{ inputs.repo }}")
           else
-            mapfile -t targets < <(gh repo list "${{ inputs.org }}" --limit 500 \
+            mapfile -t targets < <(gh repo list "${{ inputs.org }}" --limit 2000 \
               --json nameWithOwner,visibility,isArchived \
               --jq '.[] | select(.isArchived==false) | .nameWithOwner')
           fi
