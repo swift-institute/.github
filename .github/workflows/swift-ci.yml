@@ -118,7 +118,7 @@ jobs:
         run: swift test -c release
 
   windows-release:
-    name: Windows (Swift ${{ inputs.swift-version }})
+    name: Windows (Swift ${{ inputs.swift-version }}, debug)
     if: ${{ !github.event.repository.private }}
     runs-on: windows-latest
     timeout-minutes: 45
