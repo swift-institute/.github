@@ -1,0 +1,211 @@
+# lint-license-header-weekly.yml — scheduled cross-org Apache 2.0
+# license-header sweep (γ-1b Stage 1).
+#
+# Calls audit-license-header.py against every public, non-archived repo
+# in each in-scope org via a matrix strategy at 06:40 UTC every Monday
+# (offset from spine 06:30 + foundation 06:35 + readme-presence 06:00).
+# When any org has missing-header findings, opens or updates a single
+# aggregated tracking issue summarising the gap.
+#
+# Pilot scope: swift-primitives only. Expansion candidates after pilot
+# (Phases 2b/c/d).
+#
+# Empirical Stage 1 expectation (per research §3.4.3, refined by 2026-05-05
+# canary verification): partial coverage exists — swift-witness-primitives
+# 4/4 with headers, swift-tagged-primitives 1/9 with headers, swift-carrier-
+# primitives 1/44 with headers. The first weekly tracking issue summarises
+# the precise per-package gap; Stage 2 codemod (separate auth) closes it.
+#
+# Audit script source: swift-institute/.github/.github/scripts/audit-license-header.py
+# Public fetch URL:   https://raw.githubusercontent.com/swift-institute/.github/main/.github/scripts/audit-license-header.py
+#
+# Two-track flip per Decision #8: γ-1b Stage 3 (gating) requires BOTH
+# this public CI sweep AND principal-side on-disk audit clean for 2
+# consecutive weeks post-codemod.
+#
+# Provenance: research §3.4.3 (the rule), [README-167]
+# (tracking-issue pattern), [HANDOFF-023] (Stage 2 codemod bulk-push class).
+
+name: lint-license-header-weekly
+
+on:
+  schedule:
+    - cron: '40 6 * * 1'   # weekly Monday 06:40 UTC
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: 'Run audit but skip aggregated issue create/update.'
+        type: boolean
+        required: false
+        default: false
+
+jobs:
+  sweep:
+    strategy:
+      fail-fast: false
+      matrix:
+        org:
+          - swift-primitives
+          # Expansion candidates (after Phases 2b/c/d):
+          # - swift-standards
+          # - swift-foundations
+          # - swift-iso
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Mint installation token
+        id: token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.METADATA_APP_ID }}
+          private-key: ${{ secrets.METADATA_APP_PRIVATE_KEY }}
+          owner: ${{ matrix.org }}
+          repositories: ''
+
+      - name: Fetch audit script
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/audit-license-header.py \
+            https://raw.githubusercontent.com/swift-institute/.github/main/.github/scripts/audit-license-header.py
+
+      - name: Sweep org
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          ORG: ${{ matrix.org }}
+        run: |
+          set -euo pipefail
+          mapfile -t targets < <(gh repo list "$ORG" --limit 2000 \
+            --visibility public \
+            --json nameWithOwner,isArchived \
+            --jq '.[] | select(.isArchived==false) | .nameWithOwner')
+          total_missing=0
+          total_files=0
+          per_pkg=()
+          for target in "${targets[@]}"; do
+            workdir=$(mktemp -d)
+            json="/tmp/${target//\//__}.json"
+            git clone --depth 1 --quiet \
+              "https://x-access-token:${GH_TOKEN}@github.com/${target}.git" \
+              "$workdir" 2>/dev/null || { rm -rf "$workdir"; continue; }
+            python3 /tmp/audit-license-header.py \
+              --package-dir "$workdir" \
+              --json "$json" 2>/dev/null || true
+            counts=$(python3 -c "import json; t=json.load(open('$json'))['totals']; print(t['missing'], t['files_scanned'])" 2>/dev/null || echo "0 0")
+            read -r m f <<< "$counts"
+            total_missing=$((total_missing + m))
+            total_files=$((total_files + f))
+            if [[ "$m" -gt 0 ]]; then
+              pkg_name=$(basename "$target")
+              per_pkg+=("- \`${pkg_name}\`: $m / $f files missing")
+            fi
+            rm -rf "$workdir"
+          done
+          {
+            echo "## Org $ORG — license-header sweep (γ-1b Stage 1)"
+            echo "- Missing total: $total_missing / $total_files files"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "${total_missing},${total_files}" > "/tmp/${ORG}-counts.txt"
+          printf '%s\n' "${per_pkg[@]}" > "/tmp/${ORG}-pkgs.txt" 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: license-counts-${{ matrix.org }}
+          path: |
+            /tmp/${{ matrix.org }}-counts.txt
+            /tmp/${{ matrix.org }}-pkgs.txt
+
+  report:
+    needs: sweep
+    runs-on: ubuntu-latest
+    if: always() && needs.sweep.result != 'skipped'
+    steps:
+      - name: Mint installation token
+        id: token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.METADATA_APP_ID }}
+          private-key: ${{ secrets.METADATA_APP_PRIVATE_KEY }}
+          owner: swift-institute
+          repositories: .github
+          permission-issues: write
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: /tmp/counts
+
+      - name: Open or update tracking issue
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          DRY_RUN: ${{ inputs.dry-run || false }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          today=$(date -u '+%Y-%m-%d')
+          total_missing=0
+          total_files=0
+          per_org=()
+          all_pkgs=""
+          for f in /tmp/counts/*/*-counts.txt; do
+            org=$(basename "$(dirname "$f")" | sed 's/^license-counts-//')
+            IFS=',' read -r m fl < "$f"
+            total_missing=$((total_missing + m))
+            total_files=$((total_files + fl))
+            per_org+=("- \`${org}\`: $m / $fl files missing")
+          done
+          for f in /tmp/counts/*/*-pkgs.txt; do
+            [[ -s "$f" ]] && all_pkgs="${all_pkgs}$(cat "$f")"$'\n'
+          done
+          if [[ "$total_missing" -eq 0 ]]; then
+            echo "License-header clean across all orgs — no tracking issue needed."
+            exit 0
+          fi
+          [[ "$DRY_RUN" == "true" ]] && { echo "(dry-run; would have opened/updated issue)"; exit 0; }
+          title="License-header sweep ${today}"
+          body=$(cat <<EOF
+          The weekly Apache 2.0 license-header sweep at 06:40 UTC on ${today}
+          found ${total_missing} of ${total_files} \`Sources/**/*.swift\`
+          files missing the header.
+
+          ## Aggregate
+          - Missing total: ${total_missing} / ${total_files} files
+
+          ## Per-org
+
+          $(printf '%s\n' "${per_org[@]}")
+
+          ## Per-package (only those with missing headers)
+
+          ${all_pkgs}
+
+          ## What this means
+
+          γ-1b is currently in Stage 1 (advisory). The audit surfaces the
+          ecosystem-wide gap. Stage 2 (codemod) mass-applies the Apache
+          2.0 header across all in-scope \`Sources/**/*.swift\` files in
+          a separate authorized push wave per [HANDOFF-023] bulk-push
+          class. Stage 3 (gating flip) follows after 2 consecutive clean
+          public-CI sweeps + 2 clean principal-side audits.
+
+          ## What to do
+
+          - For now: this issue is informational. The codemod is the
+            mechanism, not per-PR fixes by contributors.
+          - When the codemod is authorized, it will land as one commit
+            per affected repo with the canonical header template.
+          - Close this issue when the codemod completes; subsequent
+            weekly sweeps verify that no regression has occurred.
+
+          *Idempotent: this issue is updated in place.*
+          EOF
+          )
+          existing=$(gh issue list --repo swift-institute/.github \
+            --state open --search "License-header sweep in:title" \
+            --json number --jq '.[0].number // ""')
+          if [[ -n "$existing" ]]; then
+            gh issue edit "$existing" --repo swift-institute/.github --title "$title" --body "$body"
+          else
+            gh issue create --repo swift-institute/.github --title "$title" --body "$body" --label "license-audit"
+          fi
