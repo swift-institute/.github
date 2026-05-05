@@ -251,12 +251,18 @@ jobs:
       advisory: true
     secrets: inherit
 
-  # γ-2b GitHub dependency-graph submission. push-to-main only. Advisory;
-  # judgment-based graduation at month-1 + month-3 review per §3.4.5b.
-  submit-dep-graph:
-    name: Submit dep graph (γ-2b, advisory)
-    if: ${{ github.event_name == 'push' && !github.event.repository.private && github.event.repository.fork == false }}
-    uses: ./.github/workflows/submit-dep-graph.yml
-    with:
-      advisory: true
-    secrets: inherit
+  # γ-2b GitHub dependency-graph submission — TEMPORARILY DISABLED.
+  #
+  # The submit-dep-graph.yml reusable declares `permissions: contents: write`
+  # which the consumer-→layer-→universal call chain doesn't grant by default,
+  # causing startup_failure across every consumer CI run. Re-enable once a
+  # permissions-chain spike establishes the right pattern (per [CI-026]
+  # Path B). The reusable file itself stays in place; only this caller is
+  # commented out.
+  # submit-dep-graph:
+  #   name: Submit dep graph (γ-2b, advisory)
+  #   if: ${{ github.event_name == 'push' && !github.event.repository.private && github.event.repository.fork == false }}
+  #   uses: ./.github/workflows/submit-dep-graph.yml
+  #   with:
+  #     advisory: true
+  #   secrets: inherit
