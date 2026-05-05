@@ -30,6 +30,11 @@
 
 name: submit-dep-graph-weekly
 
+# Swift toolchain pin per [CI-011]. Mirrors the universal reusable's
+# default; bump in lockstep when the floor advances.
+env:
+  SWIFT_VERSION: "6.3"
+
 on:
   schedule:
     - cron: '50 6 * * 1'   # weekly Monday 06:50 UTC
@@ -52,7 +57,7 @@ jobs:
           # - swift-standards
           # - swift-foundations
     runs-on: ubuntu-latest
-    container: swift:6.3
+    container: swift:${{ env.SWIFT_VERSION }}
     permissions:
       contents: read
     steps:
