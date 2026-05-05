@@ -17,8 +17,9 @@ Outputs (stdout):
 Optional JSON output via --json <path>.
 
 Usage:
-  preflight-test-support-spine.py            # all four org-dirs
-  preflight-test-support-spine.py --org primitives
+  preflight-test-support-spine.py                              # all four org-dirs (principal mode)
+  preflight-test-support-spine.py --org primitives             # single org (principal mode)
+  preflight-test-support-spine.py --package-dir <path>         # single package (CI mode)
   preflight-test-support-spine.py --json /tmp/spine-audit.json
 """
 
@@ -300,19 +301,37 @@ def print_report(orgs: list[dict], agg: dict) -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--org", choices=sorted(ORG_DIRS.keys()), help="Audit one org-dir only")
+    mode = ap.add_mutually_exclusive_group()
+    mode.add_argument("--org", choices=sorted(ORG_DIRS.keys()),
+                      help="Audit one org-dir only (principal mode)")
+    mode.add_argument("--package-dir", type=Path,
+                      help="Audit a single package at this path (CI mode)")
     ap.add_argument("--json", type=Path, help="Write raw findings to this JSON path")
     args = ap.parse_args()
 
-    org_names = [args.org] if args.org else sorted(ORG_DIRS.keys())
-    orgs = []
-    for name in org_names:
-        org_dir = ORG_DIRS[name]
-        if not org_dir.is_dir():
-            print(f"warning: {org_dir} not found, skipping", file=sys.stderr)
-            continue
-        print(f"auditing {name} at {org_dir} ...", file=sys.stderr)
-        orgs.append(audit_org(name, org_dir))
+    if args.package_dir:
+        pkg_dir = args.package_dir.resolve()
+        if not (pkg_dir / "Package.swift").is_file():
+            print(f"error: {pkg_dir}/Package.swift not found", file=sys.stderr)
+            return 2
+        print(f"auditing single package at {pkg_dir} ...", file=sys.stderr)
+        dump = dump_package(pkg_dir)
+        if dump is None:
+            print(f"error: swift package dump-package failed in {pkg_dir}", file=sys.stderr)
+            return 2
+        audited = audit_package(pkg_dir, dump)
+        orgs = [{"org": "<single>", "dir": str(pkg_dir.parent),
+                 "packages": [audited], "parse_failures": []}]
+    else:
+        org_names = [args.org] if args.org else sorted(ORG_DIRS.keys())
+        orgs = []
+        for name in org_names:
+            org_dir = ORG_DIRS[name]
+            if not org_dir.is_dir():
+                print(f"warning: {org_dir} not found, skipping", file=sys.stderr)
+                continue
+            print(f"auditing {name} at {org_dir} ...", file=sys.stderr)
+            orgs.append(audit_org(name, org_dir))
 
     agg = aggregate(orgs)
     print_report(orgs, agg)

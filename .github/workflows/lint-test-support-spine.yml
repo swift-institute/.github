@@ -1,0 +1,104 @@
+# lint-test-support-spine.yml — advisory CI gate for [MOD-024] Test Support
+# Spine Discipline.
+#
+# Reusable workflow. For the checked-out package, runs the per-package audit
+# (preflight-test-support-spine.py --package-dir .) and exits 1 on VIOLATION
+# or MISSING findings. The advisory-vs-gating decision is made at the CALLING
+# site via `continue-on-error: true` (Phase β) or omission (Phase γ).
+#
+# Phase β (current): called from swift-institute/.github/.github/workflows/
+# swift-ci.yml with `continue-on-error: true`. Findings surface in the job
+# log + step summary; the parent CI is not gated.
+#
+# Phase γ (future, after two consecutive weeks of ecosystem-wide zero
+# violations confirmed by lint-test-support-spine-weekly.yml): drop the
+# `continue-on-error: true` flag at the calling site. The audit becomes
+# gating; drift recurrence fails the parent CI.
+#
+# Audit script source:
+#   swift-institute/.github/.github/scripts/preflight-test-support-spine.py
+# Public fetch URL (used by the run step below):
+#   https://raw.githubusercontent.com/swift-institute/.github/main/.github/scripts/preflight-test-support-spine.py
+#
+# Provenance: [MOD-024] (the rule); [CI-001]+[CI-002] (architecture);
+# [CI-021] (continue-on-error precedent); [README-167] (tracking-issue
+# reporting via the weekly orchestrator). Research:
+# `swift-institute/Research/centralized-swift-ci-and-spine-gate.md`.
+
+name: lint-test-support-spine
+
+on:
+  workflow_call:
+    outputs:
+      ok-count:
+        description: 'Number of OK findings (TS targets that satisfy [MOD-024]).'
+        value: ${{ jobs.audit.outputs.ok-count }}
+      violation-count:
+        description: 'Number of VIOLATION findings (TS targets with non-TS cross-package deps).'
+        value: ${{ jobs.audit.outputs.violation-count }}
+      missing-count:
+        description: 'Number of MISSING findings (packages with tests but no TS target).'
+        value: ${{ jobs.audit.outputs.missing-count }}
+
+  workflow_dispatch: {}
+
+jobs:
+  audit:
+    name: Test Support Spine audit
+    if: ${{ !github.event.repository.private }}     # [CI-032]
+    runs-on: ubuntu-latest
+    container: swift:6.3                            # [CI-011] toolchain pin
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      ok-count: ${{ steps.audit.outputs.ok-count }}
+      violation-count: ${{ steps.audit.outputs.violation-count }}
+      missing-count: ${{ steps.audit.outputs.missing-count }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Fetch audit script
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/preflight-test-support-spine.py \
+            https://raw.githubusercontent.com/swift-institute/.github/main/.github/scripts/preflight-test-support-spine.py
+          chmod +x /tmp/preflight-test-support-spine.py
+
+      - name: Run audit
+        id: audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 /tmp/preflight-test-support-spine.py \
+            --package-dir . \
+            --json /tmp/audit.json \
+            | tee /tmp/audit.log
+          read -r ok viol miss < <(python3 - <<'PYEOF'
+          import json
+          t = json.load(open('/tmp/audit.json'))['aggregate']['totals']
+          print(t['ok_findings'], t['violation_findings'], t['missing_findings'])
+          PYEOF
+          )
+          echo "ok-count=$ok"          >> "$GITHUB_OUTPUT"
+          echo "violation-count=$viol" >> "$GITHUB_OUTPUT"
+          echo "missing-count=$miss"   >> "$GITHUB_OUTPUT"
+          {
+            echo "## Test Support Spine — [MOD-024]"
+            echo ""
+            echo "- OK:        $ok"
+            echo "- VIOLATION: $viol"
+            echo "- MISSING:   $miss"
+            echo ""
+            if [[ "$viol" -gt 0 || "$miss" -gt 0 ]]; then
+              echo "### Findings"
+              echo ""
+              echo '```'
+              cat /tmp/audit.log
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$viol" -gt 0 || "$miss" -gt 0 ]]; then
+            echo "::warning::[MOD-024] spine drift detected — $viol violations, $miss missing"
+            exit 1
+          fi

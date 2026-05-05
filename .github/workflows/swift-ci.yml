@@ -208,3 +208,13 @@ jobs:
 
       - name: Lint
         run: swiftlint lint --strict --reporter github-actions-logging
+
+  # [MOD-024] Test Support Spine — advisory in Phase β; gating in Phase γ
+  # (after two consecutive zero-violation weekly runs of
+  # lint-test-support-spine-weekly.yml). Audit body in
+  # lint-test-support-spine.yml.
+  lint-test-support-spine:
+    name: Test Support Spine ([MOD-024], advisory)
+    if: ${{ !github.event.repository.private }}
+    uses: ./.github/workflows/lint-test-support-spine.yml
+    continue-on-error: true     # Phase β (advisory). Drop in Phase γ.
