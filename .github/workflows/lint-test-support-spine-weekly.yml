@@ -28,11 +28,6 @@
 
 name: lint-test-support-spine-weekly
 
-# Swift toolchain pin per [CI-011]. Mirrors the universal reusable's
-# default; bump in lockstep when the floor advances.
-env:
-  SWIFT_VERSION: "6.3"
-
 on:
   schedule:
     - cron: '30 6 * * 1'   # weekly Monday 06:30 UTC
@@ -56,7 +51,11 @@ jobs:
           # - swift-foundations
           # - swift-iso
     runs-on: ubuntu-latest
-    container: swift:${{ env.SWIFT_VERSION }}
+    # Swift toolchain pin per [CI-011]; bump in lockstep with the universal reusable's default.
+    # Hardcoded literal: env.* and workflow-level env: are not bound when GitHub Actions
+    # resolves container: at job-startup. vars.* (org/repo variables) is the only working
+    # centralization mechanism here; deferred as out-of-scope for this recovery.
+    container: swift:6.3
     permissions:
       contents: read
     steps:
