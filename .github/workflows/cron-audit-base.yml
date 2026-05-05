@@ -203,7 +203,7 @@ jobs:
           repositories: .github
           permission-issues: write
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: /tmp/counts
 
@@ -228,12 +228,16 @@ jobs:
             totals["$label"]=0
           done
 
-          # Aggregate counts across orgs by walking artifact directories.
+          # Aggregate counts across orgs. Layout-agnostic per Path A:
+          # download-artifact@v8 flattens to /tmp/counts/<file> when only
+          # one artifact matches and nests to /tmp/counts/<artifact>/<file>
+          # otherwise. `find` walks at any depth; org is recovered from
+          # the filename's <org>-counts.txt suffix-strip rather than from
+          # the artifact-directory name. See Research/download-artifact-ladder-migration.md.
           per_org_lines=()
-          for f in /tmp/counts/*/*-counts.txt; do
-            [[ -e "$f" ]] || continue
-            artifact_dir=$(basename "$(dirname "$f")")
-            org="${artifact_dir#cron-audit-counts-}"
+          while IFS= read -r f; do
+            [[ -z "$f" ]] && continue
+            org=$(basename "$f" | sed 's/-counts\.txt$//')
             IFS=',' read -ra values < "$f"
             line="- \`${org}\`:"
             for i in "${!labels[@]}"; do
@@ -244,14 +248,15 @@ jobs:
               [[ $i -lt $((${#labels[@]} - 1)) ]] && line="${line},"
             done
             per_org_lines+=("$line")
-          done
+          done < <(find /tmp/counts -type f -name '*-counts.txt' 2>/dev/null)
           per_org_list=$(printf '%s\n' "${per_org_lines[@]}")
 
-          # Concatenate any /tmp/counts/*/*-extra.txt files into ${EXTRA}.
+          # Concatenate any *-extra.txt files into ${EXTRA}.
           extra=""
-          for f in /tmp/counts/*/*-extra.txt; do
+          while IFS= read -r f; do
+            [[ -z "$f" ]] && continue
             [[ -s "$f" ]] && extra="${extra}$(cat "$f")"$'\n'
-          done
+          done < <(find /tmp/counts -type f -name '*-extra.txt' 2>/dev/null)
 
           # Decide whether anything is non-zero.
           any_nonzero=0
