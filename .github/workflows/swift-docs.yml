@@ -78,15 +78,27 @@ on:
         type: boolean
         default: true
         description: "If true, configure git to use PRIVATE_REPO_TOKEN for github.com clones during DocC's `swift build`. Default true: most consumers depend on private deps; public-only consumers may pass false explicitly."
+      macos-runner:
+        type: string
+        default: "macos-26"
+        description: "macOS runner image. Bump annually when GitHub adds a new image version. env.* is invalid in runs-on: per Actions context-availability rules — input is the working centralization mechanism."
     secrets:
       PRIVATE_REPO_TOKEN:
         required: false
+
+# Workflow-level env vars centralize tool versions so each release bump
+# is a single edit instead of N grep-and-replace sites. Per
+# feedback_latest_versions_only.md these MUST track the latest stable
+# release of each tool; bump on every workflow touch where a newer
+# release exists.
+env:
+  XCODE_VERSION: "26.4"
 
 jobs:
   docs:
     name: DocC archive
     if: ${{ !github.event.repository.private }}
-    runs-on: macos-26
+    runs-on: ${{ inputs.macos-runner }}
     timeout-minutes: 60
     permissions:
       contents: read
@@ -156,8 +168,8 @@ jobs:
           echo "  docc path    = $UMBRELLA_DOCC_PATH"
           echo "  exclude      = $EXCLUDE_MODULES"
 
-      - name: Select Xcode 26.4
-        run: sudo xcode-select -s /Applications/Xcode_26.4.app
+      - name: Select Xcode ${{ env.XCODE_VERSION }}
+        run: sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
 
       - name: Print Swift version
         run: swift --version
