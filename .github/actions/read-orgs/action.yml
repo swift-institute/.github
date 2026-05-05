@@ -79,14 +79,21 @@ runs:
         ACTION_PATH: ${{ github.action_path }}
       run: |
         set -euo pipefail
-        # Install yq if not present (cache miss, or runner without yq
-        # pre-installed). Install path is /usr/local/bin/yq so the
-        # tool-binary cache per [CI-044] can persist it between runs.
-        if ! command -v yq >/dev/null 2>&1; then
-          curl -fsSL "https://github.com/mikefarah/yq/releases/download/v4.45.4/yq_linux_amd64" -o /usr/local/bin/yq
-          chmod +x /usr/local/bin/yq
+        # Install yq to /usr/local/bin/yq specifically (not "wherever").
+        # Path-specific gate is load-bearing: ubuntu-latest pre-installs
+        # yq in /usr/bin/, which `command -v yq` would find — but the
+        # cache step at /usr/local/bin/yq would then have nothing to save
+        # because the install step skipped (Path Validation Error on
+        # post-cache). Fix: gate on the specific cache path.
+        if [[ ! -x /usr/local/bin/yq ]]; then
+          # EUID check: containers run as root (no sudo needed; sudo may
+          # not be installed). Non-container ubuntu runners need sudo to
+          # write /usr/local/bin.
+          if [[ $EUID -eq 0 ]]; then SUDO=""; else SUDO="sudo"; fi
+          $SUDO curl -fsSL "https://github.com/mikefarah/yq/releases/download/v4.45.4/yq_linux_amd64" -o /usr/local/bin/yq
+          $SUDO chmod +x /usr/local/bin/yq
         fi
-        YQ=$(command -v yq)
+        YQ=/usr/local/bin/yq
         # Install jq if not present (swift:6.3 container doesn't ship jq).
         # Not cached: apt-installed packages have multiple files + dependencies;
         # caching them isn't worth the complexity for ~1s install savings.
