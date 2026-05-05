@@ -61,6 +61,16 @@ outputs:
 runs:
   using: 'composite'
   steps:
+    # Tool-binary cache per [CI-044]: keyed exact-match-only on yq version.
+    # Cache hit → /usr/local/bin/yq exists, found by `command -v` in the
+    # next step. Miss → install step writes to the same path.
+    - name: Cache yq binary
+      id: cache-yq
+      uses: actions/cache@v5
+      with:
+        path: /usr/local/bin/yq
+        key: ${{ runner.os }}-yq-v4.45.4
+
     - id: read
       shell: bash
       env:
@@ -69,17 +79,17 @@ runs:
         ACTION_PATH: ${{ github.action_path }}
       run: |
         set -euo pipefail
-        # Install yq if not present. ubuntu-latest doesn't pre-install yq;
-        # swift:* containers don't either. mikefarah/yq v4 is the Go binary;
-        # single static download.
+        # Install yq if not present (cache miss, or runner without yq
+        # pre-installed). Install path is /usr/local/bin/yq so the
+        # tool-binary cache per [CI-044] can persist it between runs.
         if ! command -v yq >/dev/null 2>&1; then
-          curl -fsSL "https://github.com/mikefarah/yq/releases/download/v4.45.4/yq_linux_amd64" -o /tmp/yq
-          chmod +x /tmp/yq
-          YQ=/tmp/yq
-        else
-          YQ=$(command -v yq)
+          curl -fsSL "https://github.com/mikefarah/yq/releases/download/v4.45.4/yq_linux_amd64" -o /usr/local/bin/yq
+          chmod +x /usr/local/bin/yq
         fi
+        YQ=$(command -v yq)
         # Install jq if not present (swift:6.3 container doesn't ship jq).
+        # Not cached: apt-installed packages have multiple files + dependencies;
+        # caching them isn't worth the complexity for ~1s install savings.
         if ! command -v jq >/dev/null 2>&1; then
           apt-get update -qq && apt-get install -qq -y jq
         fi
