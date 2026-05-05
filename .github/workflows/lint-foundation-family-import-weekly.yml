@@ -13,7 +13,6 @@
 # free policy ([PRIM-FOUND-001], [CI-022]) applies to L1+L2+L3 main targets.
 #
 # Audit script source: swift-institute/.github/.github/scripts/audit-foundation-import.py
-# Public fetch URL:   https://raw.githubusercontent.com/swift-institute/.github/main/.github/scripts/audit-foundation-import.py
 #
 # Two-track flip per Decision #8: γ-1a → gating requires BOTH this public
 # CI sweep AND principal-side on-disk audit clean for 2 consecutive weeks.
@@ -21,7 +20,8 @@
 # success signal.
 #
 # Provenance: research §3.4.2 (the rule), [CI-022], [README-167]
-# (tracking-issue pattern), [PRIM-FOUND-001].
+# (tracking-issue pattern), [PRIM-FOUND-001]. Skeleton extracted to
+# cron-audit-base.yml@main reusable.
 
 name: lint-foundation-family-import-weekly
 
@@ -37,162 +37,77 @@ on:
         default: false
 
 jobs:
-  sweep:
-    strategy:
-      fail-fast: false
-      matrix:
-        org:
-          - swift-primitives
-          # Expansion candidates (after Phases 2b/c/d):
-          # - swift-standards
-          # - swift-foundations
-          # - swift-iso
-    runs-on: ubuntu-latest    # no swift container needed (pure Python audit)
-    permissions:
-      contents: read
-    steps:
-      - name: Mint installation token
-        id: token
-        uses: actions/create-github-app-token@v3
-        with:
-          app-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
-          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
-          owner: ${{ matrix.org }}
-          repositories: ''  # all repos in the org installation
+  audit:
+    uses: ./.github/workflows/cron-audit-base.yml
+    secrets: inherit
+    with:
+      matrix-orgs: '["swift-primitives"]'
+      audit-script-url: https://raw.githubusercontent.com/swift-institute/.github/main/.github/scripts/audit-foundation-import.py
+      count-labels: errors,warnings
+      issue-title-prefix: Foundation-import sweep
+      issue-label: foundation-audit
+      dry-run: ${{ inputs.dry-run || false }}
+      audit-step: |
+        set -euo pipefail
+        mapfile -t targets < <(gh repo list "$ORG" --limit 2000 \
+          --visibility public \
+          --json nameWithOwner,isArchived \
+          --jq '.[] | select(.isArchived==false) | .nameWithOwner')
+        total_errors=0
+        total_warnings=0
+        for target in "${targets[@]}"; do
+          workdir=$(mktemp -d)
+          json="/tmp/${target//\//__}.json"
+          git clone --depth 1 --quiet \
+            "https://x-access-token:${GH_TOKEN}@github.com/${target}.git" \
+            "$workdir" 2>/dev/null || { rm -rf "$workdir"; continue; }
+          python3 /tmp/audit-script.py \
+            --package-dir "$workdir" \
+            --json "$json" 2>/dev/null || true
+          counts=$(python3 -c "import json; t=json.load(open('$json'))['totals']; print(t['errors'], t['warnings'])" 2>/dev/null || echo "0 0")
+          read -r e w <<< "$counts"
+          total_errors=$((total_errors + e))
+          total_warnings=$((total_warnings + w))
+          rm -rf "$workdir"
+        done
+        {
+          echo "## Org $ORG — Foundation-import sweep (γ-1a)"
+          echo "- ERRORS total:   $total_errors"
+          echo "- WARNINGS total: $total_warnings"
+        } >> "$GITHUB_STEP_SUMMARY"
+        echo "${total_errors},${total_warnings}" > "/tmp/${ORG}-counts.txt"
+      issue-body-template: |
+        The weekly Foundation-import sweep at 06:35 UTC on ${TODAY} found drift.
 
-      - name: Fetch audit script
-        shell: bash
-        run: |
-          set -euo pipefail
-          curl -fsSL -o /tmp/audit-foundation-import.py \
-            https://raw.githubusercontent.com/swift-institute/.github/main/.github/scripts/audit-foundation-import.py
+        ## Aggregate
+        - ERRORS total:   ${COUNT_ERRORS}
+        - WARNINGS total: ${COUNT_WARNINGS}
 
-      - name: Sweep org
-        shell: bash
-        env:
-          GH_TOKEN: ${{ steps.token.outputs.token }}
-          ORG: ${{ matrix.org }}
-        run: |
-          set -euo pipefail
-          mapfile -t targets < <(gh repo list "$ORG" --limit 2000 \
-            --visibility public \
-            --json nameWithOwner,isArchived \
-            --jq '.[] | select(.isArchived==false) | .nameWithOwner')
-          total_errors=0
-          total_warnings=0
-          for target in "${targets[@]}"; do
-            workdir=$(mktemp -d)
-            json="/tmp/${target//\//__}.json"
-            git clone --depth 1 --quiet \
-              "https://x-access-token:${GH_TOKEN}@github.com/${target}.git" \
-              "$workdir" 2>/dev/null || { rm -rf "$workdir"; continue; }
-            python3 /tmp/audit-foundation-import.py \
-              --package-dir "$workdir" \
-              --json "$json" 2>/dev/null || true
-            counts=$(python3 -c "import json; t=json.load(open('$json'))['totals']; print(t['errors'], t['warnings'])" 2>/dev/null || echo "0 0")
-            read -r e w <<< "$counts"
-            total_errors=$((total_errors + e))
-            total_warnings=$((total_warnings + w))
-            rm -rf "$workdir"
-          done
-          {
-            echo "## Org $ORG — Foundation-import sweep (γ-1a)"
-            echo "- ERRORS total:   $total_errors"
-            echo "- WARNINGS total: $total_warnings"
-          } >> "$GITHUB_STEP_SUMMARY"
-          echo "${total_errors},${total_warnings}" > "/tmp/${ORG}-counts.txt"
+        ## Per-org
 
-      - uses: actions/upload-artifact@v7
-        with:
-          name: foundation-counts-${{ matrix.org }}
-          path: /tmp/${{ matrix.org }}-counts.txt
+        ${PER_ORG_LIST}
 
-  report:
-    needs: sweep
-    runs-on: ubuntu-latest
-    if: always() && needs.sweep.result != 'skipped'
-    steps:
-      - name: Mint installation token
-        id: token
-        uses: actions/create-github-app-token@v3
-        with:
-          app-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
-          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
-          owner: swift-institute
-          repositories: .github
-          permission-issues: write
+        See the per-org run summaries for the file-level breakdown.
 
-      - uses: actions/download-artifact@v4
-        with:
-          path: /tmp/counts
+        ## What this means
 
-      - name: Open or update tracking issue
-        env:
-          GH_TOKEN: ${{ steps.token.outputs.token }}
-          DRY_RUN: ${{ inputs.dry-run || false }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          today=$(date -u '+%Y-%m-%d')
-          total_errors=0
-          total_warnings=0
-          per_org=()
-          for f in /tmp/counts/*/*.txt; do
-            org=$(basename "$(dirname "$f")" | sed 's/^foundation-counts-//')
-            IFS=',' read -r e w < "$f"
-            total_errors=$((total_errors + e))
-            total_warnings=$((total_warnings + w))
-            per_org+=("- \`${org}\`: $e errors, $w warnings")
-          done
-          if [[ "$total_errors" -eq 0 && "$total_warnings" -eq 0 ]]; then
-            echo "Foundation-import clean across all orgs — no tracking issue needed."
-            exit 0
-          fi
-          [[ "$DRY_RUN" == "true" ]] && { echo "(dry-run; would have opened/updated issue)"; exit 0; }
-          title="Foundation-import sweep ${today}"
-          body=$(cat <<EOF
-          The weekly Foundation-import sweep at 06:35 UTC on ${today} found drift.
+        One or more packages drifted from [PRIM-FOUND-001]/[CI-022] Foundation-free policy.
+        `Sources/**` and `Tests/Support/**` MUST NOT `import Foundation`,
+        `import FoundationEssentials`, or `import FoundationInternationalization`
+        (any attribute/access-modifier permutation).
 
-          ## Aggregate
-          - ERRORS total:   ${total_errors}
-          - WARNINGS total: ${total_warnings}
+        ## What to do
 
-          ## Per-org
+        - Run the audit script locally to identify the drifted files:
+          ```
+          python3 swift-institute/.github/.github/scripts/audit-foundation-import.py --package-dir <package>
+          ```
+        - Replace Foundation usage with primitives equivalents (Time, Buffer, etc.).
+        - For Foundation interop: move to a separate `* Foundation Integration` subtarget per the established pattern.
+        - Close this issue when fixed; the next weekly sweep reopens it if drift recurs.
 
-          $(printf '%s\n' "${per_org[@]}")
+        γ-1a → gating flip authorization requires 2 consecutive clean weeks
+        on BOTH this public CI sweep AND the principal-side on-disk audit
+        (Two-Track audit per Decision #8).
 
-          See the per-org run summaries for the file-level breakdown.
-
-          ## What this means
-
-          One or more packages drifted from [PRIM-FOUND-001]/[CI-022] Foundation-free policy.
-          \`Sources/**\` and \`Tests/Support/**\` MUST NOT \`import Foundation\`,
-          \`import FoundationEssentials\`, or \`import FoundationInternationalization\`
-          (any attribute/access-modifier permutation).
-
-          ## What to do
-
-          - Run the audit script locally to identify the drifted files:
-            \`\`\`
-            python3 swift-institute/.github/.github/scripts/audit-foundation-import.py --package-dir <package>
-            \`\`\`
-          - Replace Foundation usage with primitives equivalents (Time, Buffer, etc.).
-          - For Foundation interop: move to a separate \`* Foundation Integration\` subtarget per the established pattern.
-          - Close this issue when fixed; the next weekly sweep reopens it if drift recurs.
-
-          γ-1a → gating flip authorization requires 2 consecutive clean weeks
-          on BOTH this public CI sweep AND the principal-side on-disk audit
-          (Two-Track audit per Decision #8).
-
-          *Idempotent: this issue is updated in place.*
-          EOF
-          )
-          existing=$(gh issue list --repo swift-institute/.github \
-            --state open --search "Foundation-import sweep in:title" \
-            --json number --jq '.[0].number // ""')
-          if [[ -n "$existing" ]]; then
-            gh issue edit "$existing" --repo swift-institute/.github --title "$title" --body "$body"
-          else
-            gh issue create --repo swift-institute/.github --title "$title" --body "$body" --label "foundation-audit" 2>&1 || \
-              gh issue create --repo swift-institute/.github --title "$title" --body "$body"
-          fi
+        *Idempotent: this issue is updated in place.*
