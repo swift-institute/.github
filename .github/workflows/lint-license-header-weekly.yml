@@ -40,11 +40,24 @@ on:
         default: false
 
 jobs:
+  config:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      orgs: ${{ steps.read.outputs.orgs }}
+    steps:
+      - id: read
+        uses: swift-institute/.github/.github/actions/read-orgs@main
+        with:
+          filter: 'select(.name=="swift-primitives") | .name'
+
   audit:
+    needs: config
     uses: ./.github/workflows/cron-audit-base.yml
     secrets: inherit
     with:
-      matrix-orgs: '["swift-primitives"]'
+      matrix-orgs: ${{ needs.config.outputs.orgs }}
       audit-script-url: https://raw.githubusercontent.com/swift-institute/.github/main/.github/scripts/audit-license-header.py
       count-labels: missing,files
       issue-title-prefix: License-header sweep
