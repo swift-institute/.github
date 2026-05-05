@@ -212,9 +212,12 @@ jobs:
   # [MOD-024] Test Support Spine — advisory in Phase β; gating in Phase γ
   # (after two consecutive zero-violation weekly runs of
   # lint-test-support-spine-weekly.yml). Audit body in
-  # lint-test-support-spine.yml.
+  # lint-test-support-spine.yml. Phase γ flip = drop the `with:` block
+  # (advisory defaults to false → gating). `continue-on-error` is NOT
+  # permitted on workflow_call jobs in GitHub Actions, hence the input.
   lint-test-support-spine:
     name: Test Support Spine ([MOD-024], advisory)
     if: ${{ !github.event.repository.private }}
     uses: ./.github/workflows/lint-test-support-spine.yml
-    continue-on-error: true     # Phase β (advisory). Drop in Phase γ.
+    with:
+      advisory: true     # Phase β. Drop in Phase γ.

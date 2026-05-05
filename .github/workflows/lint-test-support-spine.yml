@@ -4,16 +4,24 @@
 # Reusable workflow. For the checked-out package, runs the per-package audit
 # (preflight-test-support-spine.py --package-dir .) and exits 1 on VIOLATION
 # or MISSING findings. The advisory-vs-gating decision is made at the CALLING
-# site via `continue-on-error: true` (Phase β) or omission (Phase γ).
+# site via the `advisory` input: `with: { advisory: true }` for Phase β
+# (warnings only, exit 0); omitted for Phase γ (default false, exit 1 on
+# findings).
 #
 # Phase β (current): called from swift-institute/.github/.github/workflows/
-# swift-ci.yml with `continue-on-error: true`. Findings surface in the job
-# log + step summary; the parent CI is not gated.
+# swift-ci.yml with `with: { advisory: true }`. Findings surface in the
+# job log + step summary as warnings; the workflow exits 0 regardless
+# (parent CI is not gated).
 #
 # Phase γ (future, after two consecutive weeks of ecosystem-wide zero
 # violations confirmed by lint-test-support-spine-weekly.yml): drop the
-# `continue-on-error: true` flag at the calling site. The audit becomes
-# gating; drift recurrence fails the parent CI.
+# `with:` block at the calling site (advisory defaults to false → gating).
+# The audit becomes gating; drift recurrence fails the parent CI.
+#
+# Why an input instead of `continue-on-error: true` on the `uses:` job:
+# GitHub Actions does NOT permit `continue-on-error` on workflow_call
+# jobs, only on regular jobs and steps. The advisory/gating switch
+# therefore lives as a workflow input that gates the `exit 1` line below.
 #
 # Audit script source:
 #   swift-institute/.github/.github/scripts/preflight-test-support-spine.py
@@ -29,6 +37,15 @@ name: lint-test-support-spine
 
 on:
   workflow_call:
+    inputs:
+      advisory:
+        type: boolean
+        default: false
+        description: |
+          If true, findings emit warnings only and the workflow exits 0
+          regardless of VIOLATION/MISSING counts. Used during Phase β.
+          Phase γ flip omits this input (default false) → workflow
+          exits 1 on findings (gating).
     outputs:
       ok-count:
         description: 'Number of OK findings (TS targets that satisfy [MOD-024]).'
@@ -100,5 +117,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           if [[ "$viol" -gt 0 || "$miss" -gt 0 ]]; then
             echo "::warning::[MOD-024] spine drift detected — $viol violations, $miss missing"
-            exit 1
+            if [[ "${{ inputs.advisory }}" != "true" ]]; then
+              exit 1
+            fi
           fi
