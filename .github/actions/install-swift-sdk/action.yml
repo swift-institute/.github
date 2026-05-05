@@ -75,10 +75,10 @@ inputs:
   sdk-id:
     description: >
       The SDK identifier passed to downstream `swift build --swift-sdk`.
-      The literal token `$\{TAG\}` (six characters dollar-curly-TAG-curly)
+      The literal token `${TAG}` (six characters dollar-curly-TAG-curly)
       is replaced with the resolved release tag after releases.json
       lookup. Inputs without that token pass through unchanged. Examples:
-      `$\{TAG\}_wasm-embedded`, `$\{TAG\}_android`,
+      `${TAG}_wasm-embedded`, `${TAG}_android`,
       `x86_64-swift-linux-musl`.
     required: true
   output-env-var:
