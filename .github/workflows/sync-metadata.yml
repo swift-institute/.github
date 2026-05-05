@@ -101,11 +101,22 @@ jobs:
           owner: ${{ steps.scope.outputs.owner }}
           repositories: ${{ steps.scope.outputs.repositories }}
 
+      - name: Enumerate org repos
+        if: ${{ inputs.repo == '' }}
+        id: enum
+        uses: ./.github/actions/enumerate-org-public-repos
+        with:
+          org: ${{ inputs.org }}
+          visibility: 'all'
+          gh-token: ${{ steps.token.outputs.token }}
+
       - name: Sync metadata
         id: sync
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
           DRY_RUN: ${{ inputs.dry-run }}
+          SINGLE_REPO: ${{ inputs.repo }}
+          ENUM_REPOS: ${{ steps.enum.outputs.repos }}
         run: |
           set -euo pipefail
 
@@ -113,13 +124,15 @@ jobs:
           diffs_found=0
           summary_lines=()
 
-          # Build target list ----------------------------------------------------
-          if [[ -n "${{ inputs.repo }}" ]]; then
-            targets=("${{ inputs.repo }}")
+          # Build target list — single-repo mode bypasses enumeration; org-mode
+          # reads from the enumerate-org-public-repos composite output.
+          if [[ -n "$SINGLE_REPO" ]]; then
+            targets=("$SINGLE_REPO")
           else
-            mapfile -t targets < <(gh repo list "${{ inputs.org }}" --limit 2000 \
-              --json nameWithOwner,visibility,isArchived \
-              --jq '.[] | select(.isArchived==false) | .nameWithOwner')
+            targets=()
+            while IFS= read -r line; do
+              [[ -n "$line" ]] && targets+=("$line")
+            done <<< "$ENUM_REPOS"
           fi
 
           echo "Targets: ${#targets[@]} repos"
