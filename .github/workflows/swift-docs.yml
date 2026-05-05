@@ -190,7 +190,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: swift-institute/.github
-          ref: v1
+          ref: main
           path: .swift-institute-github
           sparse-checkout: .github/scripts/patch-umbrella-symbol-graph.py
           sparse-checkout-cone-mode: false
