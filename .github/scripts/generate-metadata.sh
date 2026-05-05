@@ -25,7 +25,7 @@ SPEC_TITLES="${SPEC_TITLES:-institute-github/spec-titles.yaml}"
 if [[ -n "$SINGLE_REPO" ]]; then
   targets=("$SINGLE_REPO")
 else
-  mapfile -t targets < <(gh repo list "$ORG" --limit 500 \
+  mapfile -t targets < <(gh repo list "$ORG" --limit 2000 \
     --json nameWithOwner,isArchived \
     --jq '.[] | select(.isArchived==false) | .nameWithOwner')
 fi
