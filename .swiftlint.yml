@@ -10,11 +10,18 @@
 # the natural home for per-repo overrides only.
 #
 # Phase 1 changes (2026-05-05) — see swift-institute/Research/
-# rollout-phase-1-results.md for the rationale:
-#   - one_declaration_per_file ([API-IMPL-005]) flipped from disabled to opt-in.
-#     This is a code-surface ecosystem rule (one type per file) — applies to
-#     all Swift Institute Swift code, not just swift-primitives. Other
-#     ecosystems pick it up automatically when they migrate to this canonical.
+# rollout-phase-1-results.md for the rationale.
+#
+# [API-IMPL-005] one_declaration_per_file was originally part of Phase 1's
+# opt_in_rules but was DROPPED after canary testing surfaced an
+# architectural mismatch with [TEST-005] @Suite test patterns: SwiftLint
+# does not support per-rule path scoping for built-in rules (verified
+# 2026-05-05 against rule docs + empirical test), so the rule cannot be
+# limited to Sources/ only. The [TEST-005] pattern uses multiple top-level
+# fixture types per test file, which one_declaration_per_file flags as
+# violations. Deferred to Phase 1.5+ pending either (a) tests refactored
+# to nest fixtures, (b) CI restructured for separate Sources/Tests
+# invocations, or (c) sub-config fanout infrastructure built.
 
 disabled_rules:
   - line_length
@@ -45,8 +52,6 @@ opt_in_rules:
   - joined_default_parameter
   - operator_usage_whitespace
   - overridden_super_call
-  # Phase 1 (2026-05-05): [API-IMPL-005] One Type Per File — code-surface ecosystem rule.
-  - one_declaration_per_file
 
 included:
   - Sources
