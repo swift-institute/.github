@@ -78,6 +78,8 @@ custom_rules:
     regex: '\bthrows\b\s*(?!\()'
     message: "Throwing functions/methods/inits MUST use typed throws ([API-ERR-001]). Use 'throws(SomeError)' rather than untyped 'throws'."
     severity: warning
+    match_kinds:
+      - keyword
   no_xctest_import:
     name: "No XCTest Import ([TEST-001])"
     regex: '^[ \t]*(?:@[a-zA-Z_]+[ \t]+)*(?:public[ \t]+|package[ \t]+|internal[ \t]+|fileprivate[ \t]+|private[ \t]+)?(?:@testable[ \t]+)?import[ \t]+XCTest\b'
