@@ -38,29 +38,27 @@ on:
         default: 'public'
 
 jobs:
+  config:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      orgs: ${{ steps.read.outputs.orgs }}
+    steps:
+      - id: read
+        uses: swift-institute/.github/.github/actions/read-orgs@main
+        with:
+          # Pilot scope: swift-primitives only. To widen post-pilot,
+          # change this filter (e.g., `.name` for all orgs, or
+          # `select(.layer=="L1") | .name` for L1 only).
+          filter: 'select(.name=="swift-primitives") | .name'
+
   sweep:
+    needs: config
     strategy:
       fail-fast: false
       matrix:
-        org:
-          - swift-primitives
-          # Expansion candidates after pilot validates:
-          #   - swift-standards
-          #   - swift-foundations
-          #   - swift-ietf
-          #   - swift-iso
-          #   - swift-ieee
-          #   - swift-iec
-          #   - swift-w3c
-          #   - swift-whatwg
-          #   - swift-ecma
-          #   - swift-incits
-          #   - swift-linux-foundation
-          #   - swift-microsoft
-          #   - swift-arm-ltd
-          #   - swift-intel
-          #   - swift-riscv
-          #   - swift-institute
+        org: ${{ fromJSON(needs.config.outputs.orgs) }}
     uses: ./.github/workflows/link-check.yml
     with:
       org: ${{ matrix.org }}
