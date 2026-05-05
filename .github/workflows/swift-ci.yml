@@ -188,7 +188,20 @@ jobs:
         run: swift-format --version
 
       - name: Lint formatting (--strict)
-        run: swift-format lint --recursive --strict --ignore-unparsable-files Sources Tests
+        # Excludes *.docc/Resources/ — DocC tutorial code samples are
+        # didactic fixtures, not API surface, and rules like
+        # AllPublicDeclarationsHaveDocumentation / one_declaration_per_file
+        # produce systemic false positives there ([Phase 1.5] 2026-05-05).
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Collect Sources + Tests Swift files, excluding DocC tutorial samples.
+          mapfile -d '' files < <(find Sources Tests -name '*.swift' -not -path '*/*.docc/Resources/*' -print0 2>/dev/null || true)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "No Swift files to lint."
+            exit 0
+          fi
+          swift-format lint --strict --ignore-unparsable-files "${files[@]}"
 
   lint:
     name: SwiftLint
