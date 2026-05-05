@@ -205,7 +205,7 @@ jobs:
           # samples and Test_Support fixture modules.
           mapfile -d '' files < <(find Sources Tests -name '*.swift' \
             -not -path '*/*.docc/Resources/*' \
-            -not -path '*/Tests/Support/*' \
+            -not -path 'Tests/Support/*' \
             -print0 2>/dev/null || true)
           if [ "${#files[@]}" -eq 0 ]; then
             echo "No Swift files to lint."
