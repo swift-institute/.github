@@ -254,17 +254,15 @@ jobs:
       advisory: true
 
   # ─── γ-1 L1 identity invariants + Phase β [MOD-024] ──────────────────────
-  # Per-package source-content audits. Foundation-import + license-header
-  # run on ubuntu-latest no-container (pure Python). Test Support Spine
-  # uses swift:6.3 because it invokes `swift package dump-package`.
-  # Each has its own flip schedule per research §3.4.
-
-  lint-foundation-family-import:
-    name: Foundation import (γ-1a, advisory)
-    if: ${{ !github.event.repository.private }}
-    uses: ./.github/workflows/lint-foundation-family-import.yml
-    with:
-      advisory: true
+  # Per-package source-content audits. License-header runs on ubuntu-latest
+  # no-container (pure Python). Test Support Spine uses swift:6.3 because
+  # it invokes `swift package dump-package`. Each has its own flip schedule
+  # per research §3.4.
+  #
+  # Foundation-import (γ-1a) was migrated 2026-05-05 from this advisory
+  # workflow to the Tier 2 SwiftLint custom rule pair (no_foundation_import_*)
+  # at swift-primitives/.github/.swiftlint.yml — see swift-institute/Research/
+  # rollout-phase-1-results.md.
 
   lint-license-header:
     name: License header (γ-1b Stage 1, advisory)

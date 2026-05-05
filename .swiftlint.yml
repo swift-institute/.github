@@ -1,0 +1,79 @@
+# Tier 1 — Swift Institute ecosystem-wide canonical SwiftLint configuration.
+#
+# This is the root of the parent_config: chain for the Swift Institute
+# ecosystem. Org-specific canonicals (e.g. swift-primitives/.github/.swiftlint.yml)
+# inherit from this file via:
+#
+#   parent_config: https://raw.githubusercontent.com/swift-institute/.github/main/.swiftlint.yml
+#
+# Per-repo .swiftlint.yml files inherit from their org canonical and are
+# the natural home for per-repo overrides only.
+#
+# Phase 1 changes (2026-05-05) — see swift-institute/Research/
+# rollout-phase-1-results.md for the rationale:
+#   - one_declaration_per_file ([API-IMPL-005]) flipped from disabled to opt-in.
+#     This is a code-surface ecosystem rule (one type per file) — applies to
+#     all Swift Institute Swift code, not just swift-primitives. Other
+#     ecosystems pick it up automatically when they migrate to this canonical.
+
+disabled_rules:
+  - line_length
+  - trailing_comma
+  - redundant_discardable_let
+  - identifier_name              # Allow short variable names (i, x, y, etc.)
+  - large_tuple                  # Allow tuples with more than 2 members
+  - optional_data_string_conversion  # False positive with String(decoding:as:)
+  - for_where                    # False positives when for loops have complex logic
+  - todo                         # Allow TODO comments for tracking future work
+  - type_body_length             # Don't enforce maximum type body length
+  - nesting                      # Allow nested types for hierarchical APIs
+  - type_name                    # Allow flexible test suite naming (lowercase, special chars)
+  - cyclomatic_complexity        # Allow complex inline logic over helper extraction
+  - implicit_optional_initialization  # Allow explicit = nil initialization
+  - function_body_length         # Allow longer inline functions
+  - file_length                  # Allow longer files
+  - closure_parameter_position   # Conflicts with swift-format line breaking
+  - opening_brace                # Conflicts with swift-format for long declarations
+
+opt_in_rules:
+  - explicit_init
+  - closure_spacing
+  - empty_count
+  - empty_string
+  - fatal_error_message
+  - first_where
+  - joined_default_parameter
+  - operator_usage_whitespace
+  - overridden_super_call
+  # Phase 1 (2026-05-05): [API-IMPL-005] One Type Per File — code-surface ecosystem rule.
+  - one_declaration_per_file
+
+included:
+  - Sources
+  - Tests
+
+excluded:
+  - .build
+  - Carthage
+  - Pods
+  - fastlane
+
+function_parameter_count:
+  warning: 6
+  error: 8
+
+# ── Disabling a rule ──────────────────────────────────────────────────────────
+#
+# When you must disable a rule on a specific line, prefer:
+#
+#   // swiftlint:disable:next <rule_name>  // reason: <skill-rule | research-doc | tracking-link>
+#
+# The `// reason:` suffix is RECOMMENDED — not enforced — but makes the
+# disable auditable. Examples:
+#
+#   // swiftlint:disable:next force_unwrapping  // reason: [MEM-COPY-001a] precondition checked above
+#   // swiftlint:disable:next custom_rules      // reason: research §3.4.2 — Tests/* exception
+#   // swiftlint:disable:next no_foundation_import_warning  // reason: tracking-issue swift-foo#42
+#
+# Reviewers SHOULD push back on disables without a reason citation. A
+# disable without a reason is structurally indistinguishable from drift.

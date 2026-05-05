@@ -1,10 +1,16 @@
 # cron-audit-base.yml — reusable orchestrator skeleton for cross-org cron
 # audits.
 #
-# Encodes the shared shape of the lint-foundation-family-import-weekly,
-# lint-license-header-weekly, lint-test-support-spine-weekly, and
-# lint-mechanical-hygiene-weekly orchestrators (~80% structurally
-# identical). Each caller provides:
+# Encodes the shared shape of the lint-license-header-weekly,
+# lint-test-support-spine-weekly, and lint-mechanical-hygiene-weekly
+# orchestrators (~80% structurally identical).
+#
+# (The lint-foundation-family-import-weekly orchestrator was a fourth
+# consumer until 2026-05-05; it was retired when γ-1a migrated to a
+# Tier 2 SwiftLint custom rule — see swift-institute/Research/
+# rollout-phase-1-results.md.)
+#
+# Each caller provides:
 #
 #   - The audit-step shell snippet that produces /tmp/<ORG>-counts.txt
 #     (and optionally /tmp/<ORG>-extra.txt for auxiliary detail
