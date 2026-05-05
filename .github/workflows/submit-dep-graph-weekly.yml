@@ -58,7 +58,7 @@ jobs:
     steps:
       - name: Mint installation token
         id: token
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
           private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
@@ -174,7 +174,7 @@ jobs:
           echo "${successes},${failures},${skipped}" > "/tmp/${ORG}-counts.txt"
           printf '%s\n' "${per_target_failures[@]}" > "/tmp/${ORG}-failures.txt" 2>/dev/null || true
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: depgraph-counts-${{ matrix.org }}
           path: |
@@ -188,7 +188,7 @@ jobs:
     steps:
       - name: Mint installation token
         id: token
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
           private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
@@ -196,7 +196,7 @@ jobs:
           repositories: .github
           permission-issues: write
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: /tmp/counts
 

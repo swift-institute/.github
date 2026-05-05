@@ -109,7 +109,7 @@ jobs:
 
       - name: Mint installation token
         id: token
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
           private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
