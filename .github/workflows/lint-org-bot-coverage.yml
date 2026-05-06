@@ -1,0 +1,195 @@
+name: lint-org-bot-coverage
+
+# Cross-org coverage-verification reusable. For each org in the canonical
+# orgs.yaml manifest, verifies three operational invariants:
+#
+#   Axis 1 — bot App installation: the swift-institute-bot GitHub App is
+#            installed at the org. Required for cron orchestrators that
+#            mint per-org installation tokens via
+#            actions/create-github-app-token.
+#
+#   Axis 2 — PRIVATE_REPO_TOKEN org secret: the org-level Actions secret
+#            exists with --visibility all per [CI-060]. Required for
+#            public-consumer repos to clone private intra-Institute
+#            siblings during `swift package resolve`.
+#
+#   Axis 3 — layer-wrapper file presence: each layer org (swift-primitives,
+#            swift-standards, swift-foundations) has the expected
+#            <layer-org>/.github/.github/workflows/swift-ci.yml file per
+#            [CI-004a]. Sub-orgs do NOT have such files per [CI-004b].
+#
+# Auth-path design (per Research/ci-cd-cross-ecosystem-reuse.md v1.1.1
+# changelog item 5):
+#
+#   Axis 1 (App installation) and Axis 2 (org secret existence) require
+#   read-org scope on the orgs/<org>/installations and
+#   orgs/<org>/actions/secrets endpoints. The bot itself, when its
+#   installation grants `read:org` and `actions:read`, can self-introspect
+#   via per-org installation tokens minted from the central client-id
+#   pair in swift-institute/.github. We use that path here.
+#
+#   Axis 3 (wrapper file presence) is anonymous-public-API readable: a
+#   `gh api /repos/<org>/.github/contents/.github/workflows/swift-ci.yml`
+#   200 vs 404 check requires no auth.
+#
+# Output: tracking issue at swift-institute/.github per [README-167] when
+# any axis surfaces a gap. Idempotent open/update/close shape via
+# upsert-tracking-issue composite.
+#
+# Provenance: swift-institute/Research/ci-cd-cross-ecosystem-reuse.md
+# v1.1.1 (2026-05-06, Tier 2 RECOMMENDATION) §Q5.
+
+on:
+  workflow_call: {}
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  config:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      orgs: ${{ steps.read.outputs.orgs }}
+      layer-orgs: ${{ steps.read-layer.outputs.orgs }}
+    steps:
+      - name: Harden runner (audit-mode egress logging)
+        uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
+        with:
+          egress-policy: audit
+
+      - id: read
+        uses: swift-institute/.github/.github/actions/read-orgs@main
+        # Default filter `.name` emits all active orgs.
+
+      - id: read-layer
+        uses: swift-institute/.github/.github/actions/read-orgs@main
+        with:
+          # Layer orgs only — the orgs that MUST carry a layer wrapper
+          # per [CI-004a]. Sub-orgs (swift-ietf, ...) and the meta org
+          # (swift-institute) are excluded.
+          filter: 'select(.name=="swift-primitives" or .name=="swift-standards" or .name=="swift-foundations") | .name'
+
+  audit:
+    needs: config
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      gap-count: ${{ steps.audit.outputs.gap-count }}
+    steps:
+      - name: Harden runner (audit-mode egress logging)
+        uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
+        with:
+          egress-policy: audit
+
+      - name: Mint installation token (axis 1+2)
+        id: token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: swift-institute
+          # Token mints with the App's full org-set; per-org scoping
+          # happens at the API call site via the org slug in the URL.
+
+      - id: audit
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          ALL_ORGS: ${{ needs.config.outputs.orgs }}
+          LAYER_ORGS: ${{ needs.config.outputs.layer-orgs }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          gaps_app=()
+          gaps_secret=()
+          gaps_wrapper=()
+
+          # ─── Axis 1 — bot App installed at each org ─────────────────────
+          for org in $(jq -r '.[]' <<< "$ALL_ORGS"); do
+            installations=$(gh api "/orgs/$org/installations" --jq '.installations[].app_slug' 2>/dev/null || echo "")
+            if ! grep -qE '^swift-institute-bot$|^swift institute bot$' <<< "$installations"; then
+              gaps_app+=("$org")
+            fi
+          done
+
+          # ─── Axis 2 — PRIVATE_REPO_TOKEN org secret per [CI-060] ────────
+          # Skip the meta org (swift-institute itself doesn't host CI-running
+          # consumer repos under the [CI-032] gate; the secret lives there
+          # for cron orchestrators which is a different shape).
+          for org in $(jq -r '.[]' <<< "$ALL_ORGS"); do
+            if [ "$org" = "swift-institute" ]; then continue; fi
+            if ! gh api "/orgs/$org/actions/secrets/PRIVATE_REPO_TOKEN" >/dev/null 2>&1; then
+              gaps_secret+=("$org")
+            fi
+          done
+
+          # ─── Axis 3 — layer-wrapper file presence per [CI-004a] ─────────
+          for org in $(jq -r '.[]' <<< "$LAYER_ORGS"); do
+            if ! gh api "/repos/$org/.github/contents/.github/workflows/swift-ci.yml" >/dev/null 2>&1; then
+              gaps_wrapper+=("$org")
+            fi
+          done
+
+          gap_count=$((${#gaps_app[@]} + ${#gaps_secret[@]} + ${#gaps_wrapper[@]}))
+          echo "gap-count=$gap_count" >> "$GITHUB_OUTPUT"
+
+          echo "## Coverage audit"
+          echo ""
+          echo "Axis 1 (bot App installed): $((${#gaps_app[@]})) gap(s)"
+          if [ "${#gaps_app[@]}" -gt 0 ]; then printf '  - %s\n' "${gaps_app[@]}"; fi
+          echo "Axis 2 (PRIVATE_REPO_TOKEN org secret): $((${#gaps_secret[@]})) gap(s)"
+          if [ "${#gaps_secret[@]}" -gt 0 ]; then printf '  - %s\n' "${gaps_secret[@]}"; fi
+          echo "Axis 3 (layer-wrapper file): $((${#gaps_wrapper[@]})) gap(s)"
+          if [ "${#gaps_wrapper[@]}" -gt 0 ]; then printf '  - %s\n' "${gaps_wrapper[@]}"; fi
+
+          # Build the issue body for the upsert step (only fired by the
+          # weekly orchestrator caller; the workflow_call return is
+          # gap-count for the orchestrator to decide).
+          {
+            echo "Coverage audit run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo ""
+            echo "### Axis 1 — Bot App installation"
+            if [ "${#gaps_app[@]}" -eq 0 ]; then
+              echo ""
+              echo "✓ All orgs covered."
+            else
+              echo ""
+              echo "Orgs missing the swift-institute-bot App installation:"
+              printf '  - %s\n' "${gaps_app[@]}"
+            fi
+            echo ""
+            echo "### Axis 2 — Org-level \`PRIVATE_REPO_TOKEN\` secret"
+            if [ "${#gaps_secret[@]}" -eq 0 ]; then
+              echo ""
+              echo "✓ All consumer-hosting orgs covered."
+            else
+              echo ""
+              echo "Orgs missing the org-level \`PRIVATE_REPO_TOKEN\` secret per [CI-060]:"
+              printf '  - %s\n' "${gaps_secret[@]}"
+            fi
+            echo ""
+            echo "### Axis 3 — Layer-wrapper file presence"
+            if [ "${#gaps_wrapper[@]}" -eq 0 ]; then
+              echo ""
+              echo "✓ All layer orgs carry their wrapper file per [CI-004a]."
+            else
+              echo ""
+              echo "Layer orgs missing \`<org>/.github/.github/workflows/swift-ci.yml\`:"
+              printf '  - %s\n' "${gaps_wrapper[@]}"
+            fi
+          } > "${RUNNER_TEMP}/issue-body.md"
+
+          echo "ISSUE_BODY_FILE=${RUNNER_TEMP}/issue-body.md" >> "$GITHUB_ENV"
+
+      - name: Upload issue-body artifact for the weekly caller
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-org-bot-coverage-body
+          path: ${{ env.ISSUE_BODY_FILE }}
+          if-no-files-found: warn
+          retention-days: 14
