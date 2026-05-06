@@ -47,6 +47,11 @@ on:
           Forwarded via `secrets: inherit` from per-package ci.yml. Used
           to clone private intra-Institute deps during SwiftPM resolve.
 
+# Workflow-level deny-all default per [CI-080]; per-job permissions: blocks
+# override. workflow_call reusables: top-level permissions: is inert at call
+# time (caller's job-level grants apply); kept for consistency + dispatch path.
+permissions: {}
+
 jobs:
   diagnose:
     name: API breakage diagnose
