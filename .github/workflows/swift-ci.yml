@@ -325,3 +325,45 @@ jobs:
   # so the architecture is centralized: one workflow at swift-institute/
   # .github fires Monday 06:50 UTC and submits dep-graphs for all public
   # consumer repos via `gh api -X POST /repos/<target>/dependency-graph/snapshots`.
+
+  # ─── Conclusion aggregator ────────────────────────────────────────────────
+  # Single required-status-check name for branch protection. needs: lists
+  # every job that should gate the merge; ci-ok succeeds iff every needed
+  # job succeeded (or was skipped — visibility-gate path on private repos).
+  # Cancelled or failed needs propagate to ci-ok failing.
+  #
+  # Rationale: branch protection on consumer repos requires only `ci-ok`
+  # rather than every individual job name. Adding/removing jobs in this
+  # workflow is a local edit (update needs:); branch-protection rules don't
+  # need per-repo updates. Closes the M6 "required-check names interpolate
+  # ${{ inputs.swift-version }}" drift class — ci-ok's name doesn't
+  # interpolate anything.
+  #
+  # Excluded from needs: by design:
+  #   - linux-nightly (continue-on-error: true; nightly toolchain
+  #     instability is not the consumer's defect to fix)
+  #   - All advisory linters (lint-yaml, lint-broken-symlink,
+  #     lint-foundation-family-import [retired], lint-license-header,
+  #     lint-test-support-spine, lint-api-breakage, lint-pr-title) — they
+  #     pass with `with: { advisory: true }` and aren't gating until their
+  #     respective γ-flips land
+  ci-ok:
+    if: ${{ always() && !github.event.repository.private }}
+    needs:
+      - macos-release
+      - linux-release
+      - windows-release
+      - format
+      - lint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Aggregate required-job results
+        env:
+          NEEDS_JSON: ${{ toJson(needs) }}
+        run: |
+          set -euo pipefail
+          # success or skipped → pass; failure or cancelled → fail.
+          # ubuntu-latest pre-installs jq.
+          jq --exit-status 'all(.result == "success" or .result == "skipped")' <<< "$NEEDS_JSON"
