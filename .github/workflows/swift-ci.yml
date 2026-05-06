@@ -288,6 +288,54 @@ jobs:
       - name: Lint
         run: swiftlint lint --strict --reporter github-actions-logging
 
+  # ─── swift-linter (Phase 1 advisory; swiftsyntax-based AST linter) ───────
+  # SwiftSyntax-based AST linter at swift-foundations/swift-linter. Phase 1
+  # ships R5 (`unchecked_call_site`): flags `__unchecked:` argument labels
+  # at call sites only — distinguishing call-site uses (anti-pattern per
+  # [CONV-016] tier 5) from declaration-site uses (legitimate extension-init
+  # machinery per [CONV-001]). The structural distinction is invisible to
+  # regex but trivial on the AST.
+  #
+  # See swift-institute/Research/swiftsyntax-based-custom-linter-investigation.md
+  # for the architecture (Option C standalone CLI, Option F symbol-graph
+  # extension) and 6-phase phasing.
+  #
+  # Phase 1: advisory (continue-on-error: true). The linter is run-from-source
+  # via `swift run --package-path` against a checkout of swift-linter. Once
+  # the package is published with a binary release, this step swaps to a
+  # cached-binary install (mirroring the SwiftLint job above).
+
+  swift-linter:
+    name: swift-linter (Phase 1, advisory)
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    container: swift:${{ inputs.swift-version }}
+    timeout-minutes: 15
+    continue-on-error: true
+    permissions:
+      contents: read
+    steps:
+      - name: Harden runner (audit-mode egress logging)
+        uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@v6
+        with:
+          path: consumer
+
+      - uses: actions/checkout@v6
+        with:
+          repository: swift-foundations/swift-linter
+          path: swift-linter
+          # NOTE: repository is not yet published in Phase 1 — this step will
+          # fail until the linter package is created on GitHub. continue-on-error
+          # at the job level keeps the consumer build green during the gap.
+
+      - name: Run swift-linter
+        working-directory: swift-linter
+        run: swift run swift-linter ../consumer
+
   # ════════════════════════════════════════════════════════════════════════
   # Advisory CI gates — grouped by category for UI clarity.
   # Each gate takes an `advisory: bool` input; γ flip = drop the `with:`

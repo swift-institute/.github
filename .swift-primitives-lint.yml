@@ -1,0 +1,17 @@
+# Tier 1 — ecosystem-wide canonical configuration for swift-linter
+# (the SwiftSyntax-based AST linter at swift-foundations/swift-linter).
+#
+# Initially empty in Phase 1: rules graduate to Tier 1 only when they apply
+# ecosystem-wide. R5 (`unchecked_call_site`) is primitives-specific and lives
+# at Tier 2 (swift-primitives/.github/.swift-primitives-lint.yml).
+#
+# Schema: a flat `rules:` block listing activated rule IDs. `parent_config:`
+# URL chaining mirroring SwiftLint's mechanism is deferred to Phase 2.
+#
+# OPEN QUESTION (2026-05-06): is `.swift-primitives-lint.yml` the right
+# canonical filename? The CLI binary is `swift-linter` (per [PKG-NAME-001]),
+# the L3 package is `swift-linter`. A name like `.swift-linter.yml` or
+# `.swiftlinterrc.yml` would track the binary; the brief specified
+# `.swift-primitives-lint.yml`. Awaiting supervisor decision.
+
+rules: []
