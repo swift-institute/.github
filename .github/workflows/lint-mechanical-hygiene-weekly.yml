@@ -43,11 +43,6 @@ on:
         required: false
         default: false
 
-# Workflow-level deny-all default per [CI-080]; per-job permissions: blocks
-# override. workflow_call reusables: top-level permissions: is inert at call
-# time (caller's job-level grants apply); kept for consistency + dispatch path.
-permissions: {}
-
 jobs:
   config:
     runs-on: ubuntu-latest
