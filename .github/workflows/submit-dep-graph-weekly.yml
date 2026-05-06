@@ -96,12 +96,14 @@ jobs:
           apt-get update -qq
           apt-get install -qq -y gh
 
-      - name: Fetch snapshot helper
-        shell: bash
-        run: |
-          set -euo pipefail
-          curl -fsSL -o /tmp/build-dep-graph-snapshot.py \
-            https://raw.githubusercontent.com/swift-institute/.github/main/.github/scripts/build-dep-graph-snapshot.py
+      - name: Fetch snapshot helper (sparse-checkout from swift-institute/.github)
+        uses: actions/checkout@v6
+        with:
+          repository: swift-institute/.github
+          ref: main
+          path: .swift-institute-github
+          sparse-checkout: .github/scripts/build-dep-graph-snapshot.py
+          sparse-checkout-cone-mode: false
 
       - name: Enumerate org repos
         id: enum
@@ -162,7 +164,7 @@ jobs:
             sha=$(cd "$workdir" && git rev-parse HEAD)
             if ! GITHUB_SHA="$sha" GITHUB_REF=refs/heads/main \
                  GITHUB_RUN_ID="${GITHUB_RUN_ID:-0}" \
-                 python3 /tmp/build-dep-graph-snapshot.py /tmp/deps.json \
+                 python3 .swift-institute-github/.github/scripts/build-dep-graph-snapshot.py /tmp/deps.json \
                  > /tmp/snapshot.json 2>/dev/null; then
               failures=$((failures+1))
               per_target_failures+=("- \`${target}\`: snapshot build failed")
