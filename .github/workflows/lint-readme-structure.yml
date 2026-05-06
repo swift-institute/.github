@@ -1,0 +1,321 @@
+# lint-readme-structure.yml — verify README files follow universal structural rules.
+#
+# Reusable workflow. For the given `org` (or single `repo`), enumerates non-archived
+# repos, clones each (shallow), and runs a set of structural checks against
+# README.md (and .github/profile/README.md for org `.github` repos).
+#
+# Scope (v1 initial implementation): universal rules only — applies to every family.
+# Family-specific structural checks (sub-package required-section ordering, leaf-org
+# tier-grouped catalog, process-repo length budget, etc.) are deferred to v2 once
+# this workflow is in production.
+#
+# Universal rules checked:
+#   1. [README-017] H1 present and exactly one (first non-empty line starts with `# `).
+#   2. [README-006] One-liner does not start with "A Swift package for …".
+#   3. [README-026] No internal rule-ID citations (`[XX-NNN]`) outside code blocks.
+#   4. Length > 3 lines (catches the 1-line-stub anti-pattern observed at
+#      swift-primitives/.github/profile/README.md).
+#   5. H1 title is not literally `# Swift Institute` unless the repo owner is
+#      `swift-institute` (catches the swift-primitives leaf-tier profile defect
+#      where the title was copy-pasted from the parent org).
+#
+# Pattern mirrors lint-readme-presence.yml and link-check.yml so cross-repo
+# automation in this org has one shape, not three. Authentication uses the
+# swift-institute-bot GitHub App (SWIFT_INSTITUTE_BOT_APP_ID + SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY).
+#
+# Provenance: Skills/readme/ci-automation.md [README-162], [README-167].
+
+name: lint-readme-structure
+
+on:
+  workflow_call:
+    inputs:
+      repo:
+        description: 'Owner/name of a single repo to scan.'
+        type: string
+        required: false
+        default: ''
+      org:
+        description: 'Org to sweep (ignored if repo is set).'
+        type: string
+        required: false
+        default: ''
+      dry-run:
+        description: 'Run checks but skip aggregated reporting (preview-only mode).'
+        type: boolean
+        required: false
+        default: false
+      visibility:
+        description: 'Filter targets by visibility: public | private | internal | all. Default public.'
+        type: string
+        required: false
+        default: 'public'
+    outputs:
+      repos-scanned:
+        description: 'Number of repos scanned.'
+        value: ${{ jobs.scan.outputs.repos-scanned }}
+      repos-with-violations:
+        description: 'Number of repos with at least one structural violation.'
+        value: ${{ jobs.scan.outputs.repos-with-violations }}
+      total-violations:
+        description: 'Total count of individual violations across all repos.'
+        value: ${{ jobs.scan.outputs.total-violations }}
+
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: 'Owner/name of a single repo to scan (optional).'
+        type: string
+        required: false
+      org:
+        description: 'Org to sweep (optional; ignored if repo is set).'
+        type: string
+        required: false
+      dry-run:
+        description: 'Run checks but skip aggregated reporting.'
+        type: boolean
+        required: false
+        default: false
+      visibility:
+        description: 'Filter targets by visibility (public | private | internal | all). Default public.'
+        type: string
+        required: false
+        default: 'public'
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      repos-scanned: ${{ steps.scan.outputs.repos-scanned }}
+      repos-with-violations: ${{ steps.scan.outputs.repos-with-violations }}
+      total-violations: ${{ steps.scan.outputs.total-violations }}
+    steps:
+      - name: Validate inputs
+        run: |
+          if [[ -z "${{ inputs.repo }}" && -z "${{ inputs.org }}" ]]; then
+            echo "::error::Either 'repo' (owner/name) or 'org' input is required."
+            exit 1
+          fi
+
+      - name: Compute auth scope
+        id: scope
+        run: |
+          if [[ -n "${{ inputs.repo }}" ]]; then
+            input="${{ inputs.repo }}"
+            owner="${input%/*}"
+            name="${input#*/}"
+            echo "owner=${owner}" >> "$GITHUB_OUTPUT"
+            echo "repositories=${name}" >> "$GITHUB_OUTPUT"
+          else
+            echo "owner=${{ inputs.org }}" >> "$GITHUB_OUTPUT"
+            echo "repositories=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Mint installation token
+        id: token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: ${{ steps.scope.outputs.owner }}
+          repositories: ${{ steps.scope.outputs.repositories }}
+
+      - name: Scan
+        id: scan
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          DRY_RUN: ${{ inputs.dry-run }}
+        run: |
+          set -euo pipefail
+
+          # Build target list ----------------------------------------------------
+          if [[ -n "${{ inputs.repo }}" ]]; then
+            targets=("${{ inputs.repo }}")
+          else
+            visibility_flag=()
+            case "${{ inputs.visibility }}" in
+              public|private|internal)
+                visibility_flag=(--visibility "${{ inputs.visibility }}")
+                ;;
+              all|"")
+                ;;
+              *)
+                echo "::error::Unknown visibility '${{ inputs.visibility }}' (expected: public, private, internal, all)"
+                exit 1
+                ;;
+            esac
+            mapfile -t targets < <(gh repo list "${{ inputs.org }}" --limit 2000 \
+              "${visibility_flag[@]}" \
+              --json nameWithOwner,isArchived \
+              --jq '.[] | select(.isArchived==false) | .nameWithOwner')
+          fi
+
+          echo "Targets: ${#targets[@]} repos (visibility filter: ${{ inputs.visibility }})"
+
+          repos_scanned=0
+          repos_with_violations=0
+          total_violations=0
+          violation_lines=()
+
+          # Helper: check a single README file ---------------------------------
+          # $1 = repo name with owner (e.g., "swift-primitives/swift-property-primitives")
+          # $2 = path within the repo (e.g., "README.md" or "profile/README.md")
+          # $3 = absolute path to the local clone of the file
+          # Sets `file_violations` array for the caller to consume.
+          check_file() {
+            local target="$1"
+            local rel_path="$2"
+            local file_path="$3"
+            local owner="${target%/*}"
+            file_violations=()
+
+            # Skip silently if file does not exist — that's lint-readme-presence's job.
+            [[ -f "$file_path" ]] || return 0
+
+            local lines
+            lines=$(wc -l < "$file_path")
+
+            # Rule 4: Length > 3 (stub detection).
+            if [[ "$lines" -lt 4 ]]; then
+              file_violations+=("length: only ${lines} lines (stub-shaped)")
+            fi
+
+            # Rule 1: H1 present and unique.
+            local h1_count
+            h1_count=$(grep -cE '^# ' "$file_path" || true)
+            if [[ "$h1_count" -eq 0 ]]; then
+              file_violations+=("[README-017] no H1 heading")
+            elif [[ "$h1_count" -gt 1 ]]; then
+              file_violations+=("[README-017] multiple H1 headings (${h1_count})")
+            fi
+
+            # Rule 5: H1 != "# Swift Institute" unless owner is swift-institute.
+            local first_h1
+            first_h1=$(grep -m1 -E '^# ' "$file_path" || true)
+            if [[ "$first_h1" == "# Swift Institute" && "$owner" != "swift-institute" ]]; then
+              file_violations+=("H1 is '# Swift Institute' but owner is '${owner}' (likely copy-paste from parent org)")
+            fi
+
+            # Rule 2: One-liner does not start with "A Swift package for".
+            # Find the first prose line after the H1; check its prefix.
+            local first_prose
+            first_prose=$(awk '
+              /^# / { found_h1 = 1; next }
+              found_h1 && /^[[:space:]]*$/ { next }
+              found_h1 && /^!\[/ { next }   # skip badge image lines
+              found_h1 && /^\[!\[/ { next } # skip linked-badge lines
+              found_h1 && /./ { print; exit }
+            ' "$file_path")
+            if [[ -n "$first_prose" ]]; then
+              local first_prose_lower
+              first_prose_lower=$(echo "$first_prose" | tr '[:upper:]' '[:lower:]')
+              case "$first_prose_lower" in
+                "a swift package for"*)
+                  file_violations+=("[README-006] one-liner starts with 'A Swift package for …'")
+                  ;;
+              esac
+            fi
+
+            # Rule 3: No rule-ID citations outside fenced code blocks.
+            # Heuristic: strip ```...``` fenced blocks, then grep for [XX-NNN]
+            # patterns. False-negative on indented code blocks; acceptable for v1.
+            local stripped
+            stripped=$(awk '
+              /^```/ { in_block = !in_block; next }
+              !in_block { print }
+            ' "$file_path")
+
+            # Pattern: [LETTERS+possibly hyphenated-NUMBERS+optional-letter-suffix]
+            # Excludes ordinary markdown links `[text](url)` because they don't have
+            # the LETTERS-NUMBERS form.
+            local rule_id_count
+            rule_id_count=$(echo "$stripped" | grep -cE '\[[A-Z][A-Z-]+-[0-9]+[a-z]?\]' || true)
+            if [[ "$rule_id_count" -gt 0 ]]; then
+              local sample
+              sample=$(echo "$stripped" | grep -oE '\[[A-Z][A-Z-]+-[0-9]+[a-z]?\]' | head -3 | tr '\n' ' ')
+              file_violations+=("[README-026] ${rule_id_count} rule-ID citation(s) in prose (e.g., ${sample})")
+            fi
+
+            # Surface findings up to the caller.
+            if [[ ${#file_violations[@]} -gt 0 ]]; then
+              echo "  ${target}/${rel_path}: ${#file_violations[@]} violation(s)"
+              for v in "${file_violations[@]}"; do
+                echo "    - ${v}"
+                violation_lines+=("- \`${target}/${rel_path}\` — ${v}")
+              done
+              return ${#file_violations[@]}
+            fi
+            return 0
+          }
+
+          # Per-repo loop -------------------------------------------------------
+          for target in "${targets[@]}"; do
+            repos_scanned=$((repos_scanned + 1))
+            workdir=$(mktemp -d)
+
+            # Shallow clone via installation token.
+            if ! git clone --depth 1 --quiet \
+                "https://x-access-token:${GH_TOKEN}@github.com/${target}.git" \
+                "$workdir" 2>/dev/null; then
+              echo "  ${target}: skipped (clone failed)"
+              rm -rf "$workdir"
+              continue
+            fi
+
+            repo_violation_count=0
+
+            # Check README.md at root.
+            if [[ -f "$workdir/README.md" ]]; then
+              file_violations=()
+              check_file "$target" "README.md" "$workdir/README.md" || true
+              repo_violation_count=$((repo_violation_count + ${#file_violations[@]}))
+            fi
+
+            # If this is an org's .github repo, also check profile/README.md.
+            local_name="${target#*/}"
+            if [[ "$local_name" == ".github" && -f "$workdir/profile/README.md" ]]; then
+              file_violations=()
+              check_file "$target" "profile/README.md" "$workdir/profile/README.md" || true
+              repo_violation_count=$((repo_violation_count + ${#file_violations[@]}))
+            fi
+
+            if [[ "$repo_violation_count" -gt 0 ]]; then
+              repos_with_violations=$((repos_with_violations + 1))
+              total_violations=$((total_violations + repo_violation_count))
+            fi
+
+            rm -rf "$workdir"
+          done
+
+          # Outputs -------------------------------------------------------------
+          echo "repos-scanned=${repos_scanned}" >> "$GITHUB_OUTPUT"
+          echo "repos-with-violations=${repos_with_violations}" >> "$GITHUB_OUTPUT"
+          echo "total-violations=${total_violations}" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## lint-readme-structure summary"
+            echo ""
+            echo "- scope: ${{ inputs.repo || inputs.org }}"
+            echo "- repos scanned: ${repos_scanned}"
+            echo "- repos with violations: ${repos_with_violations}"
+            echo "- total violations: ${total_violations}"
+            echo "- dry-run: ${DRY_RUN}"
+            echo ""
+            echo "Rules checked (universal — Family-specific rules deferred to v2):"
+            echo "1. [README-017] H1 present and unique"
+            echo "2. [README-006] One-liner does not start with 'A Swift package for …'"
+            echo "3. [README-026] No internal rule-ID citations outside code blocks"
+            echo "4. Length > 3 lines (stub detection)"
+            echo "5. H1 != '# Swift Institute' unless owner is swift-institute"
+            echo ""
+            if [[ ${#violation_lines[@]} -gt 0 ]]; then
+              echo "### Violations"
+              echo ""
+              for line in "${violation_lines[@]}"; do echo "$line"; done
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # Filing of consolidated tracking issues is the responsibility of an
+          # orchestrator workflow (lint-readme-structure-weekly.yml — TODO).
+          # This reusable workflow surfaces findings via outputs + step summary.

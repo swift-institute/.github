@@ -1,0 +1,143 @@
+# lint-readme-presence-weekly.yml — scheduled cross-org README presence sweep.
+#
+# Calls lint-readme-presence.yml once per ecosystem org via a matrix strategy
+# at 06:00 UTC every Monday. When any org has missing READMEs (per-repo or
+# org-profile), opens or updates a single aggregated tracking issue in
+# swift-institute/.github summarising the missing files.
+#
+# The aggregated tracking-issue pattern (vs per-repo issues) is intentional:
+# missing READMEs are most often the recently-onboarded repo case, which
+# benefits from a single backlog rather than noise in the new repo's tracker.
+#
+# Cadence: weekly. Cron-based; manually triggerable. Pilot scope is the four
+# current-baseline ecosystem orgs (swift-institute, swift-primitives,
+# swift-standards, swift-foundations) plus the per-authority sub-orgs.
+# Vestigial topology orgs (rule-law, swift-nl-wetgever, swift-us-nv-legislature)
+# are excluded pending the principal's cleanup decision per
+# `Skills/readme/ci-automation.md` [README-161].
+#
+# Provenance: Skills/readme/ci-automation.md [README-161], [README-167].
+
+name: lint-readme-presence-weekly
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'   # weekly Monday 06:00 UTC (mirrors link-check-weekly cadence)
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: 'Run checks but skip aggregated issue create/update.'
+        type: boolean
+        required: false
+        default: false
+
+jobs:
+  sweep:
+    strategy:
+      fail-fast: false
+      matrix:
+        org:
+          - swift-institute
+          - swift-primitives
+          - swift-standards
+          - swift-foundations
+          - swift-ietf
+          - swift-iso
+          - swift-ieee
+          - swift-iec
+          - swift-w3c
+          - swift-whatwg
+          - swift-ecma
+          - swift-incits
+          - swift-linux-foundation
+          - swift-microsoft
+          - swift-arm-ltd
+          - swift-intel
+          - swift-riscv
+    uses: ./.github/workflows/lint-readme-presence.yml
+    with:
+      org: ${{ matrix.org }}
+      dry-run: ${{ inputs.dry-run || false }}
+      visibility: public
+    secrets: inherit
+
+  report:
+    needs: sweep
+    runs-on: ubuntu-latest
+    if: always() && needs.sweep.result != 'skipped'
+    steps:
+      - name: Mint installation token
+        id: token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: swift-institute
+          repositories: .github
+          permission-issues: write
+
+      - name: Open or update tracking issue
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          SWEEP_RESULT: ${{ needs.sweep.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+
+          # Post on failure (sweep failed for any leg) or whenever the matrix
+          # had non-success — a successful sweep with no missing READMEs needs
+          # no issue. The orchestrator does not have direct visibility into
+          # individual matrix outputs (GH Actions limitation), so the per-org
+          # detail lives in the run summary rather than in the issue body.
+          if [[ "$SWEEP_RESULT" == "success" ]]; then
+            echo "All orgs converged cleanly — no tracking issue needed."
+            exit 0
+          fi
+
+          today=$(date -u '+%Y-%m-%d')
+          title="README presence sweep ${today} — ${SWEEP_RESULT}"
+          body=$(cat <<EOF
+          The weekly README presence sweep at 06:00 UTC on ${today} completed with status: \`${SWEEP_RESULT}\`.
+
+          See the [run summary](${RUN_URL}) for the per-org breakdown of missing READMEs (per-repo \`README.md\` and org-level \`.github/profile/README.md\`).
+
+          ### What this means
+
+          One or more repos in the ecosystem are missing the README the readme skill's family routing requires:
+
+          - Family A / C / E / F — every repo MUST have \`README.md\` at root.
+          - Family G — every org's \`.github\` repo MUST have \`profile/README.md\`.
+
+          Family B (\`~/Developer/<org>/README.md\` clone-mirror) is local-disk only and is NOT checked by this workflow — it never renders on GitHub.
+
+          ### What to do
+
+          - For each missing per-repo README, author one per the family rules in \`swift-institute/Skills/readme/\`. The family is determined by the repo's role:
+            - Sub-package library (Family E) — \`sub-package.md\` rules.
+            - Process / workflow repo (Family C) — \`process.md\` rules.
+            - Placeholder / scaffold (Family F) — \`placeholder.md\` rules.
+            - User profile (Family A) — \`user-profile.md\` rules (only at \`<user>/<user>/README.md\`).
+          - For each missing org profile, author one per the family rules in \`org-profile.md\` — three sub-tiers (top-level / org-of-orgs / leaf).
+          - Close this issue when the missing files are landed; the next weekly sweep will re-open it if any are still missing.
+
+          *Idempotent: this issue is updated in place on each run, not re-filed. Closing it acknowledges the report; reopens happen only if subsequent sweeps find missing READMEs.*
+
+          See \`swift-institute/Skills/readme/SKILL.md\` for the full family routing matrix.
+          EOF
+          )
+
+          existing=$(gh issue list --repo swift-institute/.github \
+            --state open --search "README presence sweep in:title" --json number \
+            --jq '.[0].number // ""')
+
+          if [[ -n "$existing" ]]; then
+            gh issue edit "$existing" --repo swift-institute/.github \
+              --title "$title" --body "$body"
+            echo "Updated existing issue #${existing}"
+          else
+            gh issue create --repo swift-institute/.github \
+              --title "$title" --body "$body" \
+              --label "readme-presence" 2>&1 || \
+              gh issue create --repo swift-institute/.github \
+                --title "$title" --body "$body"
+          fi

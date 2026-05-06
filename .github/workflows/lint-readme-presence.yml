@@ -1,0 +1,222 @@
+# lint-readme-presence.yml — verify every non-archived repo has a README.md;
+# verify every org's .github repo has profile/README.md.
+#
+# Reusable workflow. For the given `org` (or single `repo`), enumerates
+# non-archived repos and checks each for the expected README path(s) per the
+# readme skill family routing. On missing READMEs files an aggregated tracking
+# issue in swift-institute/.github (NOT per-repo, because new-repo-without-
+# README would otherwise spam the offending repo's issue tracker before the
+# README author has a chance to land it).
+#
+# Family routing checks (per `Skills/readme/SKILL.md`):
+#   - Every repo: <repo>/README.md MUST exist (covers Family A, C, E, F).
+#   - Every org's .github repo: also profile/README.md MUST exist (Family G).
+#   - Family B (~/Developer/<org>/README.md) is local-disk only and not
+#     reachable from GitHub — out of scope for this workflow.
+#
+# Pattern mirrors sync-metadata.yml + link-check.yml so cross-repo automation
+# in this org has one shape, not three. Authentication uses the
+# swift-institute-bot GitHub App (SWIFT_INSTITUTE_BOT_APP_ID + SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY).
+#
+# Inputs:
+#   repo:       "owner/name" form. When set, scope to one repo.
+#   org:        org name. When set, scope to one org. Ignored if `repo` set.
+#   dry-run:    when true, run checks but skip aggregated issue create/update.
+#   visibility: filter targets by visibility (public | private | internal | all).
+# (For cross-org sweeps, use lint-readme-presence-weekly.yml.)
+#
+# Provenance: Skills/readme/ci-automation.md [README-161], [README-167].
+
+name: lint-readme-presence
+
+on:
+  workflow_call:
+    inputs:
+      repo:
+        description: 'Owner/name of a single repo to scan.'
+        type: string
+        required: false
+        default: ''
+      org:
+        description: 'Org to sweep (ignored if repo is set).'
+        type: string
+        required: false
+        default: ''
+      dry-run:
+        description: 'Run checks but skip aggregated issue create/update.'
+        type: boolean
+        required: false
+        default: false
+      visibility:
+        description: 'Filter targets by visibility: public | private | internal | all. Default public.'
+        type: string
+        required: false
+        default: 'public'
+    outputs:
+      repos-scanned:
+        description: 'Number of repos scanned.'
+        value: ${{ jobs.scan.outputs.repos-scanned }}
+      repos-missing-readme:
+        description: 'Number of repos missing README.md.'
+        value: ${{ jobs.scan.outputs.repos-missing-readme }}
+      orgs-missing-profile:
+        description: 'Number of orgs missing .github/profile/README.md.'
+        value: ${{ jobs.scan.outputs.orgs-missing-profile }}
+
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: 'Owner/name of a single repo to scan (optional).'
+        type: string
+        required: false
+      org:
+        description: 'Org to sweep (optional; ignored if repo is set).'
+        type: string
+        required: false
+      dry-run:
+        description: 'Run checks but skip aggregated issue create/update.'
+        type: boolean
+        required: false
+        default: false
+      visibility:
+        description: 'Filter targets by visibility (public | private | internal | all). Default public.'
+        type: string
+        required: false
+        default: 'public'
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      repos-scanned: ${{ steps.scan.outputs.repos-scanned }}
+      repos-missing-readme: ${{ steps.scan.outputs.repos-missing-readme }}
+      orgs-missing-profile: ${{ steps.scan.outputs.orgs-missing-profile }}
+    steps:
+      - name: Validate inputs
+        run: |
+          if [[ -z "${{ inputs.repo }}" && -z "${{ inputs.org }}" ]]; then
+            echo "::error::Either 'repo' (owner/name) or 'org' input is required."
+            echo "::error::For cross-org sweeps, use lint-readme-presence-weekly.yml which calls this workflow per-org via matrix."
+            exit 1
+          fi
+
+      - name: Compute auth scope
+        id: scope
+        run: |
+          if [[ -n "${{ inputs.repo }}" ]]; then
+            input="${{ inputs.repo }}"
+            owner="${input%/*}"
+            name="${input#*/}"
+            echo "owner=${owner}" >> "$GITHUB_OUTPUT"
+            echo "repositories=${name}" >> "$GITHUB_OUTPUT"
+          else
+            echo "owner=${{ inputs.org }}" >> "$GITHUB_OUTPUT"
+            # Empty repositories means: token covers all repos in the org installation.
+            echo "repositories=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Mint installation token
+        id: token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: ${{ steps.scope.outputs.owner }}
+          repositories: ${{ steps.scope.outputs.repositories }}
+
+      - name: Scan
+        id: scan
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          DRY_RUN: ${{ inputs.dry-run }}
+        run: |
+          set -euo pipefail
+
+          # Build target list ----------------------------------------------------
+          if [[ -n "${{ inputs.repo }}" ]]; then
+            targets=("${{ inputs.repo }}")
+          else
+            visibility_flag=()
+            case "${{ inputs.visibility }}" in
+              public|private|internal)
+                visibility_flag=(--visibility "${{ inputs.visibility }}")
+                ;;
+              all|"")
+                ;;
+              *)
+                echo "::error::Unknown visibility '${{ inputs.visibility }}' (expected: public, private, internal, all)"
+                exit 1
+                ;;
+            esac
+            mapfile -t targets < <(gh repo list "${{ inputs.org }}" --limit 2000 \
+              "${visibility_flag[@]}" \
+              --json nameWithOwner,isArchived \
+              --jq '.[] | select(.isArchived==false) | .nameWithOwner')
+          fi
+
+          echo "Targets: ${#targets[@]} repos (visibility filter: ${{ inputs.visibility }})"
+
+          repos_scanned=0
+          repos_missing=0
+          orgs_missing_profile=0
+          summary_lines=()
+          missing_readme_lines=()
+          missing_profile_lines=()
+
+          # README presence per repo + profile/README.md for .github repos -----
+          for target in "${targets[@]}"; do
+            repos_scanned=$((repos_scanned + 1))
+            owner="${target%/*}"
+            name="${target#*/}"
+
+            # Check README.md at repo root.
+            if ! gh api "repos/${target}/contents/README.md" >/dev/null 2>&1; then
+              echo "  ${target}: MISSING README.md"
+              repos_missing=$((repos_missing + 1))
+              missing_readme_lines+=("- \`${target}\` — no README.md at repo root")
+            fi
+
+            # If this is the org's .github repo, also check profile/README.md.
+            # (One per org. Family G — covers swift-institute, swift-primitives,
+            # swift-standards, swift-foundations, etc.)
+            if [[ "$name" == ".github" ]]; then
+              if ! gh api "repos/${target}/contents/profile/README.md" >/dev/null 2>&1; then
+                echo "  ${target}: MISSING profile/README.md (org profile)"
+                orgs_missing_profile=$((orgs_missing_profile + 1))
+                missing_profile_lines+=("- \`${owner}\` — no \`.github/profile/README.md\` (org profile)")
+              fi
+            fi
+          done
+
+          # Outputs -------------------------------------------------------------
+          echo "repos-scanned=${repos_scanned}" >> "$GITHUB_OUTPUT"
+          echo "repos-missing-readme=${repos_missing}" >> "$GITHUB_OUTPUT"
+          echo "orgs-missing-profile=${orgs_missing_profile}" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## lint-readme-presence summary"
+            echo ""
+            echo "- scope: ${{ inputs.repo || inputs.org }}"
+            echo "- repos scanned: ${repos_scanned}"
+            echo "- repos missing README.md: ${repos_missing}"
+            echo "- orgs missing profile/README.md: ${orgs_missing_profile}"
+            echo "- dry-run: ${DRY_RUN}"
+            echo ""
+            if [[ ${#missing_readme_lines[@]} -gt 0 ]]; then
+              echo "### Repos missing README.md"
+              echo ""
+              for line in "${missing_readme_lines[@]}"; do echo "$line"; done
+              echo ""
+            fi
+            if [[ ${#missing_profile_lines[@]} -gt 0 ]]; then
+              echo "### Orgs missing profile/README.md"
+              echo ""
+              for line in "${missing_profile_lines[@]}"; do echo "$line"; done
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # Filing of the consolidated tracking issue is the responsibility of
+          # the orchestrator (lint-readme-presence-weekly.yml). This reusable
+          # workflow surfaces findings via outputs + step summary only —
+          # mirrors sync-metadata.yml's split.

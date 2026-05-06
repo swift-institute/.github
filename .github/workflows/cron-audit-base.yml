@@ -145,6 +145,11 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Harden runner (audit-mode egress logging)
+        uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
+        with:
+          egress-policy: audit
+
       - name: Install dependencies
         if: ${{ inputs.container != '' }}
         shell: bash
@@ -217,6 +222,11 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Harden runner (audit-mode egress logging)
+        uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
+        with:
+          egress-policy: audit
+
       - name: Mint installation token
         id: token
         uses: actions/create-github-app-token@v3

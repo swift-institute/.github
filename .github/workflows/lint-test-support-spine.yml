@@ -81,6 +81,11 @@ jobs:
       violation-count: ${{ steps.audit.outputs.violation-count }}
       missing-count: ${{ steps.audit.outputs.missing-count }}
     steps:
+      - name: Harden runner (audit-mode egress logging)
+        uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
+        with:
+          egress-policy: audit
+
       - uses: actions/checkout@v6
 
       - name: Install dependencies (python3, git for sparse-checkout)
