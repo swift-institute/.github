@@ -68,14 +68,18 @@ on:
           empty means run on bare ubuntu-latest. Accepts literal image
           names; env.* and matrix.* are unavailable at the container
           field per Actions context-availability rules.
-      audit-script-url:
+      audit-script-path:
         type: string
         required: false
         default: ''
         description: >
-          Optional. When non-empty, the reusable curl-fetches the URL
-          to /tmp/audit-script.py before running audit-step. When empty,
-          the audit-step is responsible for any setup it needs.
+          Optional. Path within swift-institute/.github (e.g.
+          `.github/scripts/audit-license-header.py`) to sparse-checkout
+          before running audit-step. The fetched file is placed at
+          /tmp/audit-script.py. When empty, the audit-step is responsible
+          for any setup it needs. Replaces the previous `audit-script-url`
+          input which curl-piped from raw.githubusercontent.com (no SHA,
+          no integrity check; flagged by 2026-05-06 reviewer feedback H2).
       audit-step:
         type: string
         required: true
@@ -168,14 +172,28 @@ jobs:
           owner: ${{ matrix.org }}
           repositories: ''
 
-      - name: Fetch audit script
-        if: ${{ inputs.audit-script-url != '' }}
+      - name: Fetch audit script (sparse-checkout from swift-institute/.github)
+        if: ${{ inputs.audit-script-path != '' }}
+        uses: actions/checkout@v6
+        with:
+          repository: swift-institute/.github
+          ref: main
+          path: .swift-institute-github
+          sparse-checkout: ${{ inputs.audit-script-path }}
+          sparse-checkout-cone-mode: false
+
+      - name: Stage audit script at /tmp/audit-script.py
+        if: ${{ inputs.audit-script-path != '' }}
         shell: bash
         env:
-          AUDIT_SCRIPT_URL: ${{ inputs.audit-script-url }}
+          AUDIT_SCRIPT_PATH: ${{ inputs.audit-script-path }}
         run: |
           set -euo pipefail
-          curl -fsSL -o /tmp/audit-script.py "${AUDIT_SCRIPT_URL}"
+          # cp rather than mv so the sparse-checkout tree stays intact for
+          # any downstream reference; /tmp/audit-script.py preserves the
+          # legacy contract for audit-step shell snippets.
+          cp ".swift-institute-github/${AUDIT_SCRIPT_PATH}" /tmp/audit-script.py
+          chmod +x /tmp/audit-script.py
 
       - name: Run audit
         shell: bash

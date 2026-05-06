@@ -63,7 +63,7 @@ jobs:
     with:
       matrix-orgs: ${{ needs.config.outputs.orgs }}
       container: 'swift:6.3'
-      audit-script-url: https://raw.githubusercontent.com/swift-institute/.github/main/.github/scripts/audit-test-support-spine.py
+      audit-script-path: .github/scripts/audit-test-support-spine.py
       count-labels: violation,missing
       issue-title-prefix: Test Support spine sweep
       issue-label: spine-audit

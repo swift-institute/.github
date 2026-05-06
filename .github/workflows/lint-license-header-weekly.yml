@@ -58,7 +58,7 @@ jobs:
     secrets: inherit
     with:
       matrix-orgs: ${{ needs.config.outputs.orgs }}
-      audit-script-url: https://raw.githubusercontent.com/swift-institute/.github/main/.github/scripts/audit-license-header.py
+      audit-script-path: .github/scripts/audit-license-header.py
       count-labels: missing,files
       issue-title-prefix: License-header sweep
       issue-label: license-audit
