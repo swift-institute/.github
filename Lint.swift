@@ -3,11 +3,21 @@
 //
 // Mirrors the prior swift-institute-lint-canonical Swift package (now
 // retired in favor of the file-based canonical pattern at
-// swift-institute/.github/Lint.swift). Activates ZERO rules at present —
-// rules graduate to Tier 1 only when they apply universally across every
-// piece of Swift Institute code. Per-package consumers inherit from Tier 2
-// (swift-primitives/.github/Lint.swift) for primitives-specific rules;
-// Tier 2 inherits from this file for ecosystem-wide rules.
+// swift-institute/.github/Lint.swift). Activates rules whose anti-pattern
+// principle is universal across every piece of Swift Institute code.
+// Per-package consumers inherit from Tier 2 (swift-primitives/.github/
+// Lint.swift) for primitives-specific rules; Tier 2 inherits from this
+// file for ecosystem-wide rules.
+//
+// Activated rules:
+//
+//   R6 — result_builder_for_loop  (`for`-loop in result-builder body)
+//                                 SE-0289 transform makes this 12-44x
+//                                 slower than imperative; consumers
+//                                 write the sequence directly. See
+//                                 swift-institute/Research/result-builder-
+//                                 performance-optimization.md (DECISION
+//                                 v2.0.0).
 //
 // File-based canonical pattern: a typed `let manifest: Lint.Manifest` at
 // file scope is JSON-serialized via swift-manifest's subprocess loader and
@@ -19,4 +29,8 @@
 
 import Linter
 
-let manifest = Lint.Manifest(enabledRuleIDs: [])
+let manifest = Lint.Manifest(
+    enabledRuleIDs: [
+        "result_builder_for_loop"              // R6
+    ]
+)
