@@ -1,0 +1,496 @@
+# swift-institute-bot installation manifest.
+#
+# Per-org declared permissions of the swift-institute-bot GitHub App
+# installation. Source authority: this file; principal-admin maintains
+# manually. Audited via `gh api orgs/<org>/installations` (works with
+# read:org scope; admin:org is NOT required for the read path despite
+# brief's prior framing).
+#
+# Pairs with `orgs.yaml` (the canonical 17-org manifest); same row order.
+# Updated quarterly per the [CI-080] / G10 audit-log review cadence
+# (`swift-institute/Research/ci-cd-security-review.md` v1.1.0 § Phase 5).
+#
+# ── Ecosystem-uniform declared block ──────────────────────────────────────
+# All 17 orgs share the same 15-permission declared set as of 2026-05-06.
+# Per-row `notes:` is empty unless that org's declared set diverges from
+# the uniform pattern (no current divergences). The uniform set is:
+#
+#     declared:
+#       actions: write
+#       actions_variables: write
+#       administration: write
+#       contents: write
+#       custom_properties_for_organizations: write
+#       environments: write
+#       issues: write
+#       metadata: read
+#       organization_administration: write
+#       organization_custom_properties: write
+#       organization_self_hosted_runners: write
+#       pages: write
+#       pull_requests: write
+#       repository_custom_properties: write
+#       repository_hooks: write
+#
+# The keep-the-10 decision (principal-stated, ecosystem-wide):
+#     declared = inferred_min ∪ {10 deliberately-kept over-permissions
+#     per principal's dev-ergonomics decision during alpha}.
+# `secrets: write` and `members: write` were trimmed 2026-05-06 by
+# App-owner edit because (a) zero exercise across the workflow corpus
+# and (b) catastrophic blast radius if the App credentials leak (org
+# secret rotation + membership manipulation across all 17 orgs).
+# The remaining 10 over-permissions (see `kept_over_inferred_min:`
+# block at the bottom of this file) are revisited per-grant when
+# either (a) a workflow needs the grant and the rule moves it into
+# `inferred_min`, or (b) branch protection on swift-institute/.github
+# lands as additional defense-in-depth (per `swift-institute/Research/
+# ci-cd-security-review.md` v1.1.0 G1 / Cohort B Phase 2), at which
+# point the alpha dev-ergonomics rationale weakens and trimming
+# becomes the conservative default.
+#
+# Status legend:
+#   ENUMERATED       — `gh api orgs/<org>/installations` returned the
+#                      swift-institute-bot record; `permissions:` reflects
+#                      the App's currently-granted installation permissions
+#                      on that org.
+#   NOT_INSTALLED    — installations list does not contain swift-institute-bot.
+#                      App is NOT installed on this org. Action: install if
+#                      this org is meant to host CI-running consumer repos
+#                      per [CI-060].
+#   PENDING_ENUMERATION
+#                    — not yet enumerated; principal-admin to run
+#                      `gh api orgs/<org>/installations --jq '.installations[]
+#                      | select(.app_slug=="swift-institute-bot")'`
+#                      and paste the returned `permissions:` block here.
+#   SCOPE_BLOCKED    — gh API returned 403/404 in a way that suggests the
+#                      caller's token scope is insufficient. Action:
+#                      `gh auth refresh -h github.com -s read:org`.
+
+installations:
+
+  # ── L1 ──────────────────────────────────────────────────────────────────
+  - name: swift-primitives
+    layer: L1
+    status: ENUMERATED
+    installation_id: 128086978
+    repository_selection: all
+    declared:
+      actions: write
+      actions_variables: write
+      administration: write
+      contents: write
+      custom_properties_for_organizations: write
+      environments: write
+      issues: write
+      metadata: read
+      organization_administration: write
+      organization_custom_properties: write
+      organization_self_hosted_runners: write
+      pages: write
+      pull_requests: write
+      repository_custom_properties: write
+      repository_hooks: write
+
+  # ── L2 (layer + spec authorities + CPU vendors) ─────────────────────────
+  - name: swift-standards
+    layer: L2
+    status: ENUMERATED
+    installation_id: 128086927
+    repository_selection: all
+    declared:
+      actions: write
+      actions_variables: write
+      administration: write
+      contents: write
+      custom_properties_for_organizations: write
+      environments: write
+      issues: write
+      metadata: read
+      organization_administration: write
+      organization_custom_properties: write
+      organization_self_hosted_runners: write
+      pages: write
+      pull_requests: write
+      repository_custom_properties: write
+      repository_hooks: write
+
+  - name: swift-ietf
+    layer: L2
+    status: ENUMERATED
+    installation_id: 128087090
+    repository_selection: all
+    declared:
+      actions: write
+      actions_variables: write
+      administration: write
+      contents: write
+      custom_properties_for_organizations: write
+      environments: write
+      issues: write
+      metadata: read
+      organization_administration: write
+      organization_custom_properties: write
+      organization_self_hosted_runners: write
+      pages: write
+      pull_requests: write
+      repository_custom_properties: write
+      repository_hooks: write
+
+  - name: swift-iso
+    layer: L2
+    status: ENUMERATED
+    installation_id: 128087023
+    repository_selection: all
+    declared:
+      actions: write
+      actions_variables: write
+      administration: write
+      contents: write
+      custom_properties_for_organizations: write
+      environments: write
+      issues: write
+      metadata: read
+      organization_administration: write
+      organization_custom_properties: write
+      organization_self_hosted_runners: write
+      pages: write
+      pull_requests: write
+      repository_custom_properties: write
+      repository_hooks: write
+
+  - name: swift-ieee
+    layer: L2
+    status: ENUMERATED
+    installation_id: 128087111
+    repository_selection: all
+    declared:
+      actions: write
+      actions_variables: write
+      administration: write
+      contents: write
+      custom_properties_for_organizations: write
+      environments: write
+      issues: write
+      metadata: read
+      organization_administration: write
+      organization_custom_properties: write
+      organization_self_hosted_runners: write
+      pages: write
+      pull_requests: write
+      repository_custom_properties: write
+      repository_hooks: write
+
+  - name: swift-iec
+    layer: L2
+    status: ENUMERATED
+    installation_id: 128087128
+    repository_selection: all
+    declared:
+      actions: write
+      actions_variables: write
+      administration: write
+      contents: write
+      custom_properties_for_organizations: write
+      environments: write
+      issues: write
+      metadata: read
+      organization_administration: write
+      organization_custom_properties: write
+      organization_self_hosted_runners: write
+      pages: write
+      pull_requests: write
+      repository_custom_properties: write
+      repository_hooks: write
+
+  - name: swift-w3c
+    layer: L2
+    status: ENUMERATED
+    installation_id: 128086908
+    repository_selection: all
+    declared:
+      actions: write
+      actions_variables: write
+      administration: write
+      contents: write
+      custom_properties_for_organizations: write
+      environments: write
+      issues: write
+      metadata: read
+      organization_administration: write
+      organization_custom_properties: write
+      organization_self_hosted_runners: write
+      pages: write
+      pull_requests: write
+      repository_custom_properties: write
+      repository_hooks: write
+
+  - name: swift-whatwg
+    layer: L2
+    status: ENUMERATED
+    installation_id: 128086190
+    repository_selection: all
+    declared:
+      actions: write
+      actions_variables: write
+      administration: write
+      contents: write
+      custom_properties_for_organizations: write
+      environments: write
+      issues: write
+      metadata: read
+      organization_administration: write
+      organization_custom_properties: write
+      organization_self_hosted_runners: write
+      pages: write
+      pull_requests: write
+      repository_custom_properties: write
+      repository_hooks: write
+
+  - name: swift-ecma
+    layer: L2
+    status: ENUMERATED
+    installation_id: 128087176
+    repository_selection: all
+    declared:
+      actions: write
+      actions_variables: write
+      administration: write
+      contents: write
+      custom_properties_for_organizations: write
+      environments: write
+      issues: write
+      metadata: read
+      organization_administration: write
+      organization_custom_properties: write
+      organization_self_hosted_runners: write
+      pages: write
+      pull_requests: write
+      repository_custom_properties: write
+      repository_hooks: write
+
+  - name: swift-incits
+    layer: L2
+    status: ENUMERATED
+    installation_id: 128087070
+    repository_selection: all
+    declared:
+      actions: write
+      actions_variables: write
+      administration: write
+      contents: write
+      custom_properties_for_organizations: write
+      environments: write
+      issues: write
+      metadata: read
+      organization_administration: write
+      organization_custom_properties: write
+      organization_self_hosted_runners: write
+      pages: write
+      pull_requests: write
+      repository_custom_properties: write
+      repository_hooks: write
+
+  - name: swift-arm-ltd
+    layer: L2
+    status: ENUMERATED
+    installation_id: 128087231
+    repository_selection: all
+    declared:
+      actions: write
+      actions_variables: write
+      administration: write
+      contents: write
+      custom_properties_for_organizations: write
+      environments: write
+      issues: write
+      metadata: read
+      organization_administration: write
+      organization_custom_properties: write
+      organization_self_hosted_runners: write
+      pages: write
+      pull_requests: write
+      repository_custom_properties: write
+      repository_hooks: write
+
+  - name: swift-intel
+    layer: L2
+    status: ENUMERATED
+    installation_id: 128087048
+    repository_selection: all
+    declared:
+      actions: write
+      actions_variables: write
+      administration: write
+      contents: write
+      custom_properties_for_organizations: write
+      environments: write
+      issues: write
+      metadata: read
+      organization_administration: write
+      organization_custom_properties: write
+      organization_self_hosted_runners: write
+      pages: write
+      pull_requests: write
+      repository_custom_properties: write
+      repository_hooks: write
+
+  - name: swift-riscv
+    layer: L2
+    status: ENUMERATED
+    installation_id: 128086946
+    repository_selection: all
+    declared:
+      actions: write
+      actions_variables: write
+      administration: write
+      contents: write
+      custom_properties_for_organizations: write
+      environments: write
+      issues: write
+      metadata: read
+      organization_administration: write
+      organization_custom_properties: write
+      organization_self_hosted_runners: write
+      pages: write
+      pull_requests: write
+      repository_custom_properties: write
+      repository_hooks: write
+
+  # ── L3 (layer + foundation-specific deps) ───────────────────────────────
+  - name: swift-linux-foundation
+    layer: L3
+    status: ENUMERATED
+    installation_id: 128087007
+    repository_selection: all
+    declared:
+      actions: write
+      actions_variables: write
+      administration: write
+      contents: write
+      custom_properties_for_organizations: write
+      environments: write
+      issues: write
+      metadata: read
+      organization_administration: write
+      organization_custom_properties: write
+      organization_self_hosted_runners: write
+      pages: write
+      pull_requests: write
+      repository_custom_properties: write
+      repository_hooks: write
+
+  - name: swift-microsoft
+    layer: L3
+    status: ENUMERATED
+    installation_id: 128086996
+    repository_selection: all
+    declared:
+      actions: write
+      actions_variables: write
+      administration: write
+      contents: write
+      custom_properties_for_organizations: write
+      environments: write
+      issues: write
+      metadata: read
+      organization_administration: write
+      organization_custom_properties: write
+      organization_self_hosted_runners: write
+      pages: write
+      pull_requests: write
+      repository_custom_properties: write
+      repository_hooks: write
+
+  - name: swift-foundations
+    layer: L3
+    status: ENUMERATED
+    installation_id: 128087152
+    repository_selection: all
+    declared:
+      actions: write
+      actions_variables: write
+      administration: write
+      contents: write
+      custom_properties_for_organizations: write
+      environments: write
+      issues: write
+      metadata: read
+      organization_administration: write
+      organization_custom_properties: write
+      organization_self_hosted_runners: write
+      pages: write
+      pull_requests: write
+      repository_custom_properties: write
+      repository_hooks: write
+
+  # ── meta ────────────────────────────────────────────────────────────────
+  - name: swift-institute
+    layer: meta
+    status: ENUMERATED
+    installation_id: 128087060
+    repository_selection: all
+    declared:
+      actions: write
+      actions_variables: write
+      administration: write
+      contents: write
+      custom_properties_for_organizations: write
+      environments: write
+      issues: write
+      metadata: read
+      organization_administration: write
+      organization_custom_properties: write
+      organization_self_hosted_runners: write
+      pages: write
+      pull_requests: write
+      repository_custom_properties: write
+      repository_hooks: write
+
+# ── inferred_min (computed from workflow `permission-*` flags) ────────────
+# This block is the union of `permission-*` flags appearing across
+# `swift-institute/.github/.github/workflows/*.yml` plus per-job
+# `permissions:` declarations. Computed once per audit cycle; recompute
+# when a workflow's `permission-*` set changes.
+inferred_min:
+  contents: write          # generate-metadata.yml, submit-dep-graph-weekly (POST snapshot)
+  pull_requests: write     # generate-metadata.yml
+  issues: write            # cron-audit-base report job, lint-readme-presence-weekly,
+                           # link-check.yml, submit-dep-graph-weekly report,
+                           # sync-metadata-nightly report
+  administration: write    # sync-metadata.yml (`gh repo edit`)
+  metadata: read           # universal: every gh api call requires it
+
+# ── kept_over_inferred_min (deliberately-kept dev-ergonomics grants) ──────
+# These 10 permissions are not exercised by any workflow in the corpus
+# today but are deliberately retained on the App's installation across
+# all 17 orgs for dev-ergonomics during alpha. Each grant is revisited
+# under one of two triggers: (a) a future workflow exercises the grant
+# (move into `inferred_min` and remove here), or (b) branch protection
+# lands on swift-institute/.github (G1 / Cohort B Phase 2) at which
+# point the alpha dev-ergonomics rationale weakens — defense-in-depth
+# becomes the conservative default and per-grant trimming is reconsidered
+# under the priority axis (correctness > security > speed; cost not an
+# axis per `feedback_ci_priority_axes.md`).
+kept_over_inferred_min:
+  actions: write
+  actions_variables: write
+  custom_properties_for_organizations: write
+  environments: write
+  organization_administration: write
+  organization_custom_properties: write
+  organization_self_hosted_runners: write
+  pages: write
+  repository_custom_properties: write
+  repository_hooks: write
+
+# ── trimmed (removed 2026-05-06 via App-owner edit; do NOT re-add) ────────
+# `secrets: write` and `members: write` were removed across all 17 orgs
+# because (a) zero exercise across the workflow corpus and (b) catastrophic
+# blast radius if the App credentials leak: `secrets: write` would let an
+# attacker rotate org-level secrets ecosystem-wide; `members: write` would
+# let an attacker manipulate org membership across the ecosystem. These
+# two grants are flagged here so a future audit cycle does not silently
+# re-add them via "uniform install" tooling.
+trimmed:
+  secrets: write       # removed 2026-05-06
+  members: write       # removed 2026-05-06
