@@ -11,9 +11,12 @@
 # (`swift-institute/Research/ci-cd-security-review.md` v1.1.0 § Phase 5).
 #
 # ── Ecosystem-uniform declared block ──────────────────────────────────────
-# All 17 orgs share the same 15-permission declared set as of 2026-05-06.
-# Per-row `notes:` is empty unless that org's declared set diverges from
-# the uniform pattern (no current divergences). The uniform set is:
+# All 17 orgs share the same 16-permission declared set as of 2026-05-06
+# (post Option A propagation; see `inferred_min:` block addition of
+# `organization_secrets: read` for the lint-org-bot-coverage-weekly
+# axis-2 verification path). Per-row `notes:` is empty unless that org's
+# declared set diverges from the uniform pattern (no current
+# divergences). The uniform set is:
 #
 #     declared:
 #       actions: write
@@ -26,11 +29,20 @@
 #       metadata: read
 #       organization_administration: write
 #       organization_custom_properties: write
+#       organization_secrets: read
 #       organization_self_hosted_runners: write
 #       pages: write
 #       pull_requests: write
 #       repository_custom_properties: write
 #       repository_hooks: write
+#
+# Cascade-propagation status (transitional, 2026-05-06): swift-primitives
+# verified post-cascade via `gh api orgs/swift-primitives/installations`
+# returning `organization_secrets: read` in its installation permissions.
+# The remaining 16 orgs' per-row `declared:` blocks await empirical
+# verification via the first lint-org-bot-coverage-weekly cron-fire
+# (Sunday 2026-05-10 06:30 UTC). A follow-up batch updates those 16
+# rows once the cron-fire confirms cascade coverage.
 #
 # The keep-the-10 decision (principal-stated, ecosystem-wide):
 #     declared = inferred_min ∪ {10 deliberately-kept over-permissions
@@ -85,6 +97,7 @@ installations:
       metadata: read
       organization_administration: write
       organization_custom_properties: write
+      organization_secrets: read       # Option A 2026-05-06; spot-checked verified
       organization_self_hosted_runners: write
       pages: write
       pull_requests: write
@@ -459,6 +472,7 @@ inferred_min:
                            # sync-metadata-nightly report
   administration: write    # sync-metadata.yml (`gh repo edit`)
   metadata: read           # universal: every gh api call requires it
+  organization_secrets: read   # lint-org-bot-coverage-weekly axis-2 (org-secret PRIVATE_REPO_TOKEN coverage probe)
 
 # ── kept_over_inferred_min (deliberately-kept dev-ergonomics grants) ──────
 # These 10 permissions are not exercised by any workflow in the corpus
