@@ -88,14 +88,24 @@ jobs:
   scan:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
     outputs:
       repos-scanned: ${{ steps.scan.outputs.repos-scanned }}
       repos-missing-readme: ${{ steps.scan.outputs.repos-missing-readme }}
       orgs-missing-profile: ${{ steps.scan.outputs.orgs-missing-profile }}
     steps:
+      - name: Harden runner (audit-mode egress logging)
+        uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
+        with:
+          egress-policy: audit
+
       - name: Validate inputs
+        env:
+          INPUT_REPO: ${{ inputs.repo }}
+          INPUT_ORG: ${{ inputs.org }}
         run: |
-          if [[ -z "${{ inputs.repo }}" && -z "${{ inputs.org }}" ]]; then
+          if [[ -z "$INPUT_REPO" && -z "$INPUT_ORG" ]]; then
             echo "::error::Either 'repo' (owner/name) or 'org' input is required."
             echo "::error::For cross-org sweeps, use lint-readme-presence-weekly.yml which calls this workflow per-org via matrix."
             exit 1
@@ -103,24 +113,26 @@ jobs:
 
       - name: Compute auth scope
         id: scope
+        env:
+          INPUT_REPO: ${{ inputs.repo }}
+          INPUT_ORG: ${{ inputs.org }}
         run: |
-          if [[ -n "${{ inputs.repo }}" ]]; then
-            input="${{ inputs.repo }}"
-            owner="${input%/*}"
-            name="${input#*/}"
+          if [[ -n "$INPUT_REPO" ]]; then
+            owner="${INPUT_REPO%/*}"
+            name="${INPUT_REPO#*/}"
             echo "owner=${owner}" >> "$GITHUB_OUTPUT"
             echo "repositories=${name}" >> "$GITHUB_OUTPUT"
           else
-            echo "owner=${{ inputs.org }}" >> "$GITHUB_OUTPUT"
+            echo "owner=${INPUT_ORG}" >> "$GITHUB_OUTPUT"
             # Empty repositories means: token covers all repos in the org installation.
             echo "repositories=" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Mint installation token
         id: token
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
+          client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
           private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
           owner: ${{ steps.scope.outputs.owner }}
           repositories: ${{ steps.scope.outputs.repositories }}
@@ -130,32 +142,35 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
           DRY_RUN: ${{ inputs.dry-run }}
+          INPUT_REPO: ${{ inputs.repo }}
+          INPUT_ORG: ${{ inputs.org }}
+          INPUT_VISIBILITY: ${{ inputs.visibility }}
         run: |
           set -euo pipefail
 
           # Build target list ----------------------------------------------------
-          if [[ -n "${{ inputs.repo }}" ]]; then
-            targets=("${{ inputs.repo }}")
+          if [[ -n "$INPUT_REPO" ]]; then
+            targets=("$INPUT_REPO")
           else
             visibility_flag=()
-            case "${{ inputs.visibility }}" in
+            case "$INPUT_VISIBILITY" in
               public|private|internal)
-                visibility_flag=(--visibility "${{ inputs.visibility }}")
+                visibility_flag=(--visibility "$INPUT_VISIBILITY")
                 ;;
               all|"")
                 ;;
               *)
-                echo "::error::Unknown visibility '${{ inputs.visibility }}' (expected: public, private, internal, all)"
+                echo "::error::Unknown visibility '${INPUT_VISIBILITY}' (expected: public, private, internal, all)"
                 exit 1
                 ;;
             esac
-            mapfile -t targets < <(gh repo list "${{ inputs.org }}" --limit 2000 \
+            mapfile -t targets < <(gh repo list "$INPUT_ORG" --limit 2000 \
               "${visibility_flag[@]}" \
               --json nameWithOwner,isArchived \
               --jq '.[] | select(.isArchived==false) | .nameWithOwner')
           fi
 
-          echo "Targets: ${#targets[@]} repos (visibility filter: ${{ inputs.visibility }})"
+          echo "Targets: ${#targets[@]} repos (visibility filter: ${INPUT_VISIBILITY})"
 
           repos_scanned=0
           repos_missing=0
@@ -197,7 +212,7 @@ jobs:
           {
             echo "## lint-readme-presence summary"
             echo ""
-            echo "- scope: ${{ inputs.repo || inputs.org }}"
+            echo "- scope: ${INPUT_REPO:-${INPUT_ORG:-}}"
             echo "- repos scanned: ${repos_scanned}"
             echo "- repos missing README.md: ${repos_missing}"
             echo "- orgs missing profile/README.md: ${orgs_missing_profile}"
