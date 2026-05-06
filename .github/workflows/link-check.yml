@@ -92,8 +92,11 @@ jobs:
       repos-with-broken-links: ${{ steps.scan.outputs.repos-with-broken-links }}
     steps:
       - name: Validate inputs
+        env:
+          INPUT_REPO: ${{ inputs.repo }}
+          INPUT_ORG: ${{ inputs.org }}
         run: |
-          if [[ -z "${{ inputs.repo }}" && -z "${{ inputs.org }}" ]]; then
+          if [[ -z "$INPUT_REPO" && -z "$INPUT_ORG" ]]; then
             echo "::error::Either 'repo' (owner/name) or 'org' input is required."
             echo "::error::For cross-org sweeps, use link-check-weekly.yml which calls this workflow per-org via matrix."
             exit 1
@@ -101,15 +104,17 @@ jobs:
 
       - name: Compute auth scope
         id: scope
+        env:
+          INPUT_REPO: ${{ inputs.repo }}
+          INPUT_ORG: ${{ inputs.org }}
         run: |
-          if [[ -n "${{ inputs.repo }}" ]]; then
-            input="${{ inputs.repo }}"
-            owner="${input%/*}"
-            name="${input#*/}"
+          if [[ -n "$INPUT_REPO" ]]; then
+            owner="${INPUT_REPO%/*}"
+            name="${INPUT_REPO#*/}"
             echo "owner=${owner}" >> "$GITHUB_OUTPUT"
             echo "repositories=${name}" >> "$GITHUB_OUTPUT"
           else
-            echo "owner=${{ inputs.org }}" >> "$GITHUB_OUTPUT"
+            echo "owner=${INPUT_ORG}" >> "$GITHUB_OUTPUT"
             # Empty repositories means: token covers all repos in the org installation.
             echo "repositories=" >> "$GITHUB_OUTPUT"
           fi
@@ -169,6 +174,8 @@ jobs:
           GH_TOKEN: ${{ steps.token.outputs.token }}
           DRY_RUN: ${{ inputs.dry-run }}
           SINGLE_REPO: ${{ inputs.repo }}
+          INPUT_ORG: ${{ inputs.org }}
+          INPUT_VISIBILITY: ${{ inputs.visibility }}
           ENUM_REPOS: ${{ steps.enum.outputs.repos }}
         run: |
           set -euo pipefail
@@ -185,7 +192,7 @@ jobs:
             done <<< "$ENUM_REPOS"
           fi
 
-          echo "Targets: ${#targets[@]} repos (visibility filter: ${{ inputs.visibility }})"
+          echo "Targets: ${#targets[@]} repos (visibility filter: ${INPUT_VISIBILITY})"
 
           repos_scanned=0
           repos_with_broken=0
@@ -228,8 +235,9 @@ jobs:
             # DocC-routed paths this is a category mismatch — local
             # link integrity is validated by the DocC build (gated by
             # swift-docs.yml@main), not by HTTP rot detection.
-            if (cd "$workdir" && lychee \
-                  --github-token "$GH_TOKEN" \
+            # Token passed via env var (GITHUB_TOKEN, lychee-recognized) rather than
+            # --github-token CLI arg — keeps the token out of `ps` process listings.
+            if (cd "$workdir" && GITHUB_TOKEN="$GH_TOKEN" lychee \
                   --exclude '^https?://swiftpackageindex\.com/' \
                   --exclude '^https?://github\.com/[^/]+/[^/]+/security/advisories/new$' \
                   --exclude '^file://' \
@@ -312,7 +320,7 @@ jobs:
           {
             echo "## link-check summary"
             echo ""
-            echo "- scope: ${{ inputs.repo || inputs.org }}"
+            echo "- scope: ${SINGLE_REPO:-${INPUT_ORG:-}}"
             echo "- repos scanned: ${repos_scanned}"
             echo "- repos with broken links: ${repos_with_broken}"
             echo "- dry-run: ${DRY_RUN}"
