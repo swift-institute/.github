@@ -11,7 +11,7 @@
 //
 // File-based canonical pattern: a typed `let manifest: Lint.Manifest` at
 // file scope is JSON-serialized via swift-manifest's subprocess loader and
-// reconstructed by `Lint.SwiftDriver.resolveConfiguration(...)` at lint
+// reconstructed by `Lint.Driver.resolveConfiguration(...)` at lint
 // time. Parent-chain inheritance via the `// parent: <URL>` directive at
 // the top of Tier 2 / consumer manifests; Tier 1 is the chain root and
 // declares no parent directive.
