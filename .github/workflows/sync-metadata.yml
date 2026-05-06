@@ -70,8 +70,11 @@ jobs:
       diffs-found: ${{ steps.sync.outputs.diffs-found }}
     steps:
       - name: Validate inputs
+        env:
+          INPUT_REPO: ${{ inputs.repo }}
+          INPUT_ORG: ${{ inputs.org }}
         run: |
-          if [[ -z "${{ inputs.repo }}" && -z "${{ inputs.org }}" ]]; then
+          if [[ -z "$INPUT_REPO" && -z "$INPUT_ORG" ]]; then
             echo "::error::Either 'repo' (owner/name) or 'org' input is required."
             echo "::error::For cross-org sweeps, use sync-metadata-nightly.yml which calls this workflow per-org via matrix."
             exit 1
@@ -79,15 +82,17 @@ jobs:
 
       - name: Compute auth scope
         id: scope
+        env:
+          INPUT_REPO: ${{ inputs.repo }}
+          INPUT_ORG: ${{ inputs.org }}
         run: |
-          if [[ -n "${{ inputs.repo }}" ]]; then
-            input="${{ inputs.repo }}"
-            owner="${input%/*}"
-            name="${input#*/}"
+          if [[ -n "$INPUT_REPO" ]]; then
+            owner="${INPUT_REPO%/*}"
+            name="${INPUT_REPO#*/}"
             echo "owner=${owner}" >> "$GITHUB_OUTPUT"
             echo "repositories=${name}" >> "$GITHUB_OUTPUT"
           else
-            echo "owner=${{ inputs.org }}" >> "$GITHUB_OUTPUT"
+            echo "owner=${INPUT_ORG}" >> "$GITHUB_OUTPUT"
             # Empty repositories means: token covers all repos in the org installation.
             echo "repositories=" >> "$GITHUB_OUTPUT"
           fi
