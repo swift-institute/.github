@@ -9,7 +9,7 @@ name: Swift DocC (reusable)
 
 # Reusable DocC validation workflow for Swift Institute packages using
 # the umbrella-module single-catalog pattern ([DOC-019a]). Acts as a
-# build-time gate — if `xcrun docc convert` fails (broken cross-refs,
+# build-time gate — if `docc convert` fails (broken cross-refs,
 # unresolved symbols, schema drift, tutorial syntax errors), the job
 # fails and CI goes red. The resulting .doccarchive is intentionally
 # NOT uploaded as an artifact: visitor-facing docs are served by Swift
@@ -18,6 +18,15 @@ name: Swift DocC (reusable)
 # swift-institute.org aggregation), add an upload step gated on a tar
 # wrapper (DocC slug filenames contain `:` for `init(_:)`-shaped symbols,
 # which `actions/upload-artifact@v4+` rejects).
+#
+# Runner: Linux container (swift:6.3) instead of macos-26. The DocC
+# binary ships in the Swift Linux toolchain alongside swift; `xcrun
+# docc` was macOS-only convenience syntax. Switching to Linux is ~10×
+# cheaper in compile time AND removes the Xcode-version-tracking
+# maintenance for swift-docs (the universal swift-ci.yml's macos-26
+# job retains Xcode tracking for actual macOS coverage). Validation
+# parity preserved — Linux DocC is the same toolchain DocC, just
+# without the xcrun front-end.
 #
 # Consume from a caller package's .github/workflows/docs.yml via:
 #
@@ -46,7 +55,7 @@ name: Swift DocC (reusable)
 #      ambiguity and every symbol reference fails silently. The script's
 #      doc-comment injection is a defensive no-op under `swift build` but
 #      catches any future regression of @_exported preservation.
-#   4. `xcrun docc convert` on the umbrella catalog pointed at ONLY the
+#   4. `docc convert` on the umbrella catalog pointed at ONLY the
 #      isolated umbrella graph — single-archive output, clean cross-refs.
 #
 # Details: swift-institute/Research/docc-multi-target-documentation-aggregation.md
@@ -78,27 +87,20 @@ on:
         type: boolean
         default: true
         description: "If true, configure git to use PRIVATE_REPO_TOKEN for github.com clones during DocC's `swift build`. Default true: most consumers depend on private deps; public-only consumers may pass false explicitly."
-      macos-runner:
+      swift-version:
         type: string
-        default: "macos-26"
-        description: "macOS runner image. Bump annually when GitHub adds a new image version. env.* is invalid in runs-on: per Actions context-availability rules — input is the working centralization mechanism."
+        default: "6.3"
+        description: "Swift toolchain version for the DocC build container (swift:<version>). Mirrors the universal swift-ci.yml's input so callers bumping the floor flip both in lockstep."
     secrets:
       PRIVATE_REPO_TOKEN:
         required: false
-
-# Workflow-level env vars centralize tool versions so each release bump
-# is a single edit instead of N grep-and-replace sites. Per
-# feedback_latest_versions_only.md these MUST track the latest stable
-# release of each tool; bump on every workflow touch where a newer
-# release exists.
-env:
-  XCODE_VERSION: "26.4"
 
 jobs:
   docs:
     name: DocC archive
     if: ${{ !github.event.repository.private }}
-    runs-on: ${{ inputs.macos-runner }}
+    runs-on: ubuntu-latest
+    container: swift:${{ inputs.swift-version }}
     timeout-minutes: 60
     permissions:
       contents: read
@@ -107,6 +109,13 @@ jobs:
         uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
         with:
           egress-policy: audit
+
+      - name: Install python3 (for patch-umbrella-symbol-graph.py)
+        shell: bash
+        run: |
+          set -euo pipefail
+          apt-get update -qq
+          apt-get install -qq -y python3
 
       - uses: actions/checkout@v6
 
@@ -174,9 +183,6 @@ jobs:
           echo "  docc path    = $UMBRELLA_DOCC_PATH"
           echo "  exclude      = $EXCLUDE_MODULES"
 
-      - name: Select Xcode ${{ env.XCODE_VERSION }}
-        run: sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
-
       - name: Print Swift version
         run: swift --version
 
@@ -222,11 +228,12 @@ jobs:
           echo "Isolated umbrella graph(s):"
           ls "${DOCS_WORK}/umbrella-symbol-graph/"
 
-      - name: Build distribution archive (xcrun docc convert)
+      - name: Build distribution archive (docc convert)
         run: |
           mkdir -p "${DOCS_WORK}/archives"
           rm -rf "${DOCS_WORK}/archives/$UMBRELLA_DISPLAY_NAME.doccarchive"
-          xcrun docc convert "$UMBRELLA_DOCC_PATH" \
+          # Linux Swift toolchain ships docc directly (no xcrun front-end).
+          docc convert "$UMBRELLA_DOCC_PATH" \
             --additional-symbol-graph-dir "${DOCS_WORK}/umbrella-symbol-graph" \
             --fallback-display-name "$UMBRELLA_DISPLAY_NAME" \
             --fallback-bundle-identifier "$UMBRELLA_BUNDLE_ID" \
