@@ -56,3 +56,15 @@ contributions welcome via pull request.
 ## License
 
 All packages use the Apache License 2.0.
+
+## Reusable workflows
+
+The reusable GitHub Actions workflows in
+[swift-institute/.github](https://github.com/swift-institute/.github/tree/main/.github/workflows)
+(notably `swift-ci.yml` and `swift-docs.yml`) are designed for
+swift-institute ecosystem packages. They are technically callable from
+outside the ecosystem but are not formally supported for outside
+consumption — outside callers should pin to an immutable SHA
+(`@<sha>`) rather than `@main`, and accept that the input/output
+surface and behavior may change without notice. See the header
+comment block of each workflow file for the consumer contract.

@@ -1,5 +1,15 @@
 name: Swift DocC (reusable)
 
+# ─── Third-party consumer notice ────────────────────────────────────────
+# These reusable workflows are designed for swift-institute ecosystem
+# packages. Outside callers consume at their own risk and should pin to
+# an immutable SHA (`@<sha>`) rather than `@main`. The input/output
+# surface and behavior may change without notice; the swift-institute/
+# .github repo offers no compatibility guarantee to outside consumers.
+# Per swift-institute/Research/ci-cd-cross-ecosystem-reuse.md v1.1.1 §Q4
+# (third-party consumers are unintended-but-permitted).
+# ────────────────────────────────────────────────────────────────────────
+
 # ─── Acronym preservation list ────────────────────────────────────────
 # All-caps tokens preserved verbatim during the kebab→TitleCase derivation
 # (e.g. `swift-cpu-primitives` → `CPU_Primitives`, NOT `Cpu_Primitives`).
