@@ -56,19 +56,21 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Fetch audit script
-        shell: bash
-        run: |
-          set -euo pipefail
-          curl -fsSL -o /tmp/audit-license-header.py \
-            https://raw.githubusercontent.com/swift-institute/.github/main/.github/scripts/audit-license-header.py
+      - name: Fetch audit script (sparse-checkout from swift-institute/.github)
+        uses: actions/checkout@v6
+        with:
+          repository: swift-institute/.github
+          ref: main
+          path: .swift-institute-github
+          sparse-checkout: .github/scripts/audit-license-header.py
+          sparse-checkout-cone-mode: false
 
       - name: Run audit
         id: audit
         shell: bash
         run: |
           set -euo pipefail
-          python3 /tmp/audit-license-header.py \
+          python3 .swift-institute-github/.github/scripts/audit-license-header.py \
             --package-dir . \
             --json /tmp/audit.json \
             | tee /tmp/audit.log
