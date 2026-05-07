@@ -19,24 +19,52 @@ import argparse
 import re
 import sys
 
-# Right-pane safe area: x=580..1240 → 660 px wide
-PANE_WIDTH = 660
-# Heavy weight (800) Inter advance ≈ 0.55em with letter-spacing -2
-CHAR_ADVANCE_EM = 0.55
+# Right-pane safe area. Gradient ends at x=520; text starts at x=580
+# (60 px left gap). Apply symmetric 60 px right gap: text ends at x=1220,
+# giving 640 px usable width.
+PANE_WIDTH = 640
+# Heavy weight (800) Inter glyph-class advances with letter-spacing -2.
+# Tuned empirically against rendered text — Inter Heavy caps are wider
+# than the often-cited 0.62em average due to W/M outliers and dense
+# weight stems. Conservative side: prefer slight under-fill over clipping.
+ADVANCE_UPPER = 0.70
+ADVANCE_LOWER = 0.55
+ADVANCE_SPACE = 0.30
 # Legibility floor at thumbnail
 MIN_FONT_SIZE = 48
 DEFAULT_FONT_SIZE = 132
 TWO_LINE_FONT_SIZE = 84
 
 
-def split_camelcase(name: str) -> tuple[str, str]:
-    """Split CamelCase on the boundary closest to the midpoint.
+def text_advance(text: str) -> float:
+    """Estimated text width in em units (multiply by font_size for px)."""
+    total = 0.0
+    for c in text:
+        if c == " ":
+            total += ADVANCE_SPACE
+        elif c.isupper() or c.isdigit():
+            total += ADVANCE_UPPER
+        else:
+            total += ADVANCE_LOWER
+    return total
 
-    >>> split_camelcase("IntermediateRepresentation")
-    ('Intermediate', 'Representation')
-    >>> split_camelcase("AlgebraSemilattice")
-    ('Algebra', 'Semilattice')
+
+def split_two_lines(name: str) -> tuple[str, str]:
+    """Split into two lines on the boundary closest to the midpoint.
+
+    Preference order:
+      1. Explicit '|' separator (manual override from displayName)
+      2. Whitespace closest to midpoint
+      3. CamelCase boundary closest to midpoint
     """
+    if "|" in name:
+        l, _, r = name.partition("|")
+        return l.strip(), r.strip()
+    if " " in name:
+        spaces = [i for i, c in enumerate(name) if c == " "]
+        mid = len(name) / 2
+        best = min(spaces, key=lambda b: abs(b - mid))
+        return name[:best], name[best + 1 :]
     boundaries = [m.start() for m in re.finditer(r"(?<!^)(?=[A-Z])", name)]
     if not boundaries:
         return name, ""
@@ -45,37 +73,16 @@ def split_camelcase(name: str) -> tuple[str, str]:
     return name[:best], name[best:]
 
 
-def fit(namespace: str) -> dict[str, str]:
-    """Compute layout (font-size, lines, y-positions) for the namespace.
+def _one_line(namespace: str, size: int) -> dict[str, str]:
+    return {
+        "L1": namespace, "L2": "",
+        "SIZE": str(size),
+        "Y1": "350", "Y2": "-100",
+        "SUBLINE_Y": "410", "CAPTION_Y": "470",
+    }
 
-    Y baselines are tuned so the content cluster sits at or slightly below
-    canvas optical center, balancing the pyramid glyph's heavy base.
-    """
-    n = len(namespace)
-    one_line_default_width = n * CHAR_ADVANCE_EM * DEFAULT_FONT_SIZE
-    if one_line_default_width <= PANE_WIDTH:
-        return {
-            "L1": namespace, "L2": "",
-            "SIZE": str(DEFAULT_FONT_SIZE),
-            "Y1": "350", "Y2": "-100",
-            "SUBLINE_Y": "410", "CAPTION_Y": "470",
-        }
-    one_line_min_size = PANE_WIDTH / (n * CHAR_ADVANCE_EM)
-    if one_line_min_size >= MIN_FONT_SIZE:
-        size = int(one_line_min_size)
-        return {
-            "L1": namespace, "L2": "",
-            "SIZE": str(size),
-            "Y1": "350", "Y2": "-100",
-            "SUBLINE_Y": "410", "CAPTION_Y": "470",
-        }
-    l1, l2 = split_camelcase(namespace)
-    longest = max(len(l1), len(l2))
-    two_line_default_width = longest * CHAR_ADVANCE_EM * TWO_LINE_FONT_SIZE
-    if two_line_default_width <= PANE_WIDTH:
-        size = TWO_LINE_FONT_SIZE
-    else:
-        size = int(PANE_WIDTH / (longest * CHAR_ADVANCE_EM))
+
+def _two_line(l1: str, l2: str, size: int) -> dict[str, str]:
     return {
         "L1": l1, "L2": l2,
         "SIZE": str(size),
@@ -83,6 +90,37 @@ def fit(namespace: str) -> dict[str, str]:
         "SUBLINE_Y": str(310 + size + 60),
         "CAPTION_Y": str(310 + size + 113),
     }
+
+
+def fit(namespace: str) -> dict[str, str]:
+    """Compute layout (font-size, lines, y-positions) for the namespace.
+
+    Priority: full-size single-line → shrunk single-line (if still ≥
+    TWO_LINE_FONT_SIZE) → full-size two-line → shrunk two-line. Two-line
+    only kicks in when shrinking single-line would drop below the two-line
+    full size — at that point two-line preserves more weight per line.
+    """
+    text = namespace.replace("|", " ")
+    advance_em = text_advance(text)
+    if advance_em * DEFAULT_FONT_SIZE <= PANE_WIDTH:
+        return _one_line(namespace, DEFAULT_FONT_SIZE)
+
+    one_line_min_size = int(PANE_WIDTH / advance_em)
+    if one_line_min_size >= TWO_LINE_FONT_SIZE:
+        return _one_line(namespace, one_line_min_size)
+
+    l1, l2 = split_two_lines(namespace)
+    if l2:
+        longest = max(text_advance(l1), text_advance(l2))
+        if longest * TWO_LINE_FONT_SIZE <= PANE_WIDTH:
+            return _two_line(l1, l2, TWO_LINE_FONT_SIZE)
+        size = int(PANE_WIDTH / longest)
+        if size >= MIN_FONT_SIZE:
+            return _two_line(l1, l2, size)
+
+    if one_line_min_size >= MIN_FONT_SIZE:
+        return _one_line(namespace, one_line_min_size)
+    return _one_line(namespace, MIN_FONT_SIZE)
 
 
 def main() -> int:
