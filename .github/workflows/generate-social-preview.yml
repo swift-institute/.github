@@ -75,19 +75,10 @@ jobs:
           echo "owner=${TARGET%%/*}" >> "$GITHUB_OUTPUT"
           echo "name=${TARGET##*/}" >> "$GITHUB_OUTPUT"
 
-      - name: Mint installation token for target repo
-        id: token
-        uses: actions/create-github-app-token@v1
-        with:
-          app-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
-          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
-          owner: ${{ steps.parse.outputs.owner }}
-          repositories: ${{ steps.parse.outputs.name }}
-
       - name: Pre-flight — skip if target repo is private
         id: privacy
         env:
-          GH_TOKEN: ${{ steps.token.outputs.token }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TARGET: ${{ inputs.target-repo }}
         run: |
           is_private=$(gh api "/repos/$TARGET" --jq '.private')
@@ -122,7 +113,7 @@ jobs:
         id: ns
         if: steps.privacy.outputs.is-private == 'false'
         env:
-          GH_TOKEN: ${{ steps.token.outputs.token }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TARGET: ${{ inputs.target-repo }}
           INPUT_NAMESPACE: ${{ inputs.namespace }}
         run: |
@@ -188,6 +179,16 @@ jobs:
         with:
           name: social-preview-${{ steps.ns.outputs.namespace }}
           path: /tmp/social-preview.png
+
+      - name: Mint installation token for target repo
+        id: token
+        if: steps.privacy.outputs.is-private == 'false' && !inputs.dry-run
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: ${{ steps.parse.outputs.owner }}
+          repositories: ${{ steps.parse.outputs.name }}
 
       - name: Open PR on target repo
         if: steps.privacy.outputs.is-private == 'false' && !inputs.dry-run
