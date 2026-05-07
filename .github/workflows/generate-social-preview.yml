@@ -180,9 +180,22 @@ jobs:
           name: social-preview-${{ steps.ns.outputs.namespace }}
           path: /tmp/social-preview.png
 
+      - name: Guard — App secrets configured
+        id: guard
+        if: steps.privacy.outputs.is-private == 'false' && !inputs.dry-run
+        env:
+          APP_ID: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
+        run: |
+          if [ -z "$APP_ID" ]; then
+            echo "::warning::SWIFT_INSTITUTE_BOT_APP_ID not set in caller's secrets context. Skipping PR-open path. Configure at the calling org level (e.g., swift-primitives) to enable production runs."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Mint installation token for target repo
         id: token
-        if: steps.privacy.outputs.is-private == 'false' && !inputs.dry-run
+        if: steps.privacy.outputs.is-private == 'false' && !inputs.dry-run && steps.guard.outputs.skip != 'true'
         uses: actions/create-github-app-token@v1
         with:
           app-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
@@ -191,7 +204,7 @@ jobs:
           repositories: ${{ steps.parse.outputs.name }}
 
       - name: Open PR on target repo
-        if: steps.privacy.outputs.is-private == 'false' && !inputs.dry-run
+        if: steps.privacy.outputs.is-private == 'false' && !inputs.dry-run && steps.guard.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
           TARGET: ${{ inputs.target-repo }}
