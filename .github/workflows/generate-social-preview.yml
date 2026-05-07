@@ -107,19 +107,24 @@ jobs:
           sudo apt-get install -y -qq fonts-inter
           fc-cache -f
 
-      - name: Resolve namespace (target repo metadata or derive)
+      - name: Resolve namespace
         id: ns
         if: steps.privacy.outputs.is-private == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TARGET: ${{ inputs.target-repo }}
+          PACKAGE_NAME: ${{ inputs.package-name }}
           INPUT_NAMESPACE: ${{ inputs.namespace }}
         run: |
+          # Resolution order:
+          #   1. Explicit workflow input (caller passed it directly).
+          #   2. .socialPreview.displayName in target repo's metadata.yaml (per-repo override).
+          #   3. Derive from package-name: strip swift- prefix and layer suffix, kebab → CamelCase.
+          # Special-cased names (e.g., RFC_4122) MUST use option 2.
           if [ -n "$INPUT_NAMESPACE" ]; then
             echo "namespace=$INPUT_NAMESPACE" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # Try .socialPreview.displayName from target's metadata.yaml
           tmp=$(mktemp)
           if gh api "/repos/$TARGET/contents/.github/metadata.yaml" --jq '.content' 2>/dev/null | base64 -d > "$tmp"; then
             display=$(yq '.socialPreview.displayName // ""' "$tmp")
@@ -128,22 +133,19 @@ jobs:
               exit 0
             fi
           fi
-          # Derive: list Sources/, find primary module, strip suffix, remove spaces
-          modules=$(gh api "/repos/$TARGET/contents/Sources" --jq '[.[] | select(.type == "dir") | .name]' 2>/dev/null || echo '[]')
-          primary=$(echo "$modules" | jq -r '
-            map(select(
-              (test(" Test Support$") | not) and
-              (test("Tests$") | not) and
-              (test(" Internal$") | not)
-            )) | .[0] // ""
-          ')
-          # Strip trailing layer suffix (Primitives, Standards, Foundations) and spaces
-          stripped=$(echo "$primary" | sed -E 's/ (Primitives|Standards|Foundations)$//' | tr -d ' ')
-          if [ -z "$stripped" ]; then
-            echo "::error::Could not resolve namespace for $TARGET. Provide via .socialPreview.displayName in metadata.yaml or as workflow input."
+          # Derive: strip swift- prefix and -primitives/-standards/-foundations suffix,
+          # then kebab → CamelCase.
+          stripped=$(echo "$PACKAGE_NAME" | sed -E 's/^swift-//; s/-(primitives|standards|foundations)$//')
+          namespace=$(echo "$stripped" | awk -F'-' '{
+            out = ""
+            for (i = 1; i <= NF; i++) out = out toupper(substr($i, 1, 1)) tolower(substr($i, 2))
+            print out
+          }')
+          if [ -z "$namespace" ]; then
+            echo "::error::Could not derive namespace from package-name=$PACKAGE_NAME"
             exit 1
           fi
-          echo "namespace=$stripped" >> "$GITHUB_OUTPUT"
+          echo "namespace=$namespace" >> "$GITHUB_OUTPUT"
 
       - name: Render SVG and convert to PNG
         if: steps.privacy.outputs.is-private == 'false'
