@@ -103,10 +103,8 @@ jobs:
       - name: Install Inter font
         if: steps.privacy.outputs.is-private == 'false'
         run: |
-          mkdir -p ~/.fonts
-          curl -sL https://github.com/rsms/inter/releases/latest/download/Inter.zip -o /tmp/inter.zip
-          unzip -q /tmp/inter.zip -d /tmp/inter
-          cp /tmp/inter/InterVariable.ttf ~/.fonts/
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq fonts-inter
           fc-cache -f
 
       - name: Resolve namespace (target repo metadata or derive)
