@@ -97,7 +97,7 @@ jobs:
       - name: Install resvg
         if: steps.privacy.outputs.is-private == 'false'
         run: |
-          curl -sL https://github.com/RazrFalcon/resvg/releases/latest/download/resvg-x86_64-unknown-linux-gnu.tar.gz | tar -xz
+          curl -sL https://github.com/linebender/resvg/releases/latest/download/resvg-linux-x86_64.tar.gz | tar -xz
           sudo mv resvg /usr/local/bin/
 
       - name: Install Inter font
