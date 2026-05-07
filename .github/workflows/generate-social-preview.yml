@@ -54,6 +54,13 @@ on:
         type: boolean
         required: false
         default: false
+    secrets:
+      # Cross-org reusable workflows do NOT inherit secrets via `secrets: inherit`;
+      # callers MUST pass these explicitly. Only required for non-dry-run path.
+      SWIFT_INSTITUTE_BOT_APP_ID:
+        required: false
+      SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY:
+        required: false
 
 jobs:
   render:
