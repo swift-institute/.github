@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Universal social preview chassis (Swift Institute).
+  Parametric — knows nothing about which org renders it.
+
+  Placeholders (substituted by render.py):
+    {{ACCENT_FROM}}    — gradient top hex (e.g., #D88751)
+    {{ACCENT_TO}}      — gradient bottom hex (e.g., #A04A1B)
+    {{ACCENT_TEXT}}    — caption text color (e.g., #A04A1B)
+    {{CAPTION}}        — uppercase caption (e.g., PRIMITIVES)
+    {{NAMESPACE_L1}}   — first line of namespace (e.g., Buffer or Intermediate)
+    {{NAMESPACE_L2}}   — second line, blank for short names (e.g., Representation or "")
+    {{NAMESPACE_SIZE}} — font-size for namespace lines (84 single, 84 two-line, 132 short)
+    {{NAMESPACE_Y1}}   — y for line 1 (depends on one-vs-two-line)
+    {{NAMESPACE_Y2}}   — y for line 2 (or off-canvas if blank)
+    {{PACKAGE_NAME}}   — full kebab-case package name
+    {{SUBLINE_Y}}      — y for the package-name subline
+    {{CAPTION_Y}}      — y for the caption
+
+  Provenance: Research/social-preview-cards-ecosystem-strategy.md
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640">
+  <defs>
+    <linearGradient id="accent" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="{{ACCENT_FROM}}"/>
+      <stop offset="1" stop-color="{{ACCENT_TO}}"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1280" height="640" fill="#fbf8f6"/>
+  <rect width="520" height="640" fill="url(#accent)"/>
+
+  <!-- Tier glyph: 4-bar pyramid, white-on-accent on the left half -->
+  <g transform="translate(80, 180)">
+    <rect x="140" y="0"   width="80"  height="36" rx="7"  fill="#fbf8f6" opacity="0.45"/>
+    <rect x="100" y="56"  width="160" height="40" rx="9"  fill="#fbf8f6" opacity="0.65"/>
+    <rect x="60"  y="116" width="240" height="40" rx="9"  fill="#fbf8f6" opacity="0.85"/>
+    <rect x="20"  y="176" width="320" height="40" rx="9"  fill="#fbf8f6"/>
+  </g>
+
+  <!-- Namespace headline (one or two lines depending on length) -->
+  <text x="580" y="{{NAMESPACE_Y1}}" font-family="Inter, -apple-system, SF Pro Display, Helvetica Neue, Arial, sans-serif"
+        font-size="{{NAMESPACE_SIZE}}" font-weight="800" fill="#1d1d1f" letter-spacing="-2">{{NAMESPACE_L1}}</text>
+  <text x="580" y="{{NAMESPACE_Y2}}" font-family="Inter, -apple-system, SF Pro Display, Helvetica Neue, Arial, sans-serif"
+        font-size="{{NAMESPACE_SIZE}}" font-weight="800" fill="#1d1d1f" letter-spacing="-2">{{NAMESPACE_L2}}</text>
+
+  <!-- Package-name subline -->
+  <text x="582" y="{{SUBLINE_Y}}" font-family="Inter, -apple-system, SF Pro Display, Helvetica Neue, Arial, sans-serif"
+        font-size="32" font-weight="500" fill="#1d1d1f" opacity="0.55">{{PACKAGE_NAME}}</text>
+
+  <!-- Caption (org-supplied: PRIMITIVES, STANDARDS, FOUNDATIONS, etc.) -->
+  <text x="582" y="{{CAPTION_Y}}" font-family="Inter, -apple-system, SF Pro Display, Helvetica Neue, Arial, sans-serif"
+        font-size="28" font-weight="700" fill="{{ACCENT_TEXT}}" letter-spacing="4">{{CAPTION}}</text>
+</svg>

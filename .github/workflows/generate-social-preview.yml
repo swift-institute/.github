@@ -1,0 +1,231 @@
+# generate-social-preview.yml — universal reusable workflow.
+#
+# Renders the parametric chassis at swift-institute/.github/social-preview/chassis.svg.tmpl
+# into a 1280x640 PNG and opens a PR on the target repo committing
+# .github/social-preview.png.
+#
+# Knows nothing about which org calls it. Each org's wrapper supplies its own
+# brand inputs (accent gradient, caption).
+#
+# Public-repo gate per [CI-032] / feedback_private_repos_no_ci_runs.md:
+# both the calling repo's job gate and a pre-flight check on the target repo
+# protect against running for private repos (Free plan = no private CI signal).
+#
+# Provenance: Research/social-preview-cards-ecosystem-strategy.md
+#
+# Auth: swift-institute-bot GitHub App. App secrets at org level on
+# swift-institute/.github (SWIFT_INSTITUTE_BOT_APP_ID, SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY).
+
+name: generate-social-preview
+
+on:
+  workflow_call:
+    inputs:
+      target-repo:
+        description: 'owner/name of the repo to land the PNG in.'
+        type: string
+        required: true
+      namespace:
+        description: 'CamelCase namespace name (e.g., Buffer, IntermediateRepresentation). Headline.'
+        type: string
+        required: true
+      package-name:
+        description: 'kebab-case package name (e.g., swift-buffer-primitives). Subline.'
+        type: string
+        required: true
+      accent-from:
+        description: 'Hex color for the gradient top (e.g., `#D88751`).'
+        type: string
+        required: true
+      accent-to:
+        description: 'Hex color for the gradient bottom (e.g., `#A04A1B`).'
+        type: string
+        required: true
+      accent-text:
+        description: 'Hex color for the caption text (e.g., `#A04A1B`).'
+        type: string
+        required: true
+      caption:
+        description: 'Uppercase caption (e.g., PRIMITIVES, STANDARDS).'
+        type: string
+        required: true
+      dry-run:
+        description: 'Render and upload as artifact, do not open PR.'
+        type: boolean
+        required: false
+        default: false
+
+jobs:
+  render:
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
+        with:
+          egress-policy: audit
+
+      - name: Parse target-repo into owner / name
+        id: parse
+        env:
+          TARGET: ${{ inputs.target-repo }}
+        run: |
+          echo "owner=${TARGET%%/*}" >> "$GITHUB_OUTPUT"
+          echo "name=${TARGET##*/}" >> "$GITHUB_OUTPUT"
+
+      - name: Mint installation token for target repo
+        id: token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: ${{ steps.parse.outputs.owner }}
+          repositories: ${{ steps.parse.outputs.name }}
+
+      - name: Pre-flight — skip if target repo is private
+        id: privacy
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          TARGET: ${{ inputs.target-repo }}
+        run: |
+          is_private=$(gh api "/repos/$TARGET" --jq '.private')
+          echo "is-private=$is_private" >> "$GITHUB_OUTPUT"
+          if [ "$is_private" = "true" ]; then
+            echo "::notice::Target $TARGET is private; skipping per Free-plan CI policy."
+          fi
+
+      - name: Checkout swift-institute/.github
+        if: steps.privacy.outputs.is-private == 'false'
+        uses: actions/checkout@v4
+        with:
+          repository: swift-institute/.github
+          path: institute
+
+      - name: Install resvg
+        if: steps.privacy.outputs.is-private == 'false'
+        run: |
+          curl -sL https://github.com/RazrFalcon/resvg/releases/latest/download/resvg-x86_64-unknown-linux-gnu.tar.gz | tar -xz
+          sudo mv resvg /usr/local/bin/
+
+      - name: Install Inter font
+        if: steps.privacy.outputs.is-private == 'false'
+        run: |
+          mkdir -p ~/.fonts
+          curl -sL https://github.com/rsms/inter/releases/latest/download/Inter.zip -o /tmp/inter.zip
+          unzip -q /tmp/inter.zip -d /tmp/inter
+          cp /tmp/inter/InterVariable.ttf ~/.fonts/
+          fc-cache -f
+
+      - name: Resolve namespace (target repo metadata or derive)
+        id: ns
+        if: steps.privacy.outputs.is-private == 'false'
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          TARGET: ${{ inputs.target-repo }}
+          INPUT_NAMESPACE: ${{ inputs.namespace }}
+        run: |
+          if [ -n "$INPUT_NAMESPACE" ]; then
+            echo "namespace=$INPUT_NAMESPACE" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Try .socialPreview.displayName from target's metadata.yaml
+          tmp=$(mktemp)
+          if gh api "/repos/$TARGET/contents/.github/metadata.yaml" --jq '.content' 2>/dev/null | base64 -d > "$tmp"; then
+            display=$(yq '.socialPreview.displayName // ""' "$tmp")
+            if [ -n "$display" ] && [ "$display" != "null" ]; then
+              echo "namespace=$display" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+          # Derive: list Sources/, find primary module, strip suffix, remove spaces
+          modules=$(gh api "/repos/$TARGET/contents/Sources" --jq '[.[] | select(.type == "dir") | .name]' 2>/dev/null || echo '[]')
+          primary=$(echo "$modules" | jq -r '
+            map(select(
+              (test(" Test Support$") | not) and
+              (test("Tests$") | not) and
+              (test(" Internal$") | not)
+            )) | .[0] // ""
+          ')
+          # Strip trailing layer suffix (Primitives, Standards, Foundations) and spaces
+          stripped=$(echo "$primary" | sed -E 's/ (Primitives|Standards|Foundations)$//' | tr -d ' ')
+          if [ -z "$stripped" ]; then
+            echo "::error::Could not resolve namespace for $TARGET. Provide via .socialPreview.displayName in metadata.yaml or as workflow input."
+            exit 1
+          fi
+          echo "namespace=$stripped" >> "$GITHUB_OUTPUT"
+
+      - name: Render SVG and convert to PNG
+        if: steps.privacy.outputs.is-private == 'false'
+        env:
+          NAMESPACE: ${{ steps.ns.outputs.namespace }}
+          PACKAGE_NAME: ${{ inputs.package-name }}
+          ACCENT_FROM: ${{ inputs.accent-from }}
+          ACCENT_TO: ${{ inputs.accent-to }}
+          ACCENT_TEXT: ${{ inputs.accent-text }}
+          CAPTION: ${{ inputs.caption }}
+        run: |
+          python3 institute/social-preview/render.py \
+            --template institute/social-preview/chassis.svg.tmpl \
+            --namespace "$NAMESPACE" \
+            --package-name "$PACKAGE_NAME" \
+            --accent-from "$ACCENT_FROM" \
+            --accent-to "$ACCENT_TO" \
+            --accent-text "$ACCENT_TEXT" \
+            --caption "$CAPTION" \
+            --output /tmp/social-preview.svg
+          resvg --width 1280 --height 640 /tmp/social-preview.svg /tmp/social-preview.png
+          size=$(stat -c%s /tmp/social-preview.png)
+          if [ "$size" -gt 1048576 ]; then
+            echo "::error::Rendered PNG exceeds 1 MB cap ($size bytes)"
+            exit 1
+          fi
+
+      - name: Upload artifact (dry-run)
+        if: steps.privacy.outputs.is-private == 'false' && inputs.dry-run
+        uses: actions/upload-artifact@v4
+        with:
+          name: social-preview-${{ steps.ns.outputs.namespace }}
+          path: /tmp/social-preview.png
+
+      - name: Open PR on target repo
+        if: steps.privacy.outputs.is-private == 'false' && !inputs.dry-run
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          TARGET: ${{ inputs.target-repo }}
+        run: |
+          tmp=$(mktemp -d)
+          gh repo clone "$TARGET" "$tmp/repo" -- --depth 1
+          cd "$tmp/repo"
+          mkdir -p .github
+          cp /tmp/social-preview.png .github/social-preview.png
+          if git diff --quiet; then
+            echo "No change; nothing to commit."
+            exit 0
+          fi
+          branch="social-preview/$(date -u +%Y%m%d)-${GITHUB_RUN_ID}"
+          git checkout -b "$branch"
+          git -c user.email='swift-institute-bot@users.noreply.github.com' \
+              -c user.name='swift-institute-bot' \
+              commit -am 'chore: regenerate social preview card'
+          git push -u origin "$branch"
+          gh pr create --title 'chore: regenerate social preview card' --body "$(cat <<EOF
+          Generated by \`swift-institute/.github\`'s universal \`generate-social-preview.yml\`.
+
+          ## Preview
+
+          ![social preview](.github/social-preview.png)
+
+          ## Manual upload step
+
+          GitHub does not expose a public API for setting the social preview image. After merging:
+
+          1. Open https://github.com/${TARGET}/settings
+          2. Scroll to **Social preview**
+          3. Drag \`.github/social-preview.png\` into the upload area
+          4. Click **Save changes**
+
+          ~30 seconds. One-time per chassis change.
+          EOF
+          )"
