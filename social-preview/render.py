@@ -24,11 +24,13 @@ import sys
 # giving 640 px usable width.
 PANE_WIDTH = 640
 # Heavy weight (800) Inter glyph-class advances with letter-spacing -2.
-# Tuned empirically against rendered text — Inter Heavy caps are wider
-# than the often-cited 0.62em average due to W/M outliers and dense
-# weight stems. Conservative side: prefer slight under-fill over clipping.
-ADVANCE_UPPER = 0.70
-ADVANCE_LOWER = 0.55
+# Tuned against measured renders (design QA pass 2026-05-07): cards
+# clipping at x=1233..1240 with 0.70/0.55 indicated ~3% underestimation;
+# bumped to 0.74/0.57. Conservative side: prefer slight under-fill over
+# clipping — cohort-wide 1-px tighter spacing is invisible, but a single
+# clipped glyph is a defect.
+ADVANCE_UPPER = 0.74
+ADVANCE_LOWER = 0.57
 ADVANCE_SPACE = 0.30
 # Legibility floor at thumbnail
 MIN_FONT_SIZE = 48
