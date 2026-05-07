@@ -46,15 +46,19 @@ def split_camelcase(name: str) -> tuple[str, str]:
 
 
 def fit(namespace: str) -> dict[str, str]:
-    """Compute layout (font-size, lines, y-positions) for the namespace."""
+    """Compute layout (font-size, lines, y-positions) for the namespace.
+
+    Y baselines are tuned so the content cluster sits at or slightly below
+    canvas optical center, balancing the pyramid glyph's heavy base.
+    """
     n = len(namespace)
     one_line_default_width = n * CHAR_ADVANCE_EM * DEFAULT_FONT_SIZE
     if one_line_default_width <= PANE_WIDTH:
         return {
             "L1": namespace, "L2": "",
             "SIZE": str(DEFAULT_FONT_SIZE),
-            "Y1": "320", "Y2": "-100",
-            "SUBLINE_Y": "380", "CAPTION_Y": "440",
+            "Y1": "350", "Y2": "-100",
+            "SUBLINE_Y": "410", "CAPTION_Y": "470",
         }
     one_line_min_size = PANE_WIDTH / (n * CHAR_ADVANCE_EM)
     if one_line_min_size >= MIN_FONT_SIZE:
@@ -62,8 +66,8 @@ def fit(namespace: str) -> dict[str, str]:
         return {
             "L1": namespace, "L2": "",
             "SIZE": str(size),
-            "Y1": "320", "Y2": "-100",
-            "SUBLINE_Y": "380", "CAPTION_Y": "440",
+            "Y1": "350", "Y2": "-100",
+            "SUBLINE_Y": "410", "CAPTION_Y": "470",
         }
     l1, l2 = split_camelcase(namespace)
     longest = max(len(l1), len(l2))
@@ -75,9 +79,9 @@ def fit(namespace: str) -> dict[str, str]:
     return {
         "L1": l1, "L2": l2,
         "SIZE": str(size),
-        "Y1": "280", "Y2": str(280 + size),
-        "SUBLINE_Y": str(280 + size + 60),
-        "CAPTION_Y": str(280 + size + 113),
+        "Y1": "310", "Y2": str(310 + size),
+        "SUBLINE_Y": str(310 + size + 60),
+        "CAPTION_Y": str(310 + size + 113),
     }
 
 
