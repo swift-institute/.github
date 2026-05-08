@@ -1,0 +1,16 @@
+# .skill-description-allowlist — skills permitted to exceed the 250-char
+# description ceiling per [SKILL-CREATE-013a].
+#
+# One skill name per line. # introduces a comment.
+#
+# Each entry MUST be justified by routing logic that genuinely requires
+# longer text (e.g., explicit TRIGGER/SKIP rubrics for SDK disambiguation).
+# Architectural enumeration and feature lists do NOT justify allowlisting —
+# tighten the description instead.
+#
+# Reviewed during each cluster review per [SKILL-LIFE-030].
+
+# claude-api: needs explicit TRIGGER/SKIP clauses to disambiguate Anthropic
+# SDK files from openai SDK files in the same project. The rubric is the
+# routing logic; compressing it would mis-route.
+claude-api

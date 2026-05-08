@@ -1,0 +1,148 @@
+# lint-skill-descriptions.yml — verify every Skills/<name>/SKILL.md has a
+# `description:` frontmatter field ≤ 250 characters per [SKILL-CREATE-013].
+#
+# Reusable workflow per [CI-001]. Consumer repos that contain `Skills/` call
+# this from their `ci.yml` to gate PRs and pushes that touch skill files.
+# Pairs with the pre-flight gate in `swift-institute/Scripts/sync-skills.sh`.
+#
+# Authority:
+#   - [SKILL-CREATE-013]   the discipline rule (≤ 250 chars, route-focused)
+#   - [SKILL-CREATE-013a]  the mechanical-check requirement
+#   - [SKILL-LIFE-005]     mirror pattern for last_reviewed enforcement
+#
+# Free-account / no-billing constraint: this workflow only runs on PUBLIC
+# consumer repos (private repos consume zero billed minutes only when not
+# running CI; on a free org with no billing, private CI is unrunnable). The
+# script itself lives in the public `swift-institute/.github` repo so the
+# checkout step doesn't need a private-repo token.
+#
+# Inputs:
+#   skills-paths:  space-separated list of skill-root directories within the
+#                  calling repo. Default: 'Skills'. Override for repos with a
+#                  different layout.
+#   ceiling:       max char count per [SKILL-CREATE-013]. Default 250.
+#                  Tightening encouraged; loosening rare and provenanced.
+#   ref:           git ref of swift-institute/.github to use for the check
+#                  script. Default 'main'.
+#
+# Provenance: 2026-05-08 long-term-hygiene cycle (description-bloat diagnostic
+# → skillListingBudgetFraction raise + [SKILL-CREATE-013] / [SKILL-CREATE-013a]
+# codification + this workflow).
+
+name: lint-skill-descriptions
+
+on:
+  workflow_call:
+    inputs:
+      skills-paths:
+        description: 'Space-separated skill-root directories to scan within the caller repo.'
+        type: string
+        required: false
+        default: 'Skills'
+      ceiling:
+        description: 'Max description char count per [SKILL-CREATE-013]. Default 250.'
+        type: number
+        required: false
+        default: 250
+      ref:
+        description: 'Git ref of swift-institute/.github to use for the check script.'
+        type: string
+        required: false
+        default: 'main'
+
+  workflow_dispatch:
+    inputs:
+      skills-paths:
+        description: 'Space-separated skill-root directories.'
+        type: string
+        required: false
+        default: 'Skills'
+      ceiling:
+        description: 'Max description char count.'
+        type: number
+        required: false
+        default: 250
+      ref:
+        description: 'Git ref of swift-institute/.github.'
+        type: string
+        required: false
+        default: 'main'
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Harden runner (audit-mode egress logging)
+        uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout caller repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Checkout swift-institute/.github (public; carries the check script)
+        uses: actions/checkout@v4
+        with:
+          repository: swift-institute/.github
+          ref: ${{ inputs.ref }}
+          path: .swift-institute-github
+          fetch-depth: 1
+
+      - name: Validate skill-roots exist
+        env:
+          SKILLS_PATHS: ${{ inputs.skills-paths }}
+        run: |
+          set -euo pipefail
+          missing=()
+          for p in $SKILLS_PATHS; do
+            if [[ ! -d "$p" ]]; then
+              missing+=("$p")
+            fi
+          done
+          if (( ${#missing[@]} > 0 )); then
+            echo "::error::skill roots not found in repo: ${missing[*]}"
+            echo "::error::Pass 'skills-paths' explicitly if the default ('Skills') doesn't match this repo."
+            exit 1
+          fi
+
+      - name: Run description-length check
+        env:
+          SKILL_DESCRIPTION_CEILING: ${{ inputs.ceiling }}
+          SKILLS_PATHS: ${{ inputs.skills-paths }}
+        run: |
+          set -euo pipefail
+          script=".swift-institute-github/.github/scripts/check-skill-descriptions.sh"
+          chmod +x "$script"
+
+          # Build absolute paths so the script's allowlist (sibling of the
+          # script via SCRIPT_DIR) resolves correctly.
+          roots=()
+          for p in $SKILLS_PATHS; do
+            roots+=("$(pwd)/$p")
+          done
+
+          "$script" "${roots[@]}"
+
+      - name: Step summary
+        if: always()
+        env:
+          SKILLS_PATHS: ${{ inputs.skills-paths }}
+          CEILING: ${{ inputs.ceiling }}
+        run: |
+          {
+            echo "## lint-skill-descriptions"
+            echo ""
+            echo "- skill-roots: \`${SKILLS_PATHS}\`"
+            echo "- ceiling: ${CEILING} chars"
+            echo "- rule: [SKILL-CREATE-013] / [SKILL-CREATE-013a] in \`skill-lifecycle\`"
+            echo ""
+            echo "If this job failed, tighten the offending skill descriptions"
+            echo "(target ≤ 250 chars; preserve routing predicates, drop"
+            echo "architecture/feature enumerations) or add a justified entry"
+            echo "to \`.github/scripts/.skill-description-allowlist\` per [SKILL-CREATE-013a]."
+          } >> "$GITHUB_STEP_SUMMARY"
