@@ -307,7 +307,13 @@ jobs:
 
   swift-linter:
     name: swift-linter (Phase 1, advisory)
-    if: ${{ !github.event.repository.private }}
+    # DISABLED 2026-05-08: swift-foundations/swift-linter is still private and
+    # not yet ready for ecosystem consumption. The actions/checkout step against
+    # the private repo fails on public-repo CI runs, producing noise even
+    # though continue-on-error keeps the consumer build green. Re-enable by
+    # restoring the prior `if: ${{ !github.event.repository.private }}` line
+    # once swift-linter is publishable.
+    if: false
     runs-on: ubuntu-latest
     container: swift:${{ inputs.swift-version }}
     timeout-minutes: 15
