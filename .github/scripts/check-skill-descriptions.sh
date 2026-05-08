@@ -51,13 +51,17 @@ CEILING="${SKILL_DESCRIPTION_CEILING:-250}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ALLOWLIST="${SCRIPT_DIR}/.skill-description-allowlist"
 
-# Default roots — every directory in the local-disk ecosystem that can hold
+# Default roots — directories in the swift-institute ecosystem that can hold
 # SKILL.md files. Override by passing explicit roots as args. CI consumers
 # always pass explicit roots; defaults are convenience for ad-hoc local runs.
+#
+# Scope note: rule-institute is a PARALLEL institute (legal-domain) with its
+# own skill discipline; it is intentionally OUTSIDE swift-institute's default
+# scope. To audit rule-institute, pass its Skills root explicitly:
+#   ./check-skill-descriptions.sh ~/Developer/rule-institute/Skills
 DEFAULT_ROOTS=(
   "${HOME}/Developer/swift-institute/Skills"
   "${HOME}/Developer/swift-institute/Engagement/Skills"
-  "${HOME}/Developer/rule-institute/Skills"
   "${HOME}/Developer/swift-primitives/Skills"
 )
 
