@@ -130,19 +130,20 @@ custom_rules:
   swift_error_qualification:
     name: "Swift.Error Qualification ([PLAT-ARCH-011])"
     # Catches bare `Error` references that should be `Swift.Error`. The
-    # five fixed-length negative lookbehinds (`struct`, `enum`, `class`,
-    # `actor`, `typealias` — each followed by one space) exclude
-    # DECLARATION sites where `Error` is the type's own name; only
-    # REFERENCE sites are flagged. This is the [API-ERR-002] Nest.Name
-    # exemption — `enum X { struct Error: Swift.Error {} }` and
-    # `extension Foo { enum Error: Swift.Error { case ... } }` are valid
+    # six fixed-length negative lookbehinds (`struct`, `enum`, `class`,
+    # `actor`, `typealias`, `associatedtype` — each followed by one
+    # space) exclude DECLARATION sites where `Error` is the type's own
+    # name; only REFERENCE sites are flagged. This is the [API-ERR-002]
+    # Nest.Name exemption — `enum X { struct Error: Swift.Error {} }`,
+    # `extension Foo { enum Error: Swift.Error { case ... } }`, and
+    # `protocol Codec { associatedtype Error: Swift.Error }` are valid
     # canonical patterns and must not trip. End-state: swift-linter rule
     # using SwiftSyntax's IdentifierTypeSyntax-vs-decl traversal, which
     # makes the declaration-vs-reference distinction AST-level and
     # removes the regex fragility. Until that ships, the lookbehinds
     # are the interim fix.
-    regex: '\b(?<!Swift\.)(?<!\.)(?<!struct )(?<!enum )(?<!class )(?<!actor )(?<!typealias )Error\b(?!\.)'
-    message: "Always qualify as 'Swift.Error', not bare 'Error' ([PLAT-ARCH-011]; user-confirmed 2026-05-05). Applies to generic constraints (`<E: Swift.Error>`), conformances (`: Swift.Error`), and any other reference. Avoids ambiguity with namespace-scoped Error types and is the institute's convention everywhere. Declaration sites (`struct/enum/class/actor/typealias Error: Swift.Error`) are exempt — that's [API-ERR-002]'s Nest.Name pattern."
+    regex: '\b(?<!Swift\.)(?<!\.)(?<!struct )(?<!enum )(?<!class )(?<!actor )(?<!typealias )(?<!associatedtype )Error\b(?!\.)'
+    message: "Always qualify as 'Swift.Error', not bare 'Error' ([PLAT-ARCH-011]; user-confirmed 2026-05-05). Applies to generic constraints (`<E: Swift.Error>`), conformances (`: Swift.Error`), and any other reference. Avoids ambiguity with namespace-scoped Error types and is the institute's convention everywhere. Declaration sites (`struct/enum/class/actor/typealias/associatedtype Error: Swift.Error`) are exempt — that's [API-ERR-002]'s Nest.Name pattern."
     severity: warning
     match_kinds:
       - identifier
