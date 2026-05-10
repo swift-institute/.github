@@ -96,10 +96,15 @@ def validate_platform_architecture(repo: str, repo_root: Path) -> int:
 
     # Sources scans
     if sources.is_dir():
-        # Build file list
+        # Build file list. Skip hidden files/dirs (e.g., `.build/`) by
+        # checking ONLY the path segments BELOW repo_root — not absolute
+        # path segments, which would spuriously match parents like
+        # `swift-institute/.github/...` when the validator runs against
+        # fixture directories nested under a `.github` parent.
         swift_files: list[Path] = []
         for p in sources.rglob("*.swift"):
-            if any(seg.startswith(".") for seg in p.parts):
+            relative = p.relative_to(repo_root)
+            if any(seg.startswith(".") for seg in relative.parts):
                 continue
             swift_files.append(p)
 
