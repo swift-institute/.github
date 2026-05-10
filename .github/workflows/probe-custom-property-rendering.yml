@@ -79,7 +79,8 @@ jobs:
           INPUT_TARGET: ${{ inputs.target-repo }}
         run: |
           set -euo pipefail
-          if [[ ! "$INPUT_TARGET" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
+          # GitHub repo names may begin with `.` (e.g., `.github` org-profile repo).
+          if [[ ! "$INPUT_TARGET" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9._-]+$ ]]; then
             echo "::error::'target-repo' input must be in 'owner/name' form. Got: '$INPUT_TARGET'"
             exit 1
           fi
