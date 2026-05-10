@@ -1,3 +1,10 @@
 # .github/metadata.yaml
 # Triaged by AI-assisted bulk pass (2026-04-29).
 description: "Organization-level community-health defaults for Swift Institute."
+
+# 2026-05-10: hasDiscussionsEnabled override per [GH-REPO-051] — this org is the
+# centralization candidate for ecosystem discussions (per [GH-REPO-090..093]);
+# without this override sync-metadata-nightly reverts the toggle to default-false
+# and wipes category visibility.
+settings:
+  hasDiscussionsEnabled: true
