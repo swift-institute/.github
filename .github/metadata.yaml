@@ -8,3 +8,5 @@ description: "Organization-level community-health defaults for Swift Institute."
 # and wipes category visibility.
 settings:
   hasDiscussionsEnabled: true
+readme:
+  family: G

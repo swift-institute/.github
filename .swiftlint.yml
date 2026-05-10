@@ -148,6 +148,105 @@ custom_rules:
     match_kinds:
       - identifier
       - typeidentifier
+  # ── Wave 2b additions (2026-05-10) ────────────────────────────────────────
+  # Twelve new rules per Wave 2b extraction inventory (see
+  # `HANDOFF-skill-to-ci-cd-extraction-inventory.md`). Each cites a skill
+  # rule the regex now mechanically enforces; corresponding skill prose
+  # is trimmed in the same Wave 2b cycle. Disable a rule on a specific
+  # line via `// swiftlint:disable:next <rule_name>  // reason: <citation>`.
+  no_try_optional:
+    name: "No try? — Silent Error Swallowing ([IMPL-108])"
+    regex: '\btry\?\s'
+    message: "try? silently discards typed errors. Use 'do throws(E) { try ... } catch { }' for explicit handling, or 'try!' if the precondition is provably guaranteed ([IMPL-108])."
+    severity: warning
+    excluded:
+      - 'Tests/.*'
+  no_existential_throws:
+    name: "No Existential Throws ([API-ERR-006])"
+    regex: '\bthrows\(\s*any\s+Error\s*\)'
+    message: "Existential 'throws(any Error)' is forbidden. [API-ERR-001] requires typed throws and is non-negotiable. Make the containing type generic over the error type ([API-ERR-006])."
+    severity: error
+  no_any_protocol_existential:
+    name: "No `any <Protocol>` Existential ([API-ERR-006] extension)"
+    # Decision 3 (Wave 2b authorization): extends [API-ERR-006] to ban
+    # `any <Protocol>` references in Sources/ generally — typed-throws
+    # discipline composes with general anti-existential discipline.
+    # `any Error` is already covered (and stricter) via `no_existential_throws`.
+    # Opt-out at deliberate dynamic-dispatch sites with:
+    #   // swiftlint:disable:next no_any_protocol_existential  // reason: <citation>
+    # No `match_kinds` filter — `any` is a contextual keyword, not an
+    # identifier; SwiftLint's `match_kinds` would exclude keyword tokens
+    # and the regex would never fire.
+    regex: '\bany\s+[A-Z][A-Za-z0-9_]*'
+    message: "Existential `any <Protocol>` typically indicates dynamic dispatch the type system could express more precisely. Prefer generic constraints / typed throws / concrete types ([API-ERR-006] extension; Wave 2b decision 3). Opt out at deliberate sites with '// swiftlint:disable:next no_any_protocol_existential  // reason: <citation>'."
+    severity: warning
+    included:
+      - 'Sources/.*'
+  no_tag_suffix_phantom:
+    name: "No *Tag Suffix in Tagged Phantom Types ([API-NAME-010])"
+    regex: 'Tagged<\s*\w+Tag\b'
+    message: "Phantom-type tags use the bare concept name. The *Tag suffix adds nothing — the tag IS the concept ([API-NAME-010])."
+    severity: warning
+  options_not_flags:
+    name: "Options Suffix for OptionSet ([API-NAME-011])"
+    # Catches `struct *Flags` / `enum *Flags` declarations. Spec-mirroring
+    # exception per [API-NAME-003]: types whose `Flags` is the spec's
+    # literal term may opt out via // swiftlint:disable:next options_not_flags.
+    regex: '\b(struct|enum)\s+\w+Flags\b'
+    message: "OptionSet types use .Options suffix, not .Flags (C-flag idiom). The Swift API layer models the concept, not the C naming ([API-NAME-011])."
+    severity: warning
+  no_impl_obj_inst_bindings:
+    name: "No impl/obj/inst Local Binding Abbreviations ([API-NAME-012])"
+    regex: '\b(let|var)\s+(impl|obj|inst|instance)\s*='
+    message: "Local bindings use the type's own name or a domain-qualified word, not impl/obj/inst/instance ([API-NAME-012])."
+    severity: warning
+  no_unsafe_block_form:
+    name: "unsafe Is Expression Keyword, Not Block ([MEM-UNSAFE-004])"
+    regex: '\bunsafe\s*\{'
+    message: "unsafe wraps an expression, not a block. Move 'unsafe' to the leftmost position of the expression ([MEM-UNSAFE-004])."
+    severity: error
+  no_typed_catch_let_error_where:
+    name: "Use Implicit error Binding in Typed catch ([PATTERN-009])"
+    regex: '\bcatch\s+let\s+error\s+where\b'
+    message: "In typed-throws catch blocks, use the implicit 'error' binding with 'catch where ...', not 'catch let error where' ([PATTERN-009])."
+    severity: warning
+  no_thread_ismainthread_in_primitives:
+    name: "No Thread.isMainThread in Primitives ([SWIFT-TEST-012], [PRIM-FOUND-001])"
+    regex: '\bThread\.isMainThread\b'
+    message: "Primitives MUST NOT use Foundation's Thread.isMainThread; use pthread_main_np() ([SWIFT-TEST-012])."
+    severity: error
+    included:
+      - 'Sources/.*'
+  no_macros_test_support_legacy:
+    name: "Use SwiftSyntaxMacrosGenericTestSupport ([SWIFT-TEST-016])"
+    regex: '^[ \t]*import[ \t]+SwiftSyntaxMacrosTestSupport\b'
+    message: "Macro tests use SwiftSyntaxMacrosGenericTestSupport, not SwiftSyntaxMacrosTestSupport ([SWIFT-TEST-016])."
+    severity: error
+  workaround_marker_present:
+    name: "WORKAROUND Comment Discipline ([DOC-045], [PATTERN-016])"
+    # Interim regex per Wave 2b decision 1 (full four-part template
+    # adjacency check is a future swift-linter F-rule). This rule flags
+    # `// WORKAROUND:` markers without a `// WHY:` line within ±5 lines —
+    # SwiftLint regex is single-line; full multi-line template is the
+    # F-rule scope. Until the F-rule ships, this catches the most common
+    # drift: a // WORKAROUND comment with no // WHY explanation in the
+    # immediate vicinity of the declaration.
+    regex: '//\s*WORKAROUND:'
+    message: "Workarounds MUST be paired with // WHY: // WHEN TO REMOVE: // TRACKING: marker comments ([DOC-045], [PATTERN-016]). Verify the four-part template is present within ±5 lines."
+    severity: warning
+  no_int_bitpattern_arithmetic:
+    name: "No Int(bitPattern:) Arithmetic ([CONV-010], [IMPL-010])"
+    # Catches arithmetic on Int(bitPattern:) call sites. Boundary
+    # overloads in `*Standard_Library_Integration` targets are excluded
+    # since that's where Int(bitPattern:) legitimately lives per
+    # [IMPL-010]. Same-package internal use is also excluded via path —
+    # this rule fires at *consumer* call sites.
+    regex: 'Int\(bitPattern:\s*\w+(\.\w+)*\)\s*[+\-*/]'
+    message: "Arithmetic on Int(bitPattern:) defeats type safety. Use typed operators on primitives types; convert at the boundary, not in the middle of expressions ([CONV-010], [IMPL-010])."
+    severity: warning
+    excluded:
+      - 'Sources/.*Standard_Library_Integration.*'
+      - 'Sources/.*Standard Library Integration.*'
 
 # ── Disabling a rule ──────────────────────────────────────────────────────────
 #

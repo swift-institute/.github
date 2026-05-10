@@ -1,16 +1,31 @@
 #!/usr/bin/env bash
-# generate-metadata.sh — Phase-1 heuristic-seeded YAML drafts.
+# generate-metadata.sh — BOOTSTRAP-ONLY metadata.yaml seeder.
 #
 # Called from .github/workflows/generate-metadata.yml. Reads $ORG and
 # (optionally) $SINGLE_REPO from the environment, and uses $GH_TOKEN for
 # authentication.
 #
-# For each in-scope target without an existing .github/metadata.yaml,
-# detects the package class, renders the description per the templates in
-# Skills/github-repository [GH-REPO-011], and opens a PR with the draft.
+# Wave 2b finalization (2026-05-10) — per Decision 6 architectural pivot,
+# topics are now declarative editorial state in each repo's .github/metadata.yaml,
+# validated against `swift-institute/.github/metadata-schema.json`. This script's
+# scope NARROWED to first-time bootstrap only:
+#
+#   • For repos that DO NOT yet have a .github/metadata.yaml, this script
+#     synthesizes an initial draft and opens a PR. Once the draft lands,
+#     metadata.yaml is the source-of-truth — never re-generated.
+#   • For repos that already have metadata.yaml on main, this script
+#     SKIPS them. Authoritative topics, descriptions, and homepages live
+#     in the YAML. The sync-metadata workflow reads from the YAML and
+#     propagates to GitHub; no script-generation in the steady state.
+#
+# Topics in the bootstrap draft MUST be subset of metadata-schema.json's
+# topic enum. Inline tag extensions during bootstrap follow [GH-REPO-021]
+# hybrid governance — PR description carries the justification and the
+# next periodic schill review folds the new tag into the schema.
 #
 # Provenance: Skills/github-repository [GH-REPO-070]; Research/github-
-# metadata-harmonization.md § 4.4.
+# metadata-harmonization.md § 4.4. Wave 2b finalization narrowed scope per
+# HANDOFF-wave-2b-finalization.md Decision 6.
 
 set -euo pipefail
 

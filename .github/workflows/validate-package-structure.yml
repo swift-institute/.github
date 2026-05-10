@@ -1,0 +1,246 @@
+# validate-package-structure.yml — verify multi-product Swift packages follow
+# `modularization` skill structural invariants.
+#
+# Reusable workflow. For the given `org` (or single `repo`), enumerates
+# non-archived repos, clones each (shallow), runs
+# `swift package describe --type json`, and feeds the output to
+# `.github/scripts/validate-package-structure.py` for rule checking.
+#
+# Wave 2b reference reusable per [SKILL-LIFE-026] — covers the highest-leverage
+# Category-E rules from the inventory (HANDOFF-skill-to-ci-cd-extraction-inventory.md
+# §C.3). Subsequent reusables (validate-docc-structure.yml, validate-platform-
+# architecture.yml) follow this same shape as separate handoffs.
+#
+# Rules checked (v1):
+#   1. [MOD-001] Multi-product packages MUST have a `{Domain} Primitives Core`
+#      target. Single-product packages are exempt; layer-1/3 platform
+#      packages on the [MOD-EXCEPT-001] allowlist are exempt.
+#   2. [MOD-005] Umbrella target's sole content is `@_exported public import`
+#      lines in `exports.swift` — zero implementation code.
+#   3. [MOD-007] Intra-package dep DAG depth ≤ 3 from Core.
+#   4. [MOD-011] Multi-product packages MUST publish `{Domain} Primitives
+#      Test Support` library product (with [MOD-EXCEPT] carve-outs).
+#   5. [MOD-012] Multi-product target names match `{Domain} (Primitives|
+#      Foundation|Standard)( Core| Test Support| Namespace)?` shape.
+#   6. [MOD-017] Multi-product packages with top-level namespace MUST
+#      publish `{Domain} Namespace` target with zero non-Namespace deps.
+#
+# Out-of-scope for v1: cross-package import-vs-declared-deps audit
+# ([MOD-006], [MOD-015]), trait-gated SE-0450 integrations ([MOD-014]),
+# `internal import` + `@inlinable` collision ([MOD-027]). These need
+# tighter source-walking and are queued for v2.
+#
+# Pattern mirrors lint-readme-structure.yml and lint-test-support-spine.yml.
+# Authentication uses the swift-institute-bot GitHub App.
+#
+# Provenance: Wave 2b execution (HANDOFF-skill-to-ci-cd-extraction-inventory.md
+# Batch 5 reference reusable). Skills/modularization/SKILL.md [MOD-001],
+# [MOD-005], [MOD-007], [MOD-011], [MOD-012], [MOD-017].
+
+name: validate-package-structure
+
+on:
+  workflow_call:
+    inputs:
+      repo:
+        description: 'Owner/name of a single repo to scan.'
+        type: string
+        required: false
+        default: ''
+      org:
+        description: 'Org to sweep (ignored if repo is set).'
+        type: string
+        required: false
+        default: ''
+      dry-run:
+        description: 'Run checks but skip aggregated reporting.'
+        type: boolean
+        required: false
+        default: false
+      visibility:
+        description: 'Filter targets by visibility (public | private | internal | all).'
+        type: string
+        required: false
+        default: 'public'
+    outputs:
+      repos-scanned:
+        description: 'Number of repos scanned.'
+        value: ${{ jobs.scan.outputs.repos-scanned }}
+      repos-with-violations:
+        description: 'Number of repos with at least one violation.'
+        value: ${{ jobs.scan.outputs.repos-with-violations }}
+      total-violations:
+        description: 'Total count of individual violations across all repos.'
+        value: ${{ jobs.scan.outputs.total-violations }}
+
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: 'Owner/name of a single repo (optional).'
+        type: string
+        required: false
+      org:
+        description: 'Org to sweep (optional; ignored if repo is set).'
+        type: string
+        required: false
+      dry-run:
+        description: 'Run checks but skip aggregated reporting.'
+        type: boolean
+        required: false
+        default: false
+      visibility:
+        description: 'Filter targets by visibility (public | private | internal | all).'
+        type: string
+        required: false
+        default: 'public'
+
+jobs:
+  scan:
+    if: ${{ !github.event.repository.private }}
+    runs-on: macos-26
+    timeout-minutes: 30
+    outputs:
+      repos-scanned: ${{ steps.aggregate.outputs.repos-scanned }}
+      repos-with-violations: ${{ steps.aggregate.outputs.repos-with-violations }}
+      total-violations: ${{ steps.aggregate.outputs.total-violations }}
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@0634a2670c59f64b4a01f0f96f84700a4088b9f0  # v2.12.2
+        with:
+          egress-policy: audit
+
+      - name: Mint installation token (swift-institute-bot)
+        id: mint-token
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547  # v1.12.0
+        with:
+          app-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: ${{ inputs.org || github.repository_owner }}
+
+      - name: Checkout swift-institute/.github (for the validation script)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          repository: swift-institute/.github
+          path: .github-shared
+          ref: main
+
+      - name: Resolve target repos
+        id: targets
+        env:
+          GH_TOKEN: ${{ steps.mint-token.outputs.token }}
+          INPUT_REPO: ${{ inputs.repo }}
+          INPUT_ORG: ${{ inputs.org }}
+          INPUT_VISIBILITY: ${{ inputs.visibility }}
+        run: |
+          set -euo pipefail
+          if [ -n "$INPUT_REPO" ]; then
+            echo "$INPUT_REPO" > /tmp/targets.txt
+          else
+            : "${INPUT_ORG:?org or repo input required}"
+            visibility_filter="$INPUT_VISIBILITY"
+            if [ "$visibility_filter" = "all" ]; then
+              gh api graphql -f org="$INPUT_ORG" -f query='
+                query($org: String!, $cursor: String) {
+                  organization(login: $org) {
+                    repositories(first: 100, after: $cursor, isArchived: false) {
+                      nodes { name nameWithOwner }
+                      pageInfo { hasNextPage endCursor }
+                    }
+                  }
+                }' --paginate --jq '.data.organization.repositories.nodes[].nameWithOwner' \
+                > /tmp/targets.txt
+            else
+              gh repo list "$INPUT_ORG" --no-archived --limit 1000 --visibility "$visibility_filter" \
+                --json nameWithOwner --jq '.[].nameWithOwner' > /tmp/targets.txt
+            fi
+          fi
+          n=$(wc -l < /tmp/targets.txt | tr -d ' ')
+          echo "Resolved $n target repo(s)."
+          echo "count=$n" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Swift toolchain
+        run: swift --version
+
+      - name: Run package-structure checks
+        id: check
+        env:
+          GH_TOKEN: ${{ steps.mint-token.outputs.token }}
+          # [MOD-EXCEPT-001] platform-abstraction-package allowlist (per
+          # Skills/modularization/SKILL.md). Edit this list when the
+          # ecosystem's platform-stack composition changes.
+          MOD_EXCEPT_001_ALLOWLIST: "swift-kernel-primitives swift-cpu-primitives swift-iso-9945 swift-linux-standard swift-darwin-standard swift-windows-32 swift-kernel"
+          VALIDATOR_SCRIPT: ${{ github.workspace }}/.github-shared/.github/scripts/validate-package-structure.py
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/findings
+          : > /tmp/findings/all.tsv
+
+          while IFS= read -r repo; do
+            [ -z "$repo" ] && continue
+            name=${repo##*/}
+
+            # Skip platform-stack packages (MOD-EXCEPT-001).
+            for exempt in $MOD_EXCEPT_001_ALLOWLIST; do
+              if [ "$name" = "$exempt" ]; then
+                echo "$repo	skipped	mod-except-001-platform-allowlist" >> /tmp/findings/all.tsv
+                continue 2
+              fi
+            done
+
+            workdir=$(mktemp -d)
+            (
+              cd "$workdir"
+              if ! gh repo clone "$repo" . -- --depth 1 --quiet 2>/dev/null; then
+                echo "$repo	clone-failed	-" >> /tmp/findings/all.tsv
+                exit 0
+              fi
+
+              if [ ! -f Package.swift ]; then
+                exit 0
+              fi
+
+              if ! swift package --skip-update describe --type json > /tmp/pkg.json 2>/tmp/pkg.err; then
+                err_summary=$(tr '\n' ' ' < /tmp/pkg.err | head -c 200)
+                echo "$repo	package-describe-failed	$err_summary" >> /tmp/findings/all.tsv
+                exit 0
+              fi
+
+              python3 "$VALIDATOR_SCRIPT" "$repo" /tmp/pkg.json >> /tmp/findings/all.tsv || true
+            )
+            rm -rf "$workdir"
+          done < /tmp/targets.txt
+
+      - name: Aggregate findings
+        id: aggregate
+        run: |
+          set -euo pipefail
+          total_repos=$(wc -l < /tmp/targets.txt | tr -d ' ')
+          violations=$(grep -cE "	(MOD|API|PLAT|GH|README|TEST|DOC|MEM|SWIFT-TEST|BENCH|INST-TEST)-[0-9]" /tmp/findings/all.tsv || echo 0)
+          repos_with_violations=$(awk -F'\t' '$2 ~ /^(MOD|API|PLAT|GH|README|TEST|DOC|MEM|SWIFT-TEST|BENCH|INST-TEST)-/{print $1}' /tmp/findings/all.tsv | sort -u | wc -l | tr -d ' ')
+
+          echo "repos-scanned=$total_repos" >> "$GITHUB_OUTPUT"
+          echo "repos-with-violations=$repos_with_violations" >> "$GITHUB_OUTPUT"
+          echo "total-violations=$violations" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## validate-package-structure findings"
+            echo
+            echo "Repos scanned: $total_repos"
+            echo "Repos with violations: $repos_with_violations"
+            echo "Total violations: $violations"
+            echo
+            if [ "$violations" -gt 0 ]; then
+              echo "### Per-repo findings"
+              echo
+              echo "| Repo | Rule | Message |"
+              echo "|---|---|---|"
+              awk -F'\t' '$2 ~ /^(MOD|API|PLAT|GH|README|TEST|DOC|MEM|SWIFT-TEST|BENCH|INST-TEST)-/{
+                gsub(/\|/, "\\|", $3);
+                printf("| `%s` | `%s` | %s |\n", $1, $2, $3)
+              }' /tmp/findings/all.tsv
+            fi
+          } > "$GITHUB_STEP_SUMMARY"
+
+          if [ "$violations" -gt 0 ] && [ "${{ inputs.dry-run }}" != "true" ]; then
+            exit 1
+          fi

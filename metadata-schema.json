@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/swift-institute/.github/main/metadata-schema.json",
+  "title": "swift-institute repository metadata schema",
+  "description": "Per-repo .github/metadata.yaml schema. Validates the declarative GitHub-side metadata that swift-institute's sync-metadata workflow propagates to each repo's GitHub settings. Topics are per-repo editorial choices: the schema validates SHAPE (kebab-case, length, count) but NOT vocabulary — each repo establishes its own topic set based on its content. The closed-enum constraint introduced in Wave 2b was retracted 2026-05-10 per principal direction; see Skills/github-repository/SKILL.md [GH-REPO-021].",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 350,
+      "description": "Repo's GitHub description. Class-templated per Skills/github-repository [GH-REPO-011]."
+    },
+    "topics": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 20,
+      "uniqueItems": true,
+      "description": "GitHub-side topic tags propagated to the repo. Per-repo editorial — each repo establishes its own topic set based on its content. The schema validates SHAPE only (kebab-case, length, uniqueness, count cap); vocabulary is open. The `swift-` prefix is conventionally avoided on the org's own repos because it repeats the org name, but the schema does not enforce that.",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9-]{0,49}$",
+        "description": "Lowercase kebab-case, ≤ 50 chars per [GH-REPO-022]. No closed vocabulary."
+      }
+    },
+    "homepage": {
+      "type": "string",
+      "format": "uri",
+      "description": "Repo homepage URL. Class-templated per [GH-REPO-030]. Personal URLs are forbidden per [GH-REPO-031]."
+    },
+    "settings": {
+      "type": "object",
+      "description": "GitHub repo settings overrides. Sync-metadata workflow propagates these via the GitHub API. Hub-repo override pattern documented at [GH-REPO-094].",
+      "additionalProperties": true,
+      "properties": {
+        "hasIssuesEnabled": { "type": "boolean" },
+        "hasDiscussionsEnabled": { "type": "boolean" },
+        "hasWikiEnabled": { "type": "boolean" },
+        "defaultBranchRef": { "type": "string" }
+      }
+    },
+    "discussion": {
+      "type": "object",
+      "description": "Centralized discussion-thread tracking metadata per [GH-REPO-090..093]. Authored by sync-discussion-threads-nightly.yml; consumed by validate-readme.yml when verifying [README-040] discussion-link blocks.",
+      "additionalProperties": false,
+      "properties": {
+        "url": { "type": "string", "format": "uri" },
+        "category": { "type": "string" },
+        "thread_id": { "type": "string" }
+      }
+    },
+    "socialPreview": {
+      "type": "object",
+      "description": "Social-preview rendering parameters per Skills/social-preview [SOC-002 / SOC-003].",
+      "additionalProperties": true
+    },
+    "readme": {
+      "type": "object",
+      "description": "README routing metadata. Per Wave 2b finalization Decision 7, the `family` field drives validate-readme.yml's per-family rule subset selection.",
+      "additionalProperties": false,
+      "required": ["family"],
+      "properties": {
+        "family": {
+          "type": "string",
+          "enum": ["A", "C", "E", "F", "G"],
+          "description": "README family per Skills/readme/SKILL.md `## Family Routing`. A=user profile, C=process/workflow repo, E=sub-package (Tier 1+ implemented Swift package), F=placeholder/reservation, G=org profile (3 sub-tiers: top-level / org-of-orgs / leaf). The taxonomy has only 5 families — B and D are NOT defined. validate-readme.yml selects the per-family rule subset based on this field."
+        }
+      }
+    }
+  }
+}
