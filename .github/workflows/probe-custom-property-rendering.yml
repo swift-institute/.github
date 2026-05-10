@@ -1,0 +1,320 @@
+# probe-custom-property-rendering.yml — one-shot empirical probe.
+#
+# Question being answered:
+#   GitHub docs (https://docs.github.com/en/organizations/managing-organization-settings/managing-custom-properties-for-repositories-in-your-organization)
+#   list custom-property types as text-string / single-select / multi-select /
+#   true_false. Docs do NOT specify whether URL-shaped string values render as
+#   a clickable <a href> in the repository's About sidebar on the public repo
+#   page, or as plain text. This probe answers it empirically.
+#
+# Probe shape:
+#   1. Create org-level test property `probe_url_test` (text type) on swift-institute.
+#   2. Set its value on a target repo (default: swift-institute/.github) to a real URL.
+#   3. Fetch the rendered HTML of the public repo page anonymously (as a first-time
+#      visitor would see it).
+#   4. Test A — visibility:    is the property name/value present in the public HTML at all?
+#   5. Test B — clickability: if visible, is the value inside an <a href="..."> element?
+#   6. Emit verdict + matched HTML fragments to the workflow summary.
+#   7. Cleanup (always-run): clear per-repo value, DELETE the schema.
+#
+# Methodology caveats included in the summary:
+#   - The fetch is anonymous (no auth token) — matches "first-time visitor" experience.
+#     If GitHub renders custom properties only for authenticated/org-member viewers,
+#     the visibility test will return false even when properties exist.
+#   - GitHub's page is partially client-rendered. If the custom-properties section
+#     is client-rendered, anonymous curl HTML will not contain it; the visibility
+#     test will return false. This is itself an informative result — it would mean
+#     custom properties are not surfaced in raw HTML to anonymous visitors.
+#
+# After this probe runs once and the answer lands in the run summary, REMOVE
+# this workflow file in a follow-up commit — it is not canonical infrastructure.
+#
+# Authentication: swift-institute-bot GitHub App (per Skills/github-repository
+# [GH-REPO-073]); custom-properties read & write granted (verified pre-dispatch).
+
+name: probe-custom-property-rendering
+
+on:
+  workflow_dispatch:
+    inputs:
+      target-repo:
+        description: 'owner/name to probe'
+        type: string
+        required: false
+        default: 'swift-institute/.github'
+      probe-url:
+        description: 'URL value to set on the test property'
+        type: string
+        required: false
+        default: 'https://github.com/swift-institute/.github/discussions/13'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: probe-custom-property-rendering
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden runner (audit-mode egress logging)
+        uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
+        with:
+          egress-policy: audit
+
+      - name: Mint org token (custom-properties write on swift-institute)
+        id: token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: swift-institute
+
+      - name: Validate target repo input
+        env:
+          INPUT_TARGET: ${{ inputs.target-repo }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$INPUT_TARGET" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
+            echo "::error::'target-repo' input must be in 'owner/name' form. Got: '$INPUT_TARGET'"
+            exit 1
+          fi
+
+      - name: Create test property schema (org-level)
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          set -euo pipefail
+          gh api -X PATCH /orgs/swift-institute/properties/schema --input - <<'JSON'
+          {
+            "properties": [
+              {
+                "property_name": "probe_url_test",
+                "value_type": "string",
+                "required": false,
+                "description": "Probe: empirical URL-rendering test. Delete after probe completes."
+              }
+            ]
+          }
+          JSON
+          echo "  created property schema: probe_url_test (string)"
+
+      - name: Set value on target repo
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          TARGET_REPO: ${{ inputs.target-repo }}
+          PROBE_URL: ${{ inputs.probe-url }}
+        run: |
+          set -euo pipefail
+          jq -n --arg url "$PROBE_URL" \
+            '{properties:[{property_name:"probe_url_test",value:$url}]}' \
+            | gh api -X PATCH "/repos/${TARGET_REPO}/properties/values" --input -
+          echo "  set probe_url_test=${PROBE_URL} on ${TARGET_REPO}"
+
+      - name: Wait briefly for propagation
+        run: sleep 5
+
+      - name: Fetch rendered HTML (anonymous, as first-time visitor)
+        env:
+          TARGET_REPO: ${{ inputs.target-repo }}
+        run: |
+          set -euo pipefail
+          curl -sL \
+            -H "User-Agent: Mozilla/5.0 (probe-custom-property-rendering)" \
+            -H "Accept: text/html,application/xhtml+xml" \
+            "https://github.com/${TARGET_REPO}" -o /tmp/page.html
+          echo "  fetched $(wc -c < /tmp/page.html) bytes from https://github.com/${TARGET_REPO}"
+
+      - name: Test A — visibility check
+        id: visibility
+        env:
+          PROBE_URL: ${{ inputs.probe-url }}
+        run: |
+          set -euo pipefail
+          name_found=false
+          value_found=false
+          if grep -qF "probe_url_test" /tmp/page.html; then name_found=true; fi
+          if grep -qF "$PROBE_URL"      /tmp/page.html; then value_found=true; fi
+          echo "name-found=$name_found"   >> "$GITHUB_OUTPUT"
+          echo "value-found=$value_found" >> "$GITHUB_OUTPUT"
+          echo "  property name in HTML: $name_found"
+          echo "  property value in HTML: $value_found"
+
+      - name: Test B — clickability check (HTML parser)
+        id: clickability
+        env:
+          PROBE_URL: ${{ inputs.probe-url }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PYEOF' > /tmp/fragment.txt
+          import os, sys
+          from html.parser import HTMLParser
+
+          target = os.environ['PROBE_URL']
+          html = open('/tmp/page.html').read()
+
+          # Step 1: locate occurrences of the URL in the raw HTML and emit
+          # 400-char windows around each so a human can read the surrounding
+          # markup in the workflow summary.
+          windows = []
+          start = 0
+          while True:
+              i = html.find(target, start)
+              if i < 0:
+                  break
+              w_start = max(0, i - 200)
+              w_end   = min(len(html), i + len(target) + 200)
+              windows.append(html[w_start:w_end])
+              start = i + len(target)
+
+          if not windows:
+              print("CLICKABLE: false (value not present in fetched HTML)")
+              sys.exit(0)
+
+          # Step 2: parse the document and walk start tags; for every <a> tag
+          # whose href contains the target URL, mark it.
+          class HrefMatcher(HTMLParser):
+              def __init__(self):
+                  super().__init__()
+                  self.hits = []
+              def handle_starttag(self, tag, attrs):
+                  if tag != "a":
+                      return
+                  href = dict(attrs).get("href", "")
+                  if target in href:
+                      self.hits.append(("anchor-href", href))
+
+          # Step 3: also detect the case where the URL is the .data() text inside
+          # an <a> element (rare for GitHub, but a possible rendering shape).
+          class TextInAnchor(HTMLParser):
+              def __init__(self):
+                  super().__init__()
+                  self.depth = 0
+                  self.hits = []
+              def handle_starttag(self, tag, attrs):
+                  if tag == "a":
+                      self.depth += 1
+              def handle_endtag(self, tag):
+                  if tag == "a" and self.depth > 0:
+                      self.depth -= 1
+              def handle_data(self, data):
+                  if self.depth > 0 and target in data:
+                      self.hits.append(("anchor-text", data.strip()[:100]))
+
+          m1 = HrefMatcher(); m1.feed(html)
+          m2 = TextInAnchor(); m2.feed(html)
+
+          all_hits = m1.hits + m2.hits
+
+          if all_hits:
+              print("CLICKABLE: true")
+              for kind, val in all_hits[:10]:
+                  print(f"  {kind}: {val}")
+          else:
+              print("CLICKABLE: false (URL present but not inside <a href>)")
+
+          print()
+          print("=== HTML windows around URL occurrences ===")
+          for n, w in enumerate(windows[:5]):
+              print(f"--- window {n+1} ---")
+              print(w)
+              print()
+          PYEOF
+
+          if grep -q '^CLICKABLE: true' /tmp/fragment.txt; then
+            echo "clickable=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "clickable=false" >> "$GITHUB_OUTPUT"
+          fi
+          head -50 /tmp/fragment.txt
+
+      - name: Emit verdict to summary
+        env:
+          NAME_FOUND: ${{ steps.visibility.outputs.name-found }}
+          VALUE_FOUND: ${{ steps.visibility.outputs.value-found }}
+          CLICKABLE: ${{ steps.clickability.outputs.clickable }}
+          TARGET_REPO: ${{ inputs.target-repo }}
+          PROBE_URL: ${{ inputs.probe-url }}
+        run: |
+          set -euo pipefail
+          {
+            echo "## Custom-property URL-rendering probe — verdict"
+            echo ""
+            echo "**Target**: \`${TARGET_REPO}\`  "
+            echo "**Probe URL**: ${PROBE_URL}"
+            echo ""
+            echo "### Tests"
+            echo ""
+            echo "| Test | Result |"
+            echo "|------|--------|"
+            echo "| A1: property name \`probe_url_test\` in public HTML | \`${NAME_FOUND}\` |"
+            echo "| A2: property value (URL) in public HTML | \`${VALUE_FOUND}\` |"
+            echo "| B: value wrapped in \`<a href>\` | \`${CLICKABLE}\` |"
+            echo ""
+            echo "### Verdict"
+            echo ""
+            if [[ "$VALUE_FOUND" == "false" ]]; then
+              echo "Custom property values are NOT visible in the anonymous public-page HTML."
+              echo ""
+              echo "Implications:"
+              echo "- Custom properties cannot serve as a discoverability surface for first-time visitors."
+              echo "- README injection remains the only path for visible 'Discuss this package' links."
+              echo "- Custom properties remain useful as a **machine-readable** companion (org-wide \`gh api\` queries, dashboards, automation)."
+              echo ""
+              echo "Two possible reasons the value is invisible:"
+              echo "1. GitHub renders custom properties only for authenticated viewers / org members."
+              echo "2. The custom-properties section is client-rendered and not in raw HTML."
+              echo ""
+              echo "Either way: not a substitute for README injection."
+            elif [[ "$CLICKABLE" == "true" ]]; then
+              echo "URL values ARE rendered AND clickable in the public HTML."
+              echo ""
+              echo "Implications:"
+              echo "- Custom properties COULD substitute for README-injected discussion links if About-sidebar discoverability is sufficient."
+              echo "- Hybrid (README + custom property) remains best for both human and machine readers."
+            else
+              echo "URL values ARE rendered but as plain text (NOT clickable)."
+              echo ""
+              echo "Implications:"
+              echo "- Custom properties cannot replace clickable README links for discoverability."
+              echo "- Useful as machine-readable companion; copy-paste burden for human readers."
+            fi
+            echo ""
+            echo "### Methodology notes"
+            echo ""
+            echo "- HTML fetched via anonymous \`curl\` to https://github.com/\`${TARGET_REPO}\` — matches first-time-visitor experience."
+            echo "- Clickability tested by Python \`html.parser\` walking start tags; matches both \`<a href=URL>\` and URL-as-text-inside-\`<a>\` shapes."
+            echo "- Probe is destructible: the test property schema is created and deleted in this run."
+            echo ""
+            echo "### Matched HTML fragments"
+            echo ""
+            echo '```html'
+            head -c 4000 /tmp/fragment.txt
+            echo ""
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cleanup — clear per-repo value
+        if: always()
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          TARGET_REPO: ${{ inputs.target-repo }}
+        run: |
+          set -euo pipefail
+          # Setting value to null clears it per the GitHub REST API.
+          jq -n '{properties:[{property_name:"probe_url_test",value:null}]}' \
+            | gh api -X PATCH "/repos/${TARGET_REPO}/properties/values" --input - \
+            || echo "::warning::Could not clear per-repo value (may already be unset)"
+
+      - name: Cleanup — delete property schema
+        if: always()
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          set -euo pipefail
+          gh api -X DELETE /orgs/swift-institute/properties/schema/probe_url_test \
+            || echo "::warning::Could not delete property schema (may already be deleted)"
