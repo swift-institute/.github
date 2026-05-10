@@ -4,6 +4,11 @@
 Wave 2b finalization (2026-05-10) — companion to validate-platform-architecture.yml.
 
 Rules checked (v1):
+  [PLAT-ARCH-007]  POSIX syscall wrappers (shared between Darwin and Linux)
+                   MUST live in swift-iso-9945 (L2 POSIX spec). Curated POSIX-
+                   function-call presence in swift-darwin-standard or
+                   swift-linux-standard sources is a likely violation.
+                   Wave 1 mechanization (2026-05-10).
   [PLAT-ARCH-008c] L1 Primitives packages MUST NOT contain `#if os(...)` /
                    `#if canImport(...)` conditionals in any source file.
   [PLAT-ARCH-008i] swift-windows packages MUST NOT `import POSIX_*` modules.
@@ -30,12 +35,41 @@ L2_PLATFORM_ALLOWLIST = {
     "swift-windows-32",
 }
 
+# POSIX-shared syscalls per IEEE 1003.1, shared by Darwin and Linux. When
+# wrapped at the Swift level, they MUST live in swift-iso-9945 per
+# [PLAT-ARCH-007]. The list is curated for high-precision detection — only
+# names that are unambiguously POSIX-shared appear. Linux-specific
+# (epoll_*, io_uring_*) and Darwin-specific (kqueue, mach_*) calls are
+# CORRECT in their platform's L2 package and MUST NOT appear here.
+POSIX_SHARED_SYSCALLS = (
+    # Process control
+    "fork", "wait", "waitpid", "execv", "execve", "execvp",
+    # Signals
+    "signal", "sigaction", "sigprocmask", "kill", "raise", "alarm", "pause",
+    # Pipes and sockets
+    "pipe", "socket", "socketpair", "bind", "listen", "accept", "connect",
+    "send", "sendto", "sendmsg", "recv", "recvfrom", "recvmsg", "shutdown",
+    "getsockname", "getpeername", "setsockopt", "getsockopt",
+    # Memory mapping
+    "mmap", "munmap", "mprotect", "msync", "madvise", "mlock", "munlock",
+    # POSIX threads (selected — pthread_* set is large; cover canonical ops)
+    "pthread_create", "pthread_join", "pthread_detach", "pthread_self",
+    "pthread_mutex_init", "pthread_mutex_lock", "pthread_mutex_unlock",
+    "pthread_cond_init", "pthread_cond_wait", "pthread_cond_signal",
+)
+
 REQUIRED_TOOLS_VERSION = re.compile(r"^// swift-tools-version:\s*([0-9.]+)")
 LANG_MODE_V6 = re.compile(r"swiftLanguageModes:\s*\[\s*\.v6\s*\]")
 PLATFORM_IMPORT = re.compile(r"^[ \t]*import[ \t]+(Darwin|Glibc|Musl|WinSDK)\b", re.MULTILINE)
 POSIX_IMPORT = re.compile(r"^[ \t]*(?:@[^\s]+\s+)*(?:public[ \t]+|package[ \t]+|internal[ \t]+)?import[ \t]+POSIX_\w+", re.MULTILINE)
 PLATFORM_CONDITIONAL = re.compile(r"^\s*#if\s+(os|canImport)\b", re.MULTILINE)
 UPCOMING_FEATURES = ("ExistentialAny", "InternalImportsByDefault", "MemberImportVisibility")
+# A POSIX call is a function name token followed by an open paren. Matches
+# the call form (`fork(`, `pipe(`) but not bare references in comments
+# unless the comment also contains the paren — vanishingly rare.
+POSIX_CALL = re.compile(
+    r"\b(" + "|".join(re.escape(s) for s in POSIX_SHARED_SYSCALLS) + r")\s*\("
+)
 
 
 def emit(repo: str, rule: str, message: str) -> None:
@@ -153,6 +187,31 @@ def validate_platform_architecture(repo: str, repo_root: Path) -> int:
                      f"{len(offenders)} file(s); first offender = {offenders[0]} "
                      "(forbidden per [PLAT-ARCH-008j] — restricted to swift-iso-9945, "
                      "swift-linux-standard, swift-darwin-standard, swift-windows-32)")
+                findings += 1
+
+        # [PLAT-ARCH-007] POSIX-shared syscalls in platform-specific L2.
+        # If swift-darwin-standard or swift-linux-standard contain a direct
+        # call to a POSIX-shared function (fork, pipe, signal, etc.), the
+        # wrapper likely belongs in swift-iso-9945 — both Darwin and Linux
+        # would otherwise duplicate the POSIX wrapper.
+        if repo_name in {"swift-darwin-standard", "swift-linux-standard"}:
+            offenders: list[tuple[Path, str]] = []
+            for f in swift_files:
+                try:
+                    content = f.read_text()
+                except Exception:
+                    continue
+                m = POSIX_CALL.search(content)
+                if m:
+                    offenders.append((f.relative_to(repo_root), m.group(1)))
+            if offenders:
+                rel, call = offenders[0]
+                emit(repo, "PLAT-ARCH-007",
+                     f"platform-specific L2 package contains POSIX-shared "
+                     f"syscall `{call}(` in {rel} (and {len(offenders) - 1} "
+                     f"other file(s) — POSIX-shared wrappers MUST live in "
+                     f"swift-iso-9945 per [PLAT-ARCH-007], not be duplicated "
+                     f"between Darwin and Linux standards)")
                 findings += 1
 
     return findings
