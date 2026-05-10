@@ -67,11 +67,14 @@ on:
         required: false
         default: true
 
-# swift-institute/.github repo + Packages category — captured 2026-05-10
-# at setup time per [GH-REPO-090]. Both are stable identifiers.
+# swift-institute/.github hub repo identifiers. The repository ID is captured
+# at workflow-author time (stable). The category is resolved at runtime by
+# slug per [GH-REPO-093], so the category ID does NOT live in this file —
+# this protects against the failure mode where the category gets recreated
+# (e.g., after a discussions-disabled / re-enabled cycle) and its ID changes.
 env:
   SWIFT_INSTITUTE_GITHUB_REPO_ID: R_kgDOSDTLeg
-  PACKAGES_CATEGORY_ID: DIC_kwDOSDTLes4C8spE
+  PACKAGES_CATEGORY_SLUG: packages
   HUB_OWNER: swift-institute
   HUB_REPO: .github
 
@@ -172,6 +175,37 @@ jobs:
           fi
           echo "  decided: $(grep '^action=' "$GITHUB_OUTPUT" | tail -1 | cut -d= -f2)"
 
+      - name: Resolve Packages category ID by slug
+        id: category
+        if: steps.decide.outputs.action == 'create'
+        env:
+          GH_TOKEN: ${{ steps.hub-token.outputs.token }}
+        run: |
+          set -euo pipefail
+
+          # Look up the category by slug rather than hard-coding the ID. Slugs
+          # are stable across category recreation; IDs are not. See [GH-REPO-093].
+          category_id=$(gh api graphql -f query='
+            query($owner: String!, $name: String!) {
+              repository(owner: $owner, name: $name) {
+                discussionCategories(first: 25) {
+                  nodes { id name slug }
+                }
+              }
+            }
+          ' -F owner="$HUB_OWNER" -F name="$HUB_REPO" \
+            | jq -r --arg slug "$PACKAGES_CATEGORY_SLUG" \
+                '.data.repository.discussionCategories.nodes[] | select(.slug == $slug) | .id')
+
+          if [[ -z "$category_id" ]]; then
+            echo "::error::Could not resolve discussion category by slug '${PACKAGES_CATEGORY_SLUG}' on ${HUB_OWNER}/${HUB_REPO}."
+            echo "::error::Verify discussions are enabled (per [GH-REPO-094]) and the 'Packages' category exists."
+            exit 1
+          fi
+
+          echo "  resolved: $category_id (slug=$PACKAGES_CATEGORY_SLUG)"
+          echo "category-id=${category_id}" >> "$GITHUB_OUTPUT"
+
       - name: Create discussion (GraphQL)
         id: create
         if: steps.decide.outputs.action == 'create' && inputs.dry-run == false
@@ -179,6 +213,7 @@ jobs:
           GH_TOKEN: ${{ steps.hub-token.outputs.token }}
           TARGET_NAME: ${{ steps.scope.outputs.target-name }}
           TARGET_OWNER: ${{ steps.scope.outputs.target-owner }}
+          CATEGORY_ID: ${{ steps.category.outputs.category-id }}
         run: |
           set -euo pipefail
 
@@ -199,7 +234,7 @@ jobs:
               }
             }
           ' -F repoId="$SWIFT_INSTITUTE_GITHUB_REPO_ID" \
-             -F catId="$PACKAGES_CATEGORY_ID" \
+             -F catId="$CATEGORY_ID" \
              -F title="$title" \
              -F body="$body")
 
@@ -221,11 +256,13 @@ jobs:
         env:
           TARGET_OWNER: ${{ steps.scope.outputs.target-owner }}
           TARGET_NAME: ${{ steps.scope.outputs.target-name }}
+          CATEGORY_ID: ${{ steps.category.outputs.category-id }}
         run: |
           echo "  Would create discussion on ${HUB_OWNER}/${HUB_REPO}:"
-          echo "    category-id: $PACKAGES_CATEGORY_ID"
-          echo "    title:       $TARGET_NAME"
-          echo "    body:        Discussion thread for [${TARGET_NAME}](https://github.com/${TARGET_OWNER}/${TARGET_NAME}). Questions, feedback, and announcements welcome."
+          echo "    category-slug: $PACKAGES_CATEGORY_SLUG"
+          echo "    category-id:   $CATEGORY_ID (resolved from slug at runtime)"
+          echo "    title:         $TARGET_NAME"
+          echo "    body:          Discussion thread for [${TARGET_NAME}](https://github.com/${TARGET_OWNER}/${TARGET_NAME}). Questions, feedback, and announcements welcome."
 
       - name: Update metadata.yaml + README in workspace
         id: rewrite

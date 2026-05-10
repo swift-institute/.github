@@ -1,0 +1,128 @@
+# sync-discussion-threads-nightly.yml — daily validation sweep.
+#
+# Calls sync-discussion-threads.yml in validation-only mode (create=false,
+# dry-run=true) for each Family E package in the pilot scope per
+# [GH-REPO-090]. Each call validates that the package's metadata.yaml
+# `discussion:` URL resolves and the README marker block matches.
+#
+# When any matrix leg fails (auth, network, or the called workflow's
+# internal validation surfaces an error), opens or updates a tracking
+# issue in swift-institute/.github mirroring sync-metadata-nightly's
+# [README-167] reporting shape.
+#
+# Provenance: Skills/github-repository [GH-REPO-090..094]; Skills/readme/
+# ci-automation.md [README-167] / [README-168].
+#
+# Schedule: 04:30 UTC, after sync-metadata-nightly (04:00 UTC) so any
+# overnight metadata.yaml updates have already converged on GitHub-side
+# state before this validates the README marker block.
+
+name: sync-discussion-threads-nightly
+
+on:
+  schedule:
+    - cron: '30 4 * * *'   # daily 04:30 UTC
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: 'Validation-mode dry-run override (cron always uses dry-run=true).'
+        type: boolean
+        required: false
+        default: true
+
+jobs:
+  sweep:
+    strategy:
+      fail-fast: false
+      matrix:
+        repo:
+          - swift-primitives/swift-carrier-primitives
+          - swift-primitives/swift-comparison-primitives
+          - swift-primitives/swift-either-primitives
+          - swift-primitives/swift-equation-primitives
+          - swift-primitives/swift-hash-primitives
+          - swift-primitives/swift-ownership-primitives
+          - swift-primitives/swift-pair-primitives
+          - swift-primitives/swift-product-primitives
+          - swift-primitives/swift-property-primitives
+          - swift-primitives/swift-standard-library-extensions
+          - swift-primitives/swift-tagged-primitives
+    uses: ./.github/workflows/sync-discussion-threads.yml
+    with:
+      repo: ${{ matrix.repo }}
+      create: false
+      dry-run: ${{ inputs.dry-run || true }}
+    secrets: inherit
+
+  report:
+    needs: sweep
+    runs-on: ubuntu-latest
+    if: always() && needs.sweep.result != 'skipped'
+    permissions:
+      contents: read
+    steps:
+      - name: Harden runner (audit-mode egress logging)
+        uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
+        with:
+          egress-policy: audit
+
+      - name: Mint installation token
+        id: token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: swift-institute
+          repositories: .github
+          permission-issues: write
+
+      - name: Build issue body
+        env:
+          SWEEP_RESULT: ${{ needs.sweep.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$SWEEP_RESULT" == "success" ]]; then
+            echo "All pilot packages validated cleanly — no tracking issue needed."
+            echo "FILE_ISSUE=false" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
+          today=$(date -u '+%Y-%m-%d')
+          cat > "${RUNNER_TEMP}/issue-body.md" <<EOF
+          The nightly discussion-thread validation sweep at 04:30 UTC on ${today} completed with status: \`${SWEEP_RESULT}\`.
+
+          See the [run summary](${RUN_URL}) for the per-package breakdown.
+
+          ### What this means
+
+          One or more pilot packages failed validation. Possible causes:
+
+          - The discussion URL in \`.github/metadata.yaml\` no longer resolves (thread deleted or repository visibility changed)
+          - The README \`<!-- BEGIN: discussion -->\` marker block drifted from the metadata.yaml URL (manual edit not yet picked up, or no auto-fix PR opened)
+          - Bot authentication or transient GitHub API failure
+
+          ### What to do
+
+          - Check the failed matrix legs in the run logs.
+          - For URL-resolves failures: verify the discussion still exists at \`https://github.com/orgs/swift-institute/discussions\`.
+          - For marker-block drift: either accept the drift by updating the metadata.yaml URL, or re-dispatch \`sync-discussion-threads.yml\` with \`create=false, dry-run=false\` to apply the auto-fix PR.
+
+          See \`Skills/github-repository\` § [GH-REPO-090..094] and \`Skills/readme/ci-automation.md\` § [README-168].
+          EOF
+          {
+            echo "ISSUE_TITLE=Discussion-thread validation run ${today} — ${SWEEP_RESULT}"
+            echo "FILE_ISSUE=true"
+          } >> "$GITHUB_ENV"
+
+      - name: Upsert tracking issue
+        if: env.FILE_ISSUE == 'true'
+        uses: swift-institute/.github/.github/actions/upsert-tracking-issue@main
+        with:
+          repo: swift-institute/.github
+          title: ${{ env.ISSUE_TITLE }}
+          title-prefix: 'Discussion-thread validation run'
+          body-file: ${{ runner.temp }}/issue-body.md
+          label: 'discussion-threads'
+          gh-token: ${{ steps.token.outputs.token }}
