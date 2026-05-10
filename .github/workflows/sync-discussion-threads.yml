@@ -1,0 +1,458 @@
+# sync-discussion-threads.yml — manage centralized discussion threads for
+# public Family E packages.
+#
+# Reads the target repo's .github/metadata.yaml `discussion:` field. When
+# the field is empty and `create=true`, creates a thread on
+# swift-institute/.github "Packages" category and opens a PR back to the
+# target repo writing the URL into metadata.yaml + the README marker block.
+# When the field is populated, validates README marker block consistency.
+#
+# Provenance: Skills/github-repository [GH-REPO-090..093]; Skills/readme/
+# sub-package.md [README-040]; Skills/readme/ci-automation.md [README-168];
+# Skills/release-readiness [RELEASE-004a] Stage 2 rows 6-7.
+#
+# Inputs:
+#   repo:    "owner/name" form. Always single-repo.
+#   create:  when true, creates threads where the discussion field is empty.
+#            When false, validation-only.
+#   dry-run: when true, prints intended actions without GraphQL mutations or
+#            PR creation.
+#
+# Authentication: swift-institute-bot GitHub App (per Skills/github-repository
+# [GH-REPO-073]). Two installation tokens are minted: one for the
+# swift-institute org (createDiscussion mutation against .github), one for
+# the target repo's org (read metadata.yaml + README, open PR).
+
+name: sync-discussion-threads
+
+on:
+  workflow_call:
+    inputs:
+      repo:
+        description: 'Owner/name of the target repo (Family E package).'
+        type: string
+        required: true
+      create:
+        description: 'Create thread when discussion field is empty.'
+        type: boolean
+        required: false
+        default: false
+      dry-run:
+        description: 'Print intended actions without GraphQL mutation or PR creation.'
+        type: boolean
+        required: false
+        default: true
+    outputs:
+      action-taken:
+        description: 'one of: noop, would-create, created, would-validate, validated, drift-detected'
+        value: ${{ jobs.sync.outputs.action-taken }}
+      discussion-url:
+        description: 'Final discussion URL (existing or newly-created).'
+        value: ${{ jobs.sync.outputs.discussion-url }}
+
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: 'Owner/name of the target repo (Family E package).'
+        type: string
+        required: true
+      create:
+        description: 'Create thread when discussion field is empty.'
+        type: boolean
+        required: false
+        default: false
+      dry-run:
+        description: 'Print intended actions without GraphQL mutation or PR creation.'
+        type: boolean
+        required: false
+        default: true
+
+# swift-institute/.github repo + Packages category — captured 2026-05-10
+# at setup time per [GH-REPO-090]. Both are stable identifiers.
+env:
+  SWIFT_INSTITUTE_GITHUB_REPO_ID: R_kgDOSDTLeg
+  PACKAGES_CATEGORY_ID: DIC_kwDOSDTLes4C8spE
+  HUB_OWNER: swift-institute
+  HUB_REPO: .github
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      action-taken: ${{ steps.act.outputs.action-taken }}
+      discussion-url: ${{ steps.act.outputs.discussion-url }}
+    steps:
+      - name: Harden runner (audit-mode egress logging)
+        uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
+        with:
+          egress-policy: audit
+
+      - name: Validate inputs
+        env:
+          INPUT_REPO: ${{ inputs.repo }}
+        run: |
+          if [[ ! "$INPUT_REPO" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
+            echo "::error::'repo' input must be in 'owner/name' form. Got: '$INPUT_REPO'"
+            exit 1
+          fi
+
+      - name: Compute scope
+        id: scope
+        env:
+          INPUT_REPO: ${{ inputs.repo }}
+        run: |
+          target_owner="${INPUT_REPO%/*}"
+          target_name="${INPUT_REPO#*/}"
+          echo "target-owner=${target_owner}" >> "$GITHUB_OUTPUT"
+          echo "target-name=${target_name}" >> "$GITHUB_OUTPUT"
+
+      - name: Mint hub token (swift-institute/.github — discussions write)
+        id: hub-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: ${{ env.HUB_OWNER }}
+          repositories: ${{ env.HUB_REPO }}
+
+      - name: Mint target token (target repo — contents read + PR write)
+        id: target-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: ${{ steps.scope.outputs.target-owner }}
+          repositories: ${{ steps.scope.outputs.target-name }}
+
+      - name: Checkout target repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.repo }}
+          token: ${{ steps.target-token.outputs.token }}
+          path: target
+
+      - name: Read intended state from metadata.yaml
+        id: state
+        env:
+          INPUT_REPO: ${{ inputs.repo }}
+        run: |
+          set -euo pipefail
+
+          metadata_path="target/.github/metadata.yaml"
+          if [[ ! -f "$metadata_path" ]]; then
+            echo "::error::No .github/metadata.yaml in $INPUT_REPO."
+            exit 1
+          fi
+
+          discussion_url=$(yq -r '.discussion // ""' "$metadata_path")
+          echo "discussion-url=${discussion_url}" >> "$GITHUB_OUTPUT"
+          if [[ -n "$discussion_url" ]]; then
+            echo "  current discussion URL: ${discussion_url}"
+          else
+            echo "  current discussion URL: (empty)"
+          fi
+
+      - name: Decide action
+        id: decide
+        env:
+          CURRENT_URL: ${{ steps.state.outputs.discussion-url }}
+          CREATE: ${{ inputs.create }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$CURRENT_URL" ]]; then
+            if [[ "$CREATE" == "true" ]]; then
+              echo "action=create" >> "$GITHUB_OUTPUT"
+            else
+              echo "action=skip-no-create" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "action=validate" >> "$GITHUB_OUTPUT"
+          fi
+          echo "  decided: $(grep '^action=' "$GITHUB_OUTPUT" | tail -1 | cut -d= -f2)"
+
+      - name: Create discussion (GraphQL)
+        id: create
+        if: steps.decide.outputs.action == 'create' && inputs.dry-run == false
+        env:
+          GH_TOKEN: ${{ steps.hub-token.outputs.token }}
+          TARGET_NAME: ${{ steps.scope.outputs.target-name }}
+          TARGET_OWNER: ${{ steps.scope.outputs.target-owner }}
+        run: |
+          set -euo pipefail
+
+          # Title per [GH-REPO-093] — repo name verbatim.
+          title="$TARGET_NAME"
+          # Body per [GH-REPO-093] — minimal single paragraph.
+          body="Discussion thread for [${TARGET_NAME}](https://github.com/${TARGET_OWNER}/${TARGET_NAME}). Questions, feedback, and announcements welcome."
+
+          response=$(gh api graphql -f query='
+            mutation($repoId: ID!, $catId: ID!, $title: String!, $body: String!) {
+              createDiscussion(input: {
+                repositoryId: $repoId,
+                categoryId: $catId,
+                title: $title,
+                body: $body
+              }) {
+                discussion { url number }
+              }
+            }
+          ' -F repoId="$SWIFT_INSTITUTE_GITHUB_REPO_ID" \
+             -F catId="$PACKAGES_CATEGORY_ID" \
+             -F title="$title" \
+             -F body="$body")
+
+          new_url=$(echo "$response" | jq -r '.data.createDiscussion.discussion.url')
+          new_number=$(echo "$response" | jq -r '.data.createDiscussion.discussion.number')
+
+          if [[ -z "$new_url" || "$new_url" == "null" ]]; then
+            echo "::error::createDiscussion returned no URL. Raw response:"
+            echo "$response"
+            exit 1
+          fi
+
+          echo "  created: $new_url (#$new_number)"
+          echo "discussion-url=${new_url}" >> "$GITHUB_OUTPUT"
+          echo "discussion-number=${new_number}" >> "$GITHUB_OUTPUT"
+
+      - name: Plan create (dry-run preview)
+        if: steps.decide.outputs.action == 'create' && inputs.dry-run == true
+        env:
+          TARGET_OWNER: ${{ steps.scope.outputs.target-owner }}
+          TARGET_NAME: ${{ steps.scope.outputs.target-name }}
+        run: |
+          echo "  Would create discussion on ${HUB_OWNER}/${HUB_REPO}:"
+          echo "    category-id: $PACKAGES_CATEGORY_ID"
+          echo "    title:       $TARGET_NAME"
+          echo "    body:        Discussion thread for [${TARGET_NAME}](https://github.com/${TARGET_OWNER}/${TARGET_NAME}). Questions, feedback, and announcements welcome."
+
+      - name: Update metadata.yaml + README in workspace
+        id: rewrite
+        if: |
+          (steps.decide.outputs.action == 'create' && inputs.dry-run == false) ||
+          steps.decide.outputs.action == 'validate'
+        env:
+          DISCUSSION_URL: ${{ steps.create.outputs.discussion-url || steps.state.outputs.discussion-url }}
+          DISCUSSION_NUMBER: ${{ steps.create.outputs.discussion-number || '' }}
+          DECIDE_ACTION: ${{ steps.decide.outputs.action }}
+        run: |
+          set -euo pipefail
+
+          metadata_path="target/.github/metadata.yaml"
+          readme_path="target/README.md"
+
+          # 1. metadata.yaml — ensure `discussion:` matches DISCUSSION_URL.
+          current=$(yq -r '.discussion // ""' "$metadata_path")
+          if [[ "$current" != "$DISCUSSION_URL" ]]; then
+            yq -i ".discussion = \"$DISCUSSION_URL\"" "$metadata_path"
+            echo "  updated metadata.yaml discussion field"
+            metadata_changed=1
+          else
+            echo "  metadata.yaml: converged"
+            metadata_changed=0
+          fi
+          echo "metadata-changed=${metadata_changed}" >> "$GITHUB_OUTPUT"
+
+          # 2. README.md marker block — extract number from URL for link text.
+          number="${DISCUSSION_NUMBER:-}"
+          if [[ -z "$number" ]]; then
+            number=$(echo "$DISCUSSION_URL" | sed -nE 's|.*/discussions/([0-9]+).*|\1|p')
+          fi
+
+          python3 - <<PYEOF
+          import os, re, sys
+          from pathlib import Path
+
+          path = Path("$readme_path")
+          if not path.exists():
+              print(f"::warning::No README.md at {path} — skipping README update")
+              sys.exit(0)
+
+          original = path.read_text()
+          url = "$DISCUSSION_URL"
+          number = "$number"
+          new_block_inner = f"Discuss this package: [swift-institute/discussions/{number}]({url})"
+          new_block = f"<!-- BEGIN: discussion -->\n{new_block_inner}\n<!-- END: discussion -->"
+
+          marker_re = re.compile(r"<!-- BEGIN: discussion -->.*?<!-- END: discussion -->", re.DOTALL)
+
+          if marker_re.search(original):
+              # Update existing block
+              updated = marker_re.sub(new_block, original)
+          else:
+              # Insert new "## Community" section before "## License" if present,
+              # otherwise append at end of file.
+              section = f"## Community\n\n{new_block}\n"
+              license_re = re.compile(r"^## License\s*$", re.MULTILINE)
+              m = license_re.search(original)
+              if m:
+                  insert_at = m.start()
+                  # Ensure a blank line precedes the new section
+                  prefix = original[:insert_at]
+                  if not prefix.endswith("\n\n"):
+                      section = "\n" + section if not prefix.endswith("\n") else section
+                      if not prefix.endswith("\n\n"):
+                          section = "\n" + section
+                  updated = prefix + section + "\n" + original[insert_at:]
+              else:
+                  sep = "" if original.endswith("\n\n") else ("\n" if original.endswith("\n") else "\n\n")
+                  updated = original + sep + section
+
+          if updated != original:
+              path.write_text(updated)
+              print("  README updated")
+              # Set output via $GITHUB_OUTPUT (env var passed by run step)
+              with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+                  f.write("readme-changed=1\n")
+          else:
+              print("  README: converged")
+              with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+                  f.write("readme-changed=0\n")
+          PYEOF
+
+      - name: Open PR with metadata + README updates
+        id: pr
+        if: |
+          steps.decide.outputs.action == 'create' &&
+          inputs.dry-run == false &&
+          (steps.rewrite.outputs.metadata-changed == '1' || steps.rewrite.outputs.readme-changed == '1')
+        env:
+          GH_TOKEN: ${{ steps.target-token.outputs.token }}
+          DISCUSSION_URL: ${{ steps.create.outputs.discussion-url }}
+          INPUT_REPO: ${{ inputs.repo }}
+        working-directory: target
+        run: |
+          set -euo pipefail
+
+          git config user.name "swift-institute-bot[bot]"
+          git config user.email "swift-institute-bot[bot]@users.noreply.github.com"
+
+          branch="bot/add-discussion-thread-${GITHUB_RUN_ID}"
+          git checkout -b "$branch"
+          git add .github/metadata.yaml README.md
+
+          commit_msg_file="$RUNNER_TEMP/commit-msg.txt"
+          printf '%s\n\n%s\n\n%s\n' \
+            "Add centralized discussion thread" \
+            "Discussion thread: ${DISCUSSION_URL}" \
+            "Per Skills/github-repository [GH-REPO-090..093] and [README-040]." \
+            > "$commit_msg_file"
+          git commit -F "$commit_msg_file"
+
+          git push origin "$branch"
+
+          pr_body_file="$RUNNER_TEMP/pr-body.md"
+          {
+            printf 'Adds the centralized discussion thread URL to `.github/metadata.yaml` and the\n'
+            printf 'README `## Community` section per Skills/github-repository [GH-REPO-090..093]\n'
+            printf 'and Skills/readme/sub-package.md [README-040].\n\n'
+            printf 'Discussion thread: %s\n\n' "${DISCUSSION_URL}"
+            printf 'Workflow: `sync-discussion-threads.yml` — run [`%s`](https://github.com/%s/actions/runs/%s).\n' \
+              "${GITHUB_RUN_ID}" "${GITHUB_REPOSITORY}" "${GITHUB_RUN_ID}"
+          } > "$pr_body_file"
+
+          pr_url=$(gh pr create \
+            --repo "$INPUT_REPO" \
+            --base main \
+            --head "$branch" \
+            --title "Add centralized discussion thread" \
+            --body-file "$pr_body_file")
+          echo "  opened: $pr_url"
+          echo "pr-url=${pr_url}" >> "$GITHUB_OUTPUT"
+
+      - name: Validate-only — surface drift
+        id: validate
+        if: steps.decide.outputs.action == 'validate'
+        env:
+          DISCUSSION_URL: ${{ steps.state.outputs.discussion-url }}
+          METADATA_CHANGED: ${{ steps.rewrite.outputs.metadata-changed }}
+          README_CHANGED: ${{ steps.rewrite.outputs.readme-changed }}
+          INPUT_REPO: ${{ inputs.repo }}
+        run: |
+          set -euo pipefail
+
+          # Verify URL resolves on the public web.
+          http_code=$(curl -sS -o /dev/null -w '%{http_code}' "$DISCUSSION_URL" || echo "000")
+          echo "  URL HTTP status: $http_code"
+
+          drift=0
+          if [[ "$http_code" != "200" ]]; then
+            echo "::warning::Discussion URL returned HTTP $http_code (expected 200): $DISCUSSION_URL"
+            drift=$((drift + 1))
+          fi
+          if [[ "$METADATA_CHANGED" == "1" ]]; then
+            echo "::warning::metadata.yaml drift detected for $INPUT_REPO"
+            drift=$((drift + 1))
+          fi
+          if [[ "$README_CHANGED" == "1" ]]; then
+            echo "::warning::README marker block drift detected for $INPUT_REPO"
+            drift=$((drift + 1))
+          fi
+
+          if [[ $drift -eq 0 ]]; then
+            echo "  validated: converged"
+          else
+            echo "  validated: $drift drift finding(s)"
+          fi
+          echo "drift-count=${drift}" >> "$GITHUB_OUTPUT"
+
+      - name: Emit summary + outputs
+        id: act
+        env:
+          ACTION: ${{ steps.decide.outputs.action }}
+          DRY_RUN: ${{ inputs.dry-run }}
+          PR_URL: ${{ steps.pr.outputs.pr-url || '' }}
+          CREATED_URL: ${{ steps.create.outputs.discussion-url || '' }}
+          CURRENT_URL: ${{ steps.state.outputs.discussion-url }}
+          DRIFT: ${{ steps.validate.outputs.drift-count || '0' }}
+          INPUT_REPO: ${{ inputs.repo }}
+        run: |
+          set -euo pipefail
+
+          final_url="${CREATED_URL:-$CURRENT_URL}"
+          echo "discussion-url=${final_url}" >> "$GITHUB_OUTPUT"
+
+          case "$ACTION" in
+            skip-no-create)
+              taken="noop"
+              ;;
+            create)
+              if [[ "$DRY_RUN" == "true" ]]; then
+                taken="would-create"
+              else
+                taken="created"
+              fi
+              ;;
+            validate)
+              if [[ "$DRY_RUN" == "true" ]]; then
+                taken="would-validate"
+              elif [[ "$DRIFT" -gt 0 ]]; then
+                taken="drift-detected"
+              else
+                taken="validated"
+              fi
+              ;;
+            *)
+              taken="unknown"
+              ;;
+          esac
+          echo "action-taken=${taken}" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## sync-discussion-threads summary"
+            echo ""
+            echo "- target: \`$INPUT_REPO\`"
+            echo "- decision: $ACTION"
+            echo "- dry-run: $DRY_RUN"
+            echo "- action taken: $taken"
+            if [[ -n "$final_url" ]]; then
+              echo "- discussion URL: $final_url"
+            fi
+            if [[ -n "$PR_URL" ]]; then
+              echo "- PR opened: $PR_URL"
+            fi
+            if [[ "$DRIFT" -gt 0 ]]; then
+              echo "- drift findings: $DRIFT"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
