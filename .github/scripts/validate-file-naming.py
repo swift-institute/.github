@@ -2,6 +2,7 @@
 """validate-file-naming.py — verify file naming conventions.
 
 Wave 1 mechanization (2026-05-10) — companion to validate-file-naming.yml.
+Wave 4 extension (2026-05-11) — [API-IMPL-007] extension-file basename check.
 
 Rules checked:
   [API-IMPL-006] File names MUST match the type's full nested path with
@@ -10,6 +11,14 @@ Rules checked:
                  basename contains NO dots AND matches the compound-name
                  pattern (uppercase-first followed by an internal capital
                  boundary) is a likely violation.
+  [API-IMPL-007] Extension files MUST use the `+` suffix pattern or the
+                 where-clause shape. Mechanical narrow check: a `.swift`
+                 file in Sources/ whose top-level declarations are ALL
+                 `extension` blocks (no `struct` / `class` / `enum` /
+                 `actor` / `protocol` / `typealias` declared at file scope)
+                 MUST have `+` in its basename OR carry a ` where `
+                 segment matching the where-clause shape. The "extension
+                 only" file shape is the canonical extension-file signal.
 
 Detection scope:
 - `Sources/**/*.swift`. Test, Experiment, Example, and Benchmark trees are
@@ -78,6 +87,51 @@ def is_compound_basename(basename: str) -> bool:
     return False
 
 
+# Detect top-level type declarations: any `struct|class|enum|actor|protocol|
+# typealias|func|var|let` at the file's column-0 position (optionally
+# preceded by access modifiers / attributes). The presence of any one of
+# these marks the file as a "type" file rather than a pure-extension file.
+TOP_LEVEL_TYPE_RE = re.compile(
+    r"^(?:[a-zA-Z@_][\w@()]*[ \t]+)*"
+    r"(?:struct|class|enum|actor|protocol|typealias|func|var|let)\s+",
+    re.MULTILINE,
+)
+TOP_LEVEL_EXTENSION_RE = re.compile(
+    r"^(?:[a-zA-Z@_][\w@()]*[ \t]+)*extension\s+",
+    re.MULTILINE,
+)
+
+
+def is_pure_extension_file(text: str) -> bool:
+    """Return True iff the source has at least one top-level `extension`
+    declaration AND no top-level type / func / var / let declarations.
+    """
+    if not TOP_LEVEL_EXTENSION_RE.search(text):
+        return False
+    if TOP_LEVEL_TYPE_RE.search(text):
+        return False
+    return True
+
+
+def validate_extension_file_basename(repo: str, file: Path, repo_root: Path) -> int:
+    """For a pure-extension file, verify its basename carries either a
+    `+` segment or a ` where ` segment per [API-IMPL-007]. Return finding
+    count (0 or 1).
+    """
+    basename = file.stem
+    if "+" in basename:
+        return 0
+    if " where " in basename:
+        return 0
+    emit(repo, "API-IMPL-007",
+         f"file name `{file.relative_to(repo_root)}` contains only extension "
+         f"declarations but its basename lacks a `+` conformance segment "
+         f"(`Foo+Sequence.swift`) or a ` where ` clause "
+         f"(`Carrier where Underlying == Self.swift`) — extension files "
+         f"MUST carry one of those discriminators per [API-IMPL-007]")
+    return 1
+
+
 def validate_file_naming(repo: str, repo_root: Path) -> int:
     findings = 0
     sources = repo_root / "Sources"
@@ -102,6 +156,15 @@ def validate_file_naming(repo: str, repo_root: Path) -> int:
                  f"full nested path with dots (e.g., `Array.Dynamic.swift` "
                  f"not `DynamicArray.swift`) per [API-IMPL-006]")
             findings += 1
+        # [API-IMPL-007] — pure-extension files MUST have `+` or where-clause.
+        if basename in EXEMPT_BASENAMES:
+            continue
+        try:
+            text = f.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if is_pure_extension_file(text):
+            findings += validate_extension_file_basename(repo, f, repo_root)
     return findings
 
 

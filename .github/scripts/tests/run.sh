@@ -27,7 +27,7 @@ validator_for() {
     case "$1" in
         plat-arch-004|plat-arch-005|plat-arch-006|plat-arch-007|plat-arch-008c|plat-arch-008j|plat-arch-027)
             echo "$SCRIPTS_DIR/validate-platform-architecture.py" ;;
-        api-impl-006)
+        api-impl-006|api-impl-007)
             echo "$SCRIPTS_DIR/validate-file-naming.py" ;;
         pattern-001|pattern-003|pattern-004|pattern-004c|pattern-005|pattern-006)
             echo "$SCRIPTS_DIR/validate-package-shape.py" ;;
@@ -48,6 +48,7 @@ prefix_for() {
         plat-arch-007)   echo "PLAT-ARCH-007" ;;
         plat-arch-027)   echo "PLAT-ARCH-027" ;;
         api-impl-006)    echo "API-IMPL-006" ;;
+        api-impl-007)    echo "API-IMPL-007" ;;
         pattern-001)     echo "PATTERN-001" ;;
         pattern-003)     echo "PATTERN-003" ;;
         pattern-004)     echo "PATTERN-004" ;;
