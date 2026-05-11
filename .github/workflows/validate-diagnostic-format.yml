@@ -1,0 +1,151 @@
+# validate-diagnostic-format.yml — verify lint-rule diagnostic message format.
+#
+# Reusable workflow. For the given `org` (or single `repo`), enumerates
+# non-archived repos, clones each (shallow), and runs
+# `.github/scripts/validate-diagnostic-format.py` against the cloned tree.
+#
+# Wave 4 mechanization (2026-05-11).
+#
+# Rules checked: [API-NAME-009]. See companion script for details.
+
+name: validate-diagnostic-format
+
+on:
+  workflow_call:
+    inputs:
+      repo:
+        description: 'Owner/name of a single repo to scan.'
+        type: string
+        required: false
+        default: ''
+      org:
+        description: 'Org to sweep (ignored if repo is set).'
+        type: string
+        required: false
+        default: ''
+      dry-run:
+        description: 'Run checks but do not fail the job on findings.'
+        type: boolean
+        required: false
+        default: false
+      visibility:
+        description: 'Filter by visibility (public | private | internal | all).'
+        type: string
+        required: false
+        default: 'public'
+    outputs:
+      total-violations:
+        description: 'Total count of individual violations.'
+        value: ${{ jobs.scan.outputs.total-violations }}
+
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: 'Owner/name of a single repo (optional).'
+        type: string
+        required: false
+      org:
+        description: 'Org to sweep (optional; ignored if repo is set).'
+        type: string
+        required: false
+      dry-run:
+        description: 'Run checks but do not fail the job on findings.'
+        type: boolean
+        required: false
+        default: false
+      visibility:
+        description: 'Filter by visibility (public | private | internal | all).'
+        type: string
+        required: false
+        default: 'public'
+
+jobs:
+  scan:
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      total-violations: ${{ steps.aggregate.outputs.total-violations }}
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@0634a2670c59f64b4a01f0f96f84700a4088b9f0  # v2.12.2
+        with:
+          egress-policy: audit
+
+      - name: Mint installation token (swift-institute-bot)
+        id: mint-token
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547  # v1.12.0
+        with:
+          app-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: ${{ inputs.org || github.repository_owner }}
+
+      - name: Checkout swift-institute/.github (validator)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          repository: swift-institute/.github
+          path: institute-github
+          ref: main
+
+      - name: Resolve target repos
+        id: targets
+        env:
+          GH_TOKEN: ${{ steps.mint-token.outputs.token }}
+          INPUT_REPO: ${{ inputs.repo }}
+          INPUT_ORG: ${{ inputs.org }}
+          INPUT_VISIBILITY: ${{ inputs.visibility }}
+        run: |
+          set -euo pipefail
+          if [ -n "$INPUT_REPO" ]; then
+            echo "$INPUT_REPO" > /tmp/targets.txt
+          else
+            : "${INPUT_ORG:?org or repo input required}"
+            gh repo list "$INPUT_ORG" --no-archived --limit 1000 \
+              --visibility "$INPUT_VISIBILITY" \
+              --json nameWithOwner --jq '.[].nameWithOwner' > /tmp/targets.txt
+          fi
+
+      - name: Run diagnostic-format validation
+        id: check
+        env:
+          GH_TOKEN: ${{ steps.mint-token.outputs.token }}
+          VALIDATOR: ${{ github.workspace }}/institute-github/.github/scripts/validate-diagnostic-format.py
+        run: |
+          set -euo pipefail
+          : > /tmp/findings.tsv
+          while IFS= read -r repo; do
+            [ -z "$repo" ] && continue
+            workdir=$(mktemp -d)
+            (
+              cd "$workdir"
+              if ! gh repo clone "$repo" . -- --depth 1 --quiet 2>/dev/null; then
+                echo "$repo	clone-failed	-" >> /tmp/findings.tsv
+                exit 0
+              fi
+              python3 "$VALIDATOR" "$repo" "$workdir" >> /tmp/findings.tsv || true
+            )
+            rm -rf "$workdir"
+          done < /tmp/targets.txt
+
+      - name: Aggregate findings
+        id: aggregate
+        run: |
+          set -euo pipefail
+          violations=$(grep -cE "	API-NAME-009" /tmp/findings.tsv || echo 0)
+          echo "total-violations=$violations" >> "$GITHUB_OUTPUT"
+          {
+            echo "## validate-diagnostic-format findings"
+            echo "Total violations: $violations"
+            echo
+            if [ "$violations" -gt 0 ]; then
+              echo "| Repo | Rule | Message |"
+              echo "|---|---|---|"
+              awk -F'\t' '$2 == "API-NAME-009"{
+                gsub(/\|/, "\\|", $3);
+                printf("| `%s` | `%s` | %s |\n", $1, $2, $3)
+              }' /tmp/findings.tsv
+            fi
+          } > "$GITHUB_STEP_SUMMARY"
+          if [ "$violations" -gt 0 ] && [ "${{ inputs.dry-run }}" != "true" ]; then
+            exit 1
+          fi
