@@ -64,6 +64,10 @@ on:
         type: string
         default: "macos-26"
         description: "macOS runner image. Bump annually when GitHub adds a new image version. env.* is invalid in runs-on: per Actions context-availability rules — input is the working centralization mechanism."
+      test-filter:
+        type: string
+        default: ""
+        description: "If non-empty, append `--filter <value>` to every `swift test` invocation in this workflow. Hyphens in the value are converted to underscores so the regex matches Swift module identifiers (SwiftPM converts hyphenated target names to underscored module names). Used by per-issue consumer matrices (e.g., swift-institute/Issues calling this reusable per swift-issue-*). Empty default preserves existing consumer behavior."
     secrets:
       PRIVATE_REPO_TOKEN:
         required: false
@@ -109,7 +113,15 @@ jobs:
           echo "Xcode: $(xcode-select -p)"
 
       - name: Test
-        run: swift test -c debug
+        env:
+          TEST_FILTER: ${{ inputs.test-filter }}
+        run: |
+          if [ -n "$TEST_FILTER" ]; then
+            FILTER=$(echo "$TEST_FILTER" | tr '-' '_')
+            swift test -c debug --filter "$FILTER"
+          else
+            swift test -c debug
+          fi
 
   linux-release:
     name: Ubuntu (Swift ${{ inputs.swift-version }}, release)
@@ -141,7 +153,15 @@ jobs:
           cat /etc/os-release 2>/dev/null || true
 
       - name: Test (release)
-        run: swift test -c release
+        env:
+          TEST_FILTER: ${{ inputs.test-filter }}
+        run: |
+          if [ -n "$TEST_FILTER" ]; then
+            FILTER=$(echo "$TEST_FILTER" | tr '-' '_')
+            swift test -c release --filter "$FILTER"
+          else
+            swift test -c release
+          fi
 
   linux-nightly:
     name: Ubuntu (Swift 6.4-dev nightly, release)
@@ -174,7 +194,15 @@ jobs:
           cat /etc/os-release 2>/dev/null || true
 
       - name: Test (release)
-        run: swift test -c release
+        env:
+          TEST_FILTER: ${{ inputs.test-filter }}
+        run: |
+          if [ -n "$TEST_FILTER" ]; then
+            FILTER=$(echo "$TEST_FILTER" | tr '-' '_')
+            swift test -c release --filter "$FILTER"
+          else
+            swift test -c release
+          fi
 
   windows-release:
     name: Windows (Swift ${{ inputs.swift-version }}, debug)
@@ -208,7 +236,15 @@ jobs:
           echo "Hostname: $(hostname)"
 
       - name: Test
-        run: swift test -c debug
+        env:
+          TEST_FILTER: ${{ inputs.test-filter }}
+        run: |
+          if ("$env:TEST_FILTER") {
+            $filter = $env:TEST_FILTER -replace '-', '_'
+            swift test -c debug --filter $filter
+          } else {
+            swift test -c debug
+          }
 
   # ─── Ecosystem-wide quality gates ─────────────────────────────────────
   # `format` and `lint` run on every consumer CI in parallel with the
