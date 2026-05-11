@@ -25,7 +25,7 @@ FIXTURES_DIR="$(pwd)/fixtures"
 # as a case statement so the script runs under bash 3.x (default macOS).
 validator_for() {
     case "$1" in
-        plat-arch-008c|plat-arch-008j|plat-arch-007)
+        plat-arch-004|plat-arch-005|plat-arch-006|plat-arch-007|plat-arch-008c|plat-arch-008j|plat-arch-027)
             echo "$SCRIPTS_DIR/validate-platform-architecture.py" ;;
         api-impl-006)
             echo "$SCRIPTS_DIR/validate-file-naming.py" ;;
@@ -40,9 +40,13 @@ validator_for() {
 
 prefix_for() {
     case "$1" in
+        plat-arch-004)   echo "PLAT-ARCH-004" ;;
+        plat-arch-005)   echo "PLAT-ARCH-005" ;;
+        plat-arch-006)   echo "PLAT-ARCH-006" ;;
         plat-arch-008c)  echo "PLAT-ARCH-008c" ;;
         plat-arch-008j)  echo "PLAT-ARCH-008j" ;;
         plat-arch-007)   echo "PLAT-ARCH-007" ;;
+        plat-arch-027)   echo "PLAT-ARCH-027" ;;
         api-impl-006)    echo "API-IMPL-006" ;;
         pattern-001)     echo "PATTERN-001" ;;
         pattern-003)     echo "PATTERN-003" ;;
