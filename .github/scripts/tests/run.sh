@@ -31,6 +31,8 @@ validator_for() {
             echo "$SCRIPTS_DIR/validate-file-naming.py" ;;
         pattern-001|pattern-003|pattern-004|pattern-004c|pattern-005|pattern-006)
             echo "$SCRIPTS_DIR/validate-package-shape.py" ;;
+        plat-arch-008|plat-arch-008h)
+            echo "$SCRIPTS_DIR/validate-layer-deps.py" ;;
         *)
             echo "" ;;
     esac
@@ -48,6 +50,8 @@ prefix_for() {
         pattern-004c)    echo "PATTERN-004c" ;;
         pattern-005)     echo "PATTERN-005" ;;
         pattern-006)     echo "PATTERN-006" ;;
+        plat-arch-008)   echo "PLAT-ARCH-008" ;;
+        plat-arch-008h)  echo "PLAT-ARCH-008h" ;;
         *)               echo "" ;;
     esac
 }
