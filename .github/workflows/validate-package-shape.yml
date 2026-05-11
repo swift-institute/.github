@@ -6,8 +6,9 @@
 #
 # Wave 2 mechanization (2026-05-11).
 #
-# Rules checked: [PATTERN-001], [PATTERN-003], [PATTERN-004], [PATTERN-004c],
-# [PATTERN-005], [PATTERN-006]. See companion script for details.
+# Rules checked: [PATTERN-001], [PATTERN-003], [PATTERN-004], [PATTERN-004b],
+# [PATTERN-004c], [PATTERN-005], [PATTERN-006], [PATTERN-022]. See companion
+# script for details.
 
 name: validate-package-shape
 
