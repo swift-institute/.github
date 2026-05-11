@@ -102,8 +102,11 @@ jobs:
       - name: Select Xcode ${{ env.XCODE_VERSION }}
         run: sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
 
-      - name: Print Swift version
-        run: swift --version
+      - name: Print toolchain info
+        run: |
+          swift --version
+          echo "Runner image: ${{ runner.os }} on ${{ inputs.macos-runner }}"
+          echo "Xcode: $(xcode-select -p)"
 
       - name: Test
         run: swift test -c debug
@@ -128,6 +131,14 @@ jobs:
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
           enabled: ${{ inputs.enable-private-repos }}
+
+      - name: Print toolchain info
+        run: |
+          swift --version
+          echo "Container image: ${{ job.container.image }}"
+          echo "Container hostname: $(hostname)"
+          echo "OS release:"
+          cat /etc/os-release 2>/dev/null || true
 
       - name: Test (release)
         run: swift test -c release
@@ -154,8 +165,13 @@ jobs:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
           enabled: ${{ inputs.enable-private-repos }}
 
-      - name: Print Swift version
-        run: swift --version
+      - name: Print toolchain info
+        run: |
+          swift --version
+          echo "Container image: ${{ job.container.image }}"
+          echo "Container hostname: $(hostname)"
+          echo "OS release:"
+          cat /etc/os-release 2>/dev/null || true
 
       - name: Test (release)
         run: swift test -c release
@@ -185,8 +201,11 @@ jobs:
         with:
           swift-version: ${{ inputs.swift-version }}
 
-      - name: Print Swift version
-        run: swift --version
+      - name: Print toolchain info
+        run: |
+          swift --version
+          echo "Runner: ${{ runner.os }}"
+          echo "Hostname: $(hostname)"
 
       - name: Test
         run: swift test -c debug
