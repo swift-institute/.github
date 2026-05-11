@@ -1,16 +1,15 @@
-# validate-platform-architecture.yml — verify platform-stack invariants.
+# validate-package-shape.yml — verify Swift package shape conventions.
 #
 # Reusable workflow. For the given `org` (or single `repo`), enumerates
 # non-archived repos, clones each (shallow), and runs
-# `.github/scripts/validate-platform-architecture.py` against the cloned tree.
+# `.github/scripts/validate-package-shape.py` against the cloned tree.
 #
-# Wave 2b finalization (2026-05-10); Wave 2 consolidation (2026-05-11)
-# moved PATTERN-005 / PATTERN-006 to validate-package-shape.yml.
+# Wave 2 mechanization (2026-05-11).
 #
-# Rules checked: [PLAT-ARCH-007], [PLAT-ARCH-008c], [PLAT-ARCH-008i],
-# [PLAT-ARCH-008j], [PLAT-ARCH-023]. See companion script.
+# Rules checked: [PATTERN-001], [PATTERN-003], [PATTERN-004], [PATTERN-004c],
+# [PATTERN-005], [PATTERN-006]. See companion script for details.
 
-name: validate-platform-architecture
+name: validate-package-shape
 
 on:
   workflow_call:
@@ -107,11 +106,11 @@ jobs:
               --json nameWithOwner --jq '.[].nameWithOwner' > /tmp/targets.txt
           fi
 
-      - name: Run platform-architecture validation
+      - name: Run package-shape validation
         id: check
         env:
           GH_TOKEN: ${{ steps.mint-token.outputs.token }}
-          VALIDATOR: ${{ github.workspace }}/institute-github/.github/scripts/validate-platform-architecture.py
+          VALIDATOR: ${{ github.workspace }}/institute-github/.github/scripts/validate-package-shape.py
         run: |
           set -euo pipefail
           : > /tmp/findings.tsv
@@ -133,16 +132,16 @@ jobs:
         id: aggregate
         run: |
           set -euo pipefail
-          violations=$(grep -cE "	PLAT-ARCH-[0-9]+" /tmp/findings.tsv || echo 0)
+          violations=$(grep -cE "	PATTERN-[0-9]+[a-z]?" /tmp/findings.tsv || echo 0)
           echo "total-violations=$violations" >> "$GITHUB_OUTPUT"
           {
-            echo "## validate-platform-architecture findings"
+            echo "## validate-package-shape findings"
             echo "Total violations: $violations"
             echo
             if [ "$violations" -gt 0 ]; then
               echo "| Repo | Rule | Message |"
               echo "|---|---|---|"
-              awk -F'\t' '$2 ~ /^PLAT-ARCH-/{
+              awk -F'\t' '$2 ~ /^PATTERN-/{
                 gsub(/\|/, "\\|", $3);
                 printf("| `%s` | `%s` | %s |\n", $1, $2, $3)
               }' /tmp/findings.tsv

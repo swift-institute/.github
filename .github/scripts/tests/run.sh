@@ -29,6 +29,8 @@ validator_for() {
             echo "$SCRIPTS_DIR/validate-platform-architecture.py" ;;
         api-impl-006)
             echo "$SCRIPTS_DIR/validate-file-naming.py" ;;
+        pattern-001|pattern-003|pattern-004|pattern-004c|pattern-005|pattern-006)
+            echo "$SCRIPTS_DIR/validate-package-shape.py" ;;
         *)
             echo "" ;;
     esac
@@ -40,6 +42,12 @@ prefix_for() {
         plat-arch-008j)  echo "PLAT-ARCH-008j" ;;
         plat-arch-007)   echo "PLAT-ARCH-007" ;;
         api-impl-006)    echo "API-IMPL-006" ;;
+        pattern-001)     echo "PATTERN-001" ;;
+        pattern-003)     echo "PATTERN-003" ;;
+        pattern-004)     echo "PATTERN-004" ;;
+        pattern-004c)    echo "PATTERN-004c" ;;
+        pattern-005)     echo "PATTERN-005" ;;
+        pattern-006)     echo "PATTERN-006" ;;
         *)               echo "" ;;
     esac
 }

@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """validate-platform-architecture.py — verify platform-stack invariants.
 
-Wave 2b finalization (2026-05-10) — companion to validate-platform-architecture.yml.
+Wave 2b finalization (2026-05-10); Wave 2 consolidation (2026-05-11) moved
+PATTERN-005 / PATTERN-006 to validate-package-shape.py to keep platform-stack
+invariants and Swift-package shape conventions on separate validators.
 
 Rules checked (v1):
   [PLAT-ARCH-007]  POSIX syscall wrappers (shared between Darwin and Linux)
@@ -18,9 +20,6 @@ Rules checked (v1):
                    that grep matches are violations.
   [PLAT-ARCH-023]  swift-iso-9945 MUST NOT take a package or target dependency
                    on swift-linux-standard or swift-darwin-standard.
-  [PATTERN-005]    All packages MUST require Swift 6.3+ and use Swift 6 lang mode.
-  [PATTERN-006]    Packages SHOULD enable upcoming features (ExistentialAny,
-                   InternalImportsByDefault, MemberImportVisibility).
 """
 from __future__ import annotations
 import re
@@ -58,12 +57,9 @@ POSIX_SHARED_SYSCALLS = (
     "pthread_cond_init", "pthread_cond_wait", "pthread_cond_signal",
 )
 
-REQUIRED_TOOLS_VERSION = re.compile(r"^// swift-tools-version:\s*([0-9.]+)")
-LANG_MODE_V6 = re.compile(r"swiftLanguageModes:\s*\[\s*\.v6\s*\]")
 PLATFORM_IMPORT = re.compile(r"^[ \t]*import[ \t]+(Darwin|Glibc|Musl|WinSDK)\b", re.MULTILINE)
 POSIX_IMPORT = re.compile(r"^[ \t]*(?:@[^\s]+\s+)*(?:public[ \t]+|package[ \t]+|internal[ \t]+)?import[ \t]+POSIX_\w+", re.MULTILINE)
 PLATFORM_CONDITIONAL = re.compile(r"^\s*#if\s+(os|canImport)\b", re.MULTILINE)
-UPCOMING_FEATURES = ("ExistentialAny", "InternalImportsByDefault", "MemberImportVisibility")
 # A POSIX call is a function name token followed by an open paren. Matches
 # the call form (`fork(`, `pipe(`) but not bare references in comments
 # unless the comment also contains the paren — vanishingly rare.
@@ -92,34 +88,8 @@ def validate_platform_architecture(repo: str, repo_root: Path) -> int:
     package_swift = repo_root / "Package.swift"
     sources = repo_root / "Sources"
 
-    # [PATTERN-005] swift-tools-version
     if package_swift.is_file():
-        first_line = package_swift.read_text().splitlines()[:1]
-        if first_line:
-            m = REQUIRED_TOOLS_VERSION.match(first_line[0])
-            if not m:
-                emit(repo, "PATTERN-005",
-                     f"Package.swift first line not `// swift-tools-version: X.Y[.Z]`")
-                findings += 1
-            else:
-                version = m.group(1)
-                parts = [int(x) for x in version.split(".")]
-                if parts < [6, 3]:
-                    emit(repo, "PATTERN-005",
-                         f"Package.swift swift-tools-version is {version}; required ≥ 6.3")
-                    findings += 1
         body = package_swift.read_text()
-        if not LANG_MODE_V6.search(body):
-            emit(repo, "PATTERN-005",
-                 "Package.swift missing `swiftLanguageModes: [.v6]` declaration")
-            findings += 1
-        # [PATTERN-006] upcoming features
-        for feat in UPCOMING_FEATURES:
-            if f'enableUpcomingFeature("{feat}")' not in body:
-                emit(repo, "PATTERN-006",
-                     f"Package.swift does not enableUpcomingFeature({feat!r}) "
-                     f"(SHOULD per [PATTERN-006])")
-                findings += 1
         # [PLAT-ARCH-023] iso-9945 dep direction
         if repo_name == "swift-iso-9945":
             if 'package: "swift-linux-standard"' in body or 'package: "swift-darwin-standard"' in body:
