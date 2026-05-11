@@ -32,6 +32,23 @@ Rules checked (v1):
                  (Moved from validate-platform-architecture.py per Wave 2
                  consolidation.)
 
+Wave 4 extensions (2026-05-11):
+  [PATTERN-004b] Module name normalization. Swift normalizes Package.swift
+                 target names by replacing spaces with underscores. Target
+                 names MUST NOT mix the two conventions — a target name
+                 containing BOTH a space AND an underscore is flagged
+                 (e.g., `"Real_Primitives Core"` is mixed). Pure
+                 spec-namespace forms (`"RFC_4122"`, `"ISO_9945"`) and
+                 pure space-separated forms (`"Real Primitives"`) are
+                 acceptable.
+  [PATTERN-022]  `~Copyable` nested types MUST live in separate files.
+                 Mechanical narrow check: a Sources/*.swift file whose
+                 top-level declaration declares a generic type with a
+                 `~Copyable` constraint AND whose body contains nested
+                 `struct`/`class`/`enum`/`actor` type declarations is
+                 flagged. The fix is `extension Parent where ...
+                 ~Copyable { type ... }` in a separate file.
+
 Rules NOT yet mechanized (documented for traceability):
   [PATTERN-007]  Experimental feature flags are permissive (MAY). No
                  mechanical violation pattern exists; consumer audits cover
@@ -73,6 +90,24 @@ PRODUCT_DEP = re.compile(
 )
 HEADER_APPLE = re.compile(r"\bdefined\s*\(\s*__APPLE__\s*\)")
 HEADER_LINUX = re.compile(r"\bdefined\s*\(\s*__(?:linux|LINUX)__\s*\)")
+# Match `.target(name: "...")`, `.library(name: "...")`, `.executable(name: "...")`,
+# `.testTarget(name: "...")`, `.product(name: "...")`. Captures the string.
+TARGET_NAME = re.compile(
+    r'\.(?:target|library|executable|testTarget|product)\(\s*name:\s*"([^"]+)"'
+)
+# Match a top-level generic struct/class/enum/actor whose generic parameter
+# clause contains `~Copyable`. Captures the type name and an approximate
+# brace body for nested-type detection.
+COPYABLE_PARENT = re.compile(
+    r"^(?:public\s+|internal\s+|fileprivate\s+|private\s+|package\s+)?"
+    r"(?:struct|class|enum|actor)\s+(\w+)\s*<[^>]*~Copyable[^>]*>",
+    re.MULTILINE,
+)
+NESTED_TYPE_DECL = re.compile(
+    r"^\s+(?:public\s+|internal\s+|fileprivate\s+|private\s+|package\s+)?"
+    r"(?:struct|class|enum|actor)\s+\w+",
+    re.MULTILINE,
+)
 
 
 def emit(repo: str, rule: str, message: str) -> None:
@@ -252,6 +287,83 @@ def check_pattern_003(repo: str, repo_root: Path) -> int:
     return findings
 
 
+def check_pattern_004b(repo: str, package_swift: Path) -> int:
+    """SwiftPM target name normalization — names MUST NOT mix space + underscore.
+
+    Swift maps spaces in target names to underscores in import identifiers;
+    using both in the same name is double-encoding (e.g., `"Real_Primitives
+    Core"`). Pure space-separated (`"Real Primitives"`) and pure spec-
+    namespace underscore (`"RFC_4122"`) forms are acceptable.
+    """
+    if not package_swift.is_file():
+        return 0
+    body = package_swift.read_text()
+    findings = 0
+    seen: set[str] = set()
+    for m in TARGET_NAME.finditer(body):
+        name = m.group(1)
+        if name in seen:
+            continue
+        seen.add(name)
+        if "_" in name and " " in name:
+            emit(repo, "PATTERN-004b",
+                 f"Package.swift target name {name!r} mixes spaces and "
+                 f"underscores; Swift normalizes spaces to underscores "
+                 f"in import identifiers — use either pure spaces "
+                 f"(`\"Foo Bar\"`) or a pure spec-namespace form "
+                 f"(`\"RFC_4122\"`) per [PATTERN-004b]")
+            findings += 1
+    return findings
+
+
+def check_pattern_022(repo: str, sources: Path, repo_root: Path) -> int:
+    """`~Copyable` nested types MUST live in separate files.
+
+    Narrow mechanical check: a `.swift` file under Sources/ whose top-level
+    type declaration carries a `~Copyable` constraint AND whose body
+    contains nested `struct`/`class`/`enum`/`actor` declarations.
+    """
+    findings = 0
+    for f in iter_swift_files(sources, repo_root):
+        relative = f.relative_to(repo_root)
+        if any(seg in {"Tests", "Experiments", "Examples", "Benchmarks"}
+               for seg in relative.parts):
+            continue
+        try:
+            text = f.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        parent_match = COPYABLE_PARENT.search(text)
+        if parent_match is None:
+            continue
+        # Approximate the parent's brace body: from the parent decl's
+        # opening brace to a top-level closing brace.
+        decl_start = parent_match.end()
+        brace = text.find("{", decl_start)
+        if brace == -1:
+            continue
+        depth = 1
+        i = brace + 1
+        while i < len(text) and depth > 0:
+            c = text[i]
+            if c == "{":
+                depth += 1
+            elif c == "}":
+                depth -= 1
+            i += 1
+        body_block = text[brace + 1:i - 1] if depth == 0 else text[brace + 1:]
+        if NESTED_TYPE_DECL.search(body_block):
+            emit(repo, "PATTERN-022",
+                 f"{relative}: declares `~Copyable` generic type "
+                 f"`{parent_match.group(1)}` AND contains nested type "
+                 f"declarations in its body; nested types under `~Copyable` "
+                 f"parents MUST be hoisted into separate files via "
+                 f"`extension Parent where Element: ~Copyable {{ ... }}` "
+                 f"per [PATTERN-022]")
+            findings += 1
+    return findings
+
+
 def validate_package_shape(repo: str, repo_root: Path) -> int:
     findings = 0
     package_swift = repo_root / "Package.swift"
@@ -259,9 +371,11 @@ def validate_package_shape(repo: str, repo_root: Path) -> int:
 
     findings += check_pattern_005_006(repo, package_swift)
     findings += check_pattern_004(repo, package_swift)
+    findings += check_pattern_004b(repo, package_swift)
     findings += check_pattern_004c(repo, package_swift)
     findings += check_pattern_001(repo, sources, repo_root)
     findings += check_pattern_003(repo, repo_root)
+    findings += check_pattern_022(repo, sources, repo_root)
 
     return findings
 

@@ -29,7 +29,7 @@ validator_for() {
             echo "$SCRIPTS_DIR/validate-platform-architecture.py" ;;
         api-impl-006|api-impl-007)
             echo "$SCRIPTS_DIR/validate-file-naming.py" ;;
-        pattern-001|pattern-003|pattern-004|pattern-004c|pattern-005|pattern-006)
+        pattern-001|pattern-003|pattern-004|pattern-004b|pattern-004c|pattern-005|pattern-006|pattern-022)
             echo "$SCRIPTS_DIR/validate-package-shape.py" ;;
         plat-arch-008|plat-arch-008h)
             echo "$SCRIPTS_DIR/validate-layer-deps.py" ;;
@@ -52,7 +52,9 @@ prefix_for() {
         pattern-001)     echo "PATTERN-001" ;;
         pattern-003)     echo "PATTERN-003" ;;
         pattern-004)     echo "PATTERN-004" ;;
+        pattern-004b)    echo "PATTERN-004b" ;;
         pattern-004c)    echo "PATTERN-004c" ;;
+        pattern-022)     echo "PATTERN-022" ;;
         pattern-005)     echo "PATTERN-005" ;;
         pattern-006)     echo "PATTERN-006" ;;
         plat-arch-008)   echo "PLAT-ARCH-008" ;;
