@@ -75,6 +75,10 @@ included:
 
 excluded:
   - .build
+  # Nested SwiftPM packages (e.g. `Tests/<Suite>/`) keep their own `.build`
+  # checkout under the parent's `Tests/`; the bare `.build` entry only matches
+  # the top-level directory, so the recursive glob catches the nested ones too.
+  - "**/.build"
   - Carthage
   - Pods
   - fastlane
