@@ -51,6 +51,8 @@ import re
 import sys
 from pathlib import Path
 
+from validate_lib import emit
+
 # ---- Platform-stack registry --------------------------------------------
 #
 # L1 platform-aware primitives: live with the rest of swift-primitives, but
@@ -141,11 +143,6 @@ IMPORT_RE = re.compile(
     r"import[ \t]+([A-Za-z_][A-Za-z0-9_]*)",
     re.MULTILINE,
 )
-
-
-def emit(repo: str, rule: str, message: str) -> None:
-    safe = message.replace("\t", " ").replace("\n", " ")
-    print(f"{repo}\t{rule}\t{safe}")
 
 
 def is_in_platform_stack(repo_name: str, deps: list[str]) -> bool:
