@@ -1,0 +1,64 @@
+# validate-ci-matrix.yml — verify [CI-010] universal CI matrix shape + [CI-099] windows gating.
+#
+# Pilot 10 + 20 of `/promote-rule` (2026-05-14). Migrated to thin caller of
+# validate-base.yml in Phase B-2 of CI-REVIEW-PHASE-B-DESIGN-2026-05-14
+# (single-target mode per manifest — validates a single canonical file).
+#
+# Rules checked: [CI-010], [CI-099]. See companion script for details.
+
+name: validate-ci-matrix
+
+on:
+  # Self-firing: when swift-ci.yml is changed in swift-institute/.github,
+  # gate the change on the matrix-shape check per [CI-010].
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/swift-ci.yml'
+      - '.github/scripts/validate-ci-matrix.py'
+      - '.github/workflows/validate-ci-matrix.yml'
+  pull_request:
+    paths:
+      - '.github/workflows/swift-ci.yml'
+      - '.github/scripts/validate-ci-matrix.py'
+      - '.github/workflows/validate-ci-matrix.yml'
+
+  workflow_call:
+    inputs:
+      repo:
+        description: 'Owner/name of the repo hosting swift-ci.yml (default: this repo).'
+        type: string
+        required: false
+        default: ''
+      dry-run:
+        description: 'Run checks but do not fail the job on findings.'
+        type: boolean
+        required: false
+        default: false
+    outputs:
+      total-violations:
+        description: 'Total count of individual violations.'
+        value: ${{ jobs.scan.outputs.total-violations }}
+
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: 'Owner/name of the repo hosting swift-ci.yml (optional).'
+        type: string
+        required: false
+      dry-run:
+        description: 'Run checks but do not fail the job on findings.'
+        type: boolean
+        required: false
+        default: false
+
+jobs:
+  scan:
+    uses: ./.github/workflows/validate-base.yml
+    with:
+      validator-script: .github/scripts/validate-ci-matrix.py
+      rule-id-regex: '^CI-(010|099)'
+      discovery-mode: single-target
+      target-repo: ${{ inputs.repo }}
+      dry-run: ${{ inputs.dry-run }}
+    secrets: inherit
