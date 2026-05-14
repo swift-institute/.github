@@ -59,6 +59,8 @@ import re
 import sys
 from pathlib import Path
 
+from validate_lib import emit
+
 # Platform-specific packages: deps on these MUST appear in a `.product(...)`
 # call that also contains `condition: .when(platforms:`. The set is the
 # package names commonly referenced by name across the ecosystem; a longer
@@ -108,11 +110,6 @@ NESTED_TYPE_DECL = re.compile(
     r"(?:struct|class|enum|actor)\s+\w+",
     re.MULTILINE,
 )
-
-
-def emit(repo: str, rule: str, message: str) -> None:
-    safe = message.replace("\t", " ").replace("\n", " ")
-    print(f"{repo}\t{rule}\t{safe}")
 
 
 def iter_swift_files(sources: Path, repo_root: Path):
