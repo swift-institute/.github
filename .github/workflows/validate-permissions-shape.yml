@@ -4,11 +4,9 @@
 # validate-base.yml in Phase B-2 of CI-REVIEW-PHASE-B-DESIGN-2026-05-14
 # (wrapper-host-multi-file mode per manifest).
 #
-# Self-firing push/pull_request triggers DEFERRED pending [CI-090] baseline
-# batch-fix arc (9 findings on swift-institute/.github: 1 reusable with
-# top-level permissions [CLOSED by Phase A commit 47b028b] + 8 standalone
-# workflows lacking top-level permissions [STILL PENDING]). See
-# `Audits/PROMOTE-CI-090-CI-097-2026-05-14.md`.
+# Self-firing push/pull_request triggers active 2026-05-14 (CI-090 batch-fix
+# landed in commits 5161e33..74ae3d0; manifest flip e0a9155; trigger
+# uncomment 8babe6a). Outcome record: `Audits/PROMOTE-CI-090-CI-097-2026-05-14.md`.
 #
 name: validate-permissions-shape
 
