@@ -1,0 +1,174 @@
+# validate-base.yml — reusable workflow extracting the 7-step skeleton
+# shared by all per-rule validate-*.yml workflows.
+#
+# Phase B-1 of CI-REVIEW-PHASE-B-DESIGN-2026-05-14. Per-rule callers become
+# thin wrappers (~25 lines) declaring only the validator-script, the
+# rule-id-regex for finding aggregation, the discovery-mode, and optional
+# overrides. The base owns the boilerplate (harden-runner, App-token mint,
+# checkout, target resolution, validator invocation, aggregation, summary).
+#
+# Three discovery modes per design doc §1:
+#
+#   single-target            — clone one repo; run validator once.
+#   wrapper-host-multi-file  — clone one repo; validator iterates files
+#                              internally (e.g., every .github/workflows/*.yml).
+#                              Workflow body identical to single-target.
+#   per-package-org-sweep    — matrix over consumer repos in target-org.
+#                              DEFERRED to Phase B-2; callers with this mode
+#                              fail-fast at the discovery-mode guard step.
+#
+# Chain-depth accounting per [CI-004b] (4-level workflow_call limit):
+# Phase B-1 callers (e.g., validate-cache-policy.yml) sit at L1 when
+# triggered by their own paths-trigger or workflow_dispatch, so nesting
+# validate-base.yml puts the chain at L2 — well within budget. The two
+# universal-nested validators (validate-thin-callers.yml at swift-ci.yml:496
+# and validate-file-naming.yml at :504) sit at L4 already; they MUST NOT
+# migrate to validate-base.yml — manifest entries flag them with
+# `migrate-to-base: no (chain-C)` per CI-REVIEW-PHASE-B-DESIGN §5.
+#
+# Per [CI-090] this is a workflow_call reusable so NO top-level
+# `permissions:` block — per-job permissions provide the floor, the
+# caller's permissions cap the intersection.
+
+name: validate-base
+
+on:
+  workflow_call:
+    inputs:
+      validator-script:
+        description: 'Path within swift-institute/.github to the per-rule validator (e.g., .github/scripts/validate-cache-policy.py).'
+        type: string
+        required: true
+      rule-id-regex:
+        description: 'awk-compatible regex matching column 2 of /tmp/findings.tsv (e.g., "^CI-04[02]"). Used for both the violations-count and the step-summary table filter.'
+        type: string
+        required: true
+      discovery-mode:
+        description: 'single-target | wrapper-host-multi-file | per-package-org-sweep. Phase B-1 supports the first two; per-package-org-sweep is deferred to B-2.'
+        type: string
+        required: true
+      target-repo:
+        description: 'Optional override of github.repository. Empty = default to caller repo.'
+        type: string
+        required: false
+        default: ''
+      target-org:
+        description: 'Required for per-package-org-sweep (Phase B-2). Empty otherwise.'
+        type: string
+        required: false
+        default: ''
+      dry-run:
+        description: 'Run checks but do not fail the job on findings.'
+        type: boolean
+        required: false
+        default: false
+    outputs:
+      total-violations:
+        description: 'Count of findings matching rule-id-regex.'
+        value: ${{ jobs.scan.outputs.total-violations }}
+
+jobs:
+  scan:
+    if: ${{ !github.event.repository.private }}  # [CI-032]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      total-violations: ${{ steps.aggregate.outputs.total-violations }}
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450  # v2.19.1
+        with:
+          egress-policy: audit
+
+      - name: Reject unsupported discovery-mode (B-1 scope)
+        if: ${{ inputs.discovery-mode == 'per-package-org-sweep' }}
+        shell: bash
+        run: |
+          echo "::error::discovery-mode=per-package-org-sweep is deferred to Phase B-2 per CI-REVIEW-PHASE-B-DESIGN §1. Use single-target or wrapper-host-multi-file for now, or keep the caller inline."
+          exit 1
+
+      - name: Validate discovery-mode value
+        if: ${{ inputs.discovery-mode != 'single-target' && inputs.discovery-mode != 'wrapper-host-multi-file' }}
+        shell: bash
+        env:
+          MODE: ${{ inputs.discovery-mode }}
+        run: |
+          echo "::error::Unknown discovery-mode: '${MODE}'. Valid values: single-target | wrapper-host-multi-file | per-package-org-sweep (deferred to B-2)."
+          exit 1
+
+      - name: Mint installation token (swift-institute-bot)
+        id: mint-token
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547  # v1.12.0
+        with:
+          app-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      - name: Checkout swift-institute/.github (validator host)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          repository: swift-institute/.github
+          path: institute-github
+          ref: main
+
+      - name: Resolve target repo
+        id: targets
+        env:
+          GH_TOKEN: ${{ steps.mint-token.outputs.token }}
+          INPUT_REPO: ${{ inputs.target-repo }}
+        run: |
+          set -euo pipefail
+          if [ -n "$INPUT_REPO" ]; then
+            echo "$INPUT_REPO" > /tmp/target.txt
+          else
+            echo "${GITHUB_REPOSITORY:-swift-institute/.github}" > /tmp/target.txt
+          fi
+
+      - name: Run validator
+        id: check
+        env:
+          GH_TOKEN: ${{ steps.mint-token.outputs.token }}
+          VALIDATOR: ${{ github.workspace }}/institute-github/${{ inputs.validator-script }}
+        run: |
+          set -euo pipefail
+          : > /tmp/findings.tsv
+          repo="$(cat /tmp/target.txt)"
+          workdir=$(mktemp -d)
+          (
+            cd "$workdir"
+            if ! gh repo clone "$repo" . -- --depth 1 --quiet 2>/dev/null; then
+              echo "$repo	clone-failed	-" >> /tmp/findings.tsv
+              exit 0
+            fi
+            python3 "$VALIDATOR" "$repo" "$workdir" >> /tmp/findings.tsv || true
+          )
+          rm -rf "$workdir"
+
+      - name: Aggregate findings
+        id: aggregate
+        env:
+          RULE_ID_REGEX: ${{ inputs.rule-id-regex }}
+          DRY_RUN: ${{ inputs.dry-run }}
+          VALIDATOR_SCRIPT: ${{ inputs.validator-script }}
+        run: |
+          set -euo pipefail
+          violations=$(grep -cE "	${RULE_ID_REGEX}" /tmp/findings.tsv || echo 0)
+          echo "total-violations=$violations" >> "$GITHUB_OUTPUT"
+          {
+            echo "## ${VALIDATOR_SCRIPT} findings"
+            echo "Total violations: $violations"
+            echo
+            if [ "$violations" -gt 0 ]; then
+              echo "| Repo | Rule | Message |"
+              echo "|---|---|---|"
+              awk -F'\t' -v re="${RULE_ID_REGEX}" '$2 ~ re {
+                gsub(/\|/, "\\|", $3);
+                printf("| `%s` | `%s` | %s |\n", $1, $2, $3)
+              }' /tmp/findings.tsv
+            fi
+          } > "$GITHUB_STEP_SUMMARY"
+          if [ "$violations" -gt 0 ] && [ "$DRY_RUN" != "true" ]; then
+            exit 1
+          fi
