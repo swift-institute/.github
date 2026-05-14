@@ -27,6 +27,8 @@ import re
 import sys
 from pathlib import Path
 
+from validate_lib import emit
+
 # Find: `static let message[: Swift.String]? = ` followed by one or more
 # string literals chained with `+`. Capture the entire expression text so
 # the format check can run against the concatenated content.
@@ -54,11 +56,6 @@ FORMAT_RE = re.compile(
     r"\S[^:]*?"                               # citation: non-empty, no colon
     r"\s*:\s"                                 # : separator
 )
-
-
-def emit(repo: str, rule: str, message: str) -> None:
-    safe = message.replace("\t", " ").replace("\n", " ")
-    print(f"{repo}\t{rule}\t{safe}")
 
 
 def iter_lint_rule_sources(repo_root: Path):
