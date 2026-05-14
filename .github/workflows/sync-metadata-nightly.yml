@@ -10,6 +10,9 @@
 
 name: sync-metadata-nightly
 
+# [CI-090] Deny-all floor; per-job blocks below declare the actual grants.
+permissions: {}
+
 on:
   schedule:
     - cron: '0 4 * * *'   # daily 04:00 UTC
@@ -44,6 +47,11 @@ jobs:
       fail-fast: false
       matrix:
         org: ${{ fromJSON(needs.config.outputs.orgs) }}
+    # [CI-106] Caller must grant equivalent or greater than the called
+    # reusable's per-job permissions (sync-metadata.yml `sync` job:
+    # contents: read).
+    permissions:
+      contents: read
     uses: ./.github/workflows/sync-metadata.yml
     with:
       org: ${{ matrix.org }}
