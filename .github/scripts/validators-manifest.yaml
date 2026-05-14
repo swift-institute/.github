@@ -274,7 +274,7 @@ validators:
 
   - rule-id: GH-REPO-METADATA
     validator-script: .github/scripts/validate-github-metadata.py
-    workflow-file: ''
+    workflow-file: .github/workflows/validate-github-metadata.yml
     status: active
     self-firing: active
     discovery-mode: per-package-org-sweep
@@ -283,7 +283,7 @@ validators:
 
   - rule-id: MOD-PACKAGE-STRUCTURE
     validator-script: .github/scripts/validate-package-structure.py
-    workflow-file: ''
+    workflow-file: .github/workflows/validate-package-structure.yml
     status: active
     self-firing: active
     discovery-mode: per-package-org-sweep
