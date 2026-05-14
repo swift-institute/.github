@@ -127,7 +127,7 @@ validators:
     workflow-file: .github/workflows/validate-input-defaults.yml
     status: active
     self-firing: active
-    discovery-mode: single-target
+    discovery-mode: wrapper-host-multi-file
     rule-id-regex: '^CI-058'
     migrate-to-base: yes
 
@@ -162,7 +162,7 @@ validators:
     validator-script: .github/scripts/validate-permissions-shape.py
     workflow-file: .github/workflows/validate-permissions-shape.yml
     status: active
-    self-firing: active
+    self-firing: deferred
     discovery-mode: wrapper-host-multi-file
     rule-id-regex: '^CI-090'
     migrate-to-base: yes
@@ -171,7 +171,7 @@ validators:
     validator-script: .github/scripts/validate-permissions-shape.py
     workflow-file: .github/workflows/validate-permissions-shape.yml
     status: active
-    self-firing: active
+    self-firing: deferred
     discovery-mode: wrapper-host-multi-file
     rule-id-regex: '^CI-097'
     migrate-to-base: yes
@@ -277,18 +277,18 @@ validators:
     workflow-file: ''
     status: active
     self-firing: active
-    discovery-mode: single-target
+    discovery-mode: per-package-org-sweep
     rule-id-regex: '^GH-REPO-'
-    migrate-to-base: yes
+    migrate-to-base: 'no (signature mismatch + jsonschema cross-repo fetch; rewrite scope > migration)'
 
   - rule-id: MOD-PACKAGE-STRUCTURE
     validator-script: .github/scripts/validate-package-structure.py
     workflow-file: ''
     status: active
     self-firing: active
-    discovery-mode: single-target
+    discovery-mode: per-package-org-sweep
     rule-id-regex: '^MOD-'
-    migrate-to-base: yes
+    migrate-to-base: 'no (swift-package-describe shell logic + macos runner; out of B-2 envelope)'
 
   - rule-id: PATTERN-001
     validator-script: .github/scripts/validate-package-shape.py
