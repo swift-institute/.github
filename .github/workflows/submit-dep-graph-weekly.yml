@@ -30,6 +30,9 @@
 
 name: submit-dep-graph-weekly
 
+# [CI-090] Deny-all floor; per-job blocks below declare the actual grants.
+permissions: {}
+
 # [CI-082] sha256sum -c pin for the gh CLI apt-keyring fetched from
 # cli.github.com. The keyring is the trust root for downstream `apt-get
 # install gh`; its integrity MUST be verified before placement in
