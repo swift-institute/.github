@@ -1,0 +1,53 @@
+# validate-composite-action-descriptions.yml — verify [CI-102] description plain-text.
+#
+# Pilot 25 of `/promote-rule` (2026-05-14). Migrated to thin caller of
+# validate-base.yml in Phase B-2 of CI-REVIEW-PHASE-B-DESIGN-2026-05-14
+# (wrapper-host-multi-file mode per manifest; iterates composite actions).
+
+name: validate-composite-action-descriptions
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/actions/**/action.yml'
+      - '.github/scripts/validate-composite-action-descriptions.py'
+      - '.github/workflows/validate-composite-action-descriptions.yml'
+  pull_request:
+    paths:
+      - '.github/actions/**/action.yml'
+      - '.github/scripts/validate-composite-action-descriptions.py'
+      - '.github/workflows/validate-composite-action-descriptions.yml'
+  workflow_call:
+    inputs:
+      repo:
+        type: string
+        required: false
+        default: ''
+      dry-run:
+        type: boolean
+        required: false
+        default: false
+    outputs:
+      total-violations:
+        value: ${{ jobs.scan.outputs.total-violations }}
+  workflow_dispatch:
+    inputs:
+      repo:
+        type: string
+        required: false
+      dry-run:
+        type: boolean
+        required: false
+        default: false
+
+jobs:
+  scan:
+    uses: ./.github/workflows/validate-base.yml
+    with:
+      validator-script: .github/scripts/validate-composite-action-descriptions.py
+      rule-id-regex: '^CI-102'
+      discovery-mode: wrapper-host-multi-file
+      target-repo: ${{ inputs.repo }}
+      dry-run: ${{ inputs.dry-run }}
+    secrets: inherit
