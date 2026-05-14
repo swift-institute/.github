@@ -45,11 +45,9 @@ import re
 import sys
 from pathlib import Path
 
-try:
-    import yaml
-except ImportError:
-    print("# error: PyYAML not installed", file=sys.stderr)
-    sys.exit(2)
+from validate_lib import emit, require_yaml
+
+yaml = require_yaml()
 
 FORBIDDEN_RULE_ID = re.compile(
     r"\[(README|MEM|DOC|API|MOD|PRIM|IMPL|PLAT|TEST|SWIFT-TEST|BENCH|INST-TEST|"
@@ -68,11 +66,6 @@ INSTALL_DEP_RE = re.compile(r"\.package\(", re.MULTILINE)
 INSTALL_TARGET_RE = re.compile(r"\.target\(", re.MULTILINE)
 F_STATUS_VALUES = {"Pre-implementation", "Namespace-reservation", "Unnecessary", "Archived"}
 F_STATUS_LINE = re.compile(r">\s*\*\*Status:\s*([^*]+?)\*\*")
-
-
-def emit(repo: str, rule: str, message: str) -> None:
-    safe = message.replace("\t", " ").replace("\n", " ")
-    print(f"{repo}\t{rule}\t{safe}")
 
 
 def strip_code_blocks(text: str) -> str:
