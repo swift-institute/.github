@@ -9,7 +9,9 @@ validators:
     validator-script: .github/scripts/validate-foo.py
     workflow-file: .github/workflows/validate-foo.yml
     status: active
-    self-firing: active
+    # self-firing: deferred so check 5 is out-of-scope for this fixture
+    # (which exercises checks 1-4 only; no synthetic workflow on disk).
+    self-firing: deferred
     discovery-mode: single-target
     rule-id-regex: '^CI-997'
     migrate-to-base: yes

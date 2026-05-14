@@ -7,7 +7,10 @@ validators:
     validator-script: .github/scripts/validate-paired.py
     workflow-file: .github/workflows/validate-paired.yml
     status: active
-    self-firing: active
+    # self-firing: deferred so check 5 is out-of-scope for this fixture
+    # (which exercises the multi-rule-same-script pattern; no synthetic
+    # workflow on disk).
+    self-firing: deferred
     discovery-mode: wrapper-host-multi-file
     rule-id-regex: '^TEST-PAIRED-A'
     migrate-to-base: yes
@@ -16,7 +19,8 @@ validators:
     validator-script: .github/scripts/validate-paired.py
     workflow-file: .github/workflows/validate-paired.yml
     status: active
-    self-firing: active
+    # self-firing: deferred (same rationale as TEST-PAIRED-A above).
+    self-firing: deferred
     discovery-mode: wrapper-host-multi-file
     rule-id-regex: '^TEST-PAIRED-B'
     migrate-to-base: yes
