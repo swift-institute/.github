@@ -35,6 +35,36 @@ validator_for() {
             echo "$SCRIPTS_DIR/validate-package-shape.py" ;;
         plat-arch-008|plat-arch-008h)
             echo "$SCRIPTS_DIR/validate-layer-deps.py" ;;
+        gh-repo-074|ci-030|ci-059)
+            echo "$SCRIPTS_DIR/validate-thin-callers.py" ;;
+        ci-004b)
+            echo "$SCRIPTS_DIR/validate-sub-org-wrappers.py" ;;
+        ci-010|ci-099)
+            echo "$SCRIPTS_DIR/validate-ci-matrix.py" ;;
+        ci-032)
+            echo "$SCRIPTS_DIR/validate-visibility-gate.py" ;;
+        ci-040|ci-042)
+            echo "$SCRIPTS_DIR/validate-cache-policy.py" ;;
+        ci-080)
+            echo "$SCRIPTS_DIR/validate-harden-runner.py" ;;
+        ci-082)
+            echo "$SCRIPTS_DIR/validate-binary-install-checksum.py" ;;
+        ci-021)
+            echo "$SCRIPTS_DIR/validate-embedded-job.py" ;;
+        ci-058)
+            echo "$SCRIPTS_DIR/validate-input-defaults.py" ;;
+        ci-090|ci-097)
+            echo "$SCRIPTS_DIR/validate-permissions-shape.py" ;;
+        ci-100)
+            echo "$SCRIPTS_DIR/validate-swiftlint-rules.py" ;;
+        ci-102)
+            echo "$SCRIPTS_DIR/validate-composite-action-descriptions.py" ;;
+        ci-103)
+            echo "$SCRIPTS_DIR/validate-env-context.py" ;;
+        ci-105)
+            echo "$SCRIPTS_DIR/validate-continue-on-error.py" ;;
+        test-009)
+            echo "$SCRIPTS_DIR/validate-file-naming.py" ;;
         *)
             echo "" ;;
     esac
@@ -62,12 +92,33 @@ prefix_for() {
         pattern-006)     echo "PATTERN-006" ;;
         plat-arch-008)   echo "PLAT-ARCH-008" ;;
         plat-arch-008h)  echo "PLAT-ARCH-008h" ;;
+        gh-repo-074)     echo "GH-REPO-074" ;;
+        ci-004b)         echo "CI-004b" ;;
+        ci-010)          echo "CI-010" ;;
+        ci-030)          echo "CI-030" ;;
+        ci-099)          echo "CI-099" ;;
+        ci-021)          echo "CI-021" ;;
+        ci-058)          echo "CI-058" ;;
+        ci-090)          echo "CI-090" ;;
+        ci-097)          echo "CI-097" ;;
+        ci-100)          echo "CI-100" ;;
+        ci-102)          echo "CI-102" ;;
+        ci-032)          echo "CI-032" ;;
+        ci-040)          echo "CI-040" ;;
+        ci-042)          echo "CI-042" ;;
+        ci-059)          echo "CI-059" ;;
+        ci-080)          echo "CI-080" ;;
+        ci-082)          echo "CI-082" ;;
+        ci-103)          echo "CI-103" ;;
+        ci-105)          echo "CI-105" ;;
+        test-009)        echo "TEST-009" ;;
         *)               echo "" ;;
     esac
 }
 
 PASS_COUNT=0
 FAIL_COUNT=0
+SKIP_COUNT=0
 
 run_fixture() {
     rule_id="$1"
@@ -79,10 +130,12 @@ run_fixture() {
     prefix="$(prefix_for "$rule_id")"
     if [ -z "$validator" ] || [ -z "$prefix" ]; then
         echo "  SKIP rule_id=$rule_id (no validator registered)"
+        SKIP_COUNT=$((SKIP_COUNT + 1))
         return 0
     fi
     if [ ! -f "$validator" ]; then
         echo "  SKIP rule_id=$rule_id (validator missing: $validator)"
+        SKIP_COUNT=$((SKIP_COUNT + 1))
         return 0
     fi
 
@@ -114,6 +167,7 @@ run_fixture() {
             ;;
         *)
             echo "  SKIP unknown scenario_kind: $scenario_kind"
+            SKIP_COUNT=$((SKIP_COUNT + 1))
             ;;
     esac
 }
@@ -134,5 +188,10 @@ for rule_dir in "$FIXTURES_DIR"/*/; do
     echo
 done
 
-echo "Total: $PASS_COUNT passed, $FAIL_COUNT failed"
-[ "$FAIL_COUNT" -eq 0 ]
+echo "Total: $PASS_COUNT passed, $FAIL_COUNT failed, $SKIP_COUNT skipped"
+if [ "$FAIL_COUNT" -gt 0 ] || [ "$SKIP_COUNT" -gt 0 ]; then
+    if [ "$SKIP_COUNT" -gt 0 ]; then
+        echo "FAIL: $SKIP_COUNT silent SKIP(s) — every fixture dir MUST resolve to a registered validator." >&2
+    fi
+    exit 1
+fi
