@@ -1,0 +1,60 @@
+# validate-env-context.yml — verify [CI-103] env-context-availability invariant.
+#
+# Pilot 21 of `/promote-rule` (2026-05-14). Migrated to thin caller of
+# validate-base.yml in Phase B-2 of CI-REVIEW-PHASE-B-DESIGN-2026-05-14
+# (wrapper-host-multi-file mode per manifest).
+#
+# Rules checked: [CI-103]. See companion script for details.
+
+name: validate-env-context
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/**.yml'
+      - '.github/scripts/validate-env-context.py'
+      - '.github/workflows/validate-env-context.yml'
+  pull_request:
+    paths:
+      - '.github/workflows/**.yml'
+      - '.github/scripts/validate-env-context.py'
+      - '.github/workflows/validate-env-context.yml'
+  workflow_call:
+    inputs:
+      repo:
+        description: 'Owner/name of the wrapper-host repo to validate (default: this repo).'
+        type: string
+        required: false
+        default: ''
+      dry-run:
+        description: 'Run checks but do not fail the job on findings.'
+        type: boolean
+        required: false
+        default: false
+    outputs:
+      total-violations:
+        description: 'Total count of individual violations.'
+        value: ${{ jobs.scan.outputs.total-violations }}
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: 'Owner/name of the wrapper-host repo to validate (optional).'
+        type: string
+        required: false
+      dry-run:
+        description: 'Run checks but do not fail the job on findings.'
+        type: boolean
+        required: false
+        default: false
+
+jobs:
+  scan:
+    uses: ./.github/workflows/validate-base.yml
+    with:
+      validator-script: .github/scripts/validate-env-context.py
+      rule-id-regex: '^CI-103'
+      discovery-mode: wrapper-host-multi-file
+      target-repo: ${{ inputs.repo }}
+      dry-run: ${{ inputs.dry-run }}
+    secrets: inherit
