@@ -1,0 +1,22 @@
+# Pass fixture — manifest clean against [CI-MANIFEST-BINDING] B-1 checks.
+# 1 active entry → matching .py on disk (validate-foo.py).
+# 1 deprecated entry → empty paths.
+# Expected: 0 findings.
+validators:
+  - rule-id: TEST-ACTIVE-001
+    validator-script: .github/scripts/validate-foo.py
+    workflow-file: .github/workflows/validate-foo.yml
+    status: active
+    self-firing: active
+    discovery-mode: single-target
+    rule-id-regex: '^TEST-ACTIVE-001'
+    migrate-to-base: yes
+
+  - rule-id: TEST-DEPRECATED-001
+    validator-script: ''
+    workflow-file: ''
+    status: deprecated
+    self-firing: deprecated
+    discovery-mode: ''
+    rule-id-regex: ''
+    migrate-to-base: 'n/a (deprecated)'

@@ -63,6 +63,8 @@ validator_for() {
             echo "$SCRIPTS_DIR/validate-env-context.py" ;;
         ci-105)
             echo "$SCRIPTS_DIR/validate-continue-on-error.py" ;;
+        ci-manifest-binding)
+            echo "$SCRIPTS_DIR/validate-manifest-binding.py" ;;
         test-009)
             echo "$SCRIPTS_DIR/validate-file-naming.py" ;;
         *)
@@ -111,6 +113,7 @@ prefix_for() {
         ci-082)          echo "CI-082" ;;
         ci-103)          echo "CI-103" ;;
         ci-105)          echo "CI-105" ;;
+        ci-manifest-binding) echo "CI-MANIFEST-BINDING" ;;
         test-009)        echo "TEST-009" ;;
         *)               echo "" ;;
     esac

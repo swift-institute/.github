@@ -1,0 +1,22 @@
+# Edge fixture — paired rules pointing to the same validator script.
+# Mirrors the real CI-040/CI-042 case where validate-cache-policy.py
+# carries two rules in the manifest (one entry per rule, same script).
+# Expected: 0 findings (compose-in-script pattern is well-formed).
+validators:
+  - rule-id: TEST-PAIRED-A
+    validator-script: .github/scripts/validate-paired.py
+    workflow-file: .github/workflows/validate-paired.yml
+    status: active
+    self-firing: active
+    discovery-mode: wrapper-host-multi-file
+    rule-id-regex: '^TEST-PAIRED-A'
+    migrate-to-base: yes
+
+  - rule-id: TEST-PAIRED-B
+    validator-script: .github/scripts/validate-paired.py
+    workflow-file: .github/workflows/validate-paired.yml
+    status: active
+    self-firing: active
+    discovery-mode: wrapper-host-multi-file
+    rule-id-regex: '^TEST-PAIRED-B'
+    migrate-to-base: yes

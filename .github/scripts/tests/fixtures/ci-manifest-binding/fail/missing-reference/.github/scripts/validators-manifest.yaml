@@ -1,0 +1,13 @@
+# Fail fixture — orphan validator script.
+# Manifest references validate-foo.py (exists);
+# validate-bar.py also exists on disk but has NO manifest entry.
+# Expected: 1 finding (check 2 fires on validate-bar.py).
+validators:
+  - rule-id: TEST-ACTIVE-002
+    validator-script: .github/scripts/validate-foo.py
+    workflow-file: .github/workflows/validate-foo.yml
+    status: active
+    self-firing: active
+    discovery-mode: single-target
+    rule-id-regex: '^TEST-ACTIVE-002'
+    migrate-to-base: yes

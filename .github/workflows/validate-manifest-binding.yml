@@ -1,0 +1,67 @@
+# validate-manifest-binding.yml — enforce [CI-MANIFEST-BINDING] manifest
+# internal consistency.
+#
+# Phase B-1 of CI-REVIEW-PHASE-B-DESIGN-2026-05-14 §3. Scope = checks 2 + 4
+# (internal consistency); Skills cross-references (checks 1 + 3) DEFERRED to
+# Phase B-2 per supervisor adjudication 2026-05-14.
+#
+# Thin caller of validate-base.yml — the Phase B-1 canary shape. Single-target
+# discovery (validates the calling/target repo's own manifest).
+
+name: validate-manifest-binding
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/scripts/validators-manifest.yaml'
+      - '.github/scripts/validate-manifest-binding.py'
+      - '.github/scripts/validate-*.py'
+      - '.github/workflows/validate-manifest-binding.yml'
+
+  pull_request:
+    paths:
+      - '.github/scripts/validators-manifest.yaml'
+      - '.github/scripts/validate-manifest-binding.py'
+      - '.github/scripts/validate-*.py'
+      - '.github/workflows/validate-manifest-binding.yml'
+
+  workflow_call:
+    inputs:
+      repo:
+        description: 'Owner/name of the wrapper-host repo to validate (default: this repo).'
+        type: string
+        required: false
+        default: ''
+      dry-run:
+        description: 'Run checks but do not fail the job on findings.'
+        type: boolean
+        required: false
+        default: false
+    outputs:
+      total-violations:
+        description: 'Total count of CI-MANIFEST-BINDING violations.'
+        value: ${{ jobs.scan.outputs.total-violations }}
+
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: 'Owner/name of the wrapper-host repo to validate (optional).'
+        type: string
+        required: false
+      dry-run:
+        description: 'Run checks but do not fail the job on findings.'
+        type: boolean
+        required: false
+        default: false
+
+jobs:
+  scan:
+    uses: ./.github/workflows/validate-base.yml
+    with:
+      validator-script: .github/scripts/validate-manifest-binding.py
+      rule-id-regex: '^CI-MANIFEST-BINDING'
+      discovery-mode: single-target
+      target-repo: ${{ inputs.repo }}
+      dry-run: ${{ inputs.dry-run }}
+    secrets: inherit
