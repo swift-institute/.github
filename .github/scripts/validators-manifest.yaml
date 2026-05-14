@@ -54,7 +54,7 @@ validators:
     validator-script: .github/scripts/validate-sub-org-wrappers.py
     workflow-file: .github/workflows/validate-sub-org-wrappers.yml
     status: active
-    self-firing: active
+    self-firing: deferred
     discovery-mode: per-package-org-sweep
     rule-id-regex: '^CI-004b'
     migrate-to-base: 'no (per-package-org-sweep deferred to B-2)'
@@ -81,7 +81,7 @@ validators:
     validator-script: .github/scripts/validate-thin-callers.py
     workflow-file: .github/workflows/validate-thin-callers.yml
     status: active
-    self-firing: active
+    self-firing: deferred
     discovery-mode: per-package-org-sweep
     rule-id-regex: '^CI-030'
     migrate-to-base: 'no (chain-C; see CI-REVIEW-PHASE-B-DESIGN §5)'
@@ -135,7 +135,7 @@ validators:
     validator-script: .github/scripts/validate-thin-callers.py
     workflow-file: .github/workflows/validate-thin-callers.yml
     status: active
-    self-firing: active
+    self-firing: deferred
     discovery-mode: per-package-org-sweep
     rule-id-regex: '^CI-059'
     migrate-to-base: 'no (chain-C; see CI-REVIEW-PHASE-B-DESIGN §5)'
@@ -236,7 +236,7 @@ validators:
     validator-script: .github/scripts/validate-thin-callers.py
     workflow-file: .github/workflows/validate-thin-callers.yml
     status: active
-    self-firing: active
+    self-firing: deferred
     discovery-mode: per-package-org-sweep
     rule-id-regex: '^GH-REPO-074'
     migrate-to-base: 'no (chain-C; see CI-REVIEW-PHASE-B-DESIGN §5)'
@@ -249,7 +249,7 @@ validators:
     validator-script: .github/scripts/validate-file-naming.py
     workflow-file: .github/workflows/validate-file-naming.yml
     status: active
-    self-firing: active
+    self-firing: deferred
     discovery-mode: per-package-org-sweep
     rule-id-regex: '^API-IMPL-006'
     migrate-to-base: 'no (chain-C; see CI-REVIEW-PHASE-B-DESIGN §5)'
@@ -276,7 +276,7 @@ validators:
     validator-script: .github/scripts/validate-github-metadata.py
     workflow-file: .github/workflows/validate-github-metadata.yml
     status: active
-    self-firing: active
+    self-firing: deferred
     discovery-mode: per-package-org-sweep
     rule-id-regex: '^GH-REPO-'
     migrate-to-base: 'no (signature mismatch + jsonschema cross-repo fetch; rewrite scope > migration)'
@@ -285,7 +285,7 @@ validators:
     validator-script: .github/scripts/validate-package-structure.py
     workflow-file: .github/workflows/validate-package-structure.yml
     status: active
-    self-firing: active
+    self-firing: deferred
     discovery-mode: per-package-org-sweep
     rule-id-regex: '^MOD-'
     migrate-to-base: 'no (swift-package-describe shell logic + macos runner; out of B-2 envelope)'
