@@ -21,6 +21,9 @@
 
 name: link-check-weekly
 
+# [CI-090] Deny-all floor; per-job blocks below declare the actual grants.
+permissions: {}
+
 on:
   schedule:
     - cron: '0 6 * * 1'   # weekly Monday 06:00 UTC
@@ -64,6 +67,10 @@ jobs:
       fail-fast: false
       matrix:
         org: ${{ fromJSON(needs.config.outputs.orgs) }}
+    # [CI-106] Caller must grant equivalent or greater than the called
+    # reusable's per-job permissions (link-check.yml `scan` job: contents: read).
+    permissions:
+      contents: read
     uses: ./.github/workflows/link-check.yml
     with:
       org: ${{ matrix.org }}
