@@ -30,6 +30,13 @@
 
 name: submit-dep-graph-weekly
 
+# [CI-082] sha256sum -c pin for the gh CLI apt-keyring fetched from
+# cli.github.com. The keyring is the trust root for downstream `apt-get
+# install gh`; its integrity MUST be verified before placement in
+# /etc/apt/keyrings/. Re-lock if/when GitHub rotates the keyring digest.
+env:
+  GH_KEYRING_SHA256: "6084d5d7bd8e288441e0e94fc6275570895da18e6751f70f057485dc2d1a811b"
+
 on:
   schedule:
     - cron: '50 6 * * 1'   # weekly Monday 06:50 UTC
@@ -98,8 +105,13 @@ jobs:
           apt-get update -qq
           apt-get install -qq -y curl python3 jq ca-certificates gnupg
           mkdir -p -m 755 /etc/apt/keyrings
-          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
-            | tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null
+          # [CI-082] fetch to file, sha256sum -c against pinned digest,
+          # only then place in /etc/apt/keyrings/. Restructured from the
+          # prior `curl | tee` pipe to enable verification (the keyring
+          # is the trust root for subsequent apt-get install gh).
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /tmp/gh-keyring.gpg
+          echo "${GH_KEYRING_SHA256}  /tmp/gh-keyring.gpg" | sha256sum -c -
+          mv /tmp/gh-keyring.gpg /etc/apt/keyrings/githubcli-archive-keyring.gpg
           chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
           echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
             > /etc/apt/sources.list.d/github-cli.list
