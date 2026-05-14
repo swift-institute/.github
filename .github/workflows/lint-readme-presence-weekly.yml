@@ -20,6 +20,9 @@
 
 name: lint-readme-presence-weekly
 
+# [CI-090] Deny-all floor; per-job blocks below declare the actual grants.
+permissions: {}
+
 on:
   schedule:
     - cron: '0 6 * * 1'   # weekly Monday 06:00 UTC (mirrors link-check-weekly cadence)
@@ -54,6 +57,11 @@ jobs:
           - swift-arm-ltd
           - swift-intel
           - swift-riscv
+    # [CI-106] Caller must grant equivalent or greater than the called
+    # reusable's per-job permissions (lint-readme-presence.yml `scan` job:
+    # contents: read).
+    permissions:
+      contents: read
     uses: ./.github/workflows/lint-readme-presence.yml
     with:
       org: ${{ matrix.org }}
