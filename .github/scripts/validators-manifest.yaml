@@ -162,7 +162,7 @@ validators:
     validator-script: .github/scripts/validate-permissions-shape.py
     workflow-file: .github/workflows/validate-permissions-shape.yml
     status: active
-    self-firing: deferred
+    self-firing: active
     discovery-mode: wrapper-host-multi-file
     rule-id-regex: '^CI-090'
     migrate-to-base: yes
@@ -171,7 +171,7 @@ validators:
     validator-script: .github/scripts/validate-permissions-shape.py
     workflow-file: .github/workflows/validate-permissions-shape.yml
     status: active
-    self-firing: deferred
+    self-firing: active
     discovery-mode: wrapper-host-multi-file
     rule-id-regex: '^CI-097'
     migrate-to-base: yes
