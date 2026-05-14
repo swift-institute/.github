@@ -51,6 +51,11 @@ jobs:
     outputs:
       orgs: ${{ steps.read.outputs.orgs }}
     steps:
+      - name: Harden runner (audit-mode egress logging)
+        uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
+        with:
+          egress-policy: audit
+
       - id: read
         uses: swift-institute/.github/.github/actions/read-orgs@main
         with:
@@ -62,70 +67,19 @@ jobs:
     secrets: inherit
     with:
       matrix-orgs: ${{ needs.config.outputs.orgs }}
+      audit-script-path: .github/scripts/audit-mechanical-hygiene.py
+      audit-setup-script-path: .github/scripts/audit-setup-yamllint.py
+      audit-runner-args: |
+        {
+          "json_totals_path": "totals",
+          "count_keys": ["yaml_issues", "broken_links"],
+          "extra_template": "- `{pkg}`: yaml={yaml_issues}, symlinks={broken_links}",
+          "summary_label": "mechanical hygiene sweep (γ-2 consolidated)"
+        }
       count-labels: yaml,links
       issue-title-prefix: Mechanical hygiene sweep
       issue-label: mechanical-hygiene
       dry-run: ${{ inputs.dry-run || false }}
-      audit-step: |
-        set -euo pipefail
-        pip install --quiet yamllint
-        cat > /tmp/yamllint.yml <<'YAMLLINT_EOF'
-        extends: default
-        rules:
-          document-start: disable
-          line-length:
-            max: 200
-            level: warning
-          truthy:
-            allowed-values: ["true", "false"]
-            check-keys: false
-          indentation:
-            spaces: 2
-          comments:
-            require-starting-space: false
-        YAMLLINT_EOF
-        mapfile -t targets < <(gh repo list "$ORG" --limit 2000 \
-          --visibility public \
-          --json nameWithOwner,isArchived \
-          --jq '.[] | select(.isArchived==false) | .nameWithOwner')
-        total_yaml_issues=0
-        total_broken_links=0
-        per_pkg=()
-        for target in "${targets[@]}"; do
-          workdir=$(mktemp -d)
-          git clone --depth 1 --quiet \
-            "https://x-access-token:${GH_TOKEN}@github.com/${target}.git" \
-            "$workdir" 2>/dev/null || { rm -rf "$workdir"; continue; }
-          (
-            cd "$workdir"
-            paths=()
-            [[ -d .github/workflows ]] && paths+=(".github/workflows")
-            [[ -f .github/dependabot.yml ]] && paths+=(".github/dependabot.yml")
-            [[ -f .github/metadata.yaml ]] && paths+=(".github/metadata.yaml")
-            [[ -f metadata.yaml ]] && paths+=("metadata.yaml")
-            yaml_issues=0
-            if (( ${#paths[@]} > 0 )); then
-              yaml_issues=$(yamllint -c /tmp/yamllint.yml "${paths[@]}" 2>&1 | grep -cE '^\s+[0-9]+:[0-9]+' || true)
-            fi
-            broken_links=$(find -L . -type l ! -exec test -e {} \; -print 2>/dev/null | wc -l)
-            echo "${yaml_issues} ${broken_links}"
-          ) > "/tmp/${target//\//__}.txt"
-          read -r yi bl < "/tmp/${target//\//__}.txt"
-          total_yaml_issues=$((total_yaml_issues + yi))
-          total_broken_links=$((total_broken_links + bl))
-          if [[ "$yi" -gt 0 || "$bl" -gt 0 ]]; then
-            pkg_name=$(basename "$target")
-            per_pkg+=("- \`${pkg_name}\`: yaml=${yi}, symlinks=${bl}")
-          fi
-          rm -rf "$workdir"
-        done
-        {
-          echo "## Org $ORG — mechanical hygiene sweep (γ-2 consolidated)"
-          echo "- yamllint issues:   $total_yaml_issues"
-          echo "- Broken symlinks:   $total_broken_links"
-        } >> "$GITHUB_STEP_SUMMARY"
-        echo "${total_yaml_issues},${total_broken_links}" > "/tmp/${ORG}-counts.txt"
-        printf '%s\n' "${per_pkg[@]}" > "/tmp/${ORG}-extra.txt" 2>/dev/null || true
       issue-body-template: |
         The weekly mechanical-hygiene sweep at 06:45 UTC on ${TODAY} found drift.
 
