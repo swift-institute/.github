@@ -1,12 +1,26 @@
-# validate-manifest-binding.yml — enforce [CI-MANIFEST-BINDING] manifest
-# internal consistency.
+# validate-manifest-binding.yml — enforce [CI-MANIFEST-BINDING] full-scope binding.
 #
-# Phase B-1 of CI-REVIEW-PHASE-B-DESIGN-2026-05-14 §3. Scope = checks 2 + 4
-# (internal consistency); Skills cross-references (checks 1 + 3) DEFERRED to
-# Phase B-2 per supervisor adjudication 2026-05-14.
+# Phase B-2 follow-up of CI-REVIEW-PHASE-B-DESIGN-2026-05-14 §3. Full scope
+# (checks 1 + 2 + 3 + 4) per Option α adjudication 2026-05-14: cross-repo
+# Skills checkout via App-token mint scoped to {swift-institute/.github,
+# swift-institute/Skills} with contents: read on each.
 #
-# Thin caller of validate-base.yml — the Phase B-1 canary shape. Single-target
-# discovery (validates the calling/target repo's own manifest).
+# This is the only validator workflow that does NOT call validate-base.yml.
+# Reason: it requires a SECOND checkout (swift-institute/Skills) for SKILL.md
+# cross-references, and validate-base.yml does not parameterize additional
+# checkouts. Modifying validate-base.yml to add a Skills-checkout slot would
+# bend the base's single-purpose shape for one caller; the standalone shape
+# here contains harden-runner + token mint + dual checkout + validator run +
+# aggregate inline (~70 lines, vs ~25 for a thin caller — a one-time cost on
+# a single validator).
+#
+# Per [CI-090] this is a workflow_call reusable so NO top-level `permissions:`
+# block — per-job permissions (contents: read) provide the floor; the caller's
+# permissions cap the intersection.
+#
+# Admin-op prerequisite: swift-institute-bot App MUST be installed on
+# swift-institute/Skills with `contents: read`. Until installed, the Skills
+# checkout fails with 404 (fail-closed-on-missing-auth — correct behavior).
 
 name: validate-manifest-binding
 
@@ -29,7 +43,7 @@ on:
   workflow_call:
     inputs:
       repo:
-        description: 'Owner/name of the wrapper-host repo to validate (default: this repo).'
+        description: 'Owner/name of the target repo to validate (default: this repo).'
         type: string
         required: false
         default: ''
@@ -46,7 +60,7 @@ on:
   workflow_dispatch:
     inputs:
       repo:
-        description: 'Owner/name of the wrapper-host repo to validate (optional).'
+        description: 'Owner/name of the target repo to validate (optional).'
         type: string
         required: false
       dry-run:
@@ -57,11 +71,100 @@ on:
 
 jobs:
   scan:
-    uses: ./.github/workflows/validate-base.yml
-    with:
-      validator-script: .github/scripts/validate-manifest-binding.py
-      rule-id-regex: '^CI-MANIFEST-BINDING'
-      discovery-mode: single-target
-      target-repo: ${{ inputs.repo }}
-      dry-run: ${{ inputs.dry-run }}
-    secrets: inherit
+    if: ${{ !github.event.repository.private }}  # [CI-032]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      total-violations: ${{ steps.aggregate.outputs.total-violations }}
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450  # v2.19.1
+        with:
+          egress-policy: audit
+
+      - name: Mint installation token (swift-institute-bot, scoped to .github + Skills)
+        id: mint-token
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547  # v1.12.0
+        with:
+          app-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: |
+            .github
+            Skills
+
+      - name: Checkout swift-institute/.github (validator host)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          repository: swift-institute/.github
+          path: institute-github
+          token: ${{ steps.mint-token.outputs.token }}
+          ref: main
+
+      - name: Checkout swift-institute/Skills (SKILL.md source for checks 1 + 3)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          repository: swift-institute/Skills
+          path: institute-skills
+          token: ${{ steps.mint-token.outputs.token }}
+          ref: main
+
+      - name: Resolve target repo
+        id: targets
+        env:
+          INPUT_REPO: ${{ inputs.repo }}
+        run: |
+          set -euo pipefail
+          if [ -n "$INPUT_REPO" ]; then
+            echo "$INPUT_REPO" > /tmp/target.txt
+          else
+            echo "${GITHUB_REPOSITORY:-swift-institute/.github}" > /tmp/target.txt
+          fi
+
+      - name: Run validate-manifest-binding (full scope checks 1 + 2 + 3 + 4)
+        id: check
+        env:
+          GH_TOKEN: ${{ steps.mint-token.outputs.token }}
+          VALIDATOR: ${{ github.workspace }}/institute-github/.github/scripts/validate-manifest-binding.py
+          SKILLS_SKILL_MD: ${{ github.workspace }}/institute-skills/ci-cd-workflows/SKILL.md
+        run: |
+          set -euo pipefail
+          : > /tmp/findings.tsv
+          repo="$(cat /tmp/target.txt)"
+          workdir=$(mktemp -d)
+          (
+            cd "$workdir"
+            if ! gh repo clone "$repo" . -- --depth 1 --quiet 2>/dev/null; then
+              echo "$repo	clone-failed	-" >> /tmp/findings.tsv
+              exit 0
+            fi
+            python3 "$VALIDATOR" "$repo" "$workdir" "$SKILLS_SKILL_MD" >> /tmp/findings.tsv || true
+          )
+          rm -rf "$workdir"
+
+      - name: Aggregate findings
+        id: aggregate
+        env:
+          DRY_RUN: ${{ inputs.dry-run }}
+        run: |
+          set -euo pipefail
+          violations=$(grep -cE "	CI-MANIFEST-BINDING" /tmp/findings.tsv || echo 0)
+          echo "total-violations=$violations" >> "$GITHUB_OUTPUT"
+          {
+            echo "## validate-manifest-binding findings"
+            echo "Total violations: $violations"
+            echo
+            if [ "$violations" -gt 0 ]; then
+              echo "| Repo | Rule | Message |"
+              echo "|---|---|---|"
+              awk -F'\t' '$2 == "CI-MANIFEST-BINDING"{
+                gsub(/\|/, "\\|", $3);
+                printf("| `%s` | `%s` | %s |\n", $1, $2, $3)
+              }' /tmp/findings.tsv
+            fi
+          } > "$GITHUB_STEP_SUMMARY"
+          if [ "$violations" -gt 0 ] && [ "$DRY_RUN" != "true" ]; then
+            exit 1
+          fi
