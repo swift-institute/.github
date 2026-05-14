@@ -10,17 +10,36 @@
 # Tier 2 SwiftLint custom rule — see swift-institute/Research/
 # rollout-phase-1-results.md.)
 #
+# Phase C of the 2026-05-14 CI review (Q2=B sealed) refactored the
+# free-form `audit-step:` shell-string contract into the structured-
+# input contract below. The cron-audit-runner.py driver is the only
+# entry point; callers MUST NOT supply shell snippets. This closes the
+# HIGH-CONDITIONAL template-injection finding from
+# CI-REVIEW-security-2026-05-14.md (the prior `audit-step:` interpolated
+# caller-supplied bash into a job that holds a cross-org App-installation
+# token at the matrix-org scope).
+#
 # Each caller provides:
 #
-#   - The audit-step shell snippet that produces /tmp/<ORG>-counts.txt
-#     (and optionally /tmp/<ORG>-extra.txt for auxiliary detail
-#     surfaced as ${EXTRA} in the issue body).
-#   - The matrix-orgs to sweep.
-#   - An optional container override (e.g. swift:6.3 when the audit
-#     needs `swift package dump-package`).
-#   - An optional audit-script-url; when set, the reusable curl-fetches
-#     the script to /tmp/audit-script.py before running audit-step.
-#   - The issue title prefix, label, and body-template Markdown.
+#   - audit-runner-path: optional override for the generic runner;
+#     default '.github/scripts/cron-audit-runner.py' is the canonical
+#     driver. All 3 current callers accept the default.
+#   - audit-script-path: per-package audit script (Python). Receives
+#     --package-dir <clone> --json <out>; produces the JSON shape its
+#     callers expect (see existing audit-license-header.py /
+#     audit-test-support-spine.py / audit-mechanical-hygiene.py).
+#   - audit-setup-script-path: optional one-time pre-loop setup
+#     (e.g. audit-setup-yamllint.py installs yamllint + writes
+#     /tmp/yamllint.yml). Empty when no setup is needed.
+#   - audit-runner-args: JSON-encoded config dict consumed by the
+#     runner (json_totals_path, count_keys, extra_template,
+#     extra_when_keys, summary_label). See cron-audit-runner.py
+#     module docstring for the full schema.
+#   - matrix-orgs: JSON array of org names to sweep.
+#   - container: optional swift:* image for audits that need
+#     `swift package dump-package`.
+#   - issue-title-prefix / issue-label / issue-body-template: report
+#     scaffolding (unchanged from pre-Phase-C).
 #
 # Substitutions in issue-body-template (envsubst with ${...} syntax):
 #   ${TODAY}            UTC date YYYY-MM-DD
@@ -32,21 +51,28 @@
 #   ${EXTRA}            Concatenated content of all /tmp/<ORG>-extra.txt
 #                       artifact files (empty when no caller writes them).
 #
-# Per-org artifact convention: the audit-step MUST write a comma-
-# separated counts file at /tmp/<ORG>-counts.txt, with values in the
-# same order as count-labels. Optional auxiliary content goes to
-# /tmp/<ORG>-extra.txt and is surfaced via the ${EXTRA} substitution.
+# Per-org artifact convention: the runner writes /tmp/<ORG>-counts.txt
+# (comma-separated, in count-labels order) and (when extras configured)
+# /tmp/<ORG>-extra.txt (newline-separated per-package lines).
 #
-# Out of scope: submit-dep-graph-weekly's per-target POST-to-API
-# pattern is structurally different and remains inline. link-check-
-# weekly is also outside this template (different shape — matrix
-# delegating to link-check.yml).
+# Out of scope: submit-dep-graph-weekly's per-target POST-to-API pattern
+# is structurally different and remains inline. link-check-weekly is also
+# outside this template (different shape — matrix delegating to
+# link-check.yml).
 #
-# Provenance: extracts the cron orchestrator skeleton repeated across
-# 4 weekly orchestrators. Per [CI-030] callers reference @main during
+# Provenance: extracts the cron orchestrator skeleton repeated across 4
+# weekly orchestrators. Per [CI-030] callers reference @main during
 # active dev. Per [README-167] tracking-issue pattern preserved.
+# Phase C refactor: Audits/Outcome-CI-REVIEW-Phase-C-2026-05-14.md.
 
 name: cron-audit-base
+
+# [CI-082] sha256sum -c pin for the gh CLI apt-keyring fetched from
+# cli.github.com. The keyring is the trust root for downstream `apt-get
+# install gh`; its integrity MUST be verified before placement in
+# /etc/apt/keyrings/. Re-lock if/when GitHub rotates the keyring digest.
+env:
+  GH_KEYRING_SHA256: "6084d5d7bd8e288441e0e94fc6275570895da18e6751f70f057485dc2d1a811b"
 
 on:
   workflow_call:
@@ -68,29 +94,44 @@ on:
           empty means run on bare ubuntu-latest. Accepts literal image
           names; env.* and matrix.* are unavailable at the container
           field per Actions context-availability rules.
+      audit-runner-path:
+        type: string
+        required: false
+        default: '.github/scripts/cron-audit-runner.py'
+        description: >
+          Path within swift-institute/.github to the per-target runner.
+          Default points at the canonical cron-audit-runner.py. Override
+          only when piloting a runner replacement (rare).
       audit-script-path:
+        type: string
+        required: true
+        description: >
+          Path within swift-institute/.github to the per-package audit
+          script (e.g. `.github/scripts/audit-license-header.py`). The
+          runner invokes it as `python3 <path> --package-dir <clone>
+          --json <tmp>`; the script's JSON output is parsed via the
+          json_totals_path + count_keys fields in audit-runner-args.
+      audit-setup-script-path:
         type: string
         required: false
         default: ''
         description: >
-          Optional. Path within swift-institute/.github (e.g.
-          `.github/scripts/audit-license-header.py`) to sparse-checkout
-          before running audit-step. The fetched file is placed at
-          /tmp/audit-script.py. When empty, the audit-step is responsible
-          for any setup it needs. Replaces the previous `audit-script-url`
-          input which curl-piped from raw.githubusercontent.com (no SHA,
-          no integrity check; flagged by 2026-05-06 reviewer feedback H2).
-      audit-step:
+          Optional path within swift-institute/.github to a one-time
+          pre-loop setup script (e.g. audit-setup-yamllint.py installs
+          the yamllint binary + writes /tmp/yamllint.yml). Empty means
+          no setup needed. The setup script receives no CLI arguments.
+      audit-runner-args:
         type: string
         required: true
         description: >
-          Shell snippet that runs once per matrix org. Has access to
-          env vars ORG (the matrix org name), GH_TOKEN (org-scoped
-          installation token), and /tmp/audit-script.py (when
-          audit-script-url was provided). MUST write a comma-separated
-          counts file at /tmp/<ORG>-counts.txt in the same column order
-          as count-labels. MAY write auxiliary content to
-          /tmp/<ORG>-extra.txt (surfaced as ${EXTRA} in body).
+          JSON-encoded config object passed to the runner via
+          --args-json. Required keys: count_keys (list[str]). Optional:
+          json_totals_path (dotted, default 'totals'), extra_template
+          (Python str.format, names: pkg + count_keys), extra_when_keys
+          (list[str], subset of count_keys; default = count_keys),
+          summary_label (str). See cron-audit-runner.py module docstring.
+          Trust contract: the value is JSON-decoded inside the runner;
+          NO shell expansion ever sees this content.
       count-labels:
         type: string
         required: true
@@ -98,7 +139,9 @@ on:
           Comma-separated list of count names (e.g. errors,warnings).
           Each label generates a ${COUNT_<LABEL>} substitution
           (uppercased) summed across orgs. The number of labels must
-          match the column count in each /tmp/<ORG>-counts.txt file.
+          match the column count in each /tmp/<ORG>-counts.txt file
+          (which the runner writes in count_keys order; callers MUST
+          keep count-labels and audit-runner-args.count_keys aligned).
       issue-title-prefix:
         type: string
         required: true
@@ -140,6 +183,7 @@ jobs:
       fail-fast: false
       matrix:
         org: ${{ fromJSON(inputs.matrix-orgs) }}
+    if: ${{ !github.event.repository.private }}     # [CI-032]
     runs-on: ubuntu-latest
     container: ${{ inputs.container }}
     permissions:
@@ -160,8 +204,13 @@ jobs:
           # gh CLI install on swift:* container (not in base; required for `gh repo list`)
           type -p curl >/dev/null
           mkdir -p -m 755 /etc/apt/keyrings
-          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
-            | tee /etc/apt/keyrings/githubcli-archive-keyring.gpg >/dev/null
+          # [CI-082] fetch to file, sha256sum -c against pinned digest,
+          # only then place in /etc/apt/keyrings/. Restructured from the
+          # prior `curl | tee` pipe to enable verification (the keyring
+          # is the trust root for subsequent apt-get install gh).
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /tmp/gh-keyring.gpg
+          echo "${GH_KEYRING_SHA256}  /tmp/gh-keyring.gpg" | sha256sum -c -
+          mv /tmp/gh-keyring.gpg /etc/apt/keyrings/githubcli-archive-keyring.gpg
           chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
           echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
             | tee /etc/apt/sources.list.d/github-cli.list > /dev/null
@@ -177,35 +226,54 @@ jobs:
           owner: ${{ matrix.org }}
           repositories: ''
 
-      - name: Fetch audit script (sparse-checkout from swift-institute/.github)
-        if: ${{ inputs.audit-script-path != '' }}
+      - name: Fetch runner + audit + setup scripts (sparse-checkout from swift-institute/.github)
         uses: actions/checkout@v6
         with:
           repository: swift-institute/.github
           ref: main
           path: .swift-institute-github
-          sparse-checkout: ${{ inputs.audit-script-path }}
+          sparse-checkout: |
+            ${{ inputs.audit-runner-path }}
+            ${{ inputs.audit-script-path }}
+            ${{ inputs.audit-setup-script-path }}
           sparse-checkout-cone-mode: false
 
-      - name: Stage audit script at /tmp/audit-script.py
-        if: ${{ inputs.audit-script-path != '' }}
+      - name: Stage scripts at /tmp
         shell: bash
         env:
+          AUDIT_RUNNER_PATH: ${{ inputs.audit-runner-path }}
           AUDIT_SCRIPT_PATH: ${{ inputs.audit-script-path }}
+          AUDIT_SETUP_SCRIPT_PATH: ${{ inputs.audit-setup-script-path }}
         run: |
           set -euo pipefail
-          # cp rather than mv so the sparse-checkout tree stays intact for
-          # any downstream reference; /tmp/audit-script.py preserves the
-          # legacy contract for audit-step shell snippets.
+          # cp rather than mv so the sparse-checkout tree stays intact.
+          cp ".swift-institute-github/${AUDIT_RUNNER_PATH}" /tmp/cron-audit-runner.py
+          chmod +x /tmp/cron-audit-runner.py
           cp ".swift-institute-github/${AUDIT_SCRIPT_PATH}" /tmp/audit-script.py
           chmod +x /tmp/audit-script.py
+          if [[ -n "${AUDIT_SETUP_SCRIPT_PATH}" ]]; then
+            cp ".swift-institute-github/${AUDIT_SETUP_SCRIPT_PATH}" /tmp/audit-setup.py
+            chmod +x /tmp/audit-setup.py
+          fi
 
       - name: Run audit
         shell: bash
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
           ORG: ${{ matrix.org }}
-        run: ${{ inputs.audit-step }}
+          AUDIT_RUNNER_ARGS: ${{ inputs.audit-runner-args }}
+        run: |
+          set -euo pipefail
+          # [CI-081] structured-input contract — no caller-supplied
+          # shell. AUDIT_RUNNER_ARGS is JSON-decoded inside the runner;
+          # /tmp/audit-script.py is the per-package script staged above.
+          if [[ -e /tmp/audit-setup.py ]]; then
+            python3 /tmp/audit-setup.py
+          fi
+          python3 /tmp/cron-audit-runner.py \
+            --audit-script /tmp/audit-script.py \
+            --org "${ORG}" \
+            --args-json "${AUDIT_RUNNER_ARGS}"
 
       - uses: actions/upload-artifact@v7
         with:
@@ -218,7 +286,7 @@ jobs:
   report:
     needs: sweep
     runs-on: ubuntu-latest
-    if: always() && needs.sweep.result != 'skipped'
+    if: ${{ !github.event.repository.private && always() && needs.sweep.result != 'skipped' }}     # [CI-032]
     permissions:
       contents: read
     steps:
