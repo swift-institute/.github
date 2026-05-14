@@ -47,6 +47,11 @@ jobs:
     outputs:
       orgs: ${{ steps.read.outputs.orgs }}
     steps:
+      - name: Harden runner (audit-mode egress logging)
+        uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
+        with:
+          egress-policy: audit
+
       - id: read
         uses: swift-institute/.github/.github/actions/read-orgs@main
         with:
@@ -59,44 +64,18 @@ jobs:
     with:
       matrix-orgs: ${{ needs.config.outputs.orgs }}
       audit-script-path: .github/scripts/audit-license-header.py
+      audit-runner-args: |
+        {
+          "json_totals_path": "totals",
+          "count_keys": ["missing", "files_scanned"],
+          "extra_template": "- `{pkg}`: {missing} / {files_scanned} files missing",
+          "extra_when_keys": ["missing"],
+          "summary_label": "license-header sweep (γ-1b Stage 1)"
+        }
       count-labels: missing,files
       issue-title-prefix: License-header sweep
       issue-label: license-audit
       dry-run: ${{ inputs.dry-run || false }}
-      audit-step: |
-        set -euo pipefail
-        mapfile -t targets < <(gh repo list "$ORG" --limit 2000 \
-          --visibility public \
-          --json nameWithOwner,isArchived \
-          --jq '.[] | select(.isArchived==false) | .nameWithOwner')
-        total_missing=0
-        total_files=0
-        per_pkg=()
-        for target in "${targets[@]}"; do
-          workdir=$(mktemp -d)
-          json="/tmp/${target//\//__}.json"
-          git clone --depth 1 --quiet \
-            "https://x-access-token:${GH_TOKEN}@github.com/${target}.git" \
-            "$workdir" 2>/dev/null || { rm -rf "$workdir"; continue; }
-          python3 /tmp/audit-script.py \
-            --package-dir "$workdir" \
-            --json "$json" 2>/dev/null || true
-          counts=$(python3 -c "import json; t=json.load(open('$json'))['totals']; print(t['missing'], t['files_scanned'])" 2>/dev/null || echo "0 0")
-          read -r m f <<< "$counts"
-          total_missing=$((total_missing + m))
-          total_files=$((total_files + f))
-          if [[ "$m" -gt 0 ]]; then
-            pkg_name=$(basename "$target")
-            per_pkg+=("- \`${pkg_name}\`: $m / $f files missing")
-          fi
-          rm -rf "$workdir"
-        done
-        {
-          echo "## Org $ORG — license-header sweep (γ-1b Stage 1)"
-          echo "- Missing total: $total_missing / $total_files files"
-        } >> "$GITHUB_STEP_SUMMARY"
-        echo "${total_missing},${total_files}" > "/tmp/${ORG}-counts.txt"
-        printf '%s\n' "${per_pkg[@]}" > "/tmp/${ORG}-extra.txt" 2>/dev/null || true
       issue-body-template: |
         The weekly Apache 2.0 license-header sweep at 06:40 UTC on ${TODAY}
         found ${COUNT_MISSING} of ${COUNT_FILES} `Sources/**/*.swift`
