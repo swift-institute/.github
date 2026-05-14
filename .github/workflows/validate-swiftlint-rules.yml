@@ -1,0 +1,60 @@
+# validate-swiftlint-rules.yml — verify [CI-100] SwiftLint Tier 1 rule exclusions.
+#
+# Pilot 22 of `/promote-rule` (2026-05-14). Migrated to thin caller of
+# validate-base.yml in Phase B-2 of CI-REVIEW-PHASE-B-DESIGN-2026-05-14
+# (single-target mode per manifest).
+#
+# Rules checked: [CI-100]. See companion script for details.
+
+name: validate-swiftlint-rules
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.swiftlint.yml'
+      - '.github/scripts/validate-swiftlint-rules.py'
+      - '.github/workflows/validate-swiftlint-rules.yml'
+  pull_request:
+    paths:
+      - '.swiftlint.yml'
+      - '.github/scripts/validate-swiftlint-rules.py'
+      - '.github/workflows/validate-swiftlint-rules.yml'
+  workflow_call:
+    inputs:
+      repo:
+        description: 'Owner/name of the repo to validate (default: this repo).'
+        type: string
+        required: false
+        default: ''
+      dry-run:
+        description: 'Run checks but do not fail the job on findings.'
+        type: boolean
+        required: false
+        default: false
+    outputs:
+      total-violations:
+        description: 'Total count of individual violations.'
+        value: ${{ jobs.scan.outputs.total-violations }}
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: 'Owner/name of the repo to validate (optional).'
+        type: string
+        required: false
+      dry-run:
+        description: 'Run checks but do not fail the job on findings.'
+        type: boolean
+        required: false
+        default: false
+
+jobs:
+  scan:
+    uses: ./.github/workflows/validate-base.yml
+    with:
+      validator-script: .github/scripts/validate-swiftlint-rules.py
+      rule-id-regex: '^CI-100'
+      discovery-mode: single-target
+      target-repo: ${{ inputs.repo }}
+      dry-run: ${{ inputs.dry-run }}
+    secrets: inherit
