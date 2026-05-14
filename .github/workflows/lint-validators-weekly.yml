@@ -12,6 +12,7 @@
 #                principal adjudication 2026-05-14).
 #   Handoff:     HANDOFF-phase-d-2-execution.md (Phase D-2 execution).
 #   Structural precedent: .github/workflows/link-check-weekly.yml.
+#   Phase D-2.1 fix-forward: see § Phase D-2.1 below.
 #
 # Validators in scope (manifest's discovery-mode: per-package-org-sweep
 # + status: active):
@@ -36,7 +37,7 @@
 # top-level permissions: {} deny-all floor + explicit per-job grants.
 #
 # Token-mint pattern: orchestrator does NOT pre-mint per-org tokens for
-# the scan matrix. Each validate-X.yml mints its own per-org-scoped
+# the scan jobs. Each validate-X.yml mints its own per-org-scoped
 # swift-institute-bot App-installation token internally (via
 # actions/create-github-app-token@v1.12.0). Orchestrator passes
 # secrets: inherit per [CI-059]; called workflows use the inherited
@@ -48,20 +49,41 @@
 # upsert via swift-institute/.github/.github/actions/upsert-tracking-issue
 # (matches link-check-weekly.yml + cron-audit-base.yml report-job
 # precedent). Per-validator readability via H3 sectioning in body.
-# Auto-close when all 68 matrix cells (4 validators × 17 orgs) report
-# total-violations = 0.
+# Auto-close when all 4 scan jobs report success across their respective
+# 17-org matrix cells (4 × 17 = 68 reusable-workflow invocations total).
 #
 # dry-run posture: defaults to false (matrix cells fail naturally on
-# findings; scan.result aggregates to 'failure'; report job fires on
-# scan.result != 'success'). Matches link-check-weekly.yml's
-# `dry-run: ${{ inputs.dry-run || false }}` precedent exactly. The
-# design doc's Phase D-2 spec text included a `dry-run: true` hardcode,
-# but that posture is structurally incompatible with the cited
-# link-check-weekly precedent (it would prevent the report job from
-# distinguishing findings-present from findings-absent runs without
-# per-cell artifact aggregation, which is forbidden under ground rule 7
-# "MUST NOT modify any per-validator workflow file"). The deviation is
-# noted in Audits/Outcome-CI-REVIEW-Phase-D-2026-05-14.md.
+# findings; per-validator scan job result aggregates to 'failure'; report
+# job fires when ANY scan job is not 'success'). Matches
+# link-check-weekly.yml's `dry-run: ${{ inputs.dry-run || false }}`
+# precedent exactly. The design doc's Phase D-2 spec text included a
+# `dry-run: true` hardcode, but that posture is structurally
+# incompatible with the cited link-check-weekly precedent (it would
+# prevent the report job from distinguishing findings-present from
+# findings-absent runs without per-cell artifact aggregation, which is
+# forbidden under ground rule 7 "MUST NOT modify any per-validator
+# workflow file"). The deviation is noted in
+# Audits/Outcome-CI-REVIEW-Phase-D-2026-05-14.md.
+#
+# § Phase D-2.1 (2026-05-14) fix-forward
+#
+# The initial Phase D-2 commit (cec6778) authored the scan stage as a
+# single 2D-matrix job (`matrix: { validator: [...], org: [...] }`) with
+# matrix-interpolated `uses: ./.github/workflows/validate-${{ matrix.validator }}.yml`.
+# GitHub Actions rejected this at workflow-load time with HTTP 422
+# "Unrecognized named-value: 'matrix'" — the `uses:` field is resolved
+# BEFORE matrix expansion, so `matrix.*` context is not available in
+# `uses:` for reusable-workflow-call jobs at the job level. The
+# `inputs.*` and `vars.*` contexts ARE supported in `uses:`; `matrix.*`
+# is not.
+#
+# Phase D-2.1 rewrites the scan stage as 4 SEPARATE scan jobs, each
+# with its own 1D matrix over `org` and a STATIC `uses:` reference to
+# the corresponding validate-X.yml. Same effective coverage (4 × 17
+# = 68 reusable-workflow invocations across the 4 scan jobs); different
+# YAML shape. Matches link-check-weekly.yml's exact structural precedent
+# (single 1D matrix + static uses) extended to 4 parallel-shaped
+# scan jobs (one per validator).
 
 name: lint-validators-weekly
 
@@ -107,25 +129,66 @@ jobs:
           # validate-X.yml's gh repo list call (default: public).
           filter: '.name'
 
-  scan:
+  # Each scan-* job below: 1D matrix over orgs × static uses: to its
+  # respective validate-X.yml. Per [CI-106] caller's per-job grant
+  # (contents: read) must be ≥ the called reusable's per-job grant; each
+  # validate-X.yml's scan job either declares contents: read explicitly
+  # or inherits from caller. Verified by reading each .yml's scan: block.
+
+  scan-thin-callers:
     needs: config
     strategy:
       fail-fast: false
       matrix:
-        validator:
-          - thin-callers
-          - file-naming
-          - github-metadata
-          - package-structure
         org: ${{ fromJSON(needs.config.outputs.orgs) }}
-    # [CI-106] Caller's per-job grant must be ≥ called reusable's per-job
-    # grant. Each validate-X.yml's scan job either declares
-    # `permissions: contents: read` explicitly (validate-sub-org-wrappers
-    # pattern; not in this matrix) or inherits from the caller (the four
-    # validators in scope — verified by reading each .yml's `scan:` block).
     permissions:
       contents: read
-    uses: ./.github/workflows/validate-${{ matrix.validator }}.yml
+    uses: ./.github/workflows/validate-thin-callers.yml
+    with:
+      org: ${{ matrix.org }}
+      dry-run: ${{ inputs.dry-run || false }}
+      visibility: ${{ inputs.visibility || 'public' }}
+    secrets: inherit
+
+  scan-file-naming:
+    needs: config
+    strategy:
+      fail-fast: false
+      matrix:
+        org: ${{ fromJSON(needs.config.outputs.orgs) }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/validate-file-naming.yml
+    with:
+      org: ${{ matrix.org }}
+      dry-run: ${{ inputs.dry-run || false }}
+      visibility: ${{ inputs.visibility || 'public' }}
+    secrets: inherit
+
+  scan-github-metadata:
+    needs: config
+    strategy:
+      fail-fast: false
+      matrix:
+        org: ${{ fromJSON(needs.config.outputs.orgs) }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/validate-github-metadata.yml
+    with:
+      org: ${{ matrix.org }}
+      dry-run: ${{ inputs.dry-run || false }}
+      visibility: ${{ inputs.visibility || 'public' }}
+    secrets: inherit
+
+  scan-package-structure:
+    needs: config
+    strategy:
+      fail-fast: false
+      matrix:
+        org: ${{ fromJSON(needs.config.outputs.orgs) }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/validate-package-structure.yml
     with:
       org: ${{ matrix.org }}
       dry-run: ${{ inputs.dry-run || false }}
@@ -133,8 +196,12 @@ jobs:
     secrets: inherit
 
   report:
-    needs: scan
-    if: always() && needs.scan.result != 'skipped'
+    needs:
+      - scan-thin-callers
+      - scan-file-naming
+      - scan-github-metadata
+      - scan-package-structure
+    if: always() && (needs.scan-thin-callers.result != 'skipped' || needs.scan-file-naming.result != 'skipped' || needs.scan-github-metadata.result != 'skipped' || needs.scan-package-structure.result != 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -157,17 +224,29 @@ jobs:
 
       - name: Build issue body
         env:
-          SCAN_RESULT: ${{ needs.scan.result }}
+          RESULT_THIN_CALLERS: ${{ needs.scan-thin-callers.result }}
+          RESULT_FILE_NAMING: ${{ needs.scan-file-naming.result }}
+          RESULT_GITHUB_METADATA: ${{ needs.scan-github-metadata.result }}
+          RESULT_PACKAGE_STRUCTURE: ${{ needs.scan-package-structure.result }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         shell: bash
         run: |
           set -euo pipefail
           today=$(date -u '+%Y-%m-%d')
 
-          # All-success across 4 validators × 17 orgs ⇒ no tracking issue;
-          # close any open lint-validators issue from prior runs.
-          if [[ "${SCAN_RESULT}" == "success" ]]; then
-            echo "All 68 matrix cells converged cleanly — no tracking issue needed."
+          # Aggregate per-validator scan job results. "Clean" = every scan
+          # job result is 'success' or 'skipped'. Anything else (failure,
+          # cancelled) ⇒ findings or validator error ⇒ file/update tracking issue.
+          ALL_CLEAN=true
+          for r in "$RESULT_THIN_CALLERS" "$RESULT_FILE_NAMING" "$RESULT_GITHUB_METADATA" "$RESULT_PACKAGE_STRUCTURE"; do
+            case "$r" in
+              success|skipped) ;;
+              *) ALL_CLEAN=false ;;
+            esac
+          done
+
+          if [[ "$ALL_CLEAN" == "true" ]]; then
+            echo "All 4 scan jobs converged cleanly (success/skipped) — no tracking issue needed."
             echo "FILE_ISSUE=false" >> "$GITHUB_ENV"
             echo "CLEAN_RUN=true" >> "$GITHUB_ENV"
             exit 0
@@ -176,24 +255,23 @@ jobs:
           cat > "${RUNNER_TEMP}/issue-body.md" <<EOF
           # Validators weekly sweep — ${today}
 
-          Status: \`${SCAN_RESULT}\`. See the [run summary](${RUN_URL}) for the
-          per-cell breakdown; each matrix cell's step summary contains the
-          per-org per-rule findings table.
+          See the [run summary](${RUN_URL}) for the per-cell breakdown; each
+          matrix cell's step summary contains the per-org per-rule findings table.
 
           ## Per-validator coverage
 
           ### validate-thin-callers ([CI-030] / [CI-059] / [GH-REPO-074])
-          Per-org breakdown in run summary; per-cell step summaries name the
-          specific consumer repos with violations.
+          Job status: \`${RESULT_THIN_CALLERS}\`. Per-org breakdown in run summary;
+          per-cell step summaries name the specific consumer repos with violations.
 
           ### validate-file-naming ([API-IMPL-006])
-          Per-org breakdown in run summary.
+          Job status: \`${RESULT_FILE_NAMING}\`. Per-org breakdown in run summary.
 
           ### validate-github-metadata ([GH-REPO-METADATA])
-          Per-org breakdown in run summary.
+          Job status: \`${RESULT_GITHUB_METADATA}\`. Per-org breakdown in run summary.
 
           ### validate-package-structure ([MOD-PACKAGE-STRUCTURE])
-          Per-org breakdown in run summary.
+          Job status: \`${RESULT_PACKAGE_STRUCTURE}\`. Per-org breakdown in run summary.
 
           ## What this means
 
@@ -213,7 +291,7 @@ jobs:
           EOF
 
           {
-            echo "ISSUE_TITLE=Validators weekly sweep ${today} — ${SCAN_RESULT}"
+            echo "ISSUE_TITLE=Validators weekly sweep ${today}"
             echo "FILE_ISSUE=true"
             echo "CLEAN_RUN=false"
           } >> "$GITHUB_ENV"
