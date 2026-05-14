@@ -90,7 +90,12 @@ runs:
           # not be installed). Non-container ubuntu runners need sudo to
           # write /usr/local/bin.
           if [[ $EUID -eq 0 ]]; then SUDO=""; else SUDO="sudo"; fi
-          $SUDO curl -fsSL "https://github.com/mikefarah/yq/releases/download/v4.45.4/yq_linux_amd64" -o /usr/local/bin/yq
+          # [CI-082] fetch-verify-place: curl to /tmp, sha256sum -c against
+          # pinned digest, only then move into /usr/local/bin/yq. Re-lock
+          # YQ_SHA256 when bumping YQ_VERSION (see [CI-107]).
+          curl -fsSL "https://github.com/mikefarah/yq/releases/download/v4.45.4/yq_linux_amd64" -o /tmp/yq
+          echo "b96de04645707e14a12f52c37e6266832e03c29e95b9b139cddcae7314466e69  /tmp/yq" | sha256sum -c -
+          $SUDO mv /tmp/yq /usr/local/bin/yq
           $SUDO chmod +x /usr/local/bin/yq
         fi
         YQ=/usr/local/bin/yq
