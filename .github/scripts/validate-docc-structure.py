@@ -22,16 +22,13 @@ import re
 import sys
 from pathlib import Path
 
+from validate_lib import emit
+
 DOC_RESEARCH_FORBIDDEN = re.compile(
     r"^##\s+Research\b|^##\s+Experiments\b|^Status:\s*DECISION\b",
     re.MULTILINE,
 )
 TUTORIAL_CODE_REF = re.compile(r"@Code\s*\(\s*(?:name:[^,]*,\s*)?file:\s*\"([^\"]+)\"")
-
-
-def emit(repo: str, rule: str, message: str) -> None:
-    safe = message.replace("\t", " ").replace("\n", " ")
-    print(f"{repo}\t{rule}\t{safe}")
 
 
 def find_swift_targets(sources_dir: Path) -> list[Path]:
