@@ -78,6 +78,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from validate_lib import emit
+
 L2_PLATFORM_ALLOWLIST = {
     "swift-iso-9945",
     "swift-linux-standard",
@@ -155,11 +157,6 @@ PLATFORM_PRIMITIVES_PACKAGES = {
 POSIX_CALL = re.compile(
     r"\b(" + "|".join(re.escape(s) for s in POSIX_SHARED_SYSCALLS) + r")\s*\("
 )
-
-
-def emit(repo: str, rule: str, message: str) -> None:
-    safe = message.replace("\t", " ").replace("\n", " ")
-    print(f"{repo}\t{rule}\t{safe}")
 
 
 def is_l1_primitives(repo_name: str) -> bool:
