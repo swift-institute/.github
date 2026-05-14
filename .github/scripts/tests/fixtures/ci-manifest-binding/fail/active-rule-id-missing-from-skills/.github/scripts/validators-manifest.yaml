@@ -1,0 +1,18 @@
+# Fail fixture — active CI-numeric rule-id missing from SKILL.md.
+# rule-id CI-999 matches the ci-cd-workflows numeric shape
+# (`^CI-\d+[a-z]?$`) AND status=active, so check 3 looks it up in SKILL.md.
+# The synthetic SKILL.md does NOT contain `[CI-999]` → check 3 fires.
+#
+# CI-999 is chosen to avoid collision with real ci-cd-workflows rules
+# (which today go up to CI-105).
+#
+# Expected: ≥1 finding (check 3: manifest-side rule promotion gap).
+validators:
+  - rule-id: CI-999
+    validator-script: .github/scripts/validate-foo.py
+    workflow-file: .github/workflows/validate-foo.yml
+    status: active
+    self-firing: active
+    discovery-mode: single-target
+    rule-id-regex: '^CI-999'
+    migrate-to-base: yes

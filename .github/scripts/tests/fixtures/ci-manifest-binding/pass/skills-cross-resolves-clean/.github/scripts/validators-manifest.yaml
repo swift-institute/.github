@@ -1,0 +1,15 @@
+# Pass fixture — Skills cross-references resolve cleanly.
+# rule-id CI-997 (active, CI-numeric) is BOTH cited in SKILL.md as
+# `[CI-997]` AND has validator-script validate-foo.py which is
+# cited in SKILL.md as `[VERIFICATION: WF validate-foo.py]`. All four
+# checks silent.
+# Expected: 0 findings.
+validators:
+  - rule-id: CI-997
+    validator-script: .github/scripts/validate-foo.py
+    workflow-file: .github/workflows/validate-foo.yml
+    status: active
+    self-firing: active
+    discovery-mode: single-target
+    rule-id-regex: '^CI-997'
+    migrate-to-base: yes

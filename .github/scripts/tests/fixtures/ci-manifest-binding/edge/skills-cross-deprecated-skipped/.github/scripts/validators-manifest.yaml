@@ -1,0 +1,21 @@
+# Edge fixture — deprecated CI-numeric rule-id absent from SKILL.md.
+# rule-id CI-998 matches `^CI-\d+[a-z]?$` (ci-cd-workflows numeric shape)
+# but status=deprecated, so check 3 (which filters to status=active) must
+# stay silent even though `[CI-998]` is NOT in SKILL.md.
+#
+# Validates the scope filter: deprecated rules are exempt from rule-promotion
+# enforcement (deprecated → no longer in skill; absence is expected, not a defect).
+#
+# CI-998 is a synthetic high-numbered rule-id chosen to avoid collision
+# with real ci-cd-workflows rules (which today go up to CI-105).
+#
+# Expected: 0 findings.
+validators:
+  - rule-id: CI-998
+    validator-script: ''
+    workflow-file: ''
+    status: deprecated
+    self-firing: deprecated
+    discovery-mode: ''
+    rule-id-regex: ''
+    migrate-to-base: 'n/a (deprecated)'

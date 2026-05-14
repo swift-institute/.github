@@ -1,0 +1,13 @@
+# Fail fixture — SKILL.md cites a validator script absent from the manifest.
+# Manifest is internally clean (checks 2 + 4 silent); SKILL.md cites
+# `WF validate-nonexistent.py` which has no manifest entry → check 1 fires.
+# Expected: ≥1 finding (check 1: skill-side WF citation orphan).
+validators:
+  - rule-id: TEST-ACTIVE-001
+    validator-script: .github/scripts/validate-foo.py
+    workflow-file: .github/workflows/validate-foo.yml
+    status: active
+    self-firing: active
+    discovery-mode: single-target
+    rule-id-regex: '^TEST-ACTIVE-001'
+    migrate-to-base: yes
