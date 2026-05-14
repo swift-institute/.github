@@ -1,0 +1,249 @@
+# lint-validators-weekly.yml — weekly cross-org orchestrator for the
+# per-package-org-sweep validator corpus.
+#
+# Phase D-2 execution of the 2026-05-14 CI Review arc. Operationalizes
+# the four cross-org-consumer-sweep validators by dispatching each over
+# the 17-active-org universe on a weekly schedule. Findings surface via
+# per-cell $GITHUB_STEP_SUMMARY tables and a single aggregated tracking
+# issue at swift-institute/.github (idempotent upsert; close-on-clean).
+#
+# Provenance:
+#   Design doc:  Audits/CI-REVIEW-PHASE-D-DESIGN-2026-05-14.md (sealed by
+#                principal adjudication 2026-05-14).
+#   Handoff:     HANDOFF-phase-d-2-execution.md (Phase D-2 execution).
+#   Structural precedent: .github/workflows/link-check-weekly.yml.
+#
+# Validators in scope (manifest's discovery-mode: per-package-org-sweep
+# + status: active):
+#   - validate-thin-callers      [CI-030], [CI-059], [GH-REPO-074]
+#   - validate-file-naming       [API-IMPL-006]
+#   - validate-github-metadata   [GH-REPO-METADATA]
+#   - validate-package-structure [MOD-PACKAGE-STRUCTURE]
+#
+# Out of scope: validate-sub-org-wrappers (already self-firing with its
+# own hardcoded sub-org matrix; structurally different axis from the
+# cross-org-consumer-sweep axis this orchestrator covers).
+#
+# Cadence: Tuesday 06:00 UTC. Picks an uncongested slot relative to the
+# cron-audit-base cohort's Monday 06:00-06:45 cluster, link-check-weekly's
+# Monday 06:00, validate-sub-org-wrappers' Monday 05:00, and
+# lint-org-bot-coverage-weekly's Sunday 06:30.
+#
+# Chain depth (per [CI-004b] 4-level workflow_call limit):
+#   orchestrator (L1) → validate-X.yml (L2). Depth 2 of 4; headroom 2.
+#
+# Per [CI-090] standalone workflow (no workflow_call: trigger) →
+# top-level permissions: {} deny-all floor + explicit per-job grants.
+#
+# Token-mint pattern: orchestrator does NOT pre-mint per-org tokens for
+# the scan matrix. Each validate-X.yml mints its own per-org-scoped
+# swift-institute-bot App-installation token internally (via
+# actions/create-github-app-token@v1.12.0). Orchestrator passes
+# secrets: inherit per [CI-059]; called workflows use the inherited
+# SWIFT_INSTITUTE_BOT_APP_ID + SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY
+# secrets. The report job mints its own swift-institute-scoped token
+# for issues:write.
+#
+# Tracking-issue grouping: one issue per orchestrator run, idempotent
+# upsert via swift-institute/.github/.github/actions/upsert-tracking-issue
+# (matches link-check-weekly.yml + cron-audit-base.yml report-job
+# precedent). Per-validator readability via H3 sectioning in body.
+# Auto-close when all 68 matrix cells (4 validators × 17 orgs) report
+# total-violations = 0.
+#
+# dry-run posture: defaults to false (matrix cells fail naturally on
+# findings; scan.result aggregates to 'failure'; report job fires on
+# scan.result != 'success'). Matches link-check-weekly.yml's
+# `dry-run: ${{ inputs.dry-run || false }}` precedent exactly. The
+# design doc's Phase D-2 spec text included a `dry-run: true` hardcode,
+# but that posture is structurally incompatible with the cited
+# link-check-weekly precedent (it would prevent the report job from
+# distinguishing findings-present from findings-absent runs without
+# per-cell artifact aggregation, which is forbidden under ground rule 7
+# "MUST NOT modify any per-validator workflow file"). The deviation is
+# noted in Audits/Outcome-CI-REVIEW-Phase-D-2026-05-14.md.
+
+name: lint-validators-weekly
+
+# [CI-090] Standalone workflow → deny-all floor at workflow level;
+# per-job permissions blocks below provide the actual grants.
+permissions: {}
+
+on:
+  schedule:
+    - cron: '0 6 * * 2'   # weekly Tuesday 06:00 UTC
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: 'Run validators but skip aggregated issue create/update.'
+        type: boolean
+        required: false
+        default: false
+      visibility:
+        description: 'Filter consumer repos by visibility (public | private | internal | all). Default public per [CI-094] + [CI-095].'
+        type: string
+        required: false
+        default: 'public'
+
+jobs:
+  config:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      orgs: ${{ steps.read.outputs.orgs }}
+    steps:
+      - name: Harden runner (audit-mode egress logging)
+        uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450  # v2.19.1
+        with:
+          egress-policy: audit
+
+      - id: read
+        uses: swift-institute/.github/.github/actions/read-orgs@main
+        with:
+          # All 17 active orgs (.name); archived orgs auto-excluded by the
+          # composite. Repo-level visibility filter is applied inside each
+          # validate-X.yml's gh repo list call (default: public).
+          filter: '.name'
+
+  scan:
+    needs: config
+    strategy:
+      fail-fast: false
+      matrix:
+        validator:
+          - thin-callers
+          - file-naming
+          - github-metadata
+          - package-structure
+        org: ${{ fromJSON(needs.config.outputs.orgs) }}
+    # [CI-106] Caller's per-job grant must be ≥ called reusable's per-job
+    # grant. Each validate-X.yml's scan job either declares
+    # `permissions: contents: read` explicitly (validate-sub-org-wrappers
+    # pattern; not in this matrix) or inherits from the caller (the four
+    # validators in scope — verified by reading each .yml's `scan:` block).
+    permissions:
+      contents: read
+    uses: ./.github/workflows/validate-${{ matrix.validator }}.yml
+    with:
+      org: ${{ matrix.org }}
+      dry-run: ${{ inputs.dry-run || false }}
+      visibility: ${{ inputs.visibility || 'public' }}
+    secrets: inherit
+
+  report:
+    needs: scan
+    if: always() && needs.scan.result != 'skipped'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Harden runner (audit-mode egress logging)
+        uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450  # v2.19.1
+        with:
+          egress-policy: audit
+
+      - name: Mint installation token (issues:write at swift-institute/.github)
+        id: token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: swift-institute
+          repositories: .github
+          permission-issues: write
+
+      - name: Build issue body
+        env:
+          SCAN_RESULT: ${{ needs.scan.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          today=$(date -u '+%Y-%m-%d')
+
+          # All-success across 4 validators × 17 orgs ⇒ no tracking issue;
+          # close any open lint-validators issue from prior runs.
+          if [[ "${SCAN_RESULT}" == "success" ]]; then
+            echo "All 68 matrix cells converged cleanly — no tracking issue needed."
+            echo "FILE_ISSUE=false" >> "$GITHUB_ENV"
+            echo "CLEAN_RUN=true" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
+          cat > "${RUNNER_TEMP}/issue-body.md" <<EOF
+          # Validators weekly sweep — ${today}
+
+          Status: \`${SCAN_RESULT}\`. See the [run summary](${RUN_URL}) for the
+          per-cell breakdown; each matrix cell's step summary contains the
+          per-org per-rule findings table.
+
+          ## Per-validator coverage
+
+          ### validate-thin-callers ([CI-030] / [CI-059] / [GH-REPO-074])
+          Per-org breakdown in run summary; per-cell step summaries name the
+          specific consumer repos with violations.
+
+          ### validate-file-naming ([API-IMPL-006])
+          Per-org breakdown in run summary.
+
+          ### validate-github-metadata ([GH-REPO-METADATA])
+          Per-org breakdown in run summary.
+
+          ### validate-package-structure ([MOD-PACKAGE-STRUCTURE])
+          Per-org breakdown in run summary.
+
+          ## What this means
+
+          One or more of the 68 matrix cells (4 validators × 17 orgs) reported
+          violations or a validator error. Drill into the failed cells via the
+          run summary linked above.
+
+          ## What to do
+
+          - Review the per-cell step summaries for specific violations.
+          - For each finding, either fix the consumer repo to conform or amend
+            the rule via /promote-rule.
+          - This issue is updated in place by the next weekly run; auto-closed
+            when all four validators report 0 violations across all 17 orgs.
+
+          *Idempotent: this issue is updated in place.*
+          EOF
+
+          {
+            echo "ISSUE_TITLE=Validators weekly sweep ${today} — ${SCAN_RESULT}"
+            echo "FILE_ISSUE=true"
+            echo "CLEAN_RUN=false"
+          } >> "$GITHUB_ENV"
+
+      - name: Upsert tracking issue
+        if: ${{ env.FILE_ISSUE == 'true' && inputs.dry-run != true }}
+        uses: swift-institute/.github/.github/actions/upsert-tracking-issue@main
+        with:
+          repo: swift-institute/.github
+          title: ${{ env.ISSUE_TITLE }}
+          title-prefix: 'Validators weekly sweep'
+          body-file: ${{ runner.temp }}/issue-body.md
+          label: 'lint-validators'
+          gh-token: ${{ steps.token.outputs.token }}
+
+      - name: Close tracking issue when clean
+        if: ${{ env.CLEAN_RUN == 'true' && inputs.dry-run != true }}
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          existing=$(gh issue list \
+            --repo swift-institute/.github \
+            --state open \
+            --label lint-validators \
+            --json number \
+            --jq '.[].number' || echo "")
+          for n in $existing; do
+            gh issue close "$n" \
+              --repo swift-institute/.github \
+              --comment "All 4 validators × 17 orgs clean as of ${{ github.run_id }}; auto-closing."
+          done
