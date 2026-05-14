@@ -215,7 +215,7 @@ jobs:
         run: |
           set -euo pipefail
           total_repos=$(wc -l < /tmp/targets.txt | tr -d ' ')
-          violations=$(grep -cE "	(MOD|API|PLAT|GH|README|TEST|DOC|MEM|SWIFT-TEST|BENCH|INST-TEST)-[0-9]" /tmp/findings/all.tsv || echo 0)
+          violations=$(grep -cE "	(MOD|API|PLAT|GH|README|TEST|DOC|MEM|SWIFT-TEST|BENCH|INST-TEST)-[0-9]" /tmp/findings/all.tsv) || violations=0
           repos_with_violations=$(awk -F'\t' '$2 ~ /^(MOD|API|PLAT|GH|README|TEST|DOC|MEM|SWIFT-TEST|BENCH|INST-TEST)-/{print $1}' /tmp/findings/all.tsv | sort -u | wc -l | tr -d ' ')
 
           echo "repos-scanned=$total_repos" >> "$GITHUB_OUTPUT"

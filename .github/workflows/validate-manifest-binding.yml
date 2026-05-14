@@ -150,7 +150,7 @@ jobs:
           DRY_RUN: ${{ inputs.dry-run }}
         run: |
           set -euo pipefail
-          violations=$(grep -cE "	CI-MANIFEST-BINDING" /tmp/findings.tsv || echo 0)
+          violations=$(grep -cE "	CI-MANIFEST-BINDING" /tmp/findings.tsv) || violations=0
           echo "total-violations=$violations" >> "$GITHUB_OUTPUT"
           {
             echo "## validate-manifest-binding findings"

@@ -177,7 +177,7 @@ jobs:
         run: |
           set -euo pipefail
           total_repos=$(wc -l < /tmp/targets.txt | tr -d ' ')
-          violations=$(grep -cE "	(GH-REPO|README|metadata-)" /tmp/findings/all.tsv || echo 0)
+          violations=$(grep -cE "	(GH-REPO|README|metadata-)" /tmp/findings/all.tsv) || violations=0
           repos_with_violations=$(awk -F'\t' '$2 ~ /^(GH-REPO|README|metadata-)/{print $1}' /tmp/findings/all.tsv | sort -u | wc -l | tr -d ' ')
 
           echo "repos-scanned=$total_repos" >> "$GITHUB_OUTPUT"

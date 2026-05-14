@@ -105,7 +105,7 @@ jobs:
         id: aggregate
         run: |
           set -euo pipefail
-          violations=$(cat /tmp/findings-*.tsv 2>/dev/null | grep -cE "	CI-004b" || echo 0)
+          violations=$(cat /tmp/findings-*.tsv 2>/dev/null | grep -cE "	CI-004b") || violations=0
           echo "total-violations=$violations" >> "$GITHUB_OUTPUT"
           {
             echo "## validate-sub-org-wrappers findings"

@@ -129,7 +129,7 @@ jobs:
         id: aggregate
         run: |
           set -euo pipefail
-          violations=$(grep -cE "	API-IMPL-[0-9]+" /tmp/findings.tsv || echo 0)
+          violations=$(grep -cE "	API-IMPL-[0-9]+" /tmp/findings.tsv) || violations=0
           echo "total-violations=$violations" >> "$GITHUB_OUTPUT"
           {
             echo "## validate-file-naming findings"

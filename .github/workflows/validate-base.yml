@@ -154,7 +154,7 @@ jobs:
           VALIDATOR_SCRIPT: ${{ inputs.validator-script }}
         run: |
           set -euo pipefail
-          violations=$(grep -cE "	${RULE_ID_REGEX}" /tmp/findings.tsv || echo 0)
+          violations=$(grep -cE "	${RULE_ID_REGEX}" /tmp/findings.tsv) || violations=0
           echo "total-violations=$violations" >> "$GITHUB_OUTPUT"
           {
             echo "## ${VALIDATOR_SCRIPT} findings"

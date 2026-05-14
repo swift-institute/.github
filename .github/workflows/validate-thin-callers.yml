@@ -132,7 +132,7 @@ jobs:
         id: aggregate
         run: |
           set -euo pipefail
-          violations=$(grep -cE "	GH-REPO-074" /tmp/findings.tsv || echo 0)
+          violations=$(grep -cE "	GH-REPO-074" /tmp/findings.tsv) || violations=0
           echo "total-violations=$violations" >> "$GITHUB_OUTPUT"
           {
             echo "## validate-thin-callers findings"
