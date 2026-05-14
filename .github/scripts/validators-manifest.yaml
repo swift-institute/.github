@@ -1,0 +1,327 @@
+# validators-manifest.yaml — single source-of-truth for rule-ID ↔
+# validator-script ↔ workflow-file binding.
+#
+# Phase B-1 of CI-REVIEW-PHASE-B-DESIGN-2026-05-14 §3. The binding
+# validator (validate-manifest-binding.py) cross-checks this manifest
+# for internal consistency. Phase B-1 scope = checks 2 + 4 only
+# (internal consistency); checks 1 + 3 (Skills cross-references)
+# DEFERRED to Phase B-2 per supervisor adjudication 2026-05-14:
+# auth-surface design for Skills checkout / Skills-scoped App-token
+# mint OR alternative (sync-skills.sh-style [VERIFICATION:]-index
+# mirror) made deliberately in B-2 rather than conflated into the
+# B-1 canary.
+#
+# Schema:
+#   - rule-id            (string) — the rule this entry binds.
+#   - validator-script   (string) — path under swift-institute/.github
+#                                   to the validator .py; empty when
+#                                   status=deprecated.
+#   - workflow-file      (string) — path under swift-institute/.github
+#                                   to the validator workflow .yml;
+#                                   empty when status=deprecated or
+#                                   when the validator runs only via
+#                                   another workflow (e.g., embedded
+#                                   in a cron orchestrator).
+#   - status             (enum)   — active | deferred | deprecated.
+#   - self-firing        (enum)   — active | deferred | deprecated.
+#   - discovery-mode     (string) — single-target |
+#                                   wrapper-host-multi-file |
+#                                   per-package-org-sweep | (empty for
+#                                   non-base-eligible).
+#   - rule-id-regex      (string) — awk-compatible regex matching
+#                                   column 2 of /tmp/findings.tsv.
+#                                   Empty for deprecated entries.
+#   - migrate-to-base    (string) — yes | no | <reason>. Annotated 'no
+#                                   (chain-C; see CI-REVIEW-PHASE-B-DESIGN
+#                                   §5)' for validate-thin-callers.yml
+#                                   and validate-file-naming.yml per
+#                                   the 4-level workflow_call limit.
+#
+# Writer / reader contract:
+#   - Appended in the same Phase 7 transaction as a new validator
+#     mechanization per [PROMOTE-006].
+#   - Read by validate-manifest-binding.py weekly (Phase D's
+#     lint-validators-weekly when authored) and on every
+#     .github/scripts/validate-*.py edit (paths-trigger).
+#
+# Cross-references: CI-REVIEW-PHASE-B-DESIGN-2026-05-14.md §3 (schema)
+#                  + supervisor adjudication 2026-05-14 (B-1 scope).
+
+validators:
+  # ─── ci-cd-workflows skill (active CI-* mechanized rules) ──────────
+
+  - rule-id: CI-004b
+    validator-script: .github/scripts/validate-sub-org-wrappers.py
+    workflow-file: .github/workflows/validate-sub-org-wrappers.yml
+    status: active
+    self-firing: active
+    discovery-mode: per-package-org-sweep
+    rule-id-regex: '^CI-004b'
+    migrate-to-base: 'no (per-package-org-sweep deferred to B-2)'
+
+  - rule-id: CI-010
+    validator-script: .github/scripts/validate-ci-matrix.py
+    workflow-file: .github/workflows/validate-ci-matrix.yml
+    status: active
+    self-firing: active
+    discovery-mode: single-target
+    rule-id-regex: '^CI-010'
+    migrate-to-base: yes
+
+  - rule-id: CI-021
+    validator-script: .github/scripts/validate-embedded-job.py
+    workflow-file: .github/workflows/validate-embedded-job.yml
+    status: active
+    self-firing: active
+    discovery-mode: single-target
+    rule-id-regex: '^CI-021'
+    migrate-to-base: yes
+
+  - rule-id: CI-030
+    validator-script: .github/scripts/validate-thin-callers.py
+    workflow-file: .github/workflows/validate-thin-callers.yml
+    status: active
+    self-firing: active
+    discovery-mode: per-package-org-sweep
+    rule-id-regex: '^CI-030'
+    migrate-to-base: 'no (chain-C; see CI-REVIEW-PHASE-B-DESIGN §5)'
+
+  - rule-id: CI-032
+    validator-script: .github/scripts/validate-visibility-gate.py
+    workflow-file: .github/workflows/validate-visibility-gate.yml
+    status: active
+    self-firing: active
+    discovery-mode: wrapper-host-multi-file
+    rule-id-regex: '^CI-032'
+    migrate-to-base: yes
+
+  - rule-id: CI-040
+    validator-script: .github/scripts/validate-cache-policy.py
+    workflow-file: .github/workflows/validate-cache-policy.yml
+    status: active
+    self-firing: active
+    discovery-mode: wrapper-host-multi-file
+    rule-id-regex: '^CI-040'
+    migrate-to-base: yes
+
+  - rule-id: CI-042
+    validator-script: .github/scripts/validate-cache-policy.py
+    workflow-file: .github/workflows/validate-cache-policy.yml
+    status: active
+    self-firing: active
+    discovery-mode: wrapper-host-multi-file
+    rule-id-regex: '^CI-042'
+    migrate-to-base: yes
+
+  - rule-id: CI-055
+    validator-script: ''
+    workflow-file: ''
+    status: deprecated
+    self-firing: deprecated
+    discovery-mode: ''
+    rule-id-regex: ''
+    migrate-to-base: 'n/a (deprecated 2026-05-14; migrated to SwiftLint Tier 2 custom rule)'
+
+  - rule-id: CI-058
+    validator-script: .github/scripts/validate-input-defaults.py
+    workflow-file: .github/workflows/validate-input-defaults.yml
+    status: active
+    self-firing: active
+    discovery-mode: single-target
+    rule-id-regex: '^CI-058'
+    migrate-to-base: yes
+
+  - rule-id: CI-059
+    validator-script: .github/scripts/validate-thin-callers.py
+    workflow-file: .github/workflows/validate-thin-callers.yml
+    status: active
+    self-firing: active
+    discovery-mode: per-package-org-sweep
+    rule-id-regex: '^CI-059'
+    migrate-to-base: 'no (chain-C; see CI-REVIEW-PHASE-B-DESIGN §5)'
+
+  - rule-id: CI-080
+    validator-script: .github/scripts/validate-harden-runner.py
+    workflow-file: .github/workflows/validate-harden-runner.yml
+    status: active
+    self-firing: active
+    discovery-mode: wrapper-host-multi-file
+    rule-id-regex: '^CI-080'
+    migrate-to-base: yes
+
+  - rule-id: CI-082
+    validator-script: .github/scripts/validate-binary-install-checksum.py
+    workflow-file: .github/workflows/validate-binary-install-checksum.yml
+    status: active
+    self-firing: active
+    discovery-mode: wrapper-host-multi-file
+    rule-id-regex: '^CI-082'
+    migrate-to-base: yes
+
+  - rule-id: CI-090
+    validator-script: .github/scripts/validate-permissions-shape.py
+    workflow-file: .github/workflows/validate-permissions-shape.yml
+    status: active
+    self-firing: active
+    discovery-mode: wrapper-host-multi-file
+    rule-id-regex: '^CI-090'
+    migrate-to-base: yes
+
+  - rule-id: CI-097
+    validator-script: .github/scripts/validate-permissions-shape.py
+    workflow-file: .github/workflows/validate-permissions-shape.yml
+    status: active
+    self-firing: active
+    discovery-mode: wrapper-host-multi-file
+    rule-id-regex: '^CI-097'
+    migrate-to-base: yes
+
+  - rule-id: CI-099
+    validator-script: .github/scripts/validate-ci-matrix.py
+    workflow-file: .github/workflows/validate-ci-matrix.yml
+    status: active
+    self-firing: active
+    discovery-mode: single-target
+    rule-id-regex: '^CI-099'
+    migrate-to-base: yes
+
+  - rule-id: CI-100
+    validator-script: .github/scripts/validate-swiftlint-rules.py
+    workflow-file: .github/workflows/validate-swiftlint-rules.yml
+    status: active
+    self-firing: active
+    discovery-mode: single-target
+    rule-id-regex: '^CI-100'
+    migrate-to-base: yes
+
+  - rule-id: CI-102
+    validator-script: .github/scripts/validate-composite-action-descriptions.py
+    workflow-file: .github/workflows/validate-composite-action-descriptions.yml
+    status: active
+    self-firing: active
+    discovery-mode: wrapper-host-multi-file
+    rule-id-regex: '^CI-102'
+    migrate-to-base: yes
+
+  - rule-id: CI-103
+    validator-script: .github/scripts/validate-env-context.py
+    workflow-file: .github/workflows/validate-env-context.yml
+    status: active
+    self-firing: active
+    discovery-mode: wrapper-host-multi-file
+    rule-id-regex: '^CI-103'
+    migrate-to-base: yes
+
+  - rule-id: CI-105
+    validator-script: .github/scripts/validate-continue-on-error.py
+    workflow-file: .github/workflows/validate-continue-on-error.yml
+    status: active
+    self-firing: active
+    discovery-mode: wrapper-host-multi-file
+    rule-id-regex: '^CI-105'
+    migrate-to-base: yes
+
+  - rule-id: CI-MANIFEST-BINDING
+    validator-script: .github/scripts/validate-manifest-binding.py
+    workflow-file: .github/workflows/validate-manifest-binding.yml
+    status: active
+    self-firing: active
+    discovery-mode: single-target
+    rule-id-regex: '^CI-MANIFEST-BINDING'
+    migrate-to-base: yes
+
+  # ─── Cross-cutting (gh-repo skill, shared with thin-callers) ───────
+
+  - rule-id: GH-REPO-074
+    validator-script: .github/scripts/validate-thin-callers.py
+    workflow-file: .github/workflows/validate-thin-callers.yml
+    status: active
+    self-firing: active
+    discovery-mode: per-package-org-sweep
+    rule-id-regex: '^GH-REPO-074'
+    migrate-to-base: 'no (chain-C; see CI-REVIEW-PHASE-B-DESIGN §5)'
+
+  # ─── Non-ci-cd-workflows validators (one representative entry per
+  #     script to satisfy check 2; multi-rule expansion + skill
+  #     cross-checks deferred to B-2) ──────────────────────────────
+
+  - rule-id: API-IMPL-006
+    validator-script: .github/scripts/validate-file-naming.py
+    workflow-file: .github/workflows/validate-file-naming.yml
+    status: active
+    self-firing: active
+    discovery-mode: per-package-org-sweep
+    rule-id-regex: '^API-IMPL-006'
+    migrate-to-base: 'no (chain-C; see CI-REVIEW-PHASE-B-DESIGN §5)'
+
+  - rule-id: API-NAME-009
+    validator-script: .github/scripts/validate-diagnostic-format.py
+    workflow-file: ''
+    status: active
+    self-firing: active
+    discovery-mode: single-target
+    rule-id-regex: '^API-NAME-009'
+    migrate-to-base: yes
+
+  - rule-id: DOC-CATALOG
+    validator-script: .github/scripts/validate-docc-structure.py
+    workflow-file: ''
+    status: active
+    self-firing: active
+    discovery-mode: single-target
+    rule-id-regex: '^DOC-'
+    migrate-to-base: yes
+
+  - rule-id: GH-REPO-METADATA
+    validator-script: .github/scripts/validate-github-metadata.py
+    workflow-file: ''
+    status: active
+    self-firing: active
+    discovery-mode: single-target
+    rule-id-regex: '^GH-REPO-'
+    migrate-to-base: yes
+
+  - rule-id: MOD-PACKAGE-STRUCTURE
+    validator-script: .github/scripts/validate-package-structure.py
+    workflow-file: ''
+    status: active
+    self-firing: active
+    discovery-mode: single-target
+    rule-id-regex: '^MOD-'
+    migrate-to-base: yes
+
+  - rule-id: PATTERN-001
+    validator-script: .github/scripts/validate-package-shape.py
+    workflow-file: ''
+    status: active
+    self-firing: active
+    discovery-mode: single-target
+    rule-id-regex: '^PATTERN-'
+    migrate-to-base: yes
+
+  - rule-id: PLAT-ARCH-004
+    validator-script: .github/scripts/validate-platform-architecture.py
+    workflow-file: .github/workflows/validate-platform-architecture.yml
+    status: active
+    self-firing: active
+    discovery-mode: single-target
+    rule-id-regex: '^PLAT-ARCH-'
+    migrate-to-base: yes
+
+  - rule-id: PLAT-ARCH-008
+    validator-script: .github/scripts/validate-layer-deps.py
+    workflow-file: ''
+    status: active
+    self-firing: active
+    discovery-mode: single-target
+    rule-id-regex: '^PLAT-ARCH-008'
+    migrate-to-base: yes
+
+  - rule-id: README-PRESENCE
+    validator-script: .github/scripts/validate-readme.py
+    workflow-file: ''
+    status: active
+    self-firing: active
+    discovery-mode: single-target
+    rule-id-regex: '^README-'
+    migrate-to-base: yes
