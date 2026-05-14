@@ -1,0 +1,17 @@
+# Synthetic workflow — has both push: and pull_request: triggers at
+# top level (alongside workflow_call:/workflow_dispatch:). Satisfies
+# check 5 for TEST-CHECK5-PASS.
+name: validate-stub
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call: {}
+  workflow_dispatch: {}
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo synthetic

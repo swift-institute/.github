@@ -1,0 +1,14 @@
+# Synthetic workflow — workflow_call:/workflow_dispatch: only;
+# missing push: and pull_request:. Check 5 should fire on the manifest
+# entry that points here.
+name: validate-stub
+
+on:
+  workflow_call: {}
+  workflow_dispatch: {}
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo synthetic

@@ -3,7 +3,9 @@
 
 Phase B-2 follow-up of CI-REVIEW-PHASE-B-DESIGN-2026-05-14 §3 — Option α
 adjudication 2026-05-14 (cross-repo Skills checkout). Full scope: checks
-1 + 2 + 3 + 4.
+1 + 2 + 3 + 4. Check 5 added 2026-05-14 (Step 3 post-arc closure) to
+catch the named-targets-not-state-targets gap surfaced by the CI-090/
+CI-097 self-firing flip → uncomment cascade.
 
 Rule checked: [CI-MANIFEST-BINDING] — bidirectional binding between
 .github/scripts/validators-manifest.yaml and the ci-cd-workflows skill's
@@ -25,6 +27,15 @@ Checks:
   4. Every entry with `status: deprecated` has empty `validator-script`
      AND empty `workflow-file`. Catches ghost lint (deprecated entry left
      referencing a retired script).
+  5. For every manifest entry with `status: active` AND
+     `self-firing: active` AND non-empty `workflow-file`, the workflow
+     file MUST exist on disk AND its top-level `on:` block MUST contain
+     both `push:` and `pull_request:` triggers. Catches the manifest-
+     says-active-but-workflow-is-workflow_call-only failure mode that hid
+     CI-090/CI-097 from flip commit e0a9155 until uncomment commit
+     8babe6a landed (2026-05-14). Entries with empty `workflow-file` are
+     orchestrator-embedded (e.g., fired from a cron sweeper) and are
+     exempt from check 5.
 
 Plus schema sanity: every entry is a dict with the required keys; status
 is in the valid enum.
@@ -98,6 +109,34 @@ RULE_ID_CITATION_RE = re.compile(r"\[([A-Z][A-Z0-9a-z-]+)\]")
 # aggregate/meta labels like CI-MANIFEST-BINDING and rules from sibling
 # skills (GH-REPO-*, API-*, MOD-*, PLAT-ARCH-*, PATTERN-*, etc.).
 CI_CD_RULE_ID_RE = re.compile(r"^CI-\d+[a-z]?$")
+
+
+def workflow_on_trigger_keys(wf_data: dict) -> set[str]:
+    """Return the set of top-level trigger keys from a workflow's `on:` block.
+
+    PyYAML YAML 1.1 quirk: the bareword `on` parses as Python boolean `True`
+    (YAML 1.1 booleans include on/off/yes/no). The `on:` mapping therefore
+    lives at `wf_data[True]`, not `wf_data["on"]`. The `or wf_data.get(True)`
+    fallback recovers this case; mirrors the pattern in
+    validate_lib.parse_on_block(). Omitting this fallback false-positives
+    check 5 on every workflow.
+
+    Handles three `on:` shapes:
+      - map form:    on: {push: ..., pull_request: ...}  → set of map keys
+      - list form:   on: [push, pull_request]            → set of list items
+      - scalar form: on: push                            → {"push"}
+    Returns an empty set if `on:` is absent or another shape.
+    """
+    on_block = wf_data.get("on")
+    if on_block is None:
+        on_block = wf_data.get(True)
+    if isinstance(on_block, dict):
+        return set(on_block.keys())
+    if isinstance(on_block, list):
+        return set(on_block)
+    if isinstance(on_block, str):
+        return {on_block}
+    return set()
 
 
 def discover_skill_md(repo_root: Path, override: str | None) -> Path | None:
@@ -225,6 +264,53 @@ def main(repo: str, repo_root: str, skills_skill_md: str | None = None) -> int:
                     f"MUST clear workflow-file per [CI-MANIFEST-BINDING] check 4.",
                 )
                 findings += 1
+
+        # Check 5: self-firing:active entries MUST have a workflow with push +
+        # pull_request triggers at top level. Skips deferred/deprecated entries
+        # and orchestrator-embedded entries (empty workflow-file).
+        if status == "active" and entry.get("self-firing") == "active":
+            workflow_file = entry.get("workflow-file", "")
+            if workflow_file:
+                wf_path = root / workflow_file
+                if not wf_path.is_file():
+                    emit(
+                        repo,
+                        RULE,
+                        f"entry {rule_id!r}: declared self-firing: active but "
+                        f"workflow-file {workflow_file!r} does not exist on disk — "
+                        f"per [CI-MANIFEST-BINDING] check 5, every active "
+                        f"self-firing entry MUST resolve to an on-disk workflow.",
+                    )
+                    findings += 1
+                else:
+                    try:
+                        wf_data = yaml.safe_load(wf_path.read_text(encoding="utf-8"))
+                    except Exception as e:
+                        emit(
+                            repo,
+                            RULE,
+                            f"entry {rule_id!r}: workflow-file {workflow_file!r} "
+                            f"YAML parse failed: {e}",
+                        )
+                        findings += 1
+                    else:
+                        if isinstance(wf_data, dict):
+                            triggers = workflow_on_trigger_keys(wf_data)
+                            missing_triggers = {"push", "pull_request"} - triggers
+                            if missing_triggers:
+                                emit(
+                                    repo,
+                                    RULE,
+                                    f"entry {rule_id!r}: declared self-firing: "
+                                    f"active in manifest but workflow-file "
+                                    f"{workflow_file!r} missing trigger(s) "
+                                    f"{sorted(missing_triggers)} at top level of "
+                                    f"`on:` (has: {sorted(triggers)}) — per "
+                                    f"[CI-MANIFEST-BINDING] check 5 (catches the "
+                                    f"manifest-says-active-but-workflow-is-"
+                                    f"workflow_call-only failure mode).",
+                                )
+                                findings += 1
 
         # Collect referenced scripts for check 2 (all non-empty paths, any status).
         # A non-empty deprecated path is already flagged by check 4 above; counting

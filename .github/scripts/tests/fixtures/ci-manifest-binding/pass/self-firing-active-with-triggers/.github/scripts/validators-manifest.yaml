@@ -1,0 +1,12 @@
+# Pass fixture — manifest entry says self-firing: active AND the
+# workflow-file has both push: and pull_request: triggers at top level.
+# Check 5 should NOT fire. Expected: 0 findings.
+validators:
+  - rule-id: TEST-CHECK5-PASS
+    validator-script: .github/scripts/validate-stub.py
+    workflow-file: .github/workflows/validate-stub.yml
+    status: active
+    self-firing: active
+    discovery-mode: single-target
+    rule-id-regex: '^TEST-CHECK5-PASS'
+    migrate-to-base: yes

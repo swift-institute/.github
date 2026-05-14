@@ -1,0 +1,14 @@
+# Edge fixture — manifest entry has self-firing: deferred, AND the
+# workflow-file has no push:/pull_request: triggers. Check 5 MUST NOT
+# fire — deferred entries are exempt because they explicitly declare
+# the validator is NOT self-firing yet (orchestrator-driven or trigger-
+# uncomment pending). Expected: 0 findings.
+validators:
+  - rule-id: TEST-CHECK5-EDGE
+    validator-script: .github/scripts/validate-stub.py
+    workflow-file: .github/workflows/validate-stub.yml
+    status: active
+    self-firing: deferred
+    discovery-mode: single-target
+    rule-id-regex: '^TEST-CHECK5-EDGE'
+    migrate-to-base: yes

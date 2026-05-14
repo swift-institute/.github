@@ -1,0 +1,15 @@
+# Fail fixture — manifest entry says self-firing: active but the
+# workflow-file has only workflow_call:/workflow_dispatch: (no push:,
+# no pull_request:). This mirrors the pre-uncomment state of
+# validate-permissions-shape.yml between flip commit e0a9155 and
+# uncomment commit 8babe6a — the exact defect class check 5 catches.
+# Expected: ≥1 finding (check 5 fires).
+validators:
+  - rule-id: TEST-CHECK5-FAIL
+    validator-script: .github/scripts/validate-stub.py
+    workflow-file: .github/workflows/validate-stub.yml
+    status: active
+    self-firing: active
+    discovery-mode: single-target
+    rule-id-regex: '^TEST-CHECK5-FAIL'
+    migrate-to-base: yes
