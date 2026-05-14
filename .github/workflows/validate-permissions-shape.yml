@@ -10,22 +10,20 @@
 # workflows lacking top-level permissions [STILL PENDING]). See
 # `Audits/PROMOTE-CI-090-CI-097-2026-05-14.md`.
 #
-# on:
-#   push:
-#     branches: [main]
-#     paths:
-#       - '.github/workflows/**.yml'
-#       - '.github/scripts/validate-permissions-shape.py'
-#       - '.github/workflows/validate-permissions-shape.yml'
-#   pull_request:
-#     paths:
-#       - '.github/workflows/**.yml'
-#       - '.github/scripts/validate-permissions-shape.py'
-#       - '.github/workflows/validate-permissions-shape.yml'
-
 name: validate-permissions-shape
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/**.yml'
+      - '.github/scripts/validate-permissions-shape.py'
+      - '.github/workflows/validate-permissions-shape.yml'
+  pull_request:
+    paths:
+      - '.github/workflows/**.yml'
+      - '.github/scripts/validate-permissions-shape.py'
+      - '.github/workflows/validate-permissions-shape.yml'
   workflow_call:
     inputs:
       repo:
