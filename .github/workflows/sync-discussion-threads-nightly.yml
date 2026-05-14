@@ -19,6 +19,9 @@
 
 name: sync-discussion-threads-nightly
 
+# [CI-090] Deny-all floor; per-job blocks below declare the actual grants.
+permissions: {}
+
 on:
   schedule:
     - cron: '30 4 * * *'   # daily 04:30 UTC
@@ -47,6 +50,11 @@ jobs:
           - swift-primitives/swift-property-primitives
           - swift-primitives/swift-standard-library-extensions
           - swift-primitives/swift-tagged-primitives
+    # [CI-106] Caller must grant equivalent or greater than the called
+    # reusable's per-job permissions (sync-discussion-threads.yml `sync`
+    # job: contents: read).
+    permissions:
+      contents: read
     uses: ./.github/workflows/sync-discussion-threads.yml
     with:
       repo: ${{ matrix.repo }}
