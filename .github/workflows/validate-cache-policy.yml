@@ -1,0 +1,66 @@
+# validate-cache-policy.yml — verify [CI-040] no `.build/` cache and
+# [CI-042] no `restore-keys` partial-prefix matching.
+#
+# Pilot 14 (CI-040) + pilot 16 (CI-042) of `/promote-rule` (2026-05-14).
+# Migrated to thin caller of validate-base.yml in Phase B-1 of
+# CI-REVIEW-PHASE-B-DESIGN-2026-05-14 — chosen as the canary per §4
+# step 1 (middle-complexity paired-rule in wrapper-host-multi-file
+# mode, already-fixtured by ci-040/ + ci-042/ fixture dirs, NOT nested
+# under universal swift-ci.yml so chain-depth stays at L2).
+#
+# Rules checked: [CI-040], [CI-042]. See companion script for details.
+
+name: validate-cache-policy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/**.yml'
+      - '.github/scripts/validate-cache-policy.py'
+      - '.github/workflows/validate-cache-policy.yml'
+  pull_request:
+    paths:
+      - '.github/workflows/**.yml'
+      - '.github/scripts/validate-cache-policy.py'
+      - '.github/workflows/validate-cache-policy.yml'
+
+  workflow_call:
+    inputs:
+      repo:
+        description: 'Owner/name of the wrapper-host repo to validate (default: this repo).'
+        type: string
+        required: false
+        default: ''
+      dry-run:
+        description: 'Run checks but do not fail the job on findings.'
+        type: boolean
+        required: false
+        default: false
+    outputs:
+      total-violations:
+        description: 'Total count of individual violations.'
+        value: ${{ jobs.scan.outputs.total-violations }}
+
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: 'Owner/name of the wrapper-host repo to validate (optional).'
+        type: string
+        required: false
+      dry-run:
+        description: 'Run checks but do not fail the job on findings.'
+        type: boolean
+        required: false
+        default: false
+
+jobs:
+  scan:
+    uses: ./.github/workflows/validate-base.yml
+    with:
+      validator-script: .github/scripts/validate-cache-policy.py
+      rule-id-regex: '^CI-04[02]'
+      discovery-mode: wrapper-host-multi-file
+      target-repo: ${{ inputs.repo }}
+      dry-run: ${{ inputs.dry-run }}
+    secrets: inherit
