@@ -129,11 +129,72 @@ jobs:
           # validate-X.yml's gh repo list call (default: public).
           filter: '.name'
 
+  # Phase D Wave B (2026-05-15): resolve-targets enumerates (org, repo)
+  # pairs across all 17 active orgs for the 6 single-target validators
+  # whose org-sweep loops were dropped during Phase B-2's migration to
+  # validate-base.yml's single-target mode. Wave B restores cross-org
+  # coverage by dispatching each validator per (org, repo) pair from
+  # the orchestrator's 2D matrix.
+  resolve-targets:
+    needs: config
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      targets: ${{ steps.gen.outputs.targets }}
+      count: ${{ steps.gen.outputs.count }}
+    steps:
+      - name: Harden runner (audit-mode egress logging)
+        uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450  # v2.19.1
+        with:
+          egress-policy: audit
+
+      - name: Enumerate (org, repo) pairs across all 17 active orgs
+        id: gen
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ORGS_JSON: ${{ needs.config.outputs.orgs }}
+          VISIBILITY: ${{ inputs.visibility || 'public' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          targets='[]'
+          total=0
+          for org in $(echo "$ORGS_JSON" | jq -r '.[]'); do
+            # Public API endpoint: GITHUB_TOKEN can list public repos of
+            # any org without per-org App-installation tokens. Visibility
+            # filter defaults to public per [CI-094] / [CI-095].
+            repos=$(gh api "/orgs/${org}/repos?type=${VISIBILITY}&per_page=100" \
+              --paginate --jq '[.[] | select(.archived | not) | .full_name]' 2>/dev/null || echo '[]')
+            count=$(echo "$repos" | jq 'length')
+            if [[ "$count" -gt 0 ]]; then
+              targets=$(jq -c -n --argjson a "$targets" --argjson b "$repos" --arg org "$org" \
+                '$a + ($b | map({"org": $org, "repo": .}))')
+            fi
+            total=$((total + count))
+            echo "${org}: ${count} repos"
+          done
+          echo "Total (org, repo) pairs: $total"
+          # Matrix limit per strategy is 256. Sanity check before
+          # downstream scan-* jobs explode at runtime.
+          if [[ "$total" -gt 256 ]]; then
+            echo "::error::Total targets ($total) exceeds GitHub Actions matrix limit (256). Wave B needs to split scan jobs by layer or org-group."
+            exit 1
+          fi
+          echo "targets=$targets" >> "$GITHUB_OUTPUT"
+          echo "count=$total" >> "$GITHUB_OUTPUT"
+
   # Each scan-* job below: 1D matrix over orgs × static uses: to its
   # respective validate-X.yml. Per [CI-106] caller's per-job grant
   # (contents: read) must be ≥ the called reusable's per-job grant; each
   # validate-X.yml's scan job either declares contents: read explicitly
   # or inherits from caller. Verified by reading each .yml's scan: block.
+  #
+  # The first 4 scan-* jobs (per-package-org-sweep validators) use 1D
+  # matrix.org from config.outputs.orgs (17 legs each). The 6 Wave-B
+  # scan-* jobs use 1D matrix.target from resolve-targets.outputs.targets
+  # — each target is a {org, repo} object (~120 legs each at present).
 
   scan-thin-callers:
     needs: config
@@ -195,13 +256,108 @@ jobs:
       visibility: ${{ inputs.visibility || 'public' }}
     secrets: inherit
 
+  # Phase D Wave B (2026-05-15): 6 single-target validators dispatched
+  # per (org, repo) pair. Each takes `repo:` input (vs. existing 4 which
+  # take `org:`). matrix.target is {org, repo} object from
+  # resolve-targets.outputs.targets.
+
+  scan-docc-structure:
+    needs: resolve-targets
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.resolve-targets.outputs.targets) }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/validate-docc-structure.yml
+    with:
+      repo: ${{ matrix.target.repo }}
+      dry-run: ${{ inputs.dry-run || false }}
+    secrets: inherit
+
+  scan-package-shape:
+    needs: resolve-targets
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.resolve-targets.outputs.targets) }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/validate-package-shape.yml
+    with:
+      repo: ${{ matrix.target.repo }}
+      dry-run: ${{ inputs.dry-run || false }}
+    secrets: inherit
+
+  scan-platform-architecture:
+    needs: resolve-targets
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.resolve-targets.outputs.targets) }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/validate-platform-architecture.yml
+    with:
+      repo: ${{ matrix.target.repo }}
+      dry-run: ${{ inputs.dry-run || false }}
+    secrets: inherit
+
+  scan-readme:
+    needs: resolve-targets
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.resolve-targets.outputs.targets) }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/validate-readme.yml
+    with:
+      repo: ${{ matrix.target.repo }}
+      dry-run: ${{ inputs.dry-run || false }}
+    secrets: inherit
+
+  scan-diagnostic-format:
+    needs: resolve-targets
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.resolve-targets.outputs.targets) }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/validate-diagnostic-format.yml
+    with:
+      repo: ${{ matrix.target.repo }}
+      dry-run: ${{ inputs.dry-run || false }}
+    secrets: inherit
+
+  scan-layer-deps:
+    needs: resolve-targets
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.resolve-targets.outputs.targets) }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/validate-layer-deps.yml
+    with:
+      repo: ${{ matrix.target.repo }}
+      dry-run: ${{ inputs.dry-run || false }}
+    secrets: inherit
+
   report:
     needs:
       - scan-thin-callers
       - scan-file-naming
       - scan-github-metadata
       - scan-package-structure
-    if: always() && (needs.scan-thin-callers.result != 'skipped' || needs.scan-file-naming.result != 'skipped' || needs.scan-github-metadata.result != 'skipped' || needs.scan-package-structure.result != 'skipped')
+      - scan-docc-structure
+      - scan-package-shape
+      - scan-platform-architecture
+      - scan-readme
+      - scan-diagnostic-format
+      - scan-layer-deps
+    if: always() && (needs.scan-thin-callers.result != 'skipped' || needs.scan-file-naming.result != 'skipped' || needs.scan-github-metadata.result != 'skipped' || needs.scan-package-structure.result != 'skipped' || needs.scan-docc-structure.result != 'skipped' || needs.scan-package-shape.result != 'skipped' || needs.scan-platform-architecture.result != 'skipped' || needs.scan-readme.result != 'skipped' || needs.scan-diagnostic-format.result != 'skipped' || needs.scan-layer-deps.result != 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -228,6 +384,12 @@ jobs:
           RESULT_FILE_NAMING: ${{ needs.scan-file-naming.result }}
           RESULT_GITHUB_METADATA: ${{ needs.scan-github-metadata.result }}
           RESULT_PACKAGE_STRUCTURE: ${{ needs.scan-package-structure.result }}
+          RESULT_DOCC_STRUCTURE: ${{ needs.scan-docc-structure.result }}
+          RESULT_PACKAGE_SHAPE: ${{ needs.scan-package-shape.result }}
+          RESULT_PLATFORM_ARCHITECTURE: ${{ needs.scan-platform-architecture.result }}
+          RESULT_README: ${{ needs.scan-readme.result }}
+          RESULT_DIAGNOSTIC_FORMAT: ${{ needs.scan-diagnostic-format.result }}
+          RESULT_LAYER_DEPS: ${{ needs.scan-layer-deps.result }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         shell: bash
         run: |
@@ -238,7 +400,9 @@ jobs:
           # job result is 'success' or 'skipped'. Anything else (failure,
           # cancelled) ⇒ findings or validator error ⇒ file/update tracking issue.
           ALL_CLEAN=true
-          for r in "$RESULT_THIN_CALLERS" "$RESULT_FILE_NAMING" "$RESULT_GITHUB_METADATA" "$RESULT_PACKAGE_STRUCTURE"; do
+          for r in "$RESULT_THIN_CALLERS" "$RESULT_FILE_NAMING" "$RESULT_GITHUB_METADATA" "$RESULT_PACKAGE_STRUCTURE" \
+                   "$RESULT_DOCC_STRUCTURE" "$RESULT_PACKAGE_SHAPE" "$RESULT_PLATFORM_ARCHITECTURE" \
+                   "$RESULT_README" "$RESULT_DIAGNOSTIC_FORMAT" "$RESULT_LAYER_DEPS"; do
             case "$r" in
               success|skipped) ;;
               *) ALL_CLEAN=false ;;
@@ -246,7 +410,7 @@ jobs:
           done
 
           if [[ "$ALL_CLEAN" == "true" ]]; then
-            echo "All 4 scan jobs converged cleanly (success/skipped) — no tracking issue needed."
+            echo "All 10 scan jobs converged cleanly (success/skipped) — no tracking issue needed."
             echo "FILE_ISSUE=false" >> "$GITHUB_ENV"
             echo "CLEAN_RUN=true" >> "$GITHUB_ENV"
             exit 0
@@ -258,7 +422,7 @@ jobs:
           See the [run summary](${RUN_URL}) for the per-cell breakdown; each
           matrix cell's step summary contains the per-org per-rule findings table.
 
-          ## Per-validator coverage
+          ## Per-validator coverage (cross-org per-package-org-sweep)
 
           ### validate-thin-callers ([CI-030] / [CI-059] / [GH-REPO-074])
           Job status: \`${RESULT_THIN_CALLERS}\`. Per-org breakdown in run summary;
@@ -273,9 +437,30 @@ jobs:
           ### validate-package-structure ([MOD-PACKAGE-STRUCTURE])
           Job status: \`${RESULT_PACKAGE_STRUCTURE}\`. Per-org breakdown in run summary.
 
+          ## Per-validator coverage (cross-org single-target, Phase D Wave B)
+
+          ### validate-docc-structure ([DOC-*])
+          Job status: \`${RESULT_DOCC_STRUCTURE}\`. Per-(org, repo) breakdown in run summary.
+
+          ### validate-package-shape ([PATTERN-*])
+          Job status: \`${RESULT_PACKAGE_SHAPE}\`. Per-(org, repo) breakdown in run summary.
+
+          ### validate-platform-architecture ([PLAT-ARCH-*])
+          Job status: \`${RESULT_PLATFORM_ARCHITECTURE}\`. Per-(org, repo) breakdown in run summary.
+
+          ### validate-readme ([README-*])
+          Job status: \`${RESULT_README}\`. Per-(org, repo) breakdown in run summary.
+
+          ### validate-diagnostic-format ([API-NAME-009])
+          Job status: \`${RESULT_DIAGNOSTIC_FORMAT}\`. Per-(org, repo) breakdown in run summary.
+
+          ### validate-layer-deps ([PLAT-ARCH-008])
+          Job status: \`${RESULT_LAYER_DEPS}\`. Per-(org, repo) breakdown in run summary.
+
           ## What this means
 
-          One or more of the 68 matrix cells (4 validators × 17 orgs) reported
+          One or more of the ~788 matrix cells (4 cross-org validators × 17 orgs
+          + 6 single-target validators × ~120 (org, repo) pairs) reported
           violations or a validator error. Drill into the failed cells via the
           run summary linked above.
 
@@ -285,7 +470,7 @@ jobs:
           - For each finding, either fix the consumer repo to conform or amend
             the rule via /promote-rule.
           - This issue is updated in place by the next weekly run; auto-closed
-            when all four validators report 0 violations across all 17 orgs.
+            when all 10 validators report 0 violations across their respective coverage.
 
           *Idempotent: this issue is updated in place.*
           EOF
@@ -323,5 +508,5 @@ jobs:
           for n in $existing; do
             gh issue close "$n" \
               --repo swift-institute/.github \
-              --comment "All 4 validators × 17 orgs clean as of ${{ github.run_id }}; auto-closing."
+              --comment "All 10 validators clean as of ${{ github.run_id }}; auto-closing."
           done
