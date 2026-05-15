@@ -30,7 +30,7 @@
 import Linter
 
 let manifest = Lint.Manifest(
-    enabledRuleIDs: [
+    enabled: [
         "result_builder_for_loop"              // R6
     ]
 )
