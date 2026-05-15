@@ -85,6 +85,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     container: swift:6.3
+    defaults:
+      run:
+        shell: bash
     outputs:
       repos-scanned: ${{ steps.aggregate.outputs.repos-scanned }}
       repos-with-violations: ${{ steps.aggregate.outputs.repos-with-violations }}
