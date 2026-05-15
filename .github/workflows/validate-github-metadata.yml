@@ -96,6 +96,7 @@ jobs:
           egress-policy: audit
 
       - name: Install Python tooling
+        shell: bash
         run: |
           set -euo pipefail
           apt-get update -qq
