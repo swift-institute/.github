@@ -13,7 +13,7 @@
 # (When both repo and org are unset, sweeps all 17 ecosystem orgs.)
 #
 # Authentication: swift-institute-bot GitHub App (per Skills/github-repository
-# [GH-REPO-073]). App secrets SWIFT_INSTITUTE_BOT_APP_ID + SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY at
+# [GH-REPO-073]). App secrets SWIFT_INSTITUTE_BOT_APP_CLIENT_ID + SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY at
 # org level on swift-institute/.github.
 
 name: sync-metadata

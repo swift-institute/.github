@@ -9,7 +9,7 @@
 #
 # Pattern mirrors sync-metadata.yml deliberately so cross-repo automation
 # in this org has one shape, not two. Authentication uses the
-# swift-institute-bot GitHub App (SWIFT_INSTITUTE_BOT_APP_ID + SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY)
+# swift-institute-bot GitHub App (SWIFT_INSTITUTE_BOT_APP_CLIENT_ID + SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY)
 # already deployed across all 17 ecosystem orgs.
 #
 # Inputs:

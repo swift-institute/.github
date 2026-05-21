@@ -16,7 +16,7 @@
 #
 # Pattern mirrors sync-metadata.yml + link-check.yml so cross-repo automation
 # in this org has one shape, not three. Authentication uses the
-# swift-institute-bot GitHub App (SWIFT_INSTITUTE_BOT_APP_ID + SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY).
+# swift-institute-bot GitHub App (SWIFT_INSTITUTE_BOT_APP_CLIENT_ID + SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY).
 #
 # Inputs:
 #   repo:       "owner/name" form. When set, scope to one repo.
