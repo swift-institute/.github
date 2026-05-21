@@ -105,6 +105,7 @@ jobs:
 
           gaps_app=()
           gaps_secret=()
+          gaps_app_secrets=()
           gaps_wrapper=()
 
           # ─── Axis 1 — bot App installed at each org ─────────────────────
@@ -126,6 +127,16 @@ jobs:
             fi
           done
 
+          # ─── Axis 2b — bot App secrets at swift-institute org only per [CI-060] ─
+          # Under [CI-108] centralized cron-sweep architecture, App secrets are
+          # needed only at the orchestrator's home org (swift-institute), not at
+          # each consumer org. Single-org probe distinct from Axis 2's per-org sweep.
+          for secret in SWIFT_INSTITUTE_BOT_APP_CLIENT_ID SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY; do
+            if ! gh api "/orgs/swift-institute/actions/secrets/${secret}" >/dev/null 2>&1; then
+              gaps_app_secrets+=("swift-institute/${secret}")
+            fi
+          done
+
           # ─── Axis 3 — layer-wrapper file presence per [CI-004a] ─────────
           for org in $(jq -r '.[]' <<< "$LAYER_ORGS"); do
             if ! gh api "/repos/$org/.github/contents/.github/workflows/swift-ci.yml" >/dev/null 2>&1; then
@@ -133,7 +144,7 @@ jobs:
             fi
           done
 
-          gap_count=$((${#gaps_app[@]} + ${#gaps_secret[@]} + ${#gaps_wrapper[@]}))
+          gap_count=$((${#gaps_app[@]} + ${#gaps_secret[@]} + ${#gaps_app_secrets[@]} + ${#gaps_wrapper[@]}))
           echo "gap-count=$gap_count" >> "$GITHUB_OUTPUT"
 
           echo "## Coverage audit"
@@ -142,6 +153,8 @@ jobs:
           if [ "${#gaps_app[@]}" -gt 0 ]; then printf '  - %s\n' "${gaps_app[@]}"; fi
           echo "Axis 2 (PRIVATE_REPO_TOKEN org secret): $((${#gaps_secret[@]})) gap(s)"
           if [ "${#gaps_secret[@]}" -gt 0 ]; then printf '  - %s\n' "${gaps_secret[@]}"; fi
+          echo "Axis 2b (bot App secrets at swift-institute org): $((${#gaps_app_secrets[@]})) gap(s)"
+          if [ "${#gaps_app_secrets[@]}" -gt 0 ]; then printf '  - %s\n' "${gaps_app_secrets[@]}"; fi
           echo "Axis 3 (layer-wrapper file): $((${#gaps_wrapper[@]})) gap(s)"
           if [ "${#gaps_wrapper[@]}" -gt 0 ]; then printf '  - %s\n' "${gaps_wrapper[@]}"; fi
 
@@ -169,6 +182,16 @@ jobs:
               echo ""
               echo "Orgs missing the org-level \`PRIVATE_REPO_TOKEN\` secret per [CI-060]:"
               printf '  - %s\n' "${gaps_secret[@]}"
+            fi
+            echo ""
+            echo "### Axis 2b — Bot App secrets at swift-institute org"
+            if [ "${#gaps_app_secrets[@]}" -eq 0 ]; then
+              echo ""
+              echo "✓ Both App secrets present at swift-institute org level."
+            else
+              echo ""
+              echo "swift-institute org missing required App secrets per [CI-060] (centralized App-secret distribution under Alternative A; [CI-108] cron-sweep architecture):"
+              printf '  - %s\n' "${gaps_app_secrets[@]}"
             fi
             echo ""
             echo "### Axis 3 — Layer-wrapper file presence"
