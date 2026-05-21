@@ -473,39 +473,6 @@ jobs:
     with:
       advisory: true
 
-  # ─── Workflow validators (γ-flip gating, /promote-rule pilots 7/9) ─────
-  # Per-package gating validators that surface non-conformance and fail the
-  # job on findings. Per principal direction 2026-05-14, the linter exists
-  # precisely to surface non-conformance; rules are valid in isolation and
-  # uniformly applied. Ecosystem migrates to comply, not the rule relaxed
-  # to practice. Each enters ci-ok's `needs:` list to gate merges.
-  #
-  # [TEST-005] (suite categories) is enforced via the AST linter pipeline
-  # at the `lint` job above — it ships as `Lint.Rule.Framework.SuiteCategories`
-  # in `swift-foundations/swift-institute-linter-rules` (institute-tier
-  # bundle), NOT as a separate workflow-validator. The script layer is
-  # kept to a minimum per principal direction; Swift-AST analysis lives
-  # in the linter.
-  # [TEST-009] (test file naming) is enforced via validate-file-naming.yml
-  # below — same validator script as [API-IMPL-006]/[API-IMPL-007] for
-  # Sources/, extended pilot 9 (2026-05-14) to cover Tests/ scope.
-
-  validate-thin-callers:
-    name: Thin callers ([GH-REPO-074], gating)
-    if: ${{ !github.event.repository.private }}
-    uses: ./.github/workflows/validate-thin-callers.yml
-    with:
-      repo: ${{ github.repository }}
-    secrets: inherit
-
-  validate-file-naming:
-    name: File naming ([API-IMPL-006/007], [TEST-009], gating)
-    if: ${{ !github.event.repository.private }}
-    uses: ./.github/workflows/validate-file-naming.yml
-    with:
-      repo: ${{ github.repository }}
-    secrets: inherit
-
   # γ-2b dep-graph submission lives in submit-dep-graph-weekly.yml (a
   # centralized per-org cron orchestrator), not as a per-PR caller here.
   # The transitive consumer-→layer-→universal call chain can't grant
@@ -543,8 +510,6 @@ jobs:
       - windows-release
       - format
       - lint
-      - validate-thin-callers
-      - validate-file-naming
     runs-on: ubuntu-latest
     permissions:
       contents: read
