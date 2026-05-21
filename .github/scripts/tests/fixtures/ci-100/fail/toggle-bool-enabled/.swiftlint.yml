@@ -1,0 +1,9 @@
+# Defect: toggle_bool listed in opt_in_rules. Per [CI-100] this opt-in rule
+# MUST NOT be enabled in the canonical Tier 1 config — user direction
+# 2026-05-05 prefers `x = !x` over `x.toggle()`.
+
+opt_in_rules:
+  - empty_count
+  - explicit_init
+  - toggle_bool
+  - first_where

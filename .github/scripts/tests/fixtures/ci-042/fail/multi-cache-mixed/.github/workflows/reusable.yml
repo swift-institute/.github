@@ -1,0 +1,25 @@
+name: Edge — two cache steps, only one has restore-keys
+
+# First cache step is exact-match-only (passes). Second has restore-keys
+# (violates). Expected: 1 CI-042 finding.
+
+on:
+  workflow_call:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cache SwiftLint binary (passes)
+        uses: actions/cache@v5
+        with:
+          path: /usr/local/bin/swiftlint
+          key: ubuntu-swiftlint-0.63.2
+      - name: Cache yq binary (fails — has restore-keys)
+        uses: actions/cache@v5
+        with:
+          path: /usr/local/bin/yq
+          key: ubuntu-yq-v4.45.4
+          restore-keys: |
+            ubuntu-yq-
+      - run: yq --version

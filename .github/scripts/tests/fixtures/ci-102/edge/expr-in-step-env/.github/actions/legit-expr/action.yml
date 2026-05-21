@@ -1,0 +1,18 @@
+# Edge: expression syntax is permitted in non-description positions (env,
+# run, value, if). The validator MUST only fire on description fields.
+name: 'legit expression usage'
+description: 'Demonstrates that expression syntax in step env is correct usage.'
+
+inputs:
+  config:
+    description: 'Plain English config name.'
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        CONFIG: ${{ inputs.config }}
+      run: |
+        echo "CONFIG=$CONFIG"

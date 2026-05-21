@@ -1,0 +1,12 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  ci:
+    uses: swift-foundations/.github/.github/workflows/swift-ci.yml@main
+    secrets: inherit

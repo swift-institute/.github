@@ -1,0 +1,24 @@
+name: Fail — multiple jobs missing the visibility gate
+
+# Three jobs, none gated. Models a freshly-added reusable that missed the
+# rule entirely.
+# Expected: 3 findings ([CI-032] on each job).
+
+on:
+  workflow_call:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "build"
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "test"
+
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "publish"

@@ -1,0 +1,15 @@
+name: Cron (standalone)
+
+# Defect: standalone workflow without top-level permissions. Inherits
+# GitHub's repo-default permissions (often broader than needed). Per
+# [CI-090] MUST declare top-level permissions (typically `{}` floor).
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "sweep"

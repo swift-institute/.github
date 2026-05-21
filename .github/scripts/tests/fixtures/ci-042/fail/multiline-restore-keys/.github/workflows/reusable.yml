@@ -1,0 +1,21 @@
+name: Edge — restore-keys as multi-line YAML block scalar
+
+# YAML block scalar (`|` form) for restore-keys. Validator must still
+# detect this as a restore-keys violation. Expected: 1 CI-042 finding.
+
+on:
+  workflow_call:
+
+jobs:
+  cache-tool:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cache (multi-line restore-keys)
+        uses: actions/cache@v5
+        with:
+          path: /opt/cache
+          key: tool-v1-${{ hashFiles('install.sh') }}
+          restore-keys: |
+            tool-v1-
+            tool-
+      - run: echo "would use cached tool"

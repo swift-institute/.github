@@ -1,0 +1,13 @@
+name: Lint
+
+# Edge: repo has no swift-ci.yml at all. Validator silences entirely
+# (single-target scope; out-of-scope repos are no-ops).
+
+on:
+  pull_request: {}
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "lint"

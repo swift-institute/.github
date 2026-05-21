@@ -1,0 +1,9 @@
+# Defect: toggle_bool listed under `analyzer_rules:` — also an enable-position
+# key. The rule MUST NOT be enabled regardless of which enable-position key
+# the entry appears under.
+
+opt_in_rules:
+  - empty_count
+
+analyzer_rules:
+  - toggle_bool

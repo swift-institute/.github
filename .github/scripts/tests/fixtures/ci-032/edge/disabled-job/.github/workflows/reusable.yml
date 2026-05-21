@@ -1,0 +1,23 @@
+name: Edge — disabled job is skipped
+
+# `build` is properly gated; `swift-linter` is explicitly disabled via
+# `if: false`. Mirrors the real `swift-linter` job at swift-ci.yml:371.
+# The disabled job does not fire at runtime; its lack of visibility gate
+# is irrelevant. Validator carve-out skips `if: false` jobs.
+# Expected: 0 findings.
+
+on:
+  workflow_call:
+
+jobs:
+  build:
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "build"
+
+  swift-linter:
+    if: false
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "disabled — never runs"

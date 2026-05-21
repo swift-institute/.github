@@ -1,0 +1,20 @@
+name: CI
+
+# Mixed-shape consumer: intra-Institute reusable pin (CI-030 scope, @main
+# required) co-exists with a third-party action pin (CI-107 latest-major
+# discipline, NOT CI-030 scope). The third-party `@v6` MUST NOT fire CI-030.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  ci:
+    uses: swift-foundations/.github/.github/workflows/swift-ci.yml@main
+    secrets: inherit
+
+  # Cross-org reusable from a different intra-Institute org — also @main.
+  docs:
+    uses: swift-institute/.github/.github/workflows/swift-docs.yml@main
+    secrets: inherit

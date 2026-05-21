@@ -1,0 +1,18 @@
+name: CI
+
+# Defect: continue-on-error: true on a job that uses `uses:` to a reusable.
+# GitHub Actions parser rejects this with `Unexpected value 'continue-on-error'`
+# at workflow-load time, causing startup_failure across the entire chain.
+# This is the 2026-05-05 historical defect at swift-institute/.github
+# commit 33f638b that broke every consumer CI before the fix in b5d8445.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  ci:
+    uses: swift-primitives/.github/.github/workflows/swift-ci.yml@main
+    continue-on-error: true
+    secrets: inherit

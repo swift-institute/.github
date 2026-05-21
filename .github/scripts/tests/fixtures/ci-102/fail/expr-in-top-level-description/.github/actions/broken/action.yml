@@ -1,0 +1,15 @@
+# Defect: top-level description contains ${{ ... }} expression. Same HTTP 422
+# failure mode as input descriptions; rule scope includes top-level.
+name: 'broken action'
+description: 'Action for org ${{ github.repository_owner }} — broken!'
+
+inputs:
+  foo:
+    description: 'Plain text.'
+    required: false
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: echo "ok"

@@ -1,0 +1,17 @@
+name: Edge — scheduled/dispatch only (out of scope)
+
+# Schedule + workflow_dispatch only — no workflow_call trigger. This is the
+# canonical "weekly cron orchestrator" shape; out of scope for [CI-032]
+# because there is no consumer-callable surface (no private-repo concern).
+# Expected: 0 findings (validator skips non-workflow_call files).
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+jobs:
+  weekly-sweep:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "scheduled orchestrator — no gate needed"

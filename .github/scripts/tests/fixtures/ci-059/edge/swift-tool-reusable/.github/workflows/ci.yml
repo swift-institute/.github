@@ -1,0 +1,21 @@
+name: lint (reusable)
+
+# Edge: tool-host package per [GH-REPO-077]. `ci.yml` IS a reusable workflow
+# (`on: workflow_call:`), not a caller — file-level carve-out exempts it
+# from [CI-059] (and [CI-030] / [GH-REPO-074]). Reusables are configured by
+# their callers; whether `secrets: inherit` is present is the caller's
+# concern, not the reusable's.
+
+on:
+  workflow_call:
+    inputs:
+      target:
+        type: string
+        required: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift run lint ${{ inputs.target }}

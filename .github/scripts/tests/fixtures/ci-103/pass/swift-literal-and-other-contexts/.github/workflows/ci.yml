@@ -1,0 +1,29 @@
+name: CI
+
+# PASS: multiple jobs demonstrating the four permitted forms — literal
+# runner, literal container, matrix.* in runs-on (NOT env.*), and vars.* in
+# container. None reference env.*; all out of [CI-103] scope.
+
+on:
+  workflow_call: {}
+
+jobs:
+  literal:
+    runs-on: ubuntu-latest
+    container: swift:6.3
+    steps:
+      - run: swift build
+
+  matrix-runner:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-26]
+    steps:
+      - run: swift build
+
+  vars-container:
+    runs-on: ubuntu-latest
+    container: swift:${{ vars.SWIFT_VERSION }}
+    steps:
+      - run: swift build

@@ -1,0 +1,20 @@
+name: Pass — simple gate on every job
+
+# Both jobs carry the simple form of the visibility gate.
+# Expected: 0 findings.
+
+on:
+  workflow_call:
+
+jobs:
+  build:
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "build"
+
+  test:
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "test"

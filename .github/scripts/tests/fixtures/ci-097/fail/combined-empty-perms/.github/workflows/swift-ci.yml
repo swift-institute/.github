@@ -1,0 +1,19 @@
+name: Combined workflow
+
+# Defect: combined workflow with `permissions: {}` — treated as reusable
+# per [CI-090] table, so the workflow_call path triggers startup_failure
+# per [CI-097]. Same M2 incident shape applied to a combined workflow.
+
+on:
+  workflow_call: {}
+  workflow_dispatch: {}
+
+permissions: {}
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - run: echo "scan"

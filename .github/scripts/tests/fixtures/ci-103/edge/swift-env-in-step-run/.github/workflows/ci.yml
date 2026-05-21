@@ -1,0 +1,23 @@
+name: CI
+
+# Edge: env.* IS available in step-level fields (`run:`, `with:`, `env:` on
+# a step) — Actions binds workflow-level env: BEFORE step execution begins.
+# [CI-103]'s scope is `runs-on:` and `container:` ONLY (both pre-bind). The
+# validator MUST NOT fire on env.* references inside `run:` blocks or other
+# step-level positions.
+
+on:
+  workflow_call: {}
+
+env:
+  SWIFT_VERSION: '6.3'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: swift:6.3
+    steps:
+      - name: Use env in step-level run
+        run: |
+          echo "Building with Swift ${{ env.SWIFT_VERSION }}"
+          swift build

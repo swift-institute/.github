@@ -1,0 +1,21 @@
+name: CI
+
+# Edge: container: in dict form (with image:, env:, volumes: sub-keys). The
+# image: field is bound at the same time as the string-form shorthand and is
+# in [CI-103] scope. This fixture's image: is literal so the validator MUST
+# NOT fire. Confirms dict-form recognition without false positives.
+
+on:
+  workflow_call: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: swift:6.3
+      env:
+        SWIFT_VERBOSE: '1'
+      volumes:
+        - /tmp:/tmp
+    steps:
+      - run: swift build

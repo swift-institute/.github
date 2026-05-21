@@ -1,0 +1,15 @@
+name: Swift CI (L1 wrapper)
+
+# Defect: embedded job has continue-on-error: false (explicit). The rule
+# requires `: true`; explicit `: false` is the literal violation.
+
+on:
+  workflow_call: {}
+
+jobs:
+  embedded:
+    runs-on: ubuntu-latest
+    continue-on-error: false
+    container: swiftlang/swift:nightly-main-jammy
+    steps:
+      - run: swift build -Xswiftc -enable-experimental-feature -Xswiftc Embedded

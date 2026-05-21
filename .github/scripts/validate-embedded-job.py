@@ -9,8 +9,9 @@ layer-wrapper-host repo whose `swift-ci.yml` defines an `embedded` job).
 Rules checked:
   [CI-021]  In any `<repo_root>/.github/workflows/swift-ci.yml` that declares a
             job named `embedded`, that job MUST carry `continue-on-error: true`
-            while Swift 6.4-dev nightly is the development branch. Sunsets via
-            skill amendment when 6.4 stabilizes.
+            while Swift main is the active development branch (currently
+            6.5-dev; floats as main moves). Sunsets via skill amendment when
+            the policy moves to a stable-toolchain embedded gate.
 
   Detection: parse `<repo_root>/.github/workflows/swift-ci.yml`; if it has
   `jobs.embedded`, assert that job's `continue-on-error` is True. If no
@@ -57,11 +58,11 @@ def main(repo: str, repo_root: str) -> int:
             repo,
             "CI-021",
             f"swift-ci.yml: job 'embedded' MUST set `continue-on-error: true` "
-            f"per [CI-021] — the embedded build runs against Swift 6.4-dev "
+            f"per [CI-021] — the embedded build runs against Swift main "
             f"nightly toolchain whose instability is expected; advisory "
             f"posture absorbs toolchain-noise without gating consumer CI. "
-            f"Sunsets via skill amendment when 6.4 stabilizes (until then, "
-            f"the gate stays advisory).",
+            f"Sunsets via skill amendment when the embedded gate moves "
+            f"to a stable toolchain (until then, the gate stays advisory).",
         )
         return 1
     return 0

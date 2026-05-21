@@ -1,0 +1,20 @@
+name: CI
+
+# Edge: curl fetches a configuration file (data, not a binary). No install
+# indicators in the run-block (no mv to bin path, no chmod +x, no tar/unzip,
+# no apt keyring tee). [CI-082]'s scope is "versioned binaries"; data-only
+# fetches fall outside the rule's principle and the validator MUST NOT fire.
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  fetch-config:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch upstream linter config
+        run: |
+          set -euo pipefail
+          curl -fsSL https://example.com/configs/canonical.yml -o /tmp/canonical-config.yml
+          cat /tmp/canonical-config.yml

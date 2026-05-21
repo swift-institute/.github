@@ -1,0 +1,17 @@
+name: CI
+
+# Defect: intra-Institute reusable invocation with explicit per-secret
+# forwarding via the block-form `secrets:` map. Per [CI-059] this MUST be
+# `secrets: inherit` — explicit forwarding is dead boilerplate that drifts
+# every time a new org-level secret per [CI-060] is added.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  ci:
+    uses: swift-primitives/.github/.github/workflows/swift-ci.yml@main
+    secrets:
+      PRIVATE_REPO_TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }}

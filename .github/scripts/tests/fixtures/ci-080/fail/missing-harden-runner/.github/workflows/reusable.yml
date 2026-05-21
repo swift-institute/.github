@@ -1,0 +1,14 @@
+name: Fail — first step is not harden-runner
+
+# Job's first step is actions/checkout — harden-runner missing entirely.
+# Expected: 1 finding.
+
+on:
+  workflow_call:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - run: swift build

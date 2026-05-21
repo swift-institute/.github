@@ -1,0 +1,32 @@
+name: Swift CI (reusable)
+
+# Defect: windows-release with `continue-on-error: true` — advisory-flipping
+# Windows. This is exactly what [CI-099] forbids: Windows is a first-class
+# target platform; treating it as advisory hides source-level bugs
+# (`#if os(Windows)` divergence, source incompatibilities).
+
+on:
+  workflow_call:
+
+jobs:
+  macos-release:
+    runs-on: macos-26
+    steps:
+      - run: echo "macos-release"
+
+  linux-release:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "linux-release"
+
+  linux-nightly:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - run: echo "linux-nightly"
+
+  windows-release:
+    runs-on: windows-latest
+    continue-on-error: true
+    steps:
+      - run: echo "windows-release"

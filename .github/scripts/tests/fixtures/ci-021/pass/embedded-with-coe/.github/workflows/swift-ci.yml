@@ -1,0 +1,16 @@
+name: Swift CI (L1 wrapper)
+
+# PASS: embedded job carries continue-on-error: true per [CI-021].
+# Mirrors live swift-primitives/.github/.github/workflows/swift-ci.yml.
+
+on:
+  workflow_call: {}
+
+jobs:
+  embedded:
+    name: Ubuntu (Swift 6.4-dev nightly, Embedded build)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    container: swiftlang/swift:nightly-main-jammy
+    steps:
+      - run: swift build -Xswiftc -enable-experimental-feature -Xswiftc Embedded

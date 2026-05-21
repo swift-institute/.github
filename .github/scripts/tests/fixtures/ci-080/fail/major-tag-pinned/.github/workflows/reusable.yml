@@ -1,0 +1,17 @@
+name: Fail — harden-runner pinned to major tag, not SHA
+
+# Major-tag pin defeats integrity. SHA pin required per [CI-080] +
+# [CI-013]. Expected: 1 finding.
+
+on:
+  workflow_call:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@v2.19.1
+        with:
+          egress-policy: audit
+      - run: swift build

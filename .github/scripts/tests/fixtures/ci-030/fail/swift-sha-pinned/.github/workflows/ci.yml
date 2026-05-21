@@ -1,0 +1,15 @@
+name: CI
+
+# Defect: intra-Institute reusable pinned to an immutable SHA — forbidden
+# per [CI-030]. SHA pinning proliferates pin maintenance per consumer; the
+# active-dev rolling `@main` is the canonical pin.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  ci:
+    uses: swift-foundations/.github/.github/workflows/swift-ci.yml@abc1234567890abcdef1234567890abcdef1234
+    secrets: inherit

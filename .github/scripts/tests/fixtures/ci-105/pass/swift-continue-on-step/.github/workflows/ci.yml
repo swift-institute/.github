@@ -1,0 +1,21 @@
+name: CI
+
+# PASS: continue-on-error at STEP level is permitted per [CI-105] (rule
+# scope is job-level only). Mirrors the actions/download-artifact pattern
+# in lint-org-bot-coverage-weekly.yml line 57.
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Download optional artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: optional-artifact
+        continue-on-error: true   # step-level — out of [CI-105] scope
+      - run: swift build

@@ -1,0 +1,19 @@
+name: Swift CI (reusable)
+
+# Defect: enable-private-repos default is false. Per [CI-058] this MUST be
+# true (the canonical case is consumers depending on private intra-Institute
+# siblings); explicit false forces every consumer to opt-IN, recreating the
+# boilerplate the default-flip eliminated.
+
+on:
+  workflow_call:
+    inputs:
+      enable-private-repos:
+        type: boolean
+        default: false
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "ci"

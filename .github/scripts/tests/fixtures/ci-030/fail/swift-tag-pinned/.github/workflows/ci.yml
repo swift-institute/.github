@@ -1,0 +1,15 @@
+name: CI
+
+# Defect: intra-Institute reusable pinned to `@v1` tag — forbidden during
+# active dev per [CI-030]. Tag pinning is a stabilization signal that does
+# not yet apply; the surface still iterates.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  ci:
+    uses: swift-primitives/.github/.github/workflows/swift-ci.yml@v1
+    secrets: inherit

@@ -1,0 +1,12 @@
+name: Pass — pure uses-only workflow_call routing
+
+# Pure uses-only routing jobs are carve-out: the called workflow's own
+# jobs run their own harden-runner. Expected: 0 findings.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  delegate:
+    uses: ./.github/workflows/inner.yml
+    secrets: inherit

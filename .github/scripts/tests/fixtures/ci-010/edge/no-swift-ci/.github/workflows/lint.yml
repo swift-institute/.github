@@ -1,0 +1,13 @@
+# Repo has no swift-ci.yml — out of [CI-010] scope.
+# Per the validator's design, repos that do not host the universal reusable
+# are no-op'd (return 0 findings without complaint).
+name: lint
+
+on:
+  workflow_call:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "lint"

@@ -1,0 +1,20 @@
+name: Combined workflow
+
+# Edge: combined workflow (workflow_call + push + pull_request). Per
+# [CI-090] table, combined is treated as reusable → top-level permissions
+# OMITTED. This fixture's absent top-level permissions is the canonical
+# combined shape; validator silences.
+
+on:
+  workflow_call: {}
+  push:
+    branches: [main]
+  pull_request: {}
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - run: echo "scan"

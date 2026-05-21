@@ -1,0 +1,17 @@
+name: Swift CI (reusable)
+
+# PASS: workflow does not declare the enable-private-repos input at all.
+# Out of [CI-058] scope; validator silent.
+
+on:
+  workflow_call:
+    inputs:
+      swift-version:
+        type: string
+        default: '6.3'
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "ci"

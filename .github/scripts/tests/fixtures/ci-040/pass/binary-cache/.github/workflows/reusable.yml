@@ -1,0 +1,18 @@
+name: Pass — tool-binary cache permitted per CI-044
+
+# SwiftLint binary cache at /usr/local/bin/swiftlint. Out of scope for
+# CI-040 (path does NOT reference .build/). Expected: 0 findings.
+
+on:
+  workflow_call:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cache SwiftLint binary
+        uses: actions/cache@v5
+        with:
+          path: /usr/local/bin/swiftlint
+          key: ubuntu-swiftlint-0.63.2
+      - run: swiftlint lint

@@ -15,7 +15,7 @@ Rules checked:
             specific names and shapes:
               - macos-release   : macOS runner   + Swift 6.3, debug
               - linux-release   : Ubuntu runner  + Swift 6.3, release
-              - linux-nightly   : Ubuntu runner  + Swift 6.4-dev nightly,
+              - linux-nightly   : Ubuntu runner  + Swift main nightly,
                                   continue-on-error: true
               - windows-release : Windows runner + Swift 6.3, release
 

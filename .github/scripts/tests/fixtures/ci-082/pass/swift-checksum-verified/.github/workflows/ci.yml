@@ -1,0 +1,26 @@
+name: CI
+
+# Canonical [CI-082] PASS shape: curl fetches a binary archive to a tempfile;
+# sha256sum -c verifies against a hardcoded digest; only then does the
+# tarball get extracted and the binary moved to /usr/local/bin/.
+
+on:
+  push:
+    branches: [main]
+
+env:
+  LYCHEE_VERSION: '0.20.1'
+  LYCHEE_SHA256: '0000000000000000000000000000000000000000000000000000000000000000'
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install lychee ${{ env.LYCHEE_VERSION }}
+        run: |
+          set -euo pipefail
+          curl -fsSL "https://github.com/lycheeverse/lychee/releases/download/lychee-v${LYCHEE_VERSION}/lychee-x86_64-unknown-linux-gnu.tar.gz" -o /tmp/lychee.tar.gz
+          echo "${LYCHEE_SHA256}  /tmp/lychee.tar.gz" | sha256sum -c -
+          tar -xzC /tmp /tmp/lychee.tar.gz
+          sudo mv /tmp/lychee-x86_64-unknown-linux-gnu/lychee /usr/local/bin/lychee
+          chmod +x /usr/local/bin/lychee

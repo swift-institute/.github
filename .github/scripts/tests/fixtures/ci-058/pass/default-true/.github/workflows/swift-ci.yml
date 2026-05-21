@@ -1,0 +1,17 @@
+name: Swift CI (reusable)
+
+# PASS: enable-private-repos input declared with default: true. Canonical
+# shape per [CI-058].
+
+on:
+  workflow_call:
+    inputs:
+      enable-private-repos:
+        type: boolean
+        default: true
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "ci"

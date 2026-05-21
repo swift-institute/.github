@@ -1,0 +1,15 @@
+name: Swift CI (L1 wrapper)
+
+# Defect: embedded job declared without continue-on-error. Per [CI-021] the
+# job MUST carry continue-on-error: true while 6.4-dev nightly is the
+# development branch — toolchain-instability noise must not gate consumer CI.
+
+on:
+  workflow_call: {}
+
+jobs:
+  embedded:
+    runs-on: ubuntu-latest
+    container: swiftlang/swift:nightly-main-jammy
+    steps:
+      - run: swift build -Xswiftc -enable-experimental-feature -Xswiftc Embedded

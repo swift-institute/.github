@@ -1,0 +1,18 @@
+name: Dependabot (non-canonical workflow)
+
+# Edge: sub-org `.github` repo CAN have non-canonical workflows (e.g.,
+# dependabot, custom org-level workflows). The rule's scope is
+# `swift-ci.yml` specifically. Validator silences on other workflow files.
+
+on:
+  workflow_dispatch: {}
+
+permissions: {}
+
+jobs:
+  noop:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - run: echo "noop"

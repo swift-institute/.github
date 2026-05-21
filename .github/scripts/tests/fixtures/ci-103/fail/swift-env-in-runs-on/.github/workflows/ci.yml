@@ -1,0 +1,17 @@
+name: CI
+
+# Defect: runs-on: ${{ env.RUNNER }} — workflow-level env: is NOT available
+# in runs-on: (same context-availability rule as container:). Parse-time
+# HTTP 422 result. The rule body covers runs-on: parallel to container:.
+
+on:
+  workflow_call: {}
+
+env:
+  RUNNER: ubuntu-latest
+
+jobs:
+  build:
+    runs-on: ${{ env.RUNNER }}
+    steps:
+      - run: swift build

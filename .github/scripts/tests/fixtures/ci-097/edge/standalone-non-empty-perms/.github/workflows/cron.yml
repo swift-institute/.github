@@ -1,0 +1,19 @@
+name: Standalone non-empty perms
+
+# Edge: standalone with non-empty top-level permissions (e.g.,
+# `contents: read`). Per [CI-097] standalone MAY use `{}` if per-job
+# grants override; this fixture uses a non-empty top-perms which is also
+# acceptable. Validator silences for CI-097.
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "sweep"

@@ -12,7 +12,7 @@ name: Swift CI (reusable)
 
 # Reusable CI workflow for Swift Institute packages. Provides the universal
 # test matrix that applies across all five layers: macOS 26 (Swift 6.3 debug)
-# + Ubuntu (Swift 6.3 release) + Ubuntu (Swift 6.4-dev nightly,
+# + Ubuntu (Swift 6.3 release) + Ubuntu (Swift main nightly,
 # continue-on-error) + Windows (Swift 6.3).
 #
 # Consume from a caller package's .github/workflows/ci.yml via:
@@ -55,7 +55,7 @@ on:
       swift-version:
         type: string
         default: "6.3"
-        description: "Swift version for the macOS, Ubuntu release, and Windows jobs. The nightly job is always 6.4-dev."
+        description: "Swift version for the macOS, Ubuntu release, and Windows jobs. The nightly job is always Swift main (currently tracks 6.5-dev; floats as main moves)."
       enable-private-repos:
         type: boolean
         default: true
@@ -80,6 +80,9 @@ on:
 # release exists.
 env:
   SWIFTLINT_VERSION: "0.63.2"
+  # [CI-082] sha256sum -c pin for swiftlint_linux_amd64.zip at SWIFTLINT_VERSION.
+  # Re-lock on every version bump per the rule body's bump protocol.
+  SWIFTLINT_SHA256: "dd1017cfd20a1457f264590bcb5875a6ee06cd75b9a9d4f77cd43a552499143b"
   XCODE_VERSION: "26.4"
 
 jobs:
@@ -164,7 +167,7 @@ jobs:
           fi
 
   linux-nightly:
-    name: Ubuntu (Swift 6.4-dev nightly, release)
+    name: Ubuntu (Swift main nightly, release)
     if: ${{ !github.event.repository.private }}
     runs-on: ubuntu-latest
     container: swiftlang/swift:nightly-main-jammy
@@ -332,6 +335,9 @@ jobs:
           apt-get install -qq -y curl unzip
           curl -fsSL -o /tmp/swiftlint.zip \
             "https://github.com/realm/SwiftLint/releases/download/${{ env.SWIFTLINT_VERSION }}/swiftlint_linux_amd64.zip"
+          # [CI-082] verify against pinned SHA-256 before unpack/install. Fails
+          # closed on digest mismatch (no `|| true` swallow).
+          echo "${SWIFTLINT_SHA256}  /tmp/swiftlint.zip" | sha256sum -c -
           unzip -q /tmp/swiftlint.zip -d /tmp/swiftlint_extracted
           mv /tmp/swiftlint_extracted/swiftlint /usr/local/bin/
           chmod +x /usr/local/bin/swiftlint
@@ -467,6 +473,39 @@ jobs:
     with:
       advisory: true
 
+  # ─── Workflow validators (γ-flip gating, /promote-rule pilots 7/9) ─────
+  # Per-package gating validators that surface non-conformance and fail the
+  # job on findings. Per principal direction 2026-05-14, the linter exists
+  # precisely to surface non-conformance; rules are valid in isolation and
+  # uniformly applied. Ecosystem migrates to comply, not the rule relaxed
+  # to practice. Each enters ci-ok's `needs:` list to gate merges.
+  #
+  # [TEST-005] (suite categories) is enforced via the AST linter pipeline
+  # at the `lint` job above — it ships as `Lint.Rule.Framework.SuiteCategories`
+  # in `swift-foundations/swift-institute-linter-rules` (institute-tier
+  # bundle), NOT as a separate workflow-validator. The script layer is
+  # kept to a minimum per principal direction; Swift-AST analysis lives
+  # in the linter.
+  # [TEST-009] (test file naming) is enforced via validate-file-naming.yml
+  # below — same validator script as [API-IMPL-006]/[API-IMPL-007] for
+  # Sources/, extended pilot 9 (2026-05-14) to cover Tests/ scope.
+
+  validate-thin-callers:
+    name: Thin callers ([GH-REPO-074], gating)
+    if: ${{ !github.event.repository.private }}
+    uses: ./.github/workflows/validate-thin-callers.yml
+    with:
+      repo: ${{ github.repository }}
+    secrets: inherit
+
+  validate-file-naming:
+    name: File naming ([API-IMPL-006/007], [TEST-009], gating)
+    if: ${{ !github.event.repository.private }}
+    uses: ./.github/workflows/validate-file-naming.yml
+    with:
+      repo: ${{ github.repository }}
+    secrets: inherit
+
   # γ-2b dep-graph submission lives in submit-dep-graph-weekly.yml (a
   # centralized per-org cron orchestrator), not as a per-PR caller here.
   # The transitive consumer-→layer-→universal call chain can't grant
@@ -504,6 +543,8 @@ jobs:
       - windows-release
       - format
       - lint
+      - validate-thin-callers
+      - validate-file-naming
     runs-on: ubuntu-latest
     permissions:
       contents: read

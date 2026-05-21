@@ -1,0 +1,14 @@
+name: Forbidden L3 sub-org wrapper
+
+# Defect: simulates `swift-microsoft/.github` (L3 sub-org) WITH
+# `swift-ci.yml`. Validator's error message should cite the parent layer
+# as `swift-foundations` (L3-routed) rather than `swift-standards` (L2).
+
+on:
+  workflow_call: {}
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "ci"

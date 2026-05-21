@@ -1,0 +1,12 @@
+# PASS: canonical Tier 1 shape — opt_in_rules list does NOT contain toggle_bool.
+# This mirrors the live swift-institute/.github/.swiftlint.yml shape.
+
+opt_in_rules:
+  - empty_count
+  - explicit_init
+  - first_where
+  - last_where
+  # toggle_bool deliberately NOT enabled — user prefers `x = !x` over `x.toggle()`.
+
+disabled_rules:
+  - line_length

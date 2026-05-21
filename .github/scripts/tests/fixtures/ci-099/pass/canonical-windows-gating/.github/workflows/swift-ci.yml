@@ -1,0 +1,30 @@
+name: Swift CI (reusable)
+
+# PASS: canonical 4-job matrix where windows-release has no continue-on-error
+# (default false → gating). Linux-nightly correctly carries continue-on-error: true
+# (toolchain-noise scope); windows-release does not (target-shipped-to scope).
+
+on:
+  workflow_call:
+
+jobs:
+  macos-release:
+    runs-on: macos-26
+    steps:
+      - run: echo "macos-release"
+
+  linux-release:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "linux-release"
+
+  linux-nightly:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - run: echo "linux-nightly"
+
+  windows-release:
+    runs-on: windows-latest
+    steps:
+      - run: echo "windows-release"

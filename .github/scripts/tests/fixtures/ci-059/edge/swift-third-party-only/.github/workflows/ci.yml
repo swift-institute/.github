@@ -1,0 +1,20 @@
+name: CI
+
+# Edge: consumer invokes ONLY a third-party reusable workflow (single-infix
+# `<owner>/<repo>/.github/workflows/...` path — NOT the intra-Institute
+# double-infix `<org>/.github/.github/workflows/...` shape). Third-party
+# reusables are not subject to [CI-059] secrets:inherit discipline; absence
+# of `secrets: inherit` here is correct and CI-059 MUST fire zero findings.
+#
+# (Note: this consumer also doesn't satisfy [GH-REPO-074]'s thin-caller
+# shape — no intra-Institute reusable — but that's a separate rule's
+# concern. CI-059 scope is per-job intra-Institute discipline only.)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  external-check:
+    uses: third-party-org/third-party-repo/.github/workflows/check.yml@v1

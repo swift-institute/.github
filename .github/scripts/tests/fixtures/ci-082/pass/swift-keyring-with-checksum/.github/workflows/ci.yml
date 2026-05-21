@@ -1,0 +1,28 @@
+name: CI
+
+# PASS: apt keyring install with sha256sum verification. The keyring is the
+# trust-root for subsequent apt-get installs; its integrity MUST be verified
+# before being placed in /etc/apt/keyrings/.
+
+on:
+  push:
+    branches: [main]
+
+env:
+  GH_KEYRING_SHA256: '1111111111111111111111111111111111111111111111111111111111111111'
+
+jobs:
+  install-gh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install gh CLI via apt
+        run: |
+          set -euo pipefail
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /tmp/gh-keyring.gpg
+          echo "${GH_KEYRING_SHA256}  /tmp/gh-keyring.gpg" | sha256sum -c -
+          mkdir -p -m 755 /etc/apt/keyrings
+          tee /etc/apt/keyrings/githubcli-archive-keyring.gpg < /tmp/gh-keyring.gpg > /dev/null
+          chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
+          echo "deb [signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list
+          apt-get update -qq
+          apt-get install -qq -y gh

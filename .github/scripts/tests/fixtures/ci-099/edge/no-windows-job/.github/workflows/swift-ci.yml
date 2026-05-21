@@ -1,0 +1,26 @@
+name: Swift CI (reusable)
+
+# Edge: swift-ci.yml exists but windows-release job is missing entirely.
+# CI-010 fires (required job missing); CI-099 silences (no windows-release job
+# to check). Confirms per-rule attribution: CI-099 only fires when a windows-
+# release job exists AND has continue-on-error: true.
+
+on:
+  workflow_call:
+
+jobs:
+  macos-release:
+    runs-on: macos-26
+    steps:
+      - run: echo "macos-release"
+
+  linux-release:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "linux-release"
+
+  linux-nightly:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - run: echo "linux-nightly"

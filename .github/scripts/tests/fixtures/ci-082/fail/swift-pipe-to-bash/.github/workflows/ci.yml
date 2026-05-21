@@ -1,0 +1,18 @@
+name: CI
+
+# Defect: `curl ... | bash` (pattern A per the validator). No checksum
+# verification possible by construction — the bytes are piped directly to a
+# shell interpreter; there's no opportunity to verify before execution.
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install some-tool via pipe-to-shell
+        run: |
+          set -euo pipefail
+          curl -fsSL https://example.com/install.sh | bash

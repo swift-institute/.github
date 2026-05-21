@@ -1,0 +1,27 @@
+name: Swift CI (reusable, wrong runner)
+
+on:
+  workflow_call:
+
+jobs:
+  macos-release:
+    # Wrong runner — ubuntu instead of macos — [CI-010] violation
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "macos-release on ubuntu? no!"
+
+  linux-release:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "linux-release"
+
+  linux-nightly:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - run: echo "linux-nightly"
+
+  windows-release:
+    runs-on: windows-latest
+    steps:
+      - run: echo "windows-release"

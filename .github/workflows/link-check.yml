@@ -28,6 +28,10 @@ name: link-check
 # touch where a newer release exists.
 env:
   LYCHEE_VERSION: "0.24.2"
+  # [CI-082] sha256sum -c pin for lychee-x86_64-unknown-linux-gnu.tar.gz at
+  # LYCHEE_VERSION. Re-lock on every version bump per the rule body's bump
+  # protocol.
+  LYCHEE_SHA256: "1f4e0ef7f6554a6ed33dd7ac144fb2e1bbed98598e7af973042fc5cd43951c9a"
 
 on:
   workflow_call:
@@ -83,6 +87,7 @@ on:
 
 jobs:
   scan:
+    if: ${{ !github.event.repository.private }}     # [CI-032]
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -155,8 +160,13 @@ jobs:
           # internal structure. Extract to a tmpdir and move just the
           # binary to keep /usr/local/bin clean.
           tmpdir=$(mktemp -d)
-          curl -sSL "https://github.com/lycheeverse/lychee/releases/download/lychee-v${{ env.LYCHEE_VERSION }}/lychee-x86_64-unknown-linux-gnu.tar.gz" \
-            | tar -xz -C "$tmpdir"
+          # [CI-082] fetch to file, sha256sum -c against pinned digest,
+          # only then extract. Restructured from the prior `curl | tar`
+          # pipe to enable verification (pipe-to-tar has no checksum
+          # opportunity by construction; see Pattern A in [CI-082]).
+          curl -fsSL "https://github.com/lycheeverse/lychee/releases/download/lychee-v${{ env.LYCHEE_VERSION }}/lychee-x86_64-unknown-linux-gnu.tar.gz" -o "$tmpdir/lychee.tar.gz"
+          echo "${LYCHEE_SHA256}  $tmpdir/lychee.tar.gz" | sha256sum -c -
+          tar -xz -C "$tmpdir" -f "$tmpdir/lychee.tar.gz"
           sudo mv "$tmpdir/lychee-x86_64-unknown-linux-gnu/lychee" /usr/local/bin/lychee
           rm -rf "$tmpdir"
 

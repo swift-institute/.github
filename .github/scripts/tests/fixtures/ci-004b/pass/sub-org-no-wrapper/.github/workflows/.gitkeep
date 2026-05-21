@@ -1,0 +1,2 @@
+# PASS: sub-org marker present; workflows dir exists but no swift-ci.yml.
+# Canonical state — validator silences.

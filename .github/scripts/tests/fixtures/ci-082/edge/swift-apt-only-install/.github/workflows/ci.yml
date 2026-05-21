@@ -1,0 +1,20 @@
+name: CI
+
+# Edge: apt-get install only. No curl, no binary fetch outside the apt path.
+# Permitted exception per [CI-082] body — apt itself verifies signatures via
+# the keyring entries in /etc/apt/sources.list.d/. The validator MUST NOT
+# fire on apt-managed artifacts.
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install via apt
+        run: |
+          set -euo pipefail
+          apt-get update -qq
+          apt-get install -qq -y curl python3 jq

@@ -1,0 +1,4 @@
+# Edge: .swiftlint.yml exists but is essentially empty (no rule lists at all).
+# Validator must handle the empty/minimal case without false-positive.
+disabled_rules:
+  - line_length

@@ -1,0 +1,20 @@
+name: lint (reusable)
+
+# Edge: tool-host package per [GH-REPO-077] — this `ci.yml` IS a reusable
+# workflow (`on: workflow_call:`), not a caller. The file-level carve-out
+# exempts it from [GH-REPO-074], [CI-030], and [CI-059]. Version-pinned
+# action refs are intentional inside the reusable.
+
+on:
+  workflow_call:
+    inputs:
+      target:
+        type: string
+        required: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift run lint ${{ inputs.target }}

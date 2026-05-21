@@ -1,0 +1,21 @@
+# Edge: outputs.<name>.value MAY contain expression syntax (that's its
+# canonical shape). The validator targets outputs.<name>.description, not .value.
+name: 'legit output value'
+description: 'Demonstrates expression syntax in outputs.value is correct.'
+
+inputs:
+  src:
+    description: 'Plain English description.'
+    required: false
+
+outputs:
+  result:
+    description: 'Plain English description.'
+    value: ${{ steps.work.outputs.result }}
+
+runs:
+  using: composite
+  steps:
+    - id: work
+      shell: bash
+      run: echo "result=ok" >> $GITHUB_OUTPUT

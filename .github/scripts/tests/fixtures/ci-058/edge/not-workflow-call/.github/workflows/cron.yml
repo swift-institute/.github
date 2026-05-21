@@ -1,0 +1,16 @@
+name: Cron (standalone)
+
+# Edge: workflow has `on: schedule:` only — NOT a reusable. The
+# enable-private-repos input doesn't apply (it's a workflow_call input);
+# a standalone workflow's env-block named enable-private-repos would be
+# unrelated. Validator silent.
+
+on:
+  schedule:
+    - cron: '0 0 * * *'
+
+jobs:
+  cron:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "cron"

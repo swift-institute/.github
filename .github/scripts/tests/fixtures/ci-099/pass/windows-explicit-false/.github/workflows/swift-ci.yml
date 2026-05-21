@@ -1,0 +1,31 @@
+name: Swift CI (reusable)
+
+# PASS: windows-release with explicit `continue-on-error: false`. The rule
+# forbids `: true` (advisory-flipping); explicit `: false` is redundant with
+# the default but not forbidden. Validator's `is True` check correctly silences.
+
+on:
+  workflow_call:
+
+jobs:
+  macos-release:
+    runs-on: macos-26
+    steps:
+      - run: echo "macos-release"
+
+  linux-release:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "linux-release"
+
+  linux-nightly:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - run: echo "linux-nightly"
+
+  windows-release:
+    runs-on: windows-latest
+    continue-on-error: false
+    steps:
+      - run: echo "windows-release"

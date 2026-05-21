@@ -1,0 +1,21 @@
+name: Edge — restore-keys parameter on non-actions/cache action
+
+# A fictional action that happens to accept a `restore-keys` parameter.
+# Validator must NOT fire — the rule scopes to `actions/cache` only.
+# Expected: 0 findings.
+
+on:
+  workflow_call:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Use unrelated action with restore-keys parameter
+        uses: third-party/some-action@v1
+        with:
+          path: /opt/state
+          key: state-${{ github.sha }}
+          restore-keys: |
+            state-
+      - run: echo "validator should not flag this — not actions/cache"

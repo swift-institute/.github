@@ -1,0 +1,11 @@
+name: Pass — no actions/cache step at all
+
+on:
+  workflow_call:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - run: swift build

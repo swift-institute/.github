@@ -1,0 +1,32 @@
+name: Swift CI (reusable)
+
+# Defect: both linux-nightly AND windows-release have `continue-on-error: true`.
+# linux-nightly's posture is correct per [CI-010]; windows-release's is forbidden
+# per [CI-099]. Multi-defect fixture confirms per-rule attribution — CI-099 fires
+# only on windows-release.
+
+on:
+  workflow_call:
+
+jobs:
+  macos-release:
+    runs-on: macos-26
+    steps:
+      - run: echo "macos-release"
+
+  linux-release:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "linux-release"
+
+  linux-nightly:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - run: echo "linux-nightly"
+
+  windows-release:
+    runs-on: windows-latest
+    continue-on-error: true
+    steps:
+      - run: echo "windows-release"

@@ -1,0 +1,19 @@
+name: Cron (standalone)
+
+# PASS: standalone workflow (schedule + workflow_dispatch) WITH top-level
+# permissions. Canonical shape per [CI-090].
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch: {}
+
+permissions: {}
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - run: echo "sweep"

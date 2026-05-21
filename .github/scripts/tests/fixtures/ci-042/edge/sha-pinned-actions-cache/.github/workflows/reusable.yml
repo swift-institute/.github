@@ -1,0 +1,19 @@
+name: Edge — SHA-pinned actions/cache with no restore-keys
+
+# `actions/cache@<40-char-sha>` form. Validator detects as cache step
+# (startswith match works). No restore-keys → no CI-042 finding.
+# Expected: 0 findings.
+
+on:
+  workflow_call:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cache SwiftLint binary (SHA-pinned actions/cache)
+        uses: actions/cache@1bd1e32a3bdc45362d1e43f87a8b3ed8f5d33b1d
+        with:
+          path: /usr/local/bin/swiftlint
+          key: ubuntu-swiftlint-0.63.2
+      - run: swiftlint lint

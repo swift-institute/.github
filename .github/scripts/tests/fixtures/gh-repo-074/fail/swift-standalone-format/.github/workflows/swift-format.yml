@@ -1,0 +1,9 @@
+name: swift-format
+
+on:
+  pull_request:
+
+jobs:
+  format:
+    uses: swift-foundations/.github/.github/workflows/swift-format.yml@main
+    secrets: inherit

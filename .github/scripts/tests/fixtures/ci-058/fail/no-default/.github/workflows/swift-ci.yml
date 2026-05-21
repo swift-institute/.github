@@ -1,0 +1,17 @@
+name: Swift CI (reusable)
+
+# Defect: enable-private-repos declared without a default. Missing default
+# means consumers must always specify the input (Actions errors at dispatch
+# if a required input is unset). Per [CI-058] the default MUST be true.
+
+on:
+  workflow_call:
+    inputs:
+      enable-private-repos:
+        type: boolean
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "ci"

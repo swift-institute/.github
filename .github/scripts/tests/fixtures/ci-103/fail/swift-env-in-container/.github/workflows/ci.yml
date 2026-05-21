@@ -1,0 +1,19 @@
+name: CI
+
+# Defect: container: swift:${{ env.SWIFT_VERSION }} — the 2026-05-05
+# incident shape at commits ecf36e6/91dd8db. workflow-level env: is NOT
+# available in container: (Actions resolves container before env: binds).
+# Parse-time HTTP 422 result.
+
+on:
+  workflow_call: {}
+
+env:
+  SWIFT_VERSION: '6.3'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: swift:${{ env.SWIFT_VERSION }}
+    steps:
+      - run: swift build

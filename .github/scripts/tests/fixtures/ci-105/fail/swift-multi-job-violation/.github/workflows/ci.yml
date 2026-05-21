@@ -1,0 +1,20 @@
+name: CI
+
+# Defect: multiple jobs, one of which has continue-on-error: true alongside
+# uses:. The valid `ci` job (no continue-on-error) compiles fine, but the
+# `docs` job's continue-on-error+uses combination triggers startup_failure
+# for the entire workflow at parse time — both jobs fail to run.
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  ci:
+    uses: swift-primitives/.github/.github/workflows/swift-ci.yml@main
+    secrets: inherit
+
+  docs:
+    uses: swift-institute/.github/.github/workflows/swift-docs.yml@main
+    continue-on-error: true
+    secrets: inherit

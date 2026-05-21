@@ -1,0 +1,26 @@
+name: Pass — ci-ok aggregator job is carve-out
+
+# Aggregator runs only `jq` against needs.*.result; no network egress.
+# Expected: 0 findings.
+
+on:
+  workflow_call:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450  # v2.19.1
+        with:
+          egress-policy: audit
+      - run: swift build
+
+  ci-ok:
+    if: ${{ always() }}
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - run: jq --exit-status 'all(.result == "success")' <<< "$NEEDS_JSON"
+        env:
+          NEEDS_JSON: ${{ toJson(needs) }}

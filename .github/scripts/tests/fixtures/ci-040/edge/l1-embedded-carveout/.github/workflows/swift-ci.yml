@@ -1,0 +1,22 @@
+name: Edge — L1 embedded carve-out for .build cache
+
+# This fixture mirrors the L1 layer wrapper's embedded job. The file
+# basename is swift-ci.yml, the job name is `embedded`, and the cache
+# step has NO restore-keys. The validator's carve-out skips this case.
+# Expected: 0 findings.
+
+on:
+  workflow_call:
+
+jobs:
+  embedded:
+    runs-on: ubuntu-latest
+    container: swiftlang/swift:nightly-main-jammy
+    steps:
+      - uses: actions/checkout@v6
+      - name: Cache Swift packages (L1 embedded carve-out)
+        uses: actions/cache@v5
+        with:
+          path: .build
+          key: linux-embedded-swift63-spm-v1-${{ hashFiles('Package.swift', 'Package@*.swift') }}
+      - run: swift build -Xswiftc -enable-experimental-feature -Xswiftc Embedded

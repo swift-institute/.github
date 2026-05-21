@@ -1,0 +1,24 @@
+# PASS: descriptions are all plain English with backtick code-refs.
+name: 'clean action'
+description: 'Top-level description in plain text; backticks for `code` are fine.'
+
+inputs:
+  token:
+    description: 'Pass the `PRIVATE_REPO_TOKEN` secret from the caller.'
+    required: true
+  enabled:
+    description: 'When `true`, the action runs the rewrite step.'
+    type: boolean
+    default: true
+
+outputs:
+  result:
+    description: 'Resolved value after the step ran.'
+    value: ${{ steps.work.outputs.result }}
+
+runs:
+  using: composite
+  steps:
+    - id: work
+      shell: bash
+      run: echo "result=ok" >> $GITHUB_OUTPUT

@@ -1,0 +1,19 @@
+name: Swift CI (reusable)
+
+# Defect: reusable workflow declares top-level permissions. The
+# workflow_call intersection rule caps the caller's effective grant at
+# min(top-level, caller-job); top-level permissions on a reusable can
+# silently reduce caller grants. Per [CI-090] reusables MUST omit
+# top-level permissions.
+
+on:
+  workflow_call: {}
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "ci"

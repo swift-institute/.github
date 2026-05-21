@@ -1,0 +1,22 @@
+name: lint (reusable)
+
+# Edge: a reusable workflow (on: workflow_call:) whose OWN jobs are regular
+# (runs-on: + steps:) and one of them carries continue-on-error: true. The
+# reusable's jobs are not workflow_call'd jobs from the parser's POV; the
+# continue-on-error is permitted at this level. [CI-105] applies to CALLER
+# jobs, not the reusable's internal jobs.
+
+on:
+  workflow_call:
+    inputs:
+      target:
+        type: string
+        required: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    continue-on-error: true   # regular job — out of [CI-105] scope
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift run lint ${{ inputs.target }}

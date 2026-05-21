@@ -80,6 +80,7 @@ env:
 
 jobs:
   sync:
+    if: ${{ !github.event.repository.private }}     # [CI-032]
     runs-on: ubuntu-latest
     permissions:
       contents: read

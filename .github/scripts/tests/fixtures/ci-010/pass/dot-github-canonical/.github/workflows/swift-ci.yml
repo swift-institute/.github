@@ -1,0 +1,36 @@
+name: Swift CI (reusable)
+
+on:
+  workflow_call:
+
+jobs:
+  macos-release:
+    name: macOS (Swift 6.3, debug)
+    runs-on: macos-26
+    steps:
+      - run: echo "macos-release"
+
+  linux-release:
+    name: Ubuntu (Swift 6.3, release)
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "linux-release"
+
+  linux-nightly:
+    name: Ubuntu (Swift 6.4-dev nightly)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - run: echo "linux-nightly"
+
+  windows-release:
+    name: Windows (Swift 6.3)
+    runs-on: windows-latest
+    steps:
+      - run: echo "windows-release"
+
+  # Quality-gate jobs (out of [CI-010] scope)
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "format"

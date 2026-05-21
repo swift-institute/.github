@@ -1,0 +1,19 @@
+name: CI
+
+# PASS: continue-on-error on a regular job (with runs-on: + steps:) is
+# permitted per [CI-105]. The rule scope is workflow_call'd jobs only.
+# Mirrors the linux-nightly job in swift-institute/.github/.../swift-ci.yml.
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  nightly:
+    runs-on: ubuntu-latest
+    container: swiftlang/swift:nightly-main-jammy
+    continue-on-error: true
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      - run: swift build -c release

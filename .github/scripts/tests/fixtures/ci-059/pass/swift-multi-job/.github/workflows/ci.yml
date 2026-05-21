@@ -1,0 +1,28 @@
+name: CI
+
+# Multi-job consumer: each job invoking an intra-Institute reusable carries
+# its own `secrets: inherit`. The rule fires per-job; co-presence in the
+# same job is the discriminator.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    uses: swift-primitives/.github/.github/workflows/swift-ci.yml@main
+    secrets: inherit
+
+  docs:
+    uses: swift-institute/.github/.github/workflows/swift-docs.yml@main
+    secrets: inherit
+
+  # A job with no intra-Institute uses; CI-059 is silent here.
+  noop:
+    uses: swift-foundations/.github/.github/workflows/swift-ci.yml@main
+    secrets: inherit

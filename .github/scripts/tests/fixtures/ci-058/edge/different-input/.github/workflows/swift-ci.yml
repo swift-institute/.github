@@ -1,0 +1,17 @@
+name: Swift CI (reusable)
+
+# Edge: workflow declares OTHER inputs but not enable-private-repos.
+# Validator silent; the input is out of scope when not declared.
+
+on:
+  workflow_call:
+    inputs:
+      enable-docs:
+        type: boolean
+        default: false   # different input — different default semantics
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "ci"

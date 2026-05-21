@@ -1,0 +1,15 @@
+name: Embedded only
+
+# Edge: a non-canonical workflow file contains an `embedded` job but the
+# canonical swift-ci.yml is absent. Validator scope is swift-ci.yml only;
+# other workflow files are not inspected. CI-021 silent.
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  embedded:
+    runs-on: ubuntu-latest
+    # Missing continue-on-error here is NOT a violation — wrong file scope.
+    steps:
+      - run: swift build

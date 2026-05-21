@@ -3,31 +3,39 @@
 
 Wave 1 mechanization (2026-05-10) — companion to validate-file-naming.yml.
 Wave 4 extension (2026-05-11) — [API-IMPL-007] extension-file basename check.
+Pilot 9 extension (2026-05-14) — [TEST-009] test-file naming check folded in.
 
 Rules checked:
-  [API-IMPL-006] File names MUST match the type's full nested path with
-                 dots — e.g., `Array.Dynamic.swift`, not `DynamicArray.swift`.
-                 Mechanical narrow check: a `.swift` file in Sources/ whose
-                 basename contains NO dots AND matches the compound-name
-                 pattern (uppercase-first followed by an internal capital
-                 boundary) is a likely violation.
-  [API-IMPL-007] Extension files MUST use the `+` suffix pattern or the
-                 where-clause shape. Mechanical narrow check: a `.swift`
-                 file in Sources/ whose top-level declarations are ALL
-                 `extension` blocks (no `struct` / `class` / `enum` /
+  [API-IMPL-006] File names in Sources/ MUST match the type's full nested
+                 path with dots — e.g., `Array.Dynamic.swift`, not
+                 `DynamicArray.swift`. Mechanical narrow check: a `.swift`
+                 file in Sources/ whose basename contains NO dots AND
+                 matches the compound-name pattern (uppercase-first followed
+                 by an internal capital boundary) is a likely violation.
+  [API-IMPL-007] Extension files in Sources/ MUST use the `+` suffix pattern
+                 or the where-clause shape. Mechanical narrow check: a
+                 `.swift` file in Sources/ whose top-level declarations are
+                 ALL `extension` blocks (no `struct` / `class` / `enum` /
                  `actor` / `protocol` / `typealias` declared at file scope)
                  MUST have `+` in its basename OR carry a ` where `
-                 segment matching the where-clause shape. The "extension
-                 only" file shape is the canonical extension-file signal.
+                 segment matching the where-clause shape.
+  [TEST-009]     Test files MUST be named `{TypePath} Tests.swift`
+                 (space before "Tests", mirroring the type hierarchy).
+                 Mechanical check: in `Tests/{Target} Tests/` directories,
+                 a `.swift` file whose basename ends with `Tests.swift`
+                 but NOT with ` Tests.swift` (space before "Tests") is a
+                 violation. Carve-outs match Sources/ patterns: skip
+                 Tests/Support/, /Fixtures/, basenames with `+` or `where`,
+                 build-system exemptions.
 
 Detection scope:
-- `Sources/**/*.swift`. Test, Experiment, Example, and Benchmark trees are
-  excluded by directory name (parallels `[API-IMPL-005]` SingleTypePerFile).
+- `Sources/**/*.swift` for [API-IMPL-006]/[API-IMPL-007]. Test, Experiment,
+  Example, and Benchmark trees excluded by directory name.
+- `Tests/**/*.swift` for [TEST-009]. Tests/Support/ and /Fixtures/ excluded.
 - Files whose basename is `Package`, `exports`, `Exports` are exempt
   (build-system / re-export files don't carry type declarations).
 - Files whose basename is a `+`-suffixed extension form (`Foo+Sequence.swift`)
-  per `[API-IMPL-007]` are exempt (the basename's `+` separator marks it as
-  the conformance-extension shape, not the dotted-nested-type shape).
+  per `[API-IMPL-007]` are exempt.
 - Files whose basename is in the form `Foo where ...swift` per
   `[API-IMPL-007]`'s where-clause shape are exempt.
 """
@@ -168,6 +176,52 @@ def validate_file_naming(repo: str, repo_root: Path) -> int:
     return findings
 
 
+def validate_test_file_naming(repo: str, repo_root: Path) -> int:
+    """[TEST-009] — test files in `Tests/{Target} Tests/` directories MUST
+    end with ` Tests.swift` (space before "Tests"). Files ending with
+    `Tests.swift` WITHOUT the space are compound-name violations.
+    Other carve-outs match the Sources/-side patterns above.
+    """
+    findings = 0
+    tests = repo_root / "Tests"
+    if not tests.is_dir():
+        return 0
+    for p in tests.rglob("*.swift"):
+        relative = p.relative_to(repo_root)
+        parts = relative.parts
+        if any(seg.startswith(".") for seg in parts):
+            continue
+        # Support / Fixtures directories carry the Test Support module's
+        # own files and fixture types — different naming convention.
+        if "Support" in parts or "Fixtures" in parts:
+            continue
+        basename = p.stem  # `<name>` from `<name>.swift`
+        if basename in EXEMPT_BASENAMES:
+            continue
+        if "+" in basename:
+            continue  # [API-IMPL-007] extension form
+        if " where " in basename or basename.endswith(" where"):
+            continue  # [API-IMPL-007] where-clause shape
+        # Only flag files whose basename ends with "Tests" (i.e., this is
+        # a test file by naming convention). Fixture types and helper
+        # files in test directories don't end with "Tests" — they're out
+        # of scope (their naming is governed by [API-IMPL-006] style).
+        if not basename.endswith("Tests"):
+            continue
+        # Conforming form: `<TypePath> Tests` (literal space before "Tests").
+        # Non-conforming: `<Compound>Tests` (no space), `<X>.Tests` (dot
+        # instead of space), etc.
+        if basename.endswith(" Tests"):
+            continue
+        emit(repo, "TEST-009",
+             f"file name `{p.relative_to(repo_root)}` does not match the "
+             f"`{{TypePath}} Tests.swift` shape (space before \"Tests\") — "
+             f"per [TEST-009] test filenames MUST mirror the type "
+             f"hierarchy with a space-separated `Tests` suffix")
+        findings += 1
+    return findings
+
+
 def main(argv: list[str]) -> int:
     if len(argv) < 3:
         print("usage: validate-file-naming.py <repo-name> <repo-root>", file=sys.stderr)
@@ -175,6 +229,7 @@ def main(argv: list[str]) -> int:
     repo = argv[1]
     repo_root = Path(argv[2])
     findings = validate_file_naming(repo, repo_root)
+    findings += validate_test_file_naming(repo, repo_root)
     return 0 if findings == 0 else 1
 
 

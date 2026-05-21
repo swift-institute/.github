@@ -1,0 +1,28 @@
+name: CI
+
+# Defect: curl fetches a binary, unzip + mv to /usr/local/bin/ + chmod +x —
+# all install indicators present, but no sha256sum -c. Pattern B per the
+# validator. Mirrors the live swift-ci.yml SwiftLint install (the canonical
+# baseline finding for pilot 18).
+
+on:
+  push:
+    branches: [main]
+
+env:
+  SWIFTLINT_VERSION: '0.59.1'
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install SwiftLint ${{ env.SWIFTLINT_VERSION }}
+        run: |
+          set -euo pipefail
+          apt-get update -qq
+          apt-get install -qq -y curl unzip
+          curl -fsSL -o /tmp/swiftlint.zip \
+            "https://github.com/realm/SwiftLint/releases/download/${SWIFTLINT_VERSION}/swiftlint_linux_amd64.zip"
+          unzip -q /tmp/swiftlint.zip -d /tmp/swiftlint_extracted
+          mv /tmp/swiftlint_extracted/swiftlint /usr/local/bin/
+          chmod +x /usr/local/bin/swiftlint

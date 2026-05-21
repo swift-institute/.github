@@ -1,0 +1,15 @@
+name: Swift CI (reusable)
+
+# PASS: reusable (workflow_call only) without top-level permissions.
+# Canonical shape per [CI-090].
+
+on:
+  workflow_call: {}
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - run: echo "ci"

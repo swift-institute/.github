@@ -1,0 +1,16 @@
+# Defect: input description contains ${{ ... }} expression. Per [CI-102]
+# composite-action descriptions are evaluated at parse time and reject all
+# expression syntax (HTTP 422). The 2026-05-05 incident shape.
+name: 'broken action'
+description: 'Top-level OK.'
+
+inputs:
+  token:
+    description: 'Pass ${{ secrets.PRIVATE_REPO_TOKEN }} from the caller.'
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: echo "ok"

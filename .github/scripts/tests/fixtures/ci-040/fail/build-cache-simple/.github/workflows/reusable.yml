@@ -1,0 +1,17 @@
+name: Fail — actions/cache targeting .build
+
+# Job caches .build/ directly. Expected: 1 finding.
+
+on:
+  workflow_call:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cache Swift packages
+        uses: actions/cache@v5
+        with:
+          path: .build
+          key: ubuntu-spm-${{ hashFiles('Package.swift') }}
+      - run: swift test

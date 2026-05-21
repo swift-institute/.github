@@ -1,0 +1,20 @@
+name: lint (reusable)
+
+# Tool-host package per [GH-REPO-077] / [GH-REPO-074] carve-out: this
+# package ships a CLI invoked via reusable workflow. The reusable IS the
+# canonical CI surface — version-pinned action refs are intentional and
+# excluded from thin-caller checks.
+
+on:
+  workflow_call:
+    inputs:
+      target:
+        type: string
+        required: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift run lint ${{ inputs.target }}

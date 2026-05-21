@@ -1,0 +1,23 @@
+name: Pass — compound `&&` gate on every job
+
+# Two jobs use the compound `&&` form of the visibility gate. Mirrors the
+# `lint-api-breakage` / `lint-pr-title` / `ci-ok` pattern in the real
+# universal reusable.
+# Expected: 0 findings.
+
+on:
+  workflow_call:
+
+jobs:
+  pr-only:
+    if: ${{ github.event_name == 'pull_request' && !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "pr-only"
+
+  ci-ok:
+    if: ${{ always() && !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    needs: [pr-only]
+    steps:
+      - run: echo "aggregate"

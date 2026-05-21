@@ -1,0 +1,14 @@
+name: Layer-org swift-ci.yml (canonical)
+
+# PASS: this fixture has NO sub-org marker, so the validator treats it
+# as a layer-org or other repo (not a sub-org). Layer-org swift-ci.yml IS
+# allowed per [CI-004]. Validator silences.
+
+on:
+  workflow_call: {}
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "ci"

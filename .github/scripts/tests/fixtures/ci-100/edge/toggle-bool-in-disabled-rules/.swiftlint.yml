@@ -1,0 +1,10 @@
+# Edge: toggle_bool appears in `disabled_rules:` — an explicit disable
+# position, not an enable position. The validator MUST NOT fire (the rule's
+# scope is enable-positions only; explicit disabling is the correct behavior).
+
+opt_in_rules:
+  - empty_count
+
+disabled_rules:
+  - line_length
+  - toggle_bool

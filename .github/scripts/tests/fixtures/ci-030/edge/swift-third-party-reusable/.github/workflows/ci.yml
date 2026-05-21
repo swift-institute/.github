@@ -1,0 +1,21 @@
+name: CI
+
+# Edge: consumer invokes a THIRD-PARTY reusable workflow (single-infix
+# `<owner>/<repo>/.github/workflows/...` path shape — note the SINGLE
+# `.github/` infix, not the double-`.github/.github/` used by intra-Institute
+# org-`.github`-repo reusables). Third-party refs fall under [CI-107]
+# latest-major-version discipline, NOT [CI-030] @main discipline.
+#
+# This file also doesn't fully satisfy [GH-REPO-074]'s thin-caller shape
+# (no intra-Institute reusable), but that's a separate rule's concern.
+# CI-030 must fire zero findings here.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  external-check:
+    uses: third-party-org/third-party-repo/.github/workflows/check.yml@v1
+    secrets: inherit

@@ -1,0 +1,21 @@
+name: Fail — .build cache with restore-keys (both CI-040 and CI-042 fire)
+
+# Both rules fire; the run.sh harness counts CI-042 findings for ci-042
+# fixtures. Expected: 1 CI-042 finding (CI-040 also fires but doesn't
+# affect this fixture's count).
+
+on:
+  workflow_call:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cache Swift packages
+        uses: actions/cache@v5
+        with:
+          path: .build
+          key: ubuntu-spm-${{ hashFiles('Package.swift') }}
+          restore-keys: |
+            ubuntu-spm-
+      - run: swift test

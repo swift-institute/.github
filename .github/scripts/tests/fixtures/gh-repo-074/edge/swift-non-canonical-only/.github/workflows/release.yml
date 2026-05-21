@@ -1,0 +1,16 @@
+name: Release
+
+# Package-specific workflow (release automation) is out of [GH-REPO-074]
+# scope — only the canonical ci.yml is constrained to thin-caller shape.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./Scripts/release.sh ${{ github.ref_name }}

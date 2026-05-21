@@ -1,0 +1,14 @@
+name: Lint
+
+# Edge: repo has no swift-ci.yml — it's not a host of the canonical universal
+# reusable. The validator silences entirely (single-target scope; out-of-scope
+# repos are no-ops). Mirrors the ci-010/edge/no-swift-ci fixture.
+
+on:
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "lint"

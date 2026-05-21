@@ -1,0 +1,19 @@
+name: Swift CI (universal)
+
+# PASS: swift-ci.yml exists but has no embedded job (typical for the
+# universal canonical at swift-institute/.github). Validator silences;
+# CI-021 is out of scope when the embedded job is absent.
+
+on:
+  workflow_call: {}
+
+jobs:
+  macos-release:
+    runs-on: macos-26
+    steps:
+      - run: swift build
+
+  linux-release:
+    runs-on: ubuntu-latest
+    steps:
+      - run: swift build

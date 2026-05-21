@@ -1,0 +1,16 @@
+name: CI
+
+# Defect: intra-Institute reusable invocation lacking `secrets: inherit`.
+# Per [CI-059] this MUST be present for shape uniformity ([CI-031]), even
+# when the consumer's dependency graph is fully public — defense-in-depth
+# against upstream centralized-reusable repos flipping private or future
+# centralized jobs adding private-token deps.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  ci:
+    uses: swift-primitives/.github/.github/workflows/swift-ci.yml@main

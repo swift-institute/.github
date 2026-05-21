@@ -1,0 +1,20 @@
+name: Edge — workflow has zero actions/cache steps
+
+# Workflow has multiple jobs but no actions/cache anywhere.
+# Expected: 0 findings.
+
+on:
+  workflow_call:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - run: swift build
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - run: swift test

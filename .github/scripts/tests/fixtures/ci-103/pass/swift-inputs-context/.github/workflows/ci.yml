@@ -1,0 +1,21 @@
+name: CI
+
+# PASS: container parameterized via inputs.<name> per [CI-103] How-to-apply
+# table (workflow_call input — visible in source, evaluated by the resolver
+# before container: is bound). Mirrors live swift-ci.yml's
+# `container: swift:${{ inputs.swift-version }}` pattern.
+
+on:
+  workflow_call:
+    inputs:
+      swift-version:
+        type: string
+        required: false
+        default: '6.3'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: swift:${{ inputs.swift-version }}
+    steps:
+      - run: swift build

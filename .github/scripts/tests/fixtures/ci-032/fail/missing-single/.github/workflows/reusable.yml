@@ -1,0 +1,19 @@
+name: Fail — one job missing the visibility gate
+
+# `build` is gated; `test` has no `if:` at all.
+# Expected: 1 finding ([CI-032] on `test`).
+
+on:
+  workflow_call:
+
+jobs:
+  build:
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "build"
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "test"

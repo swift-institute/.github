@@ -1,0 +1,18 @@
+name: Swift CI (reusable)
+
+# Defect: reusable with `permissions: {}` (deny-all) — the 2026-05-06 M2
+# incident shape. Intersection rule caps effective grant at zero;
+# `startup_failure` at every caller. Per [CI-097] FORBIDDEN.
+
+on:
+  workflow_call: {}
+
+permissions: {}
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - run: echo "ci"

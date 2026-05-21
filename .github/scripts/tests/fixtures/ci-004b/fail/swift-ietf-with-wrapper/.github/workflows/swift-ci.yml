@@ -1,0 +1,13 @@
+name: Forbidden sub-org wrapper
+
+# Defect: this fixture simulates `swift-ietf/.github` (sub-org marker
+# present) WITH `swift-ci.yml` — exactly the [CI-004b] forbidden state.
+
+on:
+  workflow_call: {}
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "ci"
