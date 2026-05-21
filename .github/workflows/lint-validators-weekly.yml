@@ -41,7 +41,7 @@
 # swift-institute-bot App-installation token internally (via
 # actions/create-github-app-token@v1.12.0). Orchestrator passes
 # secrets: inherit per [CI-059]; called workflows use the inherited
-# SWIFT_INSTITUTE_BOT_APP_ID + SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY
+# SWIFT_INSTITUTE_BOT_APP_CLIENT_ID + SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY
 # secrets. The report job mints its own swift-institute-scoped token
 # for issues:write.
 #
