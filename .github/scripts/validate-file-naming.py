@@ -109,14 +109,47 @@ TOP_LEVEL_EXTENSION_RE = re.compile(
     re.MULTILINE,
 )
 
+# Detect nested type declarations at non-zero indentation. The institute's
+# canonical namespace-dispatch pattern declares nested types inside a
+# parent-namespace extension:
+#
+#     extension Sequence {
+#         public enum Drop { }
+#     }
+#
+#     extension Sequence.Borrowing {
+#         public protocol `Protocol`: ~Copyable, ~Escapable { ... }
+#     }
+#
+# Such a file DECLARES the nested type even though all top-level constructs
+# are extensions. It is NOT a pure-extension file per [API-IMPL-007] — the
+# filename `Sequence.Drop.swift` mirrors the nested type path and satisfies
+# [API-IMPL-006]. Only `struct|class|enum|actor|protocol|typealias` are
+# included here (not `func|var|let`) because the latter are normal
+# extension content (stored properties, methods) that do not promote the
+# file to a type-declaring file.
+NESTED_TYPE_RE = re.compile(
+    r"^\s+(?:[a-zA-Z@_][\w@()]*[ \t]+)*"
+    r"(?:struct|class|enum|actor|protocol|typealias)\s+",
+    re.MULTILINE,
+)
+
 
 def is_pure_extension_file(text: str) -> bool:
     """Return True iff the source has at least one top-level `extension`
-    declaration AND no top-level type / func / var / let declarations.
+    declaration AND no type declarations anywhere — top-level OR nested
+    inside an extension or other top-level construct.
+
+    The nested-type check handles the institute namespace-dispatch pattern
+    per [MOD-031] where types are declared inside a parent-namespace
+    extension. Those files DECLARE types and must not be classified as
+    pure-extension per [API-IMPL-007].
     """
     if not TOP_LEVEL_EXTENSION_RE.search(text):
         return False
     if TOP_LEVEL_TYPE_RE.search(text):
+        return False
+    if NESTED_TYPE_RE.search(text):
         return False
     return True
 
