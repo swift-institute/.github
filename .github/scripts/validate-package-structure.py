@@ -18,7 +18,8 @@ Rules checked:
             Exception: in a type/ops-split package the base plural doubles as
             the umbrella AND carries the base conformances, so the sole-source
             check is skipped for it (its `exports.swift` is still @_exported-only).
-  [MOD-007] Intra-package dep DAG depth ≤ 3 from the root.
+  [MOD-007] Intra-package dep DAG longest-path edge-depth ≤ 3 from the root
+            (= ≤ 4 nodes).
   [MOD-011] Multi-product packages MUST publish a Test Support library product.
   [MOD-012] Multi-product target names match the role-shape pattern, including
             the singular `{Domain} Primitive` root and the `{Domain} {Variant}
@@ -217,11 +218,14 @@ def validate(repo: str, pkg: dict, sources_dir: str = "Sources") -> int:
             continue
         if any(tn.endswith(suf) for suf in skip_suffixes):
             continue
+        # [MOD-007] depth = longest-path EDGES from the root, ≤ 3 (= ≤ 4 nodes).
+        # depth_from returns node-count (1 for a leaf), so edge-depth = nodes - 1.
         d = depth_from(tn, target_by_name)
-        if d > 3:
+        edge_depth = d - 1
+        if edge_depth > 3:
             emit(repo, "MOD-007",
-                 f"Target {tn!r} has DAG depth {d} from the root (>3). "
-                 f"Flatten the chain.")
+                 f"Target {tn!r} has longest-path edge-depth {edge_depth} from the root "
+                 f"({d} nodes, >3 edges). Flatten the chain.")
             findings += 1
 
     for tn in sorted(target_names):
