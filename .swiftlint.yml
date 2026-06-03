@@ -103,6 +103,12 @@ custom_rules:
     severity: warning
     match_kinds:
       - keyword
+    # Tests legitimately use untyped throws: propagation through stdlib
+    # untyped-`rethrows` boundaries (e.g. `withUnsafeBytes`) makes a typed
+    # `throws(E)` not cleanly expressible, and [API-ERR-001] targets API
+    # surface, not test code (principal-confirmed 2026-06-02).
+    excluded:
+      - 'Tests/.*'
   no_xctest_import:
     name: "No XCTest Import ([TEST-001])"
     regex: '^[ \t]*(?:@[a-zA-Z_]+[ \t]+)*(?:public[ \t]+|package[ \t]+|internal[ \t]+|fileprivate[ \t]+|private[ \t]+)?(?:@testable[ \t]+)?import[ \t]+XCTest\b'
