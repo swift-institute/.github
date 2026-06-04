@@ -109,10 +109,10 @@ on:
 # release of each tool; bump on every workflow touch where a newer
 # release exists.
 env:
-  SWIFTLINT_VERSION: "0.63.2"
+  SWIFTLINT_VERSION: "0.63.3"
   # [CI-082] sha256sum -c pin for swiftlint_linux_amd64.zip at SWIFTLINT_VERSION.
   # Re-lock on every version bump per the rule body's bump protocol.
-  SWIFTLINT_SHA256: "dd1017cfd20a1457f264590bcb5875a6ee06cd75b9a9d4f77cd43a552499143b"
+  SWIFTLINT_SHA256: "26db741d43f2f2dc26c0cf16911100a3e186c3d1dbb59e55ad3ac87b0de4538f"
   XCODE_VERSION: "26.4"
 
 jobs:
@@ -125,7 +125,7 @@ jobs:
       contents: read
     steps:
       - name: Harden runner (audit-mode egress logging)
-        uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
           egress-policy: audit
 
@@ -169,7 +169,7 @@ jobs:
       contents: read
     steps:
       - name: Harden runner (audit-mode egress logging)
-        uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
           egress-policy: audit
 
@@ -213,7 +213,7 @@ jobs:
       contents: read
     steps:
       - name: Harden runner (audit-mode egress logging)
-        uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
           egress-policy: audit
 
@@ -255,7 +255,7 @@ jobs:
       contents: read
     steps:
       - name: Harden runner (audit-mode egress logging)
-        uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
           egress-policy: audit
 
@@ -313,7 +313,7 @@ jobs:
       contents: read
     steps:
       - name: Harden runner (audit-mode egress logging)
-        uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
           egress-policy: audit
 
@@ -355,7 +355,7 @@ jobs:
       contents: read
     steps:
       - name: Harden runner (audit-mode egress logging)
-        uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
           egress-policy: audit
 
@@ -425,7 +425,7 @@ jobs:
       contents: read
     steps:
       - name: Harden runner (audit-mode egress logging)
-        uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
           egress-policy: audit
 
