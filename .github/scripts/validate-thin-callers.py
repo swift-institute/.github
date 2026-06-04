@@ -36,14 +36,34 @@ Rules checked:
                 a different shape and are exempt per [CI-107] latest-major-tag
                 discipline.
 
-  [CI-059]      Every per-repo `ci.yml` job that invokes an intra-Institute
-                reusable workflow MUST carry `secrets: inherit` in the same
-                job. Explicit per-secret forwarding (`secrets: { NAME: ... }`
-                or `secrets:` block form) is forbidden once the underlying
-                secret is org-level per [CI-060]. Omission is forbidden per
-                shape-uniformity ([CI-031]) — even consumers whose dependency
-                graph is fully public carry `secrets: inherit` as a single
-                canonical shape.
+  [CI-059]      LAYER-ORG-hosted consumers: every per-repo `ci.yml` job that
+                invokes an intra-Institute reusable workflow MUST carry
+                `secrets: inherit` in the same job. Explicit per-secret
+                forwarding (`secrets: { NAME: ... }` or `secrets:` block
+                form) is forbidden once the underlying secret is org-level
+                per [CI-060]. Omission is forbidden per shape-uniformity
+                ([CI-031]) — even consumers whose dependency graph is fully
+                public carry `secrets: inherit` as a single canonical shape.
+
+                SUB-ORG-hosted consumers ([CI-059] sub-org caveat, pattern
+                (ii), principal-confirmed 2026-06-04): the INVERSE. Their
+                hop 1 into the parent layer wrapper is cross-org, where
+                `secrets: inherit` silently delivers no org secrets per
+                [CI-109]. Sub-org callers MUST explicit-forward the named
+                private-dep credential set (PRIVATE_REPO_TOKEN,
+                SWIFT_INSTITUTE_BOT_APP_CLIENT_ID, SWIFT_INSTITUTE_BOT_APP_ID,
+                SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY) as
+                `NAME: ${{ secrets.NAME }}` lines — values resolve in the
+                consumer's own org context and survive the cross-org hop.
+                `secrets: inherit` and omission both fire; a block missing
+                any of the four names fires naming the missing ones.
+
+                Owner detection: the org component of the repo argument.
+                Fixture override: a `.fixture-sub-org-owner` marker file at
+                the fixture root (content = simulated owner, default
+                swift-ietf) lets the harness's fixed `swift-institute-test/`
+                owner exercise the sub-org branch (same convention family as
+                validate-sub-org-wrappers' `.github-as-sub-org` marker).
 
 Both CI-030 and CI-059 inherit the GH-REPO-074 file-level carve-out: workflows
 that are themselves reusables (`on: workflow_call:`) are exempt — the rules
@@ -105,6 +125,39 @@ HAS_SECRETS_INLINE_MAP = re.compile(
 # trailing comment. `\w` and `-` cover all valid job-name shapes in the
 # ecosystem.
 JOB_NAME_LINE = re.compile(r"^([\w-]+):\s*(#.*)?$")
+
+# Per-authority sub-orgs (11 L2 + 2 L3 per [CI-004b]). Their consumers'
+# hop 1 (consumer -> parent layer wrapper) is cross-org, so [CI-059]'s
+# requirement inverts for them per the sub-org caveat: explicit-forward
+# the named credential set instead of `secrets: inherit` ([CI-109]).
+SUB_ORGS = frozenset({
+    "swift-ietf", "swift-iso", "swift-w3c", "swift-whatwg", "swift-ecma",
+    "swift-incits", "swift-ieee", "swift-iec", "swift-arm-ltd",
+    "swift-intel", "swift-riscv", "swift-linux-foundation",
+    "swift-microsoft",
+})
+
+# The named private-dep credential set sub-org callers MUST forward.
+REQUIRED_SUBORG_SECRETS = (
+    "PRIVATE_REPO_TOKEN",
+    "SWIFT_INSTITUTE_BOT_APP_CLIENT_ID",
+    "SWIFT_INSTITUTE_BOT_APP_ID",
+    "SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY",
+)
+
+
+def _suborg_secret_line(name: str) -> re.Pattern[str]:
+    """`NAME: ${{ secrets.NAME }}` line (any indent, optional comment)."""
+    escaped = re.escape(name)
+    return re.compile(
+        rf"^\s+{escaped}:\s*\$\{{\{{\s*secrets\.{escaped}\s*\}}\}}\s*(#.*)?$",
+        re.MULTILINE,
+    )
+
+
+SUBORG_SECRET_LINES = {
+    name: _suborg_secret_line(name) for name in REQUIRED_SUBORG_SECRETS
+}
 
 
 def emit(repo: str, rule: str, message: str) -> None:
@@ -198,9 +251,12 @@ def check_ci_030(repo: str, text: str) -> int:
     return findings
 
 
-def check_ci_059(repo: str, text: str) -> int:
-    """Check [CI-059]: jobs invoking intra-Institute reusables MUST carry
-    `secrets: inherit` in the same job."""
+def check_ci_059(repo: str, text: str, owner: str) -> int:
+    """Check [CI-059]: layer-org callers MUST carry `secrets: inherit`;
+    sub-org callers MUST explicit-forward the named credential set
+    (the [CI-059] sub-org caveat per [CI-109] cross-org secret transport)."""
+    if owner in SUB_ORGS:
+        return _check_ci_059_suborg(repo, text)
     findings = 0
     for job_name, job_body in iter_jobs(text):
         if not USES_INTRA_INSTITUTE.search(job_body):
@@ -235,6 +291,58 @@ def check_ci_059(repo: str, text: str) -> int:
     return findings
 
 
+def _check_ci_059_suborg(repo: str, text: str) -> int:
+    """Sub-org branch of [CI-059]: explicit-forward of the named credential
+    set required; `secrets: inherit` and omission both fire ([CI-109])."""
+    findings = 0
+    for job_name, job_body in iter_jobs(text):
+        if not USES_INTRA_INSTITUTE.search(job_body):
+            continue
+        if HAS_SECRETS_INHERIT.search(job_body):
+            emit(
+                repo,
+                "CI-059",
+                f".github/workflows/ci.yml job `{job_name}` is sub-org-hosted "
+                f"and uses `secrets: inherit` — per the [CI-059] sub-org "
+                f"caveat this hop is cross-org and inherit silently delivers "
+                f"no org secrets ([CI-109]). Replace with the explicit "
+                f"`secrets:` block forwarding "
+                f"{', '.join(REQUIRED_SUBORG_SECRETS)} as "
+                f"`NAME: ${{{{ secrets.NAME }}}}` lines.",
+            )
+            findings += 1
+            continue
+        if HAS_SECRETS_BLOCK.search(job_body) or HAS_SECRETS_INLINE_MAP.search(job_body):
+            missing = [
+                name
+                for name in REQUIRED_SUBORG_SECRETS
+                if not SUBORG_SECRET_LINES[name].search(job_body)
+            ]
+            if missing:
+                emit(
+                    repo,
+                    "CI-059",
+                    f".github/workflows/ci.yml job `{job_name}` is "
+                    f"sub-org-hosted and explicit-forwards secrets but is "
+                    f"missing {', '.join(missing)} — per the [CI-059] sub-org "
+                    f"caveat the full named credential set MUST be forwarded "
+                    f"(`NAME: ${{{{ secrets.NAME }}}}` per name; [CI-109]).",
+                )
+                findings += 1
+            continue
+        emit(
+            repo,
+            "CI-059",
+            f".github/workflows/ci.yml job `{job_name}` is sub-org-hosted "
+            f"and invokes an intra-Institute reusable without any `secrets:` "
+            f"— per the [CI-059] sub-org caveat it MUST explicit-forward "
+            f"{', '.join(REQUIRED_SUBORG_SECRETS)} ([CI-109]; inherit is "
+            f"same-org-only and omission leaves resolve uncredentialed).",
+        )
+        findings += 1
+    return findings
+
+
 def check_ci_yml(repo: str, ci_path: Path) -> int:
     """Validate `<repo>/.github/workflows/ci.yml` against thin-caller rules."""
     try:
@@ -243,6 +351,15 @@ def check_ci_yml(repo: str, ci_path: Path) -> int:
         return 0
     if is_workflow_call(text):
         return 0  # tool-reusable carve-out (file-level, applies to all rules)
+    # Owner drives the [CI-059] layer-org vs sub-org branch. Production:
+    # the org component of the repo argument. Fixtures: the harness passes
+    # a fixed `swift-institute-test/` owner, so a `.fixture-sub-org-owner`
+    # marker at the fixture root overrides (content = simulated owner;
+    # empty file defaults to swift-ietf).
+    owner = repo.split("/", 1)[0]
+    marker = ci_path.parent.parent.parent / ".fixture-sub-org-owner"
+    if marker.is_file():
+        owner = marker.read_text(encoding="utf-8").strip() or "swift-ietf"
     findings = 0
     if INLINE_RUNS_ON.search(text):
         emit(
@@ -275,7 +392,7 @@ def check_ci_yml(repo: str, ci_path: Path) -> int:
         )
         findings += 1
     findings += check_ci_030(repo, text)
-    findings += check_ci_059(repo, text)
+    findings += check_ci_059(repo, text, owner)
     return findings
 
 

@@ -50,7 +50,9 @@ name: Swift DocC (reusable)
 #   jobs:
 #     docs:
 #       uses: swift-primitives/.github/.github/workflows/swift-docs.yml@main
-#       # (or swift-standards/… / swift-foundations/… per your layer)
+#       # (or swift-standards/… / swift-foundations/… per your layer;
+#       # sub-org consumers: your PARENT layer org's wrapper, with the
+#       # explicit secrets block per the [CI-059] sub-org caveat)
 #       with:
 #         umbrella-module: Property_Primitives
 #         umbrella-display-name: "Property Primitives"

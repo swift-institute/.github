@@ -1,0 +1,11 @@
+name: CI
+on:
+  push:
+    branches: [main]
+jobs:
+  ci:
+    uses: swift-standards/.github/.github/workflows/swift-ci.yml@main
+    secrets: inherit
+  docs:
+    uses: swift-standards/.github/.github/workflows/swift-docs.yml@main
+    secrets: inherit

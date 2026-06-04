@@ -1,0 +1,11 @@
+name: CI
+on:
+  push:
+    branches: [main]
+jobs:
+  ci:
+    uses: swift-standards/.github/.github/workflows/swift-ci.yml@main
+    secrets:
+      PRIVATE_REPO_TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }}
+      SWIFT_INSTITUTE_BOT_APP_CLIENT_ID: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+      SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
