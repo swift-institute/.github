@@ -44,8 +44,20 @@ on:
       PRIVATE_REPO_TOKEN:
         required: false
         description: |
-          Forwarded via `secrets: inherit` from per-package ci.yml. Used
-          to clone private intra-Institute deps during SwiftPM resolve.
+          Forwarded via `secrets: inherit` from per-package ci.yml. Legacy
+          github.com-wide fallback for cloning private intra-Institute
+          deps during SwiftPM resolve; superseded by the App-token path.
+      SWIFT_INSTITUTE_BOT_APP_CLIENT_ID:
+        required: false
+        description: |
+          swift-institute-bot App client ID (org-level secret). With the
+          private key, lets configure-private-repos mint per-job
+          contents:read installation tokens for the layer orgs.
+      SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY:
+        required: false
+        description: |
+          swift-institute-bot App private key (org-level secret).
+          Counterpart of SWIFT_INSTITUTE_BOT_APP_CLIENT_ID.
 
 jobs:
   diagnose:
@@ -70,6 +82,8 @@ jobs:
       - uses: swift-institute/.github/.github/actions/configure-private-repos@main
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+          app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+          app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
 
       - name: Diagnose API breaking changes
         shell: bash

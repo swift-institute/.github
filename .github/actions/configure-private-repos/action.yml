@@ -1,41 +1,96 @@
 # Configure git so `swift package resolve` can clone private deps.
 #
-# Sets `git config --global url."https://<token>@github.com/".insteadOf
-# "https://github.com/"`, embedding PRIVATE_REPO_TOKEN in the substituted
-# URL. When the token is empty (consumer didn't forward `secrets: inherit`,
-# or the org-level secret isn't visible per [CI-060] free-plan visibility
-# rules), the substitution becomes `https://@github.com/` and git falls
-# back to anonymous fetch — viable on public-only deps. See [CI-058] for
-# the empty-token / anonymous-fetch fallback contract.
+# Two credential paths, applied in priority order via git's longest-prefix
+# insteadOf matching:
+#
+#   1. PRIMARY — swift-institute-bot App installation tokens. When the
+#      caller passes `app-client-id` + `app-private-key` (the org-level
+#      SWIFT_INSTITUTE_BOT_APP_CLIENT_ID / SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY
+#      secrets), the composite mints one short-lived installation token per
+#      dependency-hosting layer org (swift-primitives, swift-standards,
+#      swift-foundations) via actions/create-github-app-token@v3, downscoped
+#      to `contents: read`, and writes one org-prefixed rewrite rule per org:
+#
+#        url.https://x-access-token:<tok>@github.com/<org>/.insteadOf
+#          = https://github.com/<org>/
+#
+#      Tokens auto-expire (~1h) and are revoked by the action's post-step;
+#      values are auto-masked in logs. The bot App is installed org-wide
+#      (repository_selection: all), so NEW private repos are covered the
+#      moment they exist — no per-repo or per-rotation provisioning. Per
+#      Research/private-repo-secret-management-at-scale.md Option B.
+#
+#      The org list is deliberately hardcoded as three unrolled steps:
+#      composite actions cannot loop a `uses:` step ([CI-070](a)), and the
+#      transitive dependency graph is unknowable before resolve, so
+#      "narrowest org scope that resolves the graph" = the fixed set of
+#      layer orgs that host package dependencies. When a per-authority
+#      sub-org (swift-ietf, swift-iso, …) first hosts a PRIVATE dep of a
+#      public consumer, add one mint step + one emit line here — this
+#      composite is the single edit point.
+#
+#   2. FALLBACK — legacy PRIVATE_REPO_TOKEN. When non-empty, a github.com-
+#      wide rewrite rule is written (`url.https://<token>@github.com/`).
+#      Org-prefixed rules out-prefix it, so it only serves orgs without a
+#      minted token. When BOTH the App inputs and the token are empty, no
+#      rule is written and git fetches anonymously — viable on public-only
+#      dep graphs. See [CI-058] for the empty-secret fallback contract.
+#
+# Config is env-scoped, not file-scoped: rules are exported as
+# GIT_CONFIG_COUNT / GIT_CONFIG_KEY_n / GIT_CONFIG_VALUE_n via $GITHUB_ENV,
+# so every subsequent step's git processes (SwiftPM resolve, docc build)
+# inherit them for the job's lifetime without writing any gitconfig file.
+# No token material is ever written to a tracked file or printed.
 #
 # Composite action contract: secrets cannot be referenced via `secrets.*`
-# inside a composite — the caller must pass the token value through `with:`.
+# inside a composite — the caller must pass values through `with:`.
 # The canonical caller shape is:
 #
 #   - uses: swift-institute/.github/.github/actions/configure-private-repos@main
 #     with:
 #       token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+#       app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+#       app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
 #       enabled: ${{ inputs.enable-private-repos }}
 #
 # Provenance: extracted from 11 inline `git config --global url …` blocks
 # across 4 workflows in the swift-institute + swift-primitives `.github`
 # repos (lint-api-breakage.yml × 1, swift-docs.yml × 1, universal
-# swift-ci.yml × 4, layer-wrapper swift-ci.yml × 5). Per [CI-030],
-# consumers reference this composite via `@main` during active dev.
+# swift-ci.yml × 4, layer-wrapper swift-ci.yml × 5). App-token primary path
+# added 2026-06-04 (the 5 private MSB packages entering public dep graphs
+# exposed the empty-PRIVATE_REPO_TOKEN fallback as dep-resolution redness
+# across the public cohort). Per [CI-030], consumers reference this
+# composite via `@main` during active dev.
 
 name: 'Configure private repos'
 description: >
-  Set git insteadOf for github.com to embed PRIVATE_REPO_TOKEN, enabling
-  swift package resolve to clone private dependencies. No-op when
-  enabled=false. Empty token falls back to anonymous fetch (works on
-  public-only deps).
+  Configure git url rewrites so swift package resolve can clone private
+  intra-Institute dependencies. Primary path mints per-job
+  swift-institute-bot App installation tokens (contents:read) for the
+  layer orgs; legacy PRIVATE_REPO_TOKEN is the github.com-wide fallback.
+  Env-scoped (GIT_CONFIG_* via GITHUB_ENV); no gitconfig file writes.
+  No-op when enabled=false. All-empty credentials fall back to anonymous
+  fetch (works on public-only deps).
 
 inputs:
   token:
     description: >
-      PRIVATE_REPO_TOKEN value. Caller passes the secret via `with:` since
-      composite actions cannot read `secrets` context directly. Empty
-      string is permitted and produces the anonymous-fetch fallback.
+      Legacy PRIVATE_REPO_TOKEN value. Caller passes the secret via `with:`
+      since composite actions cannot read `secrets` context directly. Empty
+      string is permitted; when the App inputs are also empty this produces
+      the anonymous-fetch fallback.
+    required: false
+    default: ''
+  app-client-id:
+    description: >
+      swift-institute-bot App client ID (SWIFT_INSTITUTE_BOT_APP_CLIENT_ID
+      org secret). Empty skips App-token minting and falls back to `token`.
+    required: false
+    default: ''
+  app-private-key:
+    description: >
+      swift-institute-bot App private key (SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY
+      org secret). Empty skips App-token minting and falls back to `token`.
     required: false
     default: ''
   enabled:
@@ -51,9 +106,61 @@ inputs:
 runs:
   using: 'composite'
   steps:
+    - id: mint-primitives
+      if: ${{ inputs.enabled == 'true' && inputs.app-client-id != '' && inputs.app-private-key != '' }}
+      name: Mint App token (swift-primitives, contents:read)
+      uses: actions/create-github-app-token@v3
+      with:
+        client-id: ${{ inputs.app-client-id }}
+        private-key: ${{ inputs.app-private-key }}
+        owner: swift-primitives
+        permission-contents: read
+
+    - id: mint-standards
+      if: ${{ inputs.enabled == 'true' && inputs.app-client-id != '' && inputs.app-private-key != '' }}
+      name: Mint App token (swift-standards, contents:read)
+      uses: actions/create-github-app-token@v3
+      with:
+        client-id: ${{ inputs.app-client-id }}
+        private-key: ${{ inputs.app-private-key }}
+        owner: swift-standards
+        permission-contents: read
+
+    - id: mint-foundations
+      if: ${{ inputs.enabled == 'true' && inputs.app-client-id != '' && inputs.app-private-key != '' }}
+      name: Mint App token (swift-foundations, contents:read)
+      uses: actions/create-github-app-token@v3
+      with:
+        client-id: ${{ inputs.app-client-id }}
+        private-key: ${{ inputs.app-private-key }}
+        owner: swift-foundations
+        permission-contents: read
+
     - if: ${{ inputs.enabled == 'true' }}
-      name: Configure git for private repos
+      name: Configure git url rewrites (env-scoped)
       shell: bash
       env:
-        TOKEN: ${{ inputs.token }}
-      run: git config --global url."https://${TOKEN}@github.com/".insteadOf "https://github.com/"
+        LEGACY_TOKEN: ${{ inputs.token }}
+        TOKEN_PRIMITIVES: ${{ steps.mint-primitives.outputs.token }}
+        TOKEN_STANDARDS: ${{ steps.mint-standards.outputs.token }}
+        TOKEN_FOUNDATIONS: ${{ steps.mint-foundations.outputs.token }}
+      run: |
+        set -euo pipefail
+        i=0
+        emit() { # $1 = org slug, $2 = installation token
+          echo "GIT_CONFIG_KEY_${i}=url.https://x-access-token:${2}@github.com/${1}/.insteadOf" >> "$GITHUB_ENV"
+          echo "GIT_CONFIG_VALUE_${i}=https://github.com/${1}/" >> "$GITHUB_ENV"
+          i=$((i + 1))
+        }
+        if [ -n "${TOKEN_PRIMITIVES}" ]; then emit swift-primitives "${TOKEN_PRIMITIVES}"; fi
+        if [ -n "${TOKEN_STANDARDS}" ]; then emit swift-standards "${TOKEN_STANDARDS}"; fi
+        if [ -n "${TOKEN_FOUNDATIONS}" ]; then emit swift-foundations "${TOKEN_FOUNDATIONS}"; fi
+        if [ -n "${LEGACY_TOKEN}" ]; then
+          echo "GIT_CONFIG_KEY_${i}=url.https://${LEGACY_TOKEN}@github.com/.insteadOf" >> "$GITHUB_ENV"
+          echo "GIT_CONFIG_VALUE_${i}=https://github.com/" >> "$GITHUB_ENV"
+          i=$((i + 1))
+        fi
+        if [ "$i" -gt 0 ]; then
+          echo "GIT_CONFIG_COUNT=${i}" >> "$GITHUB_ENV"
+        fi
+        echo "Configured ${i} git url rewrite rule(s) (env-scoped; tokens masked)."

@@ -24,11 +24,17 @@ name: Swift CI (reusable)
 #
 # Default `enable-private-repos: true` covers the canonical case (the
 # vast majority of consumers depend on private intra-Institute siblings
-# and need PRIVATE_REPO_TOKEN-rewritten github.com URLs for
-# `swift package resolve`); pass `with: { enable-private-repos: false }`
-# only for the rare public-deps-only consumer that wants to suppress
-# the configure-git step. `secrets: inherit` is uniform across all
-# consumers per [CI-031]/[CI-058]/[CI-059] post-uniformity-sweep.
+# and need credentialed github.com URL rewrites for `swift package
+# resolve`); pass `with: { enable-private-repos: false }` only for the
+# rare public-deps-only consumer that wants to suppress the
+# configure-git step. Credential resolution order (see the
+# configure-private-repos composite): per-job swift-institute-bot App
+# installation tokens (contents:read, auto-expiring) minted from the
+# org-level SWIFT_INSTITUTE_BOT_APP_CLIENT_ID/_APP_PRIVATE_KEY secrets;
+# legacy PRIVATE_REPO_TOKEN as github.com-wide fallback. `secrets:
+# inherit` is uniform across all consumers per
+# [CI-031]/[CI-058]/[CI-059] post-uniformity-sweep, so the org-level
+# secrets flow through without per-package ci.yml edits.
 #
 # Inputs are deliberately minimal. Toolchain versions, runner images, and
 # the matrix shape are hard-coded ecosystem-wide; if a package needs a
@@ -71,6 +77,22 @@ on:
     secrets:
       PRIVATE_REPO_TOKEN:
         required: false
+        description: |
+          Legacy github.com-wide fallback credential for private-dep
+          clones. Superseded by the App-token path; retained for orgs
+          not yet provisioned with the App secrets.
+      SWIFT_INSTITUTE_BOT_APP_CLIENT_ID:
+        required: false
+        description: |
+          swift-institute-bot App client ID (org-level secret). With the
+          private key, lets configure-private-repos mint per-job
+          contents:read installation tokens for the layer orgs so
+          `swift package resolve` can clone private intra-Institute deps.
+      SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY:
+        required: false
+        description: |
+          swift-institute-bot App private key (org-level secret).
+          Counterpart of SWIFT_INSTITUTE_BOT_APP_CLIENT_ID.
 
 # ─── Tool-version pins ──────────────────────────────────────────────────
 # Workflow-level env vars centralize tool versions so each release bump
@@ -104,6 +126,8 @@ jobs:
       - uses: swift-institute/.github/.github/actions/configure-private-repos@main
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+          app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+          app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
           enabled: ${{ inputs.enable-private-repos }}
 
       - name: Select Xcode ${{ env.XCODE_VERSION }}
@@ -145,6 +169,8 @@ jobs:
       - uses: swift-institute/.github/.github/actions/configure-private-repos@main
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+          app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+          app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
           enabled: ${{ inputs.enable-private-repos }}
 
       - name: Print toolchain info
@@ -186,6 +212,8 @@ jobs:
       - uses: swift-institute/.github/.github/actions/configure-private-repos@main
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+          app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+          app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
           enabled: ${{ inputs.enable-private-repos }}
 
       - name: Print toolchain info
@@ -225,6 +253,8 @@ jobs:
       - uses: swift-institute/.github/.github/actions/configure-private-repos@main
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+          app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+          app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
           enabled: ${{ inputs.enable-private-repos }}
 
       - name: Install Swift

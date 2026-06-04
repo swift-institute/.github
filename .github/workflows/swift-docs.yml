@@ -96,7 +96,7 @@ on:
       enable-private-repos:
         type: boolean
         default: true
-        description: "If true, configure git to use PRIVATE_REPO_TOKEN for github.com clones during DocC's `swift build`. Default true: most consumers depend on private deps; public-only consumers may pass false explicitly."
+        description: "If true, configure credentialed git url rewrites (App-token primary, PRIVATE_REPO_TOKEN fallback) for github.com clones during DocC's `swift build`. Default true: most consumers depend on private deps; public-only consumers may pass false explicitly."
       swift-version:
         type: string
         default: "6.3"
@@ -104,6 +104,22 @@ on:
     secrets:
       PRIVATE_REPO_TOKEN:
         required: false
+        description: |
+          Legacy github.com-wide fallback credential for private-dep
+          clones. Superseded by the App-token path; retained for orgs
+          not yet provisioned with the App secrets.
+      SWIFT_INSTITUTE_BOT_APP_CLIENT_ID:
+        required: false
+        description: |
+          swift-institute-bot App client ID (org-level secret). With the
+          private key, lets configure-private-repos mint per-job
+          contents:read installation tokens for the layer orgs so DocC's
+          `swift build` can clone private intra-Institute deps.
+      SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY:
+        required: false
+        description: |
+          swift-institute-bot App private key (org-level secret).
+          Counterpart of SWIFT_INSTITUTE_BOT_APP_CLIENT_ID.
 
 jobs:
   docs:
@@ -135,6 +151,8 @@ jobs:
       - uses: swift-institute/.github/.github/actions/configure-private-repos@main
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+          app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+          app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
           enabled: ${{ inputs.enable-private-repos }}
 
       - name: Derive umbrella metadata
