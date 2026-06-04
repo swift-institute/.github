@@ -38,11 +38,19 @@ name: Swift DocC (reusable)
 # parity preserved — Linux DocC is the same toolchain DocC, just
 # without the xcrun front-end.
 #
-# Consume from a caller package's .github/workflows/docs.yml via:
+# Consume via YOUR LAYER ORG's swift-docs.yml wrapper, NOT this workflow
+# directly. Org-secret delivery across an org boundary requires explicit
+# forwarding — `secrets: inherit` on a cross-org call delivers no org
+# secrets (proven 2026-06-04, byte-primitives run 26959288611:
+# "Configured 0" via cross-org inherit vs "Configured 4" via the
+# same-org-wrapper -> explicit-forward chain). The layer wrappers carry
+# the explicit `secrets:` block; a direct cross-org call leaves the
+# private-dep credentials behind and resolve fails on any private dep.
 #
 #   jobs:
 #     docs:
-#       uses: swift-institute/.github/.github/workflows/swift-docs.yml@main
+#       uses: swift-primitives/.github/.github/workflows/swift-docs.yml@main
+#       # (or swift-standards/… / swift-foundations/… per your layer)
 #       with:
 #         umbrella-module: Property_Primitives
 #         umbrella-display-name: "Property Primitives"
