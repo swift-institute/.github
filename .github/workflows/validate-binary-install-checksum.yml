@@ -63,5 +63,5 @@ jobs:
       rule-id-regex: '^CI-082'
       discovery-mode: wrapper-host-multi-file
       target-repo: ${{ inputs.repo }}
-      dry-run: ${{ inputs.dry-run }}
+      dry-run: ${{ inputs.dry-run == true }}
     secrets: inherit

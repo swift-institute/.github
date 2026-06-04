@@ -56,5 +56,5 @@ jobs:
       rule-id-regex: '^PATTERN-'
       discovery-mode: single-target
       target-repo: ${{ inputs.repo }}
-      dry-run: ${{ inputs.dry-run }}
+      dry-run: ${{ inputs.dry-run == true }}
     secrets: inherit
