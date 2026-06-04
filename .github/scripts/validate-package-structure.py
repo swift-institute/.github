@@ -36,6 +36,7 @@ Batch 5); merged-root + type/ops-split update 2026-05-24.
 """
 from __future__ import annotations
 
+import glob as globmod
 import json
 import os
 import re
@@ -163,7 +164,28 @@ def validate(repo: str, pkg: dict, sources_dir: str = "Sources") -> int:
     umbrella_target_name = f"{domain} Primitives"
     umbrella = target_by_name.get(umbrella_target_name)
     if umbrella:
-        src = umbrella.get("sources") or []
+        src = umbrella.get("sources")
+        if src is None:
+            # `swift package dump-package` emits "sources": null when the
+            # manifest relies on default source discovery (the corpus
+            # convention). Fall back to the filesystem so conforming
+            # umbrellas (exports.swift only) don't false-positive with
+            # src=[]; non-.swift entries (the .docc catalog) are out of
+            # scope for the only-exports.swift check. Relative ts_path
+            # matches the CI invocation contract (cwd = cloned repo root),
+            # same assumption as the exports-content check below.
+            fallback_path = umbrella.get("path") or f"Sources/{umbrella_target_name}"
+            all_rel = (
+                os.path.relpath(p, fallback_path)
+                for p in globmod.glob(
+                    os.path.join(fallback_path, "**", "*.swift"), recursive=True
+                )
+            )
+            src = sorted(
+                rel
+                for rel in all_rel
+                if not any(part.endswith(".docc") for part in rel.split(os.sep))
+            )
         if not is_type_ops_split and (len(src) != 1 or src[0] != "exports.swift"):
             emit(repo, "MOD-005",
                  f"Umbrella target {umbrella_target_name!r} has non-exports source files: "
