@@ -53,6 +53,13 @@ on:
           swift-institute-bot App client ID (org-level secret). With the
           private key, lets configure-private-repos mint per-job
           contents:read installation tokens for the layer orgs.
+      SWIFT_INSTITUTE_BOT_APP_ID:
+        required: false
+        description: |
+          Legacy-era App ID secret name carried by some orgs (e.g.
+          swift-primitives; numeric App ID value class). Accepted as
+          fallback when _APP_CLIENT_ID is absent; client-id wins when
+          both exist (create-github-app-token@v3 resolution order).
       SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY:
         required: false
         description: |
@@ -83,6 +90,7 @@ jobs:
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
           app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+          app-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
           app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
 
       - name: Diagnose API breaking changes

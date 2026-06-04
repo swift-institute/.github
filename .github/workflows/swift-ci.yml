@@ -30,8 +30,9 @@ name: Swift CI (reusable)
 # configure-git step. Credential resolution order (see the
 # configure-private-repos composite): per-job swift-institute-bot App
 # installation tokens (contents:read, auto-expiring) minted from the
-# org-level SWIFT_INSTITUTE_BOT_APP_CLIENT_ID/_APP_PRIVATE_KEY secrets;
-# legacy PRIVATE_REPO_TOKEN as github.com-wide fallback. `secrets:
+# org-level SWIFT_INSTITUTE_BOT_APP_CLIENT_ID (or legacy-era
+# SWIFT_INSTITUTE_BOT_APP_ID) + _APP_PRIVATE_KEY secrets; legacy
+# PRIVATE_REPO_TOKEN as github.com-wide fallback. `secrets:
 # inherit` is uniform across all consumers per
 # [CI-031]/[CI-058]/[CI-059] post-uniformity-sweep, so the org-level
 # secrets flow through without per-package ci.yml edits.
@@ -65,7 +66,7 @@ on:
       enable-private-repos:
         type: boolean
         default: true
-        description: "If true, configure git to use PRIVATE_REPO_TOKEN for github.com clones. Default true: most consumers in the swift-primitives ecosystem have private deps and need the token; public-only consumers may pass false explicitly."
+        description: "If true, configure credentialed git url rewrites (App-token primary, PRIVATE_REPO_TOKEN fallback) for github.com clones. Default true: most consumers in the swift-primitives ecosystem have private deps and need the credentials; public-only consumers may pass false explicitly."
       macos-runner:
         type: string
         default: "macos-26"
@@ -88,6 +89,13 @@ on:
           private key, lets configure-private-repos mint per-job
           contents:read installation tokens for the layer orgs so
           `swift package resolve` can clone private intra-Institute deps.
+      SWIFT_INSTITUTE_BOT_APP_ID:
+        required: false
+        description: |
+          Legacy-era App ID secret name carried by some orgs (e.g.
+          swift-primitives; numeric App ID value class). Accepted as
+          fallback when _APP_CLIENT_ID is absent; client-id wins when
+          both exist (create-github-app-token@v3 resolution order).
       SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY:
         required: false
         description: |
@@ -127,6 +135,7 @@ jobs:
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
           app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+          app-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
           app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
           enabled: ${{ inputs.enable-private-repos }}
 
@@ -170,6 +179,7 @@ jobs:
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
           app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+          app-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
           app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
           enabled: ${{ inputs.enable-private-repos }}
 
@@ -213,6 +223,7 @@ jobs:
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
           app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+          app-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
           app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
           enabled: ${{ inputs.enable-private-repos }}
 
@@ -254,6 +265,7 @@ jobs:
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
           app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+          app-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
           app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
           enabled: ${{ inputs.enable-private-repos }}
 
