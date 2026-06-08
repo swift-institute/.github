@@ -348,15 +348,34 @@ jobs:
           echo "Xcode: $(xcode-select -p)"
           echo "Platform: ${{ matrix.platform }} Simulator"
 
-      - name: Build for ${{ matrix.platform }} Simulator
-        # A generic simulator destination is sufficient — no booted simulator
-        # is needed and it reproduces the same resource-bundle CodeSign
-        # failure as a concrete device id. No `.build` cache per [CI-040].
+      - name: Discover SwiftPM-generated scheme
+        # The scheme name is NOT always the package name — a package may
+        # rename its product/namespace (e.g. [MOD-031]), so deriving the
+        # scheme from the manifest name alone breaks. Probe
+        # `xcodebuild -list -json`; fall back to `swift package describe`.
+        # (Matches the proven L1-wrapper discovery shape.)
         shell: bash
         run: |
           set -euo pipefail
-          SCHEME="$(swift package dump-package | python3 -c 'import sys, json; print(json.load(sys.stdin)["name"])')"
-          echo "Scheme: ${SCHEME}"
+          SCHEME=$(xcodebuild -list -json 2>/dev/null | jq -r '.project.schemes[0] // .workspace.schemes[0] // ""')
+          if [ -z "$SCHEME" ]; then
+            SCHEME=$(swift package describe --type json | jq -r '.name')
+          fi
+          if [ -z "$SCHEME" ]; then
+            echo "Could not determine scheme name" >&2
+            exit 1
+          fi
+          echo "Discovered scheme: ${SCHEME}"
+          echo "SCHEME=${SCHEME}" >> "$GITHUB_ENV"
+
+      - name: Build for ${{ matrix.platform }} Simulator
+        # A generic simulator destination is sufficient — no booted simulator
+        # is needed and it reproduces the same resource-bundle CodeSign failure
+        # as a concrete device id. No `.build` cache per [CI-040]. This is the
+        # only leg that runs the resource-bundle CodeSign phase.
+        shell: bash
+        run: |
+          set -euo pipefail
           xcodebuild build \
             -scheme "${SCHEME}" \
             -destination "generic/platform=${{ matrix.platform }} Simulator" \
