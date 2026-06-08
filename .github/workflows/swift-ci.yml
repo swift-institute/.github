@@ -294,11 +294,13 @@ jobs:
   # ─── Apple-simulator build (γ advisory; resource-bundle CodeSign gate) ──
   # `swift build` / `swift test` (the macOS/Linux/Windows legs above) never
   # run the resource-bundle CodeSign phase. `xcodebuild` against a simulator
-  # destination does — it is the only leg that catches spaced/invalid
-  # resource-bundle identifiers (e.g. a target named "ISO 639" produces
-  # "swift-iso-639_ISO 639.bundle", which fails codesign with "bundle format
-  # unrecognized, invalid, or unsuitable" on every consumer's Apple-platform
-  # build while staying invisible to `swift test`). Per [CI-091] the matrix
+  # destination does — it is the only leg that catches resource bundles that
+  # fail iOS codesign. Known trigger: a SwiftPM resource bundle containing a
+  # top-level directory named `Resources` (from `.copy("Resources")`) collides
+  # with the reserved bundle layout and fails with "bundle format unrecognized,
+  # invalid, or unsuitable" on the simulator — invisible to `swift test`.
+  # (Origin: swift-iso/swift-iso-639#3; fix = rename the copied dir, e.g.
+  # `.copy("Data")`.) Per [CI-091] the matrix
   # covers all four Apple simulator platforms and is never collapsed.
   apple-simulator-build:
     name: ${{ matrix.platform }} Simulator (Swift ${{ inputs.swift-version }}, debug)

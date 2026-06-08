@@ -161,7 +161,8 @@ def main(repo: str, repo_root: str) -> int:
     # apple-simulator-build: advisory matrix leg per [CI-010] + [CI-091].
     # `xcodebuild` against iOS/tvOS/watchOS/visionOS simulators exercises the
     # resource-bundle CodeSign phase that `swift build`/`swift test` skip —
-    # the step that catches spaced/invalid bundle identifiers. The leg is
+    # the step that catches resource bundles failing iOS codesign — a bundle
+    # with a `Resources/`-named dir collides with the reserved layout. The leg is
     # advisory (continue-on-error) during the soak window per [CI-021]/
     # [CI-091]; the matrix is never collapsed below the four Apple platforms.
     apple = jobs.get("apple-simulator-build")
