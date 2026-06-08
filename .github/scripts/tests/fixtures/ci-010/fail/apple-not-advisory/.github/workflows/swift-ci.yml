@@ -1,5 +1,10 @@
 name: Swift CI (reusable)
 
+# CI-010 fail fixture: apple-simulator-build is present with the full
+# four-platform matrix, but lacks `continue-on-error: true`. During the soak
+# window the leg MUST be advisory per [CI-021]/[CI-091]. Expect a CI-010
+# finding (apple-simulator-build not advisory).
+
 on:
   workflow_call:
 
@@ -17,7 +22,7 @@ jobs:
       - run: echo "linux-release"
 
   linux-nightly:
-    name: Ubuntu (Swift 6.4-dev nightly)
+    name: Ubuntu (Swift main nightly)
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
@@ -32,15 +37,8 @@ jobs:
   apple-simulator-build:
     name: ${{ matrix.platform }} Simulator
     runs-on: macos-26
-    continue-on-error: true
     strategy:
       matrix:
         platform: [iOS, tvOS, watchOS, visionOS]
     steps:
       - run: echo "apple-simulator-build ${{ matrix.platform }}"
-
-  # Quality-gate jobs (out of [CI-010] scope)
-  format:
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo "format"

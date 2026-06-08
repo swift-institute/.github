@@ -11,13 +11,20 @@ per-package repo tree. Distinct shape from validate-package-shape.py /
 validate-thin-callers.py (both of which iterate per-repo).
 
 Rules checked:
-  [CI-010]  The universal CI matrix MUST consist of exactly four jobs with
-            specific names and shapes:
+  [CI-010]  The universal CI matrix MUST consist of four gating jobs with
+            specific names and shapes, plus the advisory apple-simulator-build
+            leg:
               - macos-release   : macOS runner   + Swift 6.3, debug
               - linux-release   : Ubuntu runner  + Swift 6.3, release
               - linux-nightly   : Ubuntu runner  + Swift main nightly,
                                   continue-on-error: true
               - windows-release : Windows runner + Swift 6.3, release
+              - apple-simulator-build : macOS runner + strategy.matrix over the
+                                  four Apple simulator platforms (iOS / tvOS /
+                                  watchOS / visionOS), continue-on-error: true
+                                  (advisory soak per [CI-021]/[CI-091]).
+                                  Exercises the resource-bundle CodeSign phase
+                                  that swift build/test skip.
 
   [CI-099]  The `windows-release` job MUST stay gating — `continue-on-error: true`
             is forbidden. Windows is a first-class target platform; advisory-
@@ -151,6 +158,48 @@ def main(repo: str, repo_root: str) -> int:
             "weaken the gate.",
         )
         findings += 1
+    # apple-simulator-build: advisory matrix leg per [CI-010] + [CI-091].
+    # `xcodebuild` against iOS/tvOS/watchOS/visionOS simulators exercises the
+    # resource-bundle CodeSign phase that `swift build`/`swift test` skip —
+    # the step that catches spaced/invalid bundle identifiers. The leg is
+    # advisory (continue-on-error) during the soak window per [CI-021]/
+    # [CI-091]; the matrix is never collapsed below the four Apple platforms.
+    apple = jobs.get("apple-simulator-build")
+    if not isinstance(apple, dict):
+        emit(
+            repo,
+            "CI-010",
+            "required matrix job 'apple-simulator-build' missing from jobs: "
+            "block per [CI-010] — the Apple-simulator advisory leg "
+            "(iOS/tvOS/watchOS/visionOS) catches resource-bundle CodeSign "
+            "failures that swift build/test never surface",
+        )
+        findings += 1
+    else:
+        findings += check_runner(repo, "apple-simulator-build", apple, "macos")
+        if apple.get("continue-on-error") is not True:
+            emit(
+                repo,
+                "CI-010",
+                "apple-simulator-build MUST set `continue-on-error: true` per "
+                "[CI-021]/[CI-091] during the soak window — the Apple-simulator "
+                "legs are advisory until green ecosystem-wide",
+            )
+            findings += 1
+        platforms = (
+            ((apple.get("strategy") or {}).get("matrix") or {}).get("platform")
+        ) or []
+        missing = {"iOS", "tvOS", "watchOS", "visionOS"} - set(platforms)
+        if missing:
+            emit(
+                repo,
+                "CI-010",
+                "apple-simulator-build matrix MUST cover all four Apple "
+                "simulator platforms per [CI-091] uniform-platform-matrix "
+                "doctrine (never collapsed; M4 REJECT 2026-05-06); missing: "
+                f"{sorted(missing)}",
+            )
+            findings += 1
     return findings
 
 

@@ -1,5 +1,11 @@
 name: Swift CI (reusable)
 
+# CI-010 fail fixture: apple-simulator-build is present and advisory, but its
+# matrix is collapsed to a single platform. Per [CI-091] uniform-platform-
+# matrix doctrine the matrix MUST cover all four Apple simulator platforms
+# (never collapsed; M4 REJECT 2026-05-06). Expect a CI-010 finding (missing
+# tvOS / watchOS / visionOS).
+
 on:
   workflow_call:
 
@@ -17,7 +23,7 @@ jobs:
       - run: echo "linux-release"
 
   linux-nightly:
-    name: Ubuntu (Swift 6.4-dev nightly)
+    name: Ubuntu (Swift main nightly)
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
@@ -35,12 +41,6 @@ jobs:
     continue-on-error: true
     strategy:
       matrix:
-        platform: [iOS, tvOS, watchOS, visionOS]
+        platform: [iOS]
     steps:
       - run: echo "apple-simulator-build ${{ matrix.platform }}"
-
-  # Quality-gate jobs (out of [CI-010] scope)
-  format:
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo "format"

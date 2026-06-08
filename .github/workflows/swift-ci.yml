@@ -291,6 +291,78 @@ jobs:
             swift test -c debug
           }
 
+  # ─── Apple-simulator build (γ advisory; resource-bundle CodeSign gate) ──
+  # `swift build` / `swift test` (the macOS/Linux/Windows legs above) never
+  # run the resource-bundle CodeSign phase. `xcodebuild` against a simulator
+  # destination does — it is the only leg that catches spaced/invalid
+  # resource-bundle identifiers (e.g. a target named "ISO 639" produces
+  # "swift-iso-639_ISO 639.bundle", which fails codesign with "bundle format
+  # unrecognized, invalid, or unsuitable" on every consumer's Apple-platform
+  # build while staying invisible to `swift test`). Per [CI-091] the matrix
+  # covers all four Apple simulator platforms and is never collapsed.
+  apple-simulator-build:
+    name: ${{ matrix.platform }} Simulator (Swift ${{ inputs.swift-version }}, debug)
+    if: ${{ !github.event.repository.private }}
+    runs-on: ${{ inputs.macos-runner }}
+    # [CI-021]/[CI-091] advisory leg during the apple-simulator soak window.
+    # continue-on-error keeps these legs non-gating (excluded from ci-ok
+    # needs, like linux-nightly) while the ecosystem absorbs the new platform
+    # coverage. Valid at job level because this is a runs-on job, not a
+    # `uses:` job — [CI-105] only forbids the combo on workflow_call jobs.
+    # Promote to gating (drop this line + add to ci-ok needs) per the soak
+    # protocol once the legs are green ecosystem-wide.
+    continue-on-error: true
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        # [CI-091] uniform-platform-matrix doctrine: the four Apple simulator
+        # platforms are the platform contract, never collapsed to a
+        # representative subset (M4 REJECT 2026-05-06).
+        platform: [iOS, tvOS, watchOS, visionOS]
+    steps:
+      - name: Harden runner (audit-mode egress logging)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@v6
+
+      - uses: swift-institute/.github/.github/actions/configure-private-repos@main
+        with:
+          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+          app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+          app-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
+          app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          enabled: ${{ inputs.enable-private-repos }}
+
+      - name: Select Xcode ${{ env.XCODE_VERSION }}
+        run: sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
+
+      - name: Print toolchain info
+        run: |
+          swift --version
+          echo "Runner image: ${{ runner.os }} on ${{ inputs.macos-runner }}"
+          echo "Xcode: $(xcode-select -p)"
+          echo "Platform: ${{ matrix.platform }} Simulator"
+
+      - name: Build for ${{ matrix.platform }} Simulator
+        # A generic simulator destination is sufficient — no booted simulator
+        # is needed and it reproduces the same resource-bundle CodeSign
+        # failure as a concrete device id. No `.build` cache per [CI-040].
+        shell: bash
+        run: |
+          set -euo pipefail
+          SCHEME="$(swift package dump-package | python3 -c 'import sys, json; print(json.load(sys.stdin)["name"])')"
+          echo "Scheme: ${SCHEME}"
+          xcodebuild build \
+            -scheme "${SCHEME}" \
+            -destination "generic/platform=${{ matrix.platform }} Simulator" \
+            -skipPackagePluginValidation \
+            -skipMacroValidation
+
   # ─── Ecosystem-wide quality gates ─────────────────────────────────────
   # `format` and `lint` run on every consumer CI in parallel with the
   # matrix. They read each consumer's own `.swift-format` and
