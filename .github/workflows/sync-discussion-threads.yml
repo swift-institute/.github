@@ -131,7 +131,7 @@ jobs:
           repositories: ${{ steps.scope.outputs.target-name }}
 
       - name: Checkout target repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: ${{ inputs.repo }}
           token: ${{ steps.target-token.outputs.token }}
