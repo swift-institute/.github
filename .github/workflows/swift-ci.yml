@@ -503,16 +503,20 @@ jobs:
 
   swift-linter:
     name: swift-linter (Phase 1, advisory)
-    # DISABLED 2026-05-08: swift-foundations/swift-linter is still private and
-    # not yet ready for ecosystem consumption. The actions/checkout step against
-    # the private repo fails on public-repo CI runs, producing noise even
-    # though continue-on-error keeps the consumer build green. Re-enable by
-    # restoring the prior `if: ${{ !github.event.repository.private }}` line
-    # once swift-linter is publishable.
-    if: false
+    # Phase 1 advisory (continue-on-error). FILE-GATED: lints only consumers
+    # that ship a `Lint.swift` at the repo root (the consumer config shape per
+    # swift-linter [LINT-SETUP-001]); consumers without one short-circuit at the
+    # detect step (cheap no-op). No opt-in input — the file IS the activation
+    # signal, so coverage grows as packages add one.
+    #
+    # Re-enabled 2026-06-24 after swift-foundations/swift-linter went public
+    # (was DISABLED 2026-05-08 while the linter repo was private). Builds the
+    # linter from source via `swift run`; private-dep auth comes from the same
+    # configure-private-repos step the build/test matrix jobs use.
+    if: ${{ !github.event.repository.private }}
     runs-on: ubuntu-latest
     container: swift:${{ inputs.swift-version }}
-    timeout-minutes: 15
+    timeout-minutes: 30
     continue-on-error: true
     permissions:
       contents: read
@@ -526,15 +530,38 @@ jobs:
         with:
           path: consumer
 
-      - uses: actions/checkout@v6
+      - name: Detect Lint.swift
+        id: detect
+        shell: bash
+        working-directory: consumer
+        run: |
+          if [ -f Lint.swift ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+            echo "Found Lint.swift — running swift-linter."
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "No Lint.swift at repo root — skipping swift-linter (no-op)."
+          fi
+
+      - name: Configure private-dep access
+        if: ${{ steps.detect.outputs.present == 'true' }}
+        uses: swift-institute/.github/.github/actions/configure-private-repos@main
+        with:
+          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+          app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+          app-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
+          app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          enabled: ${{ inputs.enable-private-repos }}
+
+      - name: Checkout swift-linter
+        if: ${{ steps.detect.outputs.present == 'true' }}
+        uses: actions/checkout@v6
         with:
           repository: swift-foundations/swift-linter
           path: swift-linter
-          # NOTE: repository is not yet published in Phase 1 — this step will
-          # fail until the linter package is created on GitHub. continue-on-error
-          # at the job level keeps the consumer build green during the gap.
 
       - name: Run swift-linter
+        if: ${{ steps.detect.outputs.present == 'true' }}
         working-directory: swift-linter
         run: swift run swift-linter ../consumer
 

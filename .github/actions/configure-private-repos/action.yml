@@ -6,8 +6,11 @@
 #   1. PRIMARY — swift-institute-bot App installation tokens. When the
 #      caller passes an App ID secret + `app-private-key` (the org-level
 #      SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY secret), the composite mints one
-#      short-lived installation token per dependency-hosting layer org
-#      (swift-primitives, swift-standards, swift-foundations) via
+#      short-lived installation token per dependency-hosting org — the three
+#      layer orgs (swift-primitives, swift-standards, swift-foundations) plus
+#      the per-authority sub-orgs that host private deps of public consumers
+#      (swift-iso, swift-microsoft, swift-arm-ltd, swift-intel,
+#      swift-linux-foundation, swift-ietf) — via
 #      actions/create-github-app-token@v3, downscoped to `contents: read`,
 #      and writes one org-prefixed rewrite rule per org:
 #
@@ -42,14 +45,17 @@
 #      on private repos, so public-repo delivery is the only path CI uses.
 #      Never request all-repositories visibility.
 #
-#      The org list is deliberately hardcoded as three unrolled steps:
-#      composite actions cannot loop a `uses:` step ([CI-070](a)), and the
-#      transitive dependency graph is unknowable before resolve, so
-#      "narrowest org scope that resolves the graph" = the fixed set of
-#      layer orgs that host package dependencies. When a per-authority
-#      sub-org (swift-ietf, swift-iso, …) first hosts a PRIVATE dep of a
-#      public consumer, add one mint step + one emit line here — this
-#      composite is the single edit point.
+#      The org list is deliberately hardcoded as unrolled steps: composite
+#      actions cannot loop a `uses:` step ([CI-070](a)), and the transitive
+#      dependency graph is unknowable before resolve, so "narrowest org scope
+#      that resolves the graph" = the fixed set of orgs that host package
+#      dependencies. Currently nine: the three layer orgs plus six sub-orgs
+#      (swift-iso, swift-microsoft, swift-arm-ltd, swift-intel,
+#      swift-linux-foundation, swift-ietf) added 2026-06-24 when swift-linter
+#      (a public consumer) brought their private deps into a public graph.
+#      When another per-authority sub-org first hosts a PRIVATE dep of a
+#      public consumer, add one mint step + one env var + one emit line here —
+#      this composite is the single edit point.
 #
 #   2. FALLBACK — legacy PRIVATE_REPO_TOKEN. When non-empty, a github.com-
 #      wide rewrite rule is written (`url.https://<token>@github.com/`).
@@ -173,6 +179,75 @@ runs:
         owner: swift-foundations
         permission-contents: read
 
+    # Per-authority sub-orgs that host private deps of public consumers
+    # (added 2026-06-24 for swift-linter's graph; see header note). One
+    # unrolled mint per org — composite actions cannot loop a `uses:` step.
+    - id: mint-iso
+      if: ${{ inputs.enabled == 'true' && (inputs.app-client-id != '' || inputs.app-id != '') && inputs.app-private-key != '' }}
+      name: Mint App token (swift-iso, contents:read)
+      uses: actions/create-github-app-token@v3
+      with:
+        client-id: ${{ inputs.app-client-id }}
+        app-id: ${{ inputs.app-id }}
+        private-key: ${{ inputs.app-private-key }}
+        owner: swift-iso
+        permission-contents: read
+
+    - id: mint-microsoft
+      if: ${{ inputs.enabled == 'true' && (inputs.app-client-id != '' || inputs.app-id != '') && inputs.app-private-key != '' }}
+      name: Mint App token (swift-microsoft, contents:read)
+      uses: actions/create-github-app-token@v3
+      with:
+        client-id: ${{ inputs.app-client-id }}
+        app-id: ${{ inputs.app-id }}
+        private-key: ${{ inputs.app-private-key }}
+        owner: swift-microsoft
+        permission-contents: read
+
+    - id: mint-arm-ltd
+      if: ${{ inputs.enabled == 'true' && (inputs.app-client-id != '' || inputs.app-id != '') && inputs.app-private-key != '' }}
+      name: Mint App token (swift-arm-ltd, contents:read)
+      uses: actions/create-github-app-token@v3
+      with:
+        client-id: ${{ inputs.app-client-id }}
+        app-id: ${{ inputs.app-id }}
+        private-key: ${{ inputs.app-private-key }}
+        owner: swift-arm-ltd
+        permission-contents: read
+
+    - id: mint-intel
+      if: ${{ inputs.enabled == 'true' && (inputs.app-client-id != '' || inputs.app-id != '') && inputs.app-private-key != '' }}
+      name: Mint App token (swift-intel, contents:read)
+      uses: actions/create-github-app-token@v3
+      with:
+        client-id: ${{ inputs.app-client-id }}
+        app-id: ${{ inputs.app-id }}
+        private-key: ${{ inputs.app-private-key }}
+        owner: swift-intel
+        permission-contents: read
+
+    - id: mint-linux-foundation
+      if: ${{ inputs.enabled == 'true' && (inputs.app-client-id != '' || inputs.app-id != '') && inputs.app-private-key != '' }}
+      name: Mint App token (swift-linux-foundation, contents:read)
+      uses: actions/create-github-app-token@v3
+      with:
+        client-id: ${{ inputs.app-client-id }}
+        app-id: ${{ inputs.app-id }}
+        private-key: ${{ inputs.app-private-key }}
+        owner: swift-linux-foundation
+        permission-contents: read
+
+    - id: mint-ietf
+      if: ${{ inputs.enabled == 'true' && (inputs.app-client-id != '' || inputs.app-id != '') && inputs.app-private-key != '' }}
+      name: Mint App token (swift-ietf, contents:read)
+      uses: actions/create-github-app-token@v3
+      with:
+        client-id: ${{ inputs.app-client-id }}
+        app-id: ${{ inputs.app-id }}
+        private-key: ${{ inputs.app-private-key }}
+        owner: swift-ietf
+        permission-contents: read
+
     - if: ${{ inputs.enabled == 'true' }}
       name: Configure git url rewrites (env-scoped)
       shell: bash
@@ -181,6 +256,12 @@ runs:
         TOKEN_PRIMITIVES: ${{ steps.mint-primitives.outputs.token }}
         TOKEN_STANDARDS: ${{ steps.mint-standards.outputs.token }}
         TOKEN_FOUNDATIONS: ${{ steps.mint-foundations.outputs.token }}
+        TOKEN_ISO: ${{ steps.mint-iso.outputs.token }}
+        TOKEN_MICROSOFT: ${{ steps.mint-microsoft.outputs.token }}
+        TOKEN_ARM_LTD: ${{ steps.mint-arm-ltd.outputs.token }}
+        TOKEN_INTEL: ${{ steps.mint-intel.outputs.token }}
+        TOKEN_LINUX_FOUNDATION: ${{ steps.mint-linux-foundation.outputs.token }}
+        TOKEN_IETF: ${{ steps.mint-ietf.outputs.token }}
       run: |
         set -euo pipefail
         i=0
@@ -192,6 +273,12 @@ runs:
         if [ -n "${TOKEN_PRIMITIVES}" ]; then emit swift-primitives "${TOKEN_PRIMITIVES}"; fi
         if [ -n "${TOKEN_STANDARDS}" ]; then emit swift-standards "${TOKEN_STANDARDS}"; fi
         if [ -n "${TOKEN_FOUNDATIONS}" ]; then emit swift-foundations "${TOKEN_FOUNDATIONS}"; fi
+        if [ -n "${TOKEN_ISO}" ]; then emit swift-iso "${TOKEN_ISO}"; fi
+        if [ -n "${TOKEN_MICROSOFT}" ]; then emit swift-microsoft "${TOKEN_MICROSOFT}"; fi
+        if [ -n "${TOKEN_ARM_LTD}" ]; then emit swift-arm-ltd "${TOKEN_ARM_LTD}"; fi
+        if [ -n "${TOKEN_INTEL}" ]; then emit swift-intel "${TOKEN_INTEL}"; fi
+        if [ -n "${TOKEN_LINUX_FOUNDATION}" ]; then emit swift-linux-foundation "${TOKEN_LINUX_FOUNDATION}"; fi
+        if [ -n "${TOKEN_IETF}" ]; then emit swift-ietf "${TOKEN_IETF}"; fi
         if [ -n "${LEGACY_TOKEN}" ]; then
           echo "GIT_CONFIG_KEY_${i}=url.https://${LEGACY_TOKEN}@github.com/.insteadOf" >> "$GITHUB_ENV"
           echo "GIT_CONFIG_VALUE_${i}=https://github.com/" >> "$GITHUB_ENV"
