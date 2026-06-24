@@ -553,29 +553,58 @@ jobs:
           app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
           enabled: ${{ inputs.enable-private-repos }}
 
-      - name: Checkout swift-linter
-        if: ${{ steps.detect.outputs.present == 'true' }}
-        uses: actions/checkout@v6
-        with:
-          repository: swift-foundations/swift-linter
-          path: swift-linter
-
       # swift-linter's dependency graph pulls swift-linux-standard, whose
       # CLinuxKernelShim #includes <uuid/uuid.h> — absent from the minimal
       # swift:N image ([CI-092]). Install libuuid headers before building
-      # (covers both the linter build and the Lint.swift eval-project build).
+      # (covers both the dispatcher build and the Lint.swift eval-project build).
       - name: Install system libraries (libuuid)
         if: ${{ steps.detect.outputs.present == 'true' }}
         run: apt-get update -qq && apt-get install -qq -y uuid-dev
 
+      # ── Tag-free engine-binary cache (Phase 1 of
+      # near-instant-lint-with-external-rule-loading.md) ──
+      # Build the swift-linter dispatcher CLI once per engine `main` HEAD and
+      # reuse it, removing the ~270s engine build from every run where main is
+      # unchanged. The cache key is the immutable engine commit sha (+ Swift
+      # version): a [CI-044] versioned-tool-binary cache (single binary, NOT a
+      # `.build/` cache — [CI-040] honored), exact-match with no restore-keys
+      # ([CI-042]). No tag / no release: tracks `main` per the ecosystem
+      # branch:"main" convention.
+      - name: Resolve swift-linter main HEAD
+        if: ${{ steps.detect.outputs.present == 'true' }}
+        id: linter-sha
+        run: echo "sha=$(git ls-remote https://github.com/swift-foundations/swift-linter.git main | cut -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache swift-linter dispatcher binary
+        if: ${{ steps.detect.outputs.present == 'true' }}
+        id: cache-swift-linter
+        uses: actions/cache@v5
+        with:
+          path: /usr/local/bin/swift-linter
+          key: ${{ runner.os }}-swift${{ inputs.swift-version }}-linterbin-${{ steps.linter-sha.outputs.sha }}
+
+      - name: Checkout swift-linter (cache miss)
+        if: ${{ steps.detect.outputs.present == 'true' && steps.cache-swift-linter.outputs.cache-hit != 'true' }}
+        uses: actions/checkout@v6
+        with:
+          repository: swift-foundations/swift-linter
+          ref: ${{ steps.linter-sha.outputs.sha }}
+          path: swift-linter
+
+      - name: Build swift-linter dispatcher (cache miss)
+        if: ${{ steps.detect.outputs.present == 'true' && steps.cache-swift-linter.outputs.cache-hit != 'true' }}
+        run: |
+          set -euo pipefail
+          swift build --package-path swift-linter --product swift-linter
+          install -m 0755 swift-linter/.build/debug/swift-linter /usr/local/bin/swift-linter
+
       - name: Run swift-linter
         if: ${{ steps.detect.outputs.present == 'true' }}
-        working-directory: swift-linter
-        # The single-file `Lint.swift` dispatch materializes an eval project
-        # that path-depends on the linter engine; the driver reads its own
-        # checkout location from SWIFT_LINTER_PATH (it can't infer it at
-        # runtime). $GITHUB_WORKSPACE is the container-mounted workspace.
-        run: SWIFT_LINTER_PATH="$GITHUB_WORKSPACE/swift-linter" swift run swift-linter ../consumer
+        # The dispatcher binary references the engine by branch:"main" (Phase 0)
+        # — NO SWIFT_LINTER_PATH — so it dispatches the eval without an engine
+        # source tree. The eval compiles the consumer's rule packs + the engine
+        # `Linter` library (private-dep auth configured above; libuuid present).
+        run: swift-linter "$GITHUB_WORKSPACE/consumer"
 
   # ════════════════════════════════════════════════════════════════════════
   # Advisory CI gates — grouped by category for UI clarity.
