@@ -593,6 +593,7 @@ jobs:
 
       - name: Build swift-linter dispatcher (cache miss)
         if: ${{ steps.detect.outputs.present == 'true' && steps.cache-swift-linter.outputs.cache-hit != 'true' }}
+        shell: bash   # the swift:N container's default run-shell is dash; need bash for `set -o pipefail`
         run: |
           set -euo pipefail
           swift build --package-path swift-linter --product swift-linter
