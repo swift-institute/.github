@@ -560,6 +560,14 @@ jobs:
           repository: swift-foundations/swift-linter
           path: swift-linter
 
+      # swift-linter's dependency graph pulls swift-linux-standard, whose
+      # CLinuxKernelShim #includes <uuid/uuid.h> — absent from the minimal
+      # swift:N image ([CI-092]). Install libuuid headers before building
+      # (covers both the linter build and the Lint.swift eval-project build).
+      - name: Install system libraries (libuuid)
+        if: ${{ steps.detect.outputs.present == 'true' }}
+        run: apt-get update -qq && apt-get install -qq -y uuid-dev
+
       - name: Run swift-linter
         if: ${{ steps.detect.outputs.present == 'true' }}
         working-directory: swift-linter
