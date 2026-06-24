@@ -563,7 +563,11 @@ jobs:
       - name: Run swift-linter
         if: ${{ steps.detect.outputs.present == 'true' }}
         working-directory: swift-linter
-        run: swift run swift-linter ../consumer
+        # The single-file `Lint.swift` dispatch materializes an eval project
+        # that path-depends on the linter engine; the driver reads its own
+        # checkout location from SWIFT_LINTER_PATH (it can't infer it at
+        # runtime). $GITHUB_WORKSPACE is the container-mounted workspace.
+        run: SWIFT_LINTER_PATH="$GITHUB_WORKSPACE/swift-linter" swift run swift-linter ../consumer
 
   # ════════════════════════════════════════════════════════════════════════
   # Advisory CI gates — grouped by category for UI clarity.
