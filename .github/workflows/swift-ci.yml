@@ -500,9 +500,14 @@ jobs:
   # via `swift run --package-path` against a checkout of swift-linter. Once
   # the package is published with a binary release, this step swaps to a
   # cached-binary install (mirroring the SwiftLint job above).
+  #
+  # Phase 3 (2026-06-25): adds a composite-keyed prebuilt "standard runner"
+  # cache so pure-bundle consumers lint warm in ~0.65s instead of paying the
+  # per-run eval recompile. See the runner-cache steps below and the research
+  # doc's Phase-3 § (A-dynamic composite key).
 
   swift-linter:
-    name: swift-linter (Phase 1, advisory)
+    name: swift-linter (Phase 1+3, advisory)
     # Phase 1 advisory (continue-on-error). FILE-GATED: lints only consumers
     # that ship a `Lint.swift` at the repo root (the consumer config shape per
     # swift-linter [LINT-SETUP-001]); consumers without one short-circuit at the
@@ -583,8 +588,57 @@ jobs:
           path: /usr/local/bin/swift-linter
           key: ${{ runner.os }}-swift${{ inputs.swift-version }}-linterbin-${{ steps.linter-sha.outputs.sha }}
 
+      # ── Standard-runner full-bake cache (Phase 3 of
+      # near-instant-lint-with-external-rule-loading.md) ──
+      # A prebuilt "standard runner" (engine + SwiftSyntax + the standard
+      # primitives rule packs — `Runner/` in the swift-linter repo) lints
+      # pure-bundle consumers WARM in ~0.65s, skipping the per-run eval
+      # materialize-compile (the ~155s SwiftSyntax-from-source floor that
+      # dominates a cold eval). The dispatcher's CLI fast path
+      # (Lint.File.Single.Classifier) routes a bare-`Bundle.primitives` consumer
+      # to this runner via SWIFT_LINTER_RUNNER; inline/custom-rule consumers fall
+      # back to the eval path, so external/consumer-declared rule loading stays
+      # intact on both paths.
+      #
+      # The cache key ([CI-044] tool-binary carve-out — single binary, NOT a
+      # `.build` cache so [CI-040] is honored; exact-match with NO restore-keys
+      # per [CI-042]) is a COMPOSITE over the engine HEAD AND the standard
+      # rule-pack HEADs on branch:"main" ("A-dynamic"): a commit to the engine
+      # (which carries Runner/ too) or to ANY standard rule pack busts the key →
+      # one shared rebuild → instant warm thereafter, so the baked rule set
+      # always tracks latest-committed main. No tag / no version pin.
+      - name: Resolve standard rule-pack HEADs (composite runner key)
+        if: ${{ steps.detect.outputs.present == 'true' }}
+        id: runner-key
+        shell: bash
+        run: |
+          set -euo pipefail
+          engine='${{ steps.linter-sha.outputs.sha }}'
+          # The rule-source repos baked into the runner. Their `main` HEADs +
+          # the engine HEAD are the freshness coordinate; primitive support
+          # libs (cardinal/byte/tagged/…) are deliberately NOT keyed (they do
+          # not define rules and would tank the warm-hit rate — see the
+          # research doc Phase-3 §, composite-key scope).
+          primrules=$(git ls-remote https://github.com/swift-primitives/swift-primitives-linter-rules.git main | cut -f1)
+          instrules=$(git ls-remote https://github.com/swift-foundations/swift-institute-linter-rules.git main | cut -f1)
+          unirules=$(git ls-remote https://github.com/swift-foundations/swift-linter-rules.git main | cut -f1)
+          linterprim=$(git ls-remote https://github.com/swift-primitives/swift-linter-primitives.git main | cut -f1)
+          digest=$(printf '%s\n' "$engine" "$primrules" "$instrules" "$unirules" "$linterprim" | sort | sha256sum | cut -d' ' -f1)
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "Runner composite digest=$digest (engine=$engine primrules=$primrules instrules=$instrules unirules=$unirules linterprim=$linterprim)"
+
+      - name: Cache swift-linter standard runner
+        if: ${{ steps.detect.outputs.present == 'true' }}
+        id: cache-runner
+        uses: actions/cache@v5
+        with:
+          path: /usr/local/bin/swift-linter-runner
+          key: ${{ runner.os }}-swift${{ inputs.swift-version }}-linterrunner-${{ steps.runner-key.outputs.digest }}
+
+      # Checkout the engine source when EITHER the dispatcher or the runner
+      # cache missed — both build from this checkout (Runner/ ships inside it).
       - name: Checkout swift-linter (cache miss)
-        if: ${{ steps.detect.outputs.present == 'true' && steps.cache-swift-linter.outputs.cache-hit != 'true' }}
+        if: ${{ steps.detect.outputs.present == 'true' && (steps.cache-swift-linter.outputs.cache-hit != 'true' || steps.cache-runner.outputs.cache-hit != 'true') }}
         uses: actions/checkout@v6
         with:
           repository: swift-foundations/swift-linter
@@ -599,12 +653,28 @@ jobs:
           swift build --package-path swift-linter --product swift-linter
           install -m 0755 swift-linter/.build/debug/swift-linter /usr/local/bin/swift-linter
 
+      - name: Build swift-linter standard runner (cache miss)
+        if: ${{ steps.detect.outputs.present == 'true' && steps.cache-runner.outputs.cache-hit != 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # One-time full bake (~310–560s): engine + SwiftSyntax + standard rule
+          # packs, debug. Shared across all consumers via the composite-keyed
+          # cache until a keyed HEAD moves.
+          swift build --package-path swift-linter/Runner --product runner
+          install -m 0755 swift-linter/Runner/.build/debug/runner /usr/local/bin/swift-linter-runner
+
       - name: Run swift-linter
         if: ${{ steps.detect.outputs.present == 'true' }}
         # The dispatcher binary references the engine by branch:"main" (Phase 0)
-        # — NO SWIFT_LINTER_PATH — so it dispatches the eval without an engine
-        # source tree. The eval compiles the consumer's rule packs + the engine
-        # `Linter` library (private-dep auth configured above; libuuid present).
+        # — NO SWIFT_LINTER_PATH — so it dispatches without an engine source tree.
+        # SWIFT_LINTER_RUNNER provisions the fast path: a bare-`Bundle.primitives`
+        # consumer is linted by the prebuilt runner (~0.65s warm); any inline/
+        # custom-rule consumer falls through to the eval path, which compiles the
+        # consumer's declared rule packs + the engine `Linter` library exactly as
+        # before (private-dep auth configured above; libuuid present).
+        env:
+          SWIFT_LINTER_RUNNER: /usr/local/bin/swift-linter-runner
         run: swift-linter "$GITHUB_WORKSPACE/consumer"
 
   # ════════════════════════════════════════════════════════════════════════
