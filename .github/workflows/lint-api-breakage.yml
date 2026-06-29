@@ -81,7 +81,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           # Need full enough history to reach the PR base SHA.
           fetch-depth: 0
