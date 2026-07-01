@@ -227,7 +227,7 @@ jobs:
           repositories: ''
 
       - name: Fetch runner + audit + setup scripts (sparse-checkout from swift-institute/.github)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: swift-institute/.github
           ref: main

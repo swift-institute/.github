@@ -82,12 +82,12 @@ jobs:
           egress-policy: audit
 
       - name: Checkout caller repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
 
       - name: Checkout swift-institute/.github (public; carries the check script)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: swift-institute/.github
           ref: ${{ inputs.ref }}

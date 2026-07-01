@@ -163,7 +163,7 @@ jobs:
           apt-get update -qq
           apt-get install -qq -y python3
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: swift-institute/.github/.github/actions/configure-private-repos@main
         with:
@@ -262,7 +262,7 @@ jobs:
           ls "${DOCS_WORK}/symbol-graphs/"
 
       - name: Fetch patch-umbrella-symbol-graph.py
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: swift-institute/.github
           ref: main
