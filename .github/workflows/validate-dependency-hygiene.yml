@@ -1,0 +1,60 @@
+# validate-dependency-hygiene.yml — verify [PKG-DEP-007] declared-dependency hygiene.
+#
+# Promoted 2026-07-01 from the dependency-reference-hygiene arc via
+# /lint-rule-promotion. Thin caller of validate-base.yml (single-target mode).
+#
+# Rule checked: [PKG-DEP-007] (unused-dependency half — a top-level `.package`
+# referenced by no `.product`). The under-declared and manifest-helper halves of
+# [PKG-DEP-007] remain text-only (deferred); see the companion script and
+# swift-institute/Audits/PROMOTE-PKG-DEP-007-2026-07-01.md.
+
+name: validate-dependency-hygiene
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/scripts/validate-dependency-hygiene.py'
+      - '.github/workflows/validate-dependency-hygiene.yml'
+  pull_request:
+    paths:
+      - '.github/scripts/validate-dependency-hygiene.py'
+      - '.github/workflows/validate-dependency-hygiene.yml'
+  workflow_call:
+    inputs:
+      repo:
+        description: 'Owner/name of the target repo to validate (default: this repo).'
+        type: string
+        required: false
+        default: ''
+      dry-run:
+        description: 'Run checks but do not fail the job on findings.'
+        type: boolean
+        required: false
+        default: false
+    outputs:
+      total-violations:
+        description: 'Total count of individual violations.'
+        value: ${{ jobs.scan.outputs.total-violations }}
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: 'Owner/name of the target repo to validate (optional).'
+        type: string
+        required: false
+      dry-run:
+        description: 'Run checks but do not fail the job on findings.'
+        type: boolean
+        required: false
+        default: false
+
+jobs:
+  scan:
+    uses: ./.github/workflows/validate-base.yml
+    with:
+      validator-script: .github/scripts/validate-dependency-hygiene.py
+      rule-id-regex: '^PKG-DEP-'
+      discovery-mode: single-target
+      target-repo: ${{ inputs.repo }}
+      dry-run: ${{ inputs.dry-run == true }}
+    secrets: inherit

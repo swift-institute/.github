@@ -325,3 +325,14 @@ validators:
     discovery-mode: single-target
     rule-id-regex: '^README-'
     migrate-to-base: yes
+
+  # ─── swift-package skill (PKG-DEP-007 dependency hygiene) ──────────
+
+  - rule-id: PKG-DEP-007
+    validator-script: .github/scripts/validate-dependency-hygiene.py
+    workflow-file: .github/workflows/validate-dependency-hygiene.yml
+    status: active
+    self-firing: active
+    discovery-mode: single-target
+    rule-id-regex: '^PKG-DEP-'
+    migrate-to-base: yes

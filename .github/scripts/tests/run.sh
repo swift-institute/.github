@@ -67,6 +67,8 @@ validator_for() {
             echo "$SCRIPTS_DIR/validate-manifest-binding.py" ;;
         test-009)
             echo "$SCRIPTS_DIR/validate-file-naming.py" ;;
+        pkg-dep-007)
+            echo "$SCRIPTS_DIR/validate-dependency-hygiene.py" ;;
         *)
             echo "" ;;
     esac
@@ -115,6 +117,7 @@ prefix_for() {
         ci-105)          echo "CI-105" ;;
         ci-manifest-binding) echo "CI-MANIFEST-BINDING" ;;
         test-009)        echo "TEST-009" ;;
+        pkg-dep-007)     echo "PKG-DEP-007" ;;
         *)               echo "" ;;
     esac
 }
