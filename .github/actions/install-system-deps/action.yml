@@ -1,0 +1,105 @@
+# Derive + install Linux system dev-packages from the SwiftPM dependency graph.
+#
+# Why this exists
+# ---------------
+# Some targets are C shims that `#include` a system header and declare the
+# native library with `.linkedLibrary("<name>")` in their manifest — e.g.
+# swift-linux-standard's CLinuxKernelShim does `#include <uuid/uuid.h>` and
+# declares `.linkedLibrary("uuid", .when(platforms: [.linux]))`. SwiftPM's
+# `.linkedLibrary` only affects the LINK step; it does not make the header
+# available at COMPILE time, and it does not install anything. On the stock
+# `swift:<v>` / `swiftlang/swift:nightly` images the `-dev` package that ships
+# the header (`uuid-dev` → `/usr/include/uuid/uuid.h`) is absent, so the C
+# module fails to build ("'uuid/uuid.h' file not found"), which fails every
+# Linux build + the DocC archive for any package that transitively depends on
+# such a shim.
+#
+# What it does
+# ------------
+# Instead of hard-coding a per-package apt list (which drifts), this derives
+# the needed packages from the resolved graph:
+#
+#   1. `swift package resolve` to populate `.build/checkouts/` (must run AFTER
+#      configure-private-repos so private deps can be cloned).
+#   2. Scan the root manifest AND every resolved dependency manifest (incl.
+#      version-specific `Package@swift-*.swift`) for `.linkedLibrary("<name>")`.
+#      The linked library is usually declared by a DEPENDENCY, not the root
+#      package, so scanning only the root manifest is insufficient.
+#   3. Map each linker name to its apt `-dev` package and install the union.
+#      Libraries provided by `libc6-dev` (already in the image) map to nothing;
+#      an unmapped library emits a `::warning::` (one-line map addition) rather
+#      than a silent miss.
+#
+# Best-effort + apt-only: a no-op on non-Debian runners (macOS/Windows) and
+# when no mapped libraries are found, so it is safe to add to every build job.
+name: Install system dependencies
+description: >-
+  Derive required Linux system dev-packages from the resolved SwiftPM
+  dependency graph's .linkedLibrary declarations and apt-install them, so
+  C-shim targets that #include system headers compile in CI. No-op on
+  non-apt runners. Run AFTER configure-private-repos.
+runs:
+  using: composite
+  steps:
+    - name: Derive + install system dev-packages from .linkedLibrary
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        # apt-only: no-op on macOS/Windows runners.
+        if ! command -v apt-get >/dev/null 2>&1; then
+          echo "no apt-get (non-Debian runner) — skipping system-dep derivation"
+          exit 0
+        fi
+
+        # Populate .build/checkouts so transitive-dependency manifests are
+        # scannable. Best-effort: if resolve fails, the downstream build step
+        # surfaces the real error; we install nothing rather than masking it.
+        swift package resolve \
+          || echo "::warning::swift package resolve failed during system-dep derivation; continuing best-effort"
+
+        # Scan root + every resolved manifest for .linkedLibrary("<name>").
+        libs=$(grep -rhoE '\.linkedLibrary\("[^"]+"' \
+                 Package.swift Package@swift-*.swift \
+                 .build/checkouts/*/Package.swift .build/checkouts/*/Package@swift-*.swift 2>/dev/null \
+               | sed -E 's/.*"([^"]+)".*/\1/' | sort -u || true)
+        echo "Linked libraries in dependency graph: ${libs:-<none>}"
+
+        # Map a linker name to its apt -dev package. Libraries shipped by
+        # libc6-dev (already in the toolchain image) map to the empty string
+        # and need no install; an unknown library returns __UNMAPPED__ so the
+        # caller can warn. `case` (not an associative array) keeps this
+        # portable across any bash the container ships.
+        map_lib() {
+          case "$1" in
+            uuid)     echo uuid-dev ;;
+            uring)    echo liburing-dev ;;
+            z)        echo zlib1g-dev ;;
+            ssl|crypto) echo libssl-dev ;;
+            curl)     echo libcurl4-openssl-dev ;;
+            sqlite3)  echo libsqlite3-dev ;;
+            xml2)     echo libxml2-dev ;;
+            c|dl|m|pthread|rt|util|resolv) echo "" ;;   # libc6-dev provides these
+            *)        echo __UNMAPPED__ ;;
+          esac
+        }
+
+        pkgs=""
+        for lib in $libs; do
+          p=$(map_lib "$lib")
+          if [ "$p" = "__UNMAPPED__" ]; then
+            echo "::warning::No apt mapping for linked library '$lib'. If its header is needed at compile time, add it to map_lib in swift-institute/.github install-system-deps."
+          elif [ -n "$p" ]; then
+            pkgs="$pkgs $p"
+          fi
+        done
+
+        pkgs=$(printf '%s\n' $pkgs | sort -u | tr '\n' ' ')
+        if [ -z "${pkgs// }" ]; then
+          echo "No system dev-packages required."
+          exit 0
+        fi
+
+        echo "Installing system dev-packages: $pkgs"
+        apt-get update -qq
+        apt-get install -qq -y $pkgs
