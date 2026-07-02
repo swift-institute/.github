@@ -2,69 +2,46 @@
 
 A layered Swift package ecosystem organized around shared conventions.
 
-## What this is
+## Why
 
-Swift Institute is a set of layered Swift packages organized as separate GitHub
-organizations, one per layer. The layers share dependency rules, naming
-conventions, error handling, memory ownership, and API shape — so that
-compile-time guarantees hold across the entire stack rather than stopping at
-package boundaries.
+Rules sit at the heart of every system we build on. When rules are expressed clearly and consistently, everything built on top of them becomes simpler, safer, and more predictable. We believe rules deserve a form that can be validated rather than interpreted — and Swift's type system makes that possible.
+
+Swift Institute applies that idea to infrastructure itself: specifications become types, conventions become compiler guarantees, and the same discipline runs from the smallest buffer primitive to a complete PDF renderer.
+
+## How it is organized
+
+The ecosystem is a set of GitHub organizations, one per layer. Layers depend downward only, and every package shares the same dependency rules, naming conventions, typed error handling, memory-ownership discipline, and API shape — so compile-time guarantees hold across the entire stack rather than stopping at package boundaries.
 
 | Layer | Organization | Role |
 |-------|--------------|------|
-| 1 | [swift-primitives](https://github.com/swift-primitives) | Atomic building blocks — buffer, geometry, algebra, memory, kernel |
-| 2 | [swift-standards](https://github.com/swift-standards) + per-authority orgs | Specification implementations |
-| 3 | [swift-foundations](https://github.com/swift-foundations) | Composed building blocks — IO, HTML, CSS, SVG, PDF, networking |
-| 4 | Components | Opinionated assemblies — planned |
-| 5 | Applications | End-user systems — planned |
+| 1 | [swift-primitives](https://github.com/swift-primitives) | Atomic building blocks — buffer, memory, geometry, time, async |
+| 2 | [swift-standards](https://github.com/swift-standards) + per-authority orgs | Specification implementations — RFC, ISO, W3C, WHATWG |
+| 3 | [swift-foundations](https://github.com/swift-foundations) | Composed systems — I/O, filesystem, HTML, CSS, PDF, networking |
+| 4 | Components — planned | Opinionated assemblies |
+| 5 | Applications — planned | End-user systems |
 
-> **Release in progress.** The organization links above are being made world-readable over the coming weeks. Some may currently 404; they resolve as each layer's release lands.
-
-Layer 2 is an organization of organizations. Each standards authority has its
-own GitHub organization hosting the packages it governs:
-[swift-ietf](https://github.com/swift-ietf) (RFCs),
-[swift-iso](https://github.com/swift-iso),
-[swift-w3c](https://github.com/swift-w3c),
-[swift-whatwg](https://github.com/swift-whatwg),
-plus single-package organizations for IEEE, IEC, ECMA, INCITS, ARM, Intel,
-RISC-V, and Microsoft.
+Layer 2 is an organization of organizations: each standards authority has its own GitHub organization — [swift-ietf](https://github.com/swift-ietf) (RFCs), [swift-iso](https://github.com/swift-iso), [swift-w3c](https://github.com/swift-w3c), [swift-whatwg](https://github.com/swift-whatwg), plus single-package organizations for IEEE, IEC, ECMA, INCITS, ARM, Intel, RISC-V, and Microsoft.
 
 ## Where to go next
 
 | If you want to... | Go to |
 |-------------------|-------|
 | Read the website, architecture overview, or blog | [swift-institute.org](https://swift-institute.org) |
-| Use atomic primitives (buffer, geometry, algebra, memory, kernel) | [swift-primitives](https://github.com/swift-primitives) |
-| Consume an RFC or ISO specification | [swift-ietf](https://github.com/swift-ietf), [swift-iso](https://github.com/swift-iso), or the relevant per-authority org |
-| Use composed building blocks (IO, HTML, CSS, SVG, PDF) | [swift-foundations](https://github.com/swift-foundations) |
-| Browse design rationale | [swift-institute/Research](https://github.com/swift-institute/Research) |
-| Browse the empirical receipts behind technical claims | [swift-institute/Experiments](https://github.com/swift-institute/Experiments) |
+| Use atomic primitives | [swift-primitives](https://github.com/swift-primitives) |
+| Consume an RFC, ISO, W3C, or WHATWG specification | [swift-standards](https://github.com/swift-standards) |
+| Use composed systems (I/O, filesystem, HTML, CSS, PDF) | [swift-foundations](https://github.com/swift-foundations) |
+| Browse design rationale | [Research](https://github.com/swift-institute/Research) |
+| Browse the experiments behind technical claims | [Experiments](https://github.com/swift-institute/Experiments) |
+| Call the reusable CI workflows | [.github/workflows](https://github.com/swift-institute/.github/tree/main/.github/workflows) — pin an immutable SHA; not formally supported outside the ecosystem |
+| Report a security vulnerability | [Security policy](https://github.com/swift-institute/.github/blob/main/SECURITY.md) |
 | Report an issue or contribute | Open an issue or pull request on the relevant repository |
-| Report a security vulnerability | See the [security policy](https://github.com/swift-institute/.github/blob/main/SECURITY.md) |
 
 ## Status
 
-Initial public alpha. The website ([swift-institute.org](https://swift-institute.org))
-and companion repositories ([Research](https://github.com/swift-institute/Research),
-[Experiments](https://github.com/swift-institute/Experiments)) are public.
-The package layers they describe are being released repository by repository
-over the coming weeks.
+Public alpha. All layer organizations are public and packages continue to land repository by repository; APIs may change until first tagged releases.
 
-Maintained by [Coen ten Thije Boonkkamp](https://github.com/coenttb) —
-contributions welcome via pull request.
+Maintained by [Coen ten Thije Boonkkamp](https://github.com/coenttb) — contributions welcome via pull request.
 
 ## License
 
 All packages use the Apache License 2.0.
-
-## Reusable workflows
-
-The reusable GitHub Actions workflows in
-[swift-institute/.github](https://github.com/swift-institute/.github/tree/main/.github/workflows)
-(notably `swift-ci.yml` and `swift-docs.yml`) are designed for
-swift-institute ecosystem packages. They are technically callable from
-outside the ecosystem but are not formally supported for outside
-consumption — outside callers should pin to an immutable SHA
-(`@<sha>`) rather than `@main`, and accept that the input/output
-surface and behavior may change without notice. See the header
-comment block of each workflow file for the consumer contract.
