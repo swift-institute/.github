@@ -190,7 +190,18 @@ custom_rules:
     # No `match_kinds` filter — `any` is a contextual keyword, not an
     # identifier; SwiftLint's `match_kinds` would exclude keyword tokens
     # and the regex would never fire.
+    # excluded_match_kinds added 2026-07-02: comment/doccomment/string prose
+    # legitimately says "any <Word>" (e.g. swift-manifest-primitives
+    # Manifest.swift:31 "…or any L2/L3 type"); exclusion sidesteps the
+    # keyword-inclusion breakage above while keeping the regex unchanged.
     regex: '\bany\s+[A-Z][A-Za-z0-9_]*'
+    excluded_match_kinds:
+      - comment
+      - comment.mark
+      - comment.url
+      - doccomment
+      - doccomment.field
+      - string
     message: "Existential `any <Protocol>` typically indicates dynamic dispatch the type system could express more precisely. Prefer generic constraints / typed throws / concrete types ([API-ERR-006] extension; Wave 2b decision 3). Opt out at deliberate sites with '// swiftlint:disable:next no_any_protocol_existential  // reason: <citation>'."
     severity: warning
     included:
