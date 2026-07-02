@@ -2,7 +2,6 @@
 #
 # Schema mirrors per-repo .github/metadata.yaml.
 
-description: "A layered Swift package ecosystem organized around shared conventions."
 homepage: "https://swift-institute.org"
 
 # Org-account profile fields (display name, description, email, website, X, location).
