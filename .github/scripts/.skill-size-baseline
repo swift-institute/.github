@@ -1,0 +1,15 @@
+# .skill-size-baseline — prune-only ratchet for legacy over-1000-line skill files.
+# Entries shrink or vanish as R2 evictions land; they never grow. Provenance: meta-setup R2, 2026-07-02.
+audit/SKILL.md 1094
+code-surface/SKILL.md 1789
+existing-infrastructure/SKILL.md 1225
+github-repository/SKILL.md 1018
+handoff/SKILL.md 1744
+modularization/SKILL.md 1725
+platform/SKILL.md 1885
+readme/sub-package.md 1140
+research-process/SKILL.md 1053
+skill-lifecycle/SKILL.md 1017
+supervise/SKILL.md 1536
+swift-package/SKILL.md 1064
+testing/SKILL.md 1142
