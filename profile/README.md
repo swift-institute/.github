@@ -20,7 +20,7 @@ The ecosystem is a set of GitHub organizations, one per layer. Layers depend dow
 | 4 | Components — planned | Opinionated assemblies |
 | 5 | Applications — planned | End-user systems |
 
-Layer 2 is an organization of organizations: each standards authority has its own GitHub organization — [swift-ietf](https://github.com/swift-ietf) (RFCs), [swift-iso](https://github.com/swift-iso), [swift-w3c](https://github.com/swift-w3c), [swift-whatwg](https://github.com/swift-whatwg), plus single-package organizations for IEEE, IEC, ECMA, INCITS, ARM, Intel, RISC-V, and Microsoft.
+Layer 2 is an organization of organizations: each standards authority has its own GitHub organization — [swift-ietf](https://github.com/swift-ietf) (RFCs), [swift-iso](https://github.com/swift-iso), [swift-w3c](https://github.com/swift-w3c), [swift-whatwg](https://github.com/swift-whatwg), plus single-package organizations for IEEE, IEC, ECMA, INCITS, ARM, Intel, RISC-V (pending), and Microsoft.
 
 ## Where to go next
 
@@ -39,6 +39,8 @@ Layer 2 is an organization of organizations: each standards authority has its ow
 ## Status
 
 Public alpha. All layer organizations are public and packages continue to land repository by repository; APIs may change until first tagged releases.
+
+Swift Institute is an independent open-source project, not affiliated with Apple or the Swift open-source project.
 
 Maintained by [Coen ten Thije Boonkkamp](https://github.com/coenttb) — contributions welcome via pull request.
 
