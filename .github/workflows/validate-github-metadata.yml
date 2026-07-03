@@ -121,6 +121,12 @@ jobs:
           path: institute-github
           ref: main
 
+      - name: Validate schema<->workflow settings-key consistency [GH-REPO-063]
+        run: |
+          python3 institute-github/.github/scripts/validate-schema-workflow-keys.py \
+            institute-github/metadata-schema.json \
+            institute-github/.github/workflows/sync-metadata.yml
+
       - name: Set up gh
         env:
           GH_TOKEN: ${{ steps.mint-token.outputs.token }}
