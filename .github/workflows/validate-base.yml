@@ -154,12 +154,34 @@ jobs:
           VALIDATOR_SCRIPT: ${{ inputs.validator-script }}
         run: |
           set -euo pipefail
-          violations=$(grep -cE "	${RULE_ID_REGEX}" /tmp/findings.tsv) || violations=0
+          # Count findings with the SAME field-match predicate the summary
+          # table uses below (awk `$2 ~ re`), so the count and the rendered
+          # table share one predicate and can never disagree. The prior
+          # `grep -cE "<TAB>${RULE_ID_REGEX}"` was structurally inert: every
+          # caller's rule-id-regex is `^`-anchored, so the effective pattern
+          # `<TAB>^CI-NNN` placed a line-start anchor mid-pattern and matched
+          # ZERO lines — violations pinned to 0, all validate-base consumers
+          # false-green ([CI-110] tooling-trap cluster). awk|wc|tr each exit 0
+          # (awk emits 0 records on empty input) so the pipeline is
+          # pipefail-safe and yields 0 on an empty findings.tsv.
+          violations=$(awk -F'\t' -v re="${RULE_ID_REGEX}" '$2 ~ re' /tmp/findings.tsv | wc -l | tr -d ' ')
+          # Clone-failed sentinel gate: the Run-validator step writes a
+          # `<repo><TAB>clone-failed<TAB>-` row and exit 0 when the clone fails,
+          # so a validator that NEVER RAN would otherwise pass silently (field 2
+          # matches no rule regex). Detect these rows explicitly and fail closed.
+          clone_failures=$(awk -F'\t' '$2 == "clone-failed"' /tmp/findings.tsv | wc -l | tr -d ' ')
           echo "total-violations=$violations" >> "$GITHUB_OUTPUT"
           {
             echo "## ${VALIDATOR_SCRIPT} findings"
             echo "Total violations: $violations"
             echo
+            if [ "$clone_failures" -gt 0 ]; then
+              echo "> [!CAUTION]"
+              echo "> ${clone_failures} target(s) FAILED TO CLONE — the validator did not run. The violation count above is unreliable (false-green risk); treat this run as FAILED and re-run to clear a transient clone error."
+              echo
+              awk -F'\t' '$2 == "clone-failed" { printf("- clone-failed: `%s`\n", $1) }' /tmp/findings.tsv
+              echo
+            fi
             if [ "$violations" -gt 0 ]; then
               echo "| Repo | Rule | Message |"
               echo "|---|---|---|"
@@ -169,6 +191,13 @@ jobs:
               }' /tmp/findings.tsv
             fi
           } > "$GITHUB_STEP_SUMMARY"
-          if [ "$violations" -gt 0 ] && [ "$DRY_RUN" != "true" ]; then
+          if [ "$clone_failures" -gt 0 ]; then
+            if [ "$DRY_RUN" != "true" ]; then
+              echo "::error::${clone_failures} validator target(s) failed to clone — a validator did NOT run, so a green result here would be false. Failing the aggregation gate (re-run to clear a transient clone error)."
+            else
+              echo "::warning::${clone_failures} validator target(s) failed to clone (dry-run: not failing) — a validator did not run; this run's counts are unreliable."
+            fi
+          fi
+          if { [ "$violations" -gt 0 ] || [ "$clone_failures" -gt 0 ]; } && [ "$DRY_RUN" != "true" ]; then
             exit 1
           fi
