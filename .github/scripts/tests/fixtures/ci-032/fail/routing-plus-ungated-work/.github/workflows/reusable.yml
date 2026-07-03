@@ -1,0 +1,21 @@
+name: Fail — routing carve-out must not blind the gate on real work
+
+# Coverage guard for the narrowness of the pure-`uses:`-routing carve-out:
+# `route` is a pure `uses:`-routing shim (carved out, correctly no gate), but
+# `work` is a genuine work job (`runs-on:`+`steps:`) with NO visibility gate.
+# The carve-out MUST remain narrow: `work` MUST still be flagged. If the
+# carve-out ever broadened to swallow `runs-on:`/`steps:` jobs, this fixture
+# would regress to 0 findings and fail.
+# Expected: 1 finding ([CI-032] on `work`).
+
+on:
+  workflow_call:
+
+jobs:
+  route:
+    uses: ./.github/workflows/validate-base.yml
+
+  work:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "ungated real work — must still be flagged"

@@ -22,6 +22,12 @@ Rules checked:
             anywhere in the job's `if:` value.
 
   Carve-outs:
+    - Pure `uses:`-only routing jobs (workflow_call delegation): a job that
+      only routes to another reusable via `uses:` at the job level, with no
+      `steps:` and no `runs-on:`. The visibility gate lives on the called
+      workflow's real work job, not on the routing shim (mirrors [CI-080]'s
+      pure-`uses:`-only routing carve-out in validate-harden-runner.py). A job
+      with real work (`steps:`/`runs-on:`) that lacks the gate is still flagged.
     - Jobs with `if: false` are explicitly disabled — skipped.
     - Workflows whose `on:` does NOT include `workflow_call:` are out of
       scope (scheduled/dispatch-only orchestrators have no consumer surface).
@@ -35,6 +41,22 @@ from validate_lib import emit, require_yaml
 yaml = require_yaml()
 
 GATE_SUBSTRING = "!github.event.repository.private"
+
+
+def is_pure_uses_only_job(job_data: dict) -> bool:
+    """A workflow_call routing job: `uses:` at job level, no `steps:`/`runs-on:`.
+
+    Mirrors validate-harden-runner.py's identically-named [CI-080] carve-out,
+    strengthened to also require the absence of `runs-on:` so the exemption
+    stays narrow: a job carrying real work (`steps:` or `runs-on:`) is never
+    treated as pure routing even if it also declares `uses:`. The visibility
+    gate belongs on the called workflow's real work job, not the routing shim.
+    """
+    return (
+        "uses" in job_data
+        and "steps" not in job_data
+        and "runs-on" not in job_data
+    )
 
 
 def get_on_block(data: dict):
@@ -77,6 +99,12 @@ def check_workflow(repo: str, wf_path: Path) -> int:
     findings = 0
     for job_name, job_data in jobs.items():
         if not isinstance(job_data, dict):
+            continue
+        # Pure `uses:`-only routing job (workflow_call delegation): carved
+        # out per [CI-032]/[CI-080] — the gate lives on the called workflow's
+        # real work job, not the routing shim. Narrow: a job with `steps:`/
+        # `runs-on:` is real work and is NOT exempt even if it declares `uses:`.
+        if is_pure_uses_only_job(job_data):
             continue
         if_clause = job_data.get("if")
         # `if: false` parses as Python bool False; treat as explicit disable.

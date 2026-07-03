@@ -1,0 +1,18 @@
+name: Pass — pure uses-only routing job (carve-out)
+
+# A workflow_call reusable whose only job is a pure `uses:`-routing shim:
+# it delegates to another reusable with no `steps:` and no `runs-on:`, so it
+# carries no visibility gate itself. The gate lives on the called workflow's
+# real work job. Mirrors the 18 `validate-*.yml` thin callers in
+# swift-institute/.github, each of which routes to validate-base.yml.
+# Validator carve-out skips pure `uses:`-only routing jobs.
+# Expected: 0 findings ([CI-032] routing carve-out).
+
+on:
+  workflow_call:
+
+jobs:
+  scan:
+    uses: ./.github/workflows/validate-base.yml
+    with:
+      script-name: example
