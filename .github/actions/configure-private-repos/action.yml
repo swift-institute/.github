@@ -149,7 +149,7 @@ runs:
     - id: mint-primitives
       if: ${{ inputs.enabled == 'true' && (inputs.app-client-id != '' || inputs.app-id != '') && inputs.app-private-key != '' }}
       name: Mint App token (swift-primitives, contents:read)
-      uses: actions/create-github-app-token@v3
+      uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
       with:
         client-id: ${{ inputs.app-client-id }}
         app-id: ${{ inputs.app-id }}
@@ -160,7 +160,7 @@ runs:
     - id: mint-standards
       if: ${{ inputs.enabled == 'true' && (inputs.app-client-id != '' || inputs.app-id != '') && inputs.app-private-key != '' }}
       name: Mint App token (swift-standards, contents:read)
-      uses: actions/create-github-app-token@v3
+      uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
       with:
         client-id: ${{ inputs.app-client-id }}
         app-id: ${{ inputs.app-id }}
@@ -171,7 +171,7 @@ runs:
     - id: mint-foundations
       if: ${{ inputs.enabled == 'true' && (inputs.app-client-id != '' || inputs.app-id != '') && inputs.app-private-key != '' }}
       name: Mint App token (swift-foundations, contents:read)
-      uses: actions/create-github-app-token@v3
+      uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
       with:
         client-id: ${{ inputs.app-client-id }}
         app-id: ${{ inputs.app-id }}
@@ -185,7 +185,7 @@ runs:
     - id: mint-iso
       if: ${{ inputs.enabled == 'true' && (inputs.app-client-id != '' || inputs.app-id != '') && inputs.app-private-key != '' }}
       name: Mint App token (swift-iso, contents:read)
-      uses: actions/create-github-app-token@v3
+      uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
       with:
         client-id: ${{ inputs.app-client-id }}
         app-id: ${{ inputs.app-id }}
@@ -196,7 +196,7 @@ runs:
     - id: mint-microsoft
       if: ${{ inputs.enabled == 'true' && (inputs.app-client-id != '' || inputs.app-id != '') && inputs.app-private-key != '' }}
       name: Mint App token (swift-microsoft, contents:read)
-      uses: actions/create-github-app-token@v3
+      uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
       with:
         client-id: ${{ inputs.app-client-id }}
         app-id: ${{ inputs.app-id }}
@@ -207,7 +207,7 @@ runs:
     - id: mint-arm-ltd
       if: ${{ inputs.enabled == 'true' && (inputs.app-client-id != '' || inputs.app-id != '') && inputs.app-private-key != '' }}
       name: Mint App token (swift-arm-ltd, contents:read)
-      uses: actions/create-github-app-token@v3
+      uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
       with:
         client-id: ${{ inputs.app-client-id }}
         app-id: ${{ inputs.app-id }}
@@ -218,7 +218,7 @@ runs:
     - id: mint-intel
       if: ${{ inputs.enabled == 'true' && (inputs.app-client-id != '' || inputs.app-id != '') && inputs.app-private-key != '' }}
       name: Mint App token (swift-intel, contents:read)
-      uses: actions/create-github-app-token@v3
+      uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
       with:
         client-id: ${{ inputs.app-client-id }}
         app-id: ${{ inputs.app-id }}
@@ -229,7 +229,7 @@ runs:
     - id: mint-linux-foundation
       if: ${{ inputs.enabled == 'true' && (inputs.app-client-id != '' || inputs.app-id != '') && inputs.app-private-key != '' }}
       name: Mint App token (swift-linux-foundation, contents:read)
-      uses: actions/create-github-app-token@v3
+      uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
       with:
         client-id: ${{ inputs.app-client-id }}
         app-id: ${{ inputs.app-id }}
@@ -240,7 +240,7 @@ runs:
     - id: mint-ietf
       if: ${{ inputs.enabled == 'true' && (inputs.app-client-id != '' || inputs.app-id != '') && inputs.app-private-key != '' }}
       name: Mint App token (swift-ietf, contents:read)
-      uses: actions/create-github-app-token@v3
+      uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
       with:
         client-id: ${{ inputs.app-client-id }}
         app-id: ${{ inputs.app-id }}
