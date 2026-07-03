@@ -38,7 +38,7 @@
         "hasDiscussionsEnabled": { "type": "boolean" },
         "hasWikiEnabled": { "type": "boolean" },
         "hasProjectsEnabled": { "type": "boolean" },
-        "defaultBranchRef": { "type": "string" }
+        "defaultBranch": { "type": "string", "description": "Default branch name (string), consumed by sync-metadata.yml as .settings.defaultBranch and documented by [GH-REPO-060]. NOT GitHub's GraphQL 'defaultBranchRef' object. Default 'main' per [GH-REPO-053]." }
       }
     },
     "discussion": {
