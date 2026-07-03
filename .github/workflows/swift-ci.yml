@@ -280,6 +280,66 @@ jobs:
             swift test -c release
           fi
 
+  # ─── Swift 6.4.x release-branch nightly (advisory; upcoming-release signal) ──
+  # Mirrors linux-nightly but pins the release/6.4.x nightly container instead
+  # of nightly-main (=6.5-dev). This is the upcoming-RELEASE signal — the same
+  # leg Apple/swiftlang run as `nightly-6.4.x` in
+  # swiftlang/github-workflows/.github/workflows/swift_package_test.yml — and it
+  # answers "does 6.4 specifically pass" without conflating 6.4 + 6.5 changes.
+  # Advisory per [CI-021]/[CI-091]: continue-on-error, excluded from ci-ok
+  # needs, listed in advisory-summary. continue-on-error is valid at job level
+  # here because this is a runs-on job, not a `uses:` job ([CI-105]). At 6.4 GA
+  # (~Sept 2026) this graduates to a gating `swift:6.4` stable leg, retiring the
+  # `compiler(<6.4)` §A9 gates (swift-xml / swift-w3c-xml / swift-graph / swift-plist).
+  linux-6.4:
+    name: Ubuntu (Swift 6.4.x nightly, release)
+    if: ${{ !github.event.repository.private && (inputs.job == '' || inputs.job == 'linux-6.4') }}
+    runs-on: ubuntu-latest
+    container: swiftlang/swift:nightly-6.4.x-jammy
+    continue-on-error: true
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - name: Harden runner (audit-mode egress logging)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@v6
+        with:
+          repository: ${{ inputs.target-repo || github.repository }}
+          ref: ${{ inputs.ref }}
+
+      - uses: swift-institute/.github/.github/actions/configure-private-repos@main
+        with:
+          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+          app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+          app-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
+          app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          enabled: ${{ inputs.enable-private-repos }}
+
+      - uses: swift-institute/.github/.github/actions/install-system-deps@main
+
+      - name: Print toolchain info
+        run: |
+          swift --version
+          echo "Container image: ${{ job.container.image }}"
+          echo "Container hostname: $(hostname)"
+          echo "OS release:"
+          cat /etc/os-release 2>/dev/null || true
+
+      - name: Test (release)
+        env:
+          TEST_FILTER: ${{ inputs.test-filter }}
+        run: |
+          if [ -n "$TEST_FILTER" ]; then
+            FILTER=$(echo "$TEST_FILTER" | tr '-' '_')
+            swift test -c release --filter "$FILTER"
+          else
+            swift test -c release
+          fi
+
   windows-release:
     name: Windows (Swift ${{ inputs.swift-version }}, debug)
     if: ${{ !github.event.repository.private && (inputs.job == '' || inputs.job == 'windows-release') }}
@@ -821,6 +881,7 @@ jobs:
     continue-on-error: true
     needs:
       - linux-nightly
+      - linux-6.4
       - apple-simulator-build
       - swift-linter
       - lint-yaml
