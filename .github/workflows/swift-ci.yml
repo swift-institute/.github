@@ -808,14 +808,16 @@ jobs:
   # advisory red is legible in ONE place, instead of scattered across the job
   # sidebar. Informational ONLY: it is excluded from ci-ok's needs (never a
   # merge gate) and carries `continue-on-error: true` so a rendering hiccup can
-  # never fail the run. Keyed on always() + not-private like ci-ok — but NOT a
-  # ci-dispatch-selectable job: it declares no `inputs.job` selector and is
-  # absent from ci-dispatch.yml's `job` enum. `needs:` enumerates every advisory
+  # never fail the run. Keyed on always() + not-private + `inputs.job == ''`
+  # EXACTLY like ci-ok, so it SKIPS on any single-job dispatch (preserving
+  # ci-dispatch's exactly-one-job property) and runs only on push/PR. It carries
+  # no `inputs.job == '<id>'` selector and is absent from ci-dispatch.yml's `job`
+  # enum. `needs:` enumerates every advisory
   # leg per [CI-002] (the continue-on-error legs linux-nightly /
   # apple-simulator-build / swift-linter + the six nested advisory:true linters).
   advisory-summary:
     name: Advisory results (informational)
-    if: ${{ always() && !github.event.repository.private }}
+    if: ${{ always() && !github.event.repository.private && inputs.job == '' }}
     continue-on-error: true
     needs:
       - linux-nightly
