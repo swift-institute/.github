@@ -60,7 +60,7 @@ on:
   workflow_dispatch:
     inputs:
       target-repo:
-        description: "Target package to run CI against, as owner/name (e.g. swift-primitives/swift-cardinal-primitives)."
+        description: "Target package to run CI against, as owner/name (e.g. swift-primitives/swift-cardinal-primitives). Public repositories only — a private or inaccessible target fails at the checkout step by design (see the file header for the mechanism)."
         type: string
         required: true
       job:
