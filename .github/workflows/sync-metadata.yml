@@ -169,11 +169,12 @@ jobs:
             desired_issues=$(echo "$desired" | jq -r '.settings.hasIssuesEnabled // true')
             desired_disc=$(echo "$desired" | jq -r '.settings.hasDiscussionsEnabled // false')
             desired_wiki=$(echo "$desired" | jq -r '.settings.hasWikiEnabled // false')
+            desired_projects=$(echo "$desired" | jq -r '.settings.hasProjectsEnabled // false')
             desired_branch=$(echo "$desired" | jq -r '.settings.defaultBranch // "main"')
 
             # 3. Read current GitHub state.
             current=$(gh repo view "$target" \
-              --json description,repositoryTopics,homepageUrl,hasIssuesEnabled,hasDiscussionsEnabled,hasWikiEnabled,defaultBranchRef)
+              --json description,repositoryTopics,homepageUrl,hasIssuesEnabled,hasDiscussionsEnabled,hasWikiEnabled,hasProjectsEnabled,defaultBranchRef)
 
             current_desc=$(echo "$current" | jq -r '.description // ""')
             current_homepage=$(echo "$current" | jq -r '.homepageUrl // ""')
@@ -181,6 +182,7 @@ jobs:
             current_issues=$(echo "$current" | jq -r '.hasIssuesEnabled')
             current_disc=$(echo "$current" | jq -r '.hasDiscussionsEnabled')
             current_wiki=$(echo "$current" | jq -r '.hasWikiEnabled')
+            current_projects=$(echo "$current" | jq -r '.hasProjectsEnabled')
             current_branch=$(echo "$current" | jq -r '.defaultBranchRef.name // "main"')
 
             # 4. Compute diffs.
@@ -221,6 +223,10 @@ jobs:
             fi
             if [[ "$desired_wiki" != "$current_wiki" ]]; then
               edit_args+=(--enable-wiki="$desired_wiki")
+              repo_diffs=$((repo_diffs+1))
+            fi
+            if [[ "$desired_projects" != "$current_projects" ]]; then
+              edit_args+=(--enable-projects="$desired_projects")
               repo_diffs=$((repo_diffs+1))
             fi
             if [[ "$desired_branch" != "$current_branch" ]]; then

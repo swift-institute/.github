@@ -37,6 +37,7 @@
         "hasIssuesEnabled": { "type": "boolean" },
         "hasDiscussionsEnabled": { "type": "boolean" },
         "hasWikiEnabled": { "type": "boolean" },
+        "hasProjectsEnabled": { "type": "boolean" },
         "defaultBranchRef": { "type": "string" }
       }
     },
