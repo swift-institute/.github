@@ -174,7 +174,7 @@ jobs:
 
             # 3. Read current GitHub state.
             current=$(gh repo view "$target" \
-              --json description,repositoryTopics,homepageUrl,hasIssuesEnabled,hasDiscussionsEnabled,hasWikiEnabled,hasProjectsEnabled,defaultBranchRef)
+              --json description,repositoryTopics,homepageUrl,hasIssuesEnabled,hasDiscussionsEnabled,hasWikiEnabled,hasProjectsEnabled,defaultBranchRef,mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed,deleteBranchOnMerge)
 
             current_desc=$(echo "$current" | jq -r '.description // ""')
             current_homepage=$(echo "$current" | jq -r '.homepageUrl // ""')
@@ -234,6 +234,24 @@ jobs:
               repo_diffs=$((repo_diffs+1))
             fi
 
+            # Merge-method + branch-cleanup settings per [GH-REPO-056].
+            # gh repo edit exposes no flag for the merge-method allows, so
+            # these apply via `gh api PATCH` (delete_branch_on_merge folded in).
+            desired_mc=$(echo "$desired" | jq -r '.settings.allowMergeCommit // false')
+            desired_sq=$(echo "$desired" | jq -r '.settings.allowSquashMerge // true')
+            desired_rb=$(echo "$desired" | jq -r '.settings.allowRebaseMerge // false')
+            desired_del=$(echo "$desired" | jq -r '.settings.deleteBranchOnMerge // true')
+            current_mc=$(echo "$current" | jq -r '.mergeCommitAllowed')
+            current_sq=$(echo "$current" | jq -r '.squashMergeAllowed')
+            current_rb=$(echo "$current" | jq -r '.rebaseMergeAllowed')
+            current_del=$(echo "$current" | jq -r '.deleteBranchOnMerge')
+            merge_args=()
+            [[ "$desired_mc"  != "$current_mc"  ]] && merge_args+=(-F "allow_merge_commit=$desired_mc")
+            [[ "$desired_sq"  != "$current_sq"  ]] && merge_args+=(-F "allow_squash_merge=$desired_sq")
+            [[ "$desired_rb"  != "$current_rb"  ]] && merge_args+=(-F "allow_rebase_merge=$desired_rb")
+            [[ "$desired_del" != "$current_del" ]] && merge_args+=(-F "delete_branch_on_merge=$desired_del")
+            repo_diffs=$((repo_diffs + ${#merge_args[@]}))
+
             diffs_found=$((diffs_found + repo_diffs))
 
             # 5. Apply (or print).
@@ -244,13 +262,21 @@ jobs:
 
             if [[ "$DRY_RUN" == "true" ]]; then
               echo "  ${target}: ${repo_diffs} diff(s) — would run:"
-              printf '    gh repo edit %q' "$target"
-              for a in "${edit_args[@]}"; do printf ' %q' "$a"; done
-              printf '\n'
+              if [[ ${#edit_args[@]} -gt 0 ]]; then
+                printf '    gh repo edit %q' "$target"
+                for a in "${edit_args[@]}"; do printf ' %q' "$a"; done
+                printf '\n'
+              fi
+              if [[ ${#merge_args[@]} -gt 0 ]]; then
+                printf '    gh api -X PATCH %q' "repos/$target"
+                for a in "${merge_args[@]}"; do printf ' %q' "$a"; done
+                printf '\n'
+              fi
               summary_lines+=("- \`${target}\`: ${repo_diffs} field(s) — dry-run preview")
             else
               echo "  ${target}: ${repo_diffs} diff(s) — applying"
-              gh repo edit "$target" "${edit_args[@]}"
+              [[ ${#edit_args[@]} -gt 0 ]] && gh repo edit "$target" "${edit_args[@]}"
+              [[ ${#merge_args[@]} -gt 0 ]] && gh api -X PATCH "repos/$target" "${merge_args[@]}" >/dev/null
               edits_applied=$((edits_applied + repo_diffs))
               summary_lines+=("- \`${target}\`: ${repo_diffs} field(s) applied")
             fi

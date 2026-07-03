@@ -38,7 +38,11 @@
         "hasDiscussionsEnabled": { "type": "boolean" },
         "hasWikiEnabled": { "type": "boolean" },
         "hasProjectsEnabled": { "type": "boolean" },
-        "defaultBranch": { "type": "string", "description": "Default branch name (string), consumed by sync-metadata.yml as .settings.defaultBranch and documented by [GH-REPO-060]. NOT GitHub's GraphQL 'defaultBranchRef' object. Default 'main' per [GH-REPO-053]." }
+        "defaultBranch": { "type": "string", "description": "Default branch name (string), consumed by sync-metadata.yml as .settings.defaultBranch and documented by [GH-REPO-060]. NOT GitHub's GraphQL 'defaultBranchRef' object. Default 'main' per [GH-REPO-053]." },
+        "allowMergeCommit": { "type": "boolean", "description": "Allow merge commits. Default false per [GH-REPO-056] (squash-only)." },
+        "allowSquashMerge": { "type": "boolean", "description": "Allow squash merging. Default true per [GH-REPO-056] (squash-only)." },
+        "allowRebaseMerge": { "type": "boolean", "description": "Allow rebase merging. Default false per [GH-REPO-056] (squash-only)." },
+        "deleteBranchOnMerge": { "type": "boolean", "description": "Auto-delete head branch on merge. Default true per [GH-REPO-056]." }
       }
     },
     "discussion": {
