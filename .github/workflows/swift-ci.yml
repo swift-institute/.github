@@ -40,6 +40,15 @@ name: Swift CI (reusable)
 # Inputs are deliberately minimal. Toolchain versions, runner images, and
 # the matrix shape are hard-coded ecosystem-wide; if a package needs a
 # different shape, fork the workflow rather than parameterizing this one.
+# The three dispatch-only inputs (target-repo, job, ref) are the sanctioned
+# exception to that doctrine: they are DEFAULT-INERT — all empty on every
+# push/PR/wrapper call, so a push builds the caller's own repo at the
+# triggering ref, running every job, exactly as before — and change NOTHING
+# for consumers. They exist solely so ci-dispatch.yml can retarget one job of
+# this universal at another package on demand (a debug surface). Default-
+# inertness is precisely what the fork-doctrine protects, so parameterizing
+# for dispatch does not violate it. Seat-ruled 2026-07-03: this expands the
+# ratified D3 spec from two dispatch inputs to three (target-repo + job + ref).
 #
 # Caching policy: this workflow does NOT cache `.build/`. Every run does
 # a fresh `swift package resolve` + clone + compile. This matches Apple's
@@ -78,11 +87,15 @@ on:
       target-repo:
         type: string
         default: ""
-        description: "Dispatch-only target selector (set by ci-dispatch.yml). When non-empty, every build/test/lint job checks out this `owner/name` repo instead of the caller's own. Empty default — every push/PR/wrapper call passes nothing — so `repository: ${{ inputs.target-repo || github.repository }}` falls back to `github.repository`, bit-identical to the pre-dispatch implicit-default checkout. See ci-dispatch.yml."
+        description: "Dispatch-only target selector (set by ci-dispatch.yml). When non-empty, every build/test/lint job checks out this `owner/name` repo instead of the caller's own. Empty default — every push/PR/wrapper call passes nothing — so each checkout's repository field falls back to github.repository (the `|| github.repository` tail of the expression), bit-identical to the pre-dispatch implicit-default checkout. See ci-dispatch.yml."
       job:
         type: string
         default: ""
         description: "Dispatch-only single-job selector (set by ci-dispatch.yml). When non-empty, only the job whose id equals this value runs; every other selectable job skips via the composed `inputs.job == '' || inputs.job == '<id>'` guard. Empty default — every push/PR/wrapper call passes nothing — so the `inputs.job == ''` disjunct is true for every job and all jobs run exactly as before. The dispatch enum is fixed to the 12 dispatch-meaningful jobs; see ci-dispatch.yml for the list and the ci-ok / lint-api-breakage / lint-pr-title exclusions."
+      ref:
+        type: string
+        default: ""
+        description: "Dispatch-only target ref (set by ci-dispatch.yml). Selects the branch/tag/SHA of `target-repo` to build. Threaded into the `ref:` field of the 8 target checkouts only — NOT the swift-linter engine checkout, which pins its own tool SHA via steps.linter-sha.outputs.sha. Empty default — every push/PR/wrapper call passes nothing — so `actions/checkout` resolves the TRIGGERING ref (github.ref/SHA, i.e. the pushed branch), bit-identical to the pre-dispatch implicit-default checkout. See ci-dispatch.yml."
     secrets:
       PRIVATE_REPO_TOKEN:
         required: false
@@ -140,6 +153,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           repository: ${{ inputs.target-repo || github.repository }}
+          ref: ${{ inputs.ref }}
 
       - uses: swift-institute/.github/.github/actions/configure-private-repos@main
         with:
@@ -186,6 +200,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           repository: ${{ inputs.target-repo || github.repository }}
+          ref: ${{ inputs.ref }}
 
       - uses: swift-institute/.github/.github/actions/configure-private-repos@main
         with:
@@ -234,6 +249,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           repository: ${{ inputs.target-repo || github.repository }}
+          ref: ${{ inputs.ref }}
 
       - uses: swift-institute/.github/.github/actions/configure-private-repos@main
         with:
@@ -280,6 +296,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           repository: ${{ inputs.target-repo || github.repository }}
+          ref: ${{ inputs.ref }}
 
       - uses: swift-institute/.github/.github/actions/configure-private-repos@main
         with:
@@ -353,6 +370,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           repository: ${{ inputs.target-repo || github.repository }}
+          ref: ${{ inputs.ref }}
 
       - uses: swift-institute/.github/.github/actions/configure-private-repos@main
         with:
@@ -435,6 +453,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           repository: ${{ inputs.target-repo || github.repository }}
+          ref: ${{ inputs.ref }}
 
       - name: Print swift-format version
         run: swift-format --version
@@ -479,6 +498,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           repository: ${{ inputs.target-repo || github.repository }}
+          ref: ${{ inputs.ref }}
 
       - name: Cache SwiftLint binary
         id: cache-swiftlint
@@ -560,6 +580,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           repository: ${{ inputs.target-repo || github.repository }}
+          ref: ${{ inputs.ref }}
           path: consumer
 
       - name: Detect Lint.swift

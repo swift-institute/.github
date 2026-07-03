@@ -34,20 +34,20 @@
 #   - Runs appear in THIS repo's (swift-institute/.github) Actions tab, not the
 #     target's. They satisfy NO branch protection on the target and never count
 #     toward a target's required checks.
-#   - [CI-095] consequence: every swift-ci.yml job carries the
-#     `!github.event.repository.private` visibility gate, which evaluates
-#     against the TRIGGERING repo. Here that is public swift-institute/.github,
-#     so the gate always passes and jobs run even when the TARGET is private
-#     (by design, so private packages remain debuggable). Note that actually
-#     checking out a private target still needs credentials the ambient token
-#     lacks — see the next caveat.
-#   - Private-target checkout: the GITHUB_TOKEN inherited here is scoped to
-#     swift-institute/.github and cannot read a private target in another org,
-#     so private targets will fail at checkout; PUBLIC targets check out fine.
-#     Credentialed private-target checkout is an OPEN item — the existing
-#     configure-private-repos mint runs after checkout and is org-hardcoded, so
-#     it cannot be reused for the checkout itself without a new pre-checkout
-#     mint (deferred to the seat per the D3 handoff RELAY).
+#   - Private targets are UNSUPPORTED BY DESIGN — this is a public-target-only
+#     debug surface (seat-ratified 2026-07-03). Do NOT "fix" the checkout to
+#     credential a private target: it enables a dead path and re-expands the
+#     credential surface Slice C hardened. The target checkout stays
+#     `repository:`-only — no token mint.
+#   - Mechanism ([CI-095]/[CI-032]): the `!github.event.repository.private`
+#     gate on every swift-ci.yml selector evaluates against the TRIGGERING repo,
+#     which for a dispatch is public swift-institute/.github — NOT the target —
+#     so the gate PASSES regardless of the target's privacy. A private-target
+#     dispatch therefore schedules its jobs and then fails at the target
+#     checkout (the ambient GITHUB_TOKEN, scoped to .github, cannot read a
+#     cross-org private repo); it does not silently skip. Net: nothing to gain
+#     but a red checkout, and nothing to credential. PUBLIC targets check out
+#     fine and are the only supported use.
 
 name: CI dispatch (single-job, debug)
 
@@ -81,7 +81,7 @@ on:
           - lint-license-header
           - lint-test-support-spine
       ref:
-        description: "Git ref of the target to check out. OPEN: the universal keeps its ratified two-input surface (target-repo, job), so this input does not yet reach the target checkout — the target's default branch is used until a ref thread is ratified (D3 RELAY). To run against a different version of the CI itself, dispatch with `gh workflow run --ref <branch>` instead."
+        description: "Git ref (branch/tag/SHA) of `target-repo` to build. Forwarded to swift-ci.yml's `ref` input and threaded into the 8 target checkouts, so it selects WHAT CODE is built. Different axis from `gh workflow run --ref <branch>`, which selects the CI-DEFINITION version (which swift-ci.yml / ci-dispatch.yml runs). Default `main`."
         type: string
         required: false
         default: main
@@ -100,3 +100,4 @@ jobs:
     with:
       target-repo: ${{ inputs.target-repo }}
       job: ${{ inputs.job }}
+      ref: ${{ inputs.ref }}

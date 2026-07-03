@@ -64,7 +64,17 @@ gh workflow run ci-dispatch.yml -R swift-institute/.github \
 `job` accepts one of the twelve dispatch-meaningful jobs (`macos-release`,
 `linux-release`, `linux-nightly`, `windows-release`, `apple-simulator-build`,
 `format`, `lint`, `swift-linter`, `lint-yaml`, `lint-broken-symlink`,
-`lint-license-header`, `lint-test-support-spine`). See the header of
+`lint-license-header`, `lint-test-support-spine`).
+
+There are two independent ref knobs, easy to conflate:
+
+- `-f ref=<branch>` — the **target** ref: which commit of `target-repo` is
+  checked out and built. Defaults to `main`.
+- `--ref <branch>` — the **CI-definition** version: which revision of
+  `ci-dispatch.yml` / `swift-ci.yml` actually runs. Defaults to the default
+  branch of `swift-institute/.github`.
+
+The surface is public-target-only by design. See the header of
 `.github/workflows/ci-dispatch.yml` for the full caveats.
 
 ## Code of Conduct
