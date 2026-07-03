@@ -1,0 +1,102 @@
+# ci-dispatch.yml — on-demand single-job CI dispatch surface (debug-only).
+#
+# PURPOSE
+# Lets an operator run exactly ONE job of the universal swift-ci.yml against a
+# chosen package, on demand, without pushing to that package. Useful for
+# reproducing a single failing leg (e.g. linux-release) of a target repo from a
+# central place. Per the ratified D3 CI-refactor design.
+#
+# CALL CHAIN (depth 3 — safely under GitHub's 4-level workflow_call limit):
+#   ci-dispatch.yml  (1, workflow_dispatch)
+#     -> swift-ci.yml  (2, workflow_call; universal matrix + quality gates)
+#       -> advisory reusables  (3, e.g. lint-yaml.yml / lint-license-header.yml)
+#
+# THE `job` ENUM — the 12 dispatch-meaningful jobs of swift-ci.yml:
+#   macos-release, linux-release, linux-nightly, windows-release,
+#   apple-simulator-build, format, lint, swift-linter, lint-yaml,
+#   lint-broken-symlink, lint-license-header, lint-test-support-spine.
+# Each is selected by swift-ci.yml's per-job guard
+# `inputs.job == '' || inputs.job == '<id>'`.
+#
+# EXCLUDED from the enum (ruled by the seat):
+#   - ci-ok            — the conclusion aggregator, not a unit of work. A
+#                        single-job dispatch sets `inputs.job != ''`, and
+#                        ci-ok's `if:` requires `inputs.job == ''`, so ci-ok is
+#                        skipped on any dispatch — offering it would run nothing
+#                        and only muddy the result.
+#   - lint-api-breakage,
+#     lint-pr-title    — PR-only jobs (`if: github.event_name ==
+#                        'pull_request'`). A workflow_dispatch is not a
+#                        pull_request event, so selecting either would silently
+#                        no-op (the job's own gate skips it).
+#
+# CAVEATS — this is a DEBUG surface, NOT a gating surface:
+#   - Runs appear in THIS repo's (swift-institute/.github) Actions tab, not the
+#     target's. They satisfy NO branch protection on the target and never count
+#     toward a target's required checks.
+#   - [CI-095] consequence: every swift-ci.yml job carries the
+#     `!github.event.repository.private` visibility gate, which evaluates
+#     against the TRIGGERING repo. Here that is public swift-institute/.github,
+#     so the gate always passes and jobs run even when the TARGET is private
+#     (by design, so private packages remain debuggable). Note that actually
+#     checking out a private target still needs credentials the ambient token
+#     lacks — see the next caveat.
+#   - Private-target checkout: the GITHUB_TOKEN inherited here is scoped to
+#     swift-institute/.github and cannot read a private target in another org,
+#     so private targets will fail at checkout; PUBLIC targets check out fine.
+#     Credentialed private-target checkout is an OPEN item — the existing
+#     configure-private-repos mint runs after checkout and is org-hardcoded, so
+#     it cannot be reused for the checkout itself without a new pre-checkout
+#     mint (deferred to the seat per the D3 handoff RELAY).
+
+name: CI dispatch (single-job, debug)
+
+# [CI-090] standalone workflow (workflow_dispatch only, no workflow_call) MUST
+# declare a top-level permissions floor. Deny-all here; the routing job below
+# grants exactly the `contents: read` the universal's jobs need ([CI-106]).
+permissions: {}
+
+on:
+  workflow_dispatch:
+    inputs:
+      target-repo:
+        description: "Target package to run CI against, as owner/name (e.g. swift-primitives/swift-cardinal-primitives)."
+        type: string
+        required: true
+      job:
+        description: "Which single swift-ci.yml job to run against the target."
+        type: choice
+        required: true
+        options:
+          - macos-release
+          - linux-release
+          - linux-nightly
+          - windows-release
+          - apple-simulator-build
+          - format
+          - lint
+          - swift-linter
+          - lint-yaml
+          - lint-broken-symlink
+          - lint-license-header
+          - lint-test-support-spine
+      ref:
+        description: "Git ref of the target to check out. OPEN: the universal keeps its ratified two-input surface (target-repo, job), so this input does not yet reach the target checkout — the target's default branch is used until a ref thread is ratified (D3 RELAY). To run against a different version of the CI itself, dispatch with `gh workflow run --ref <branch>` instead."
+        type: string
+        required: false
+        default: main
+
+jobs:
+  dispatch:
+    # Pure `uses:` routing job: no harden-runner ([CI-080] pure-`uses:`
+    # carve-out — the called workflow's own jobs run harden-runner) and no
+    # visibility gate ([CI-032] is workflow_call-scoped; this workflow is
+    # dispatch-only). [CI-105]: no `continue-on-error` on a `uses:` job.
+    # [CI-106]: grant >= the called reusable's per-job needs (contents: read).
+    permissions:
+      contents: read
+    uses: ./.github/workflows/swift-ci.yml
+    secrets: inherit
+    with:
+      target-repo: ${{ inputs.target-repo }}
+      job: ${{ inputs.job }}

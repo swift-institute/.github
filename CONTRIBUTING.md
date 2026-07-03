@@ -46,6 +46,27 @@ After that, `swift-format` on the command line resolves to the pinned wrapper
 and produces byte-identical output to CI. The rule and rationale live in the
 ci-cd-workflows skill as `[CI-093]`.
 
+## Running a single CI job on demand
+
+The universal CI can be dispatched against one package, one job at a time, from
+a central place — handy for reproducing a single failing leg without pushing to
+the package. It is a **debug surface, not a gating surface**: runs appear in the
+`swift-institute/.github` Actions tab, and they do not satisfy any branch
+protection on the target.
+
+```sh
+gh workflow run ci-dispatch.yml -R swift-institute/.github \
+  -f target-repo=<org>/<pkg> \
+  -f job=linux-release \
+  [-f ref=main]
+```
+
+`job` accepts one of the twelve dispatch-meaningful jobs (`macos-release`,
+`linux-release`, `linux-nightly`, `windows-release`, `apple-simulator-build`,
+`format`, `lint`, `swift-linter`, `lint-yaml`, `lint-broken-symlink`,
+`lint-license-header`, `lint-test-support-spine`). See the header of
+`.github/workflows/ci-dispatch.yml` for the full caveats.
+
 ## Code of Conduct
 
 All participation in the Swift Institute ecosystem is governed by the
