@@ -65,6 +65,10 @@ validator_for() {
             echo "$SCRIPTS_DIR/validate-continue-on-error.py" ;;
         ci-manifest-binding)
             echo "$SCRIPTS_DIR/validate-manifest-binding.py" ;;
+        doc-020)
+            echo "$SCRIPTS_DIR/validate-docc-structure.py" ;;
+        readme-017)
+            echo "$SCRIPTS_DIR/validate-readme.py" ;;
         test-009)
             echo "$SCRIPTS_DIR/validate-file-naming.py" ;;
         *)
@@ -114,6 +118,8 @@ prefix_for() {
         ci-103)          echo "CI-103" ;;
         ci-105)          echo "CI-105" ;;
         ci-manifest-binding) echo "CI-MANIFEST-BINDING" ;;
+        doc-020)         echo "DOC-020" ;;
+        readme-017)      echo "README-017" ;;
         test-009)        echo "TEST-009" ;;
         *)               echo "" ;;
     esac
