@@ -41,6 +41,7 @@ disabled_rules:
   - file_length                  # Allow longer files
   - closure_parameter_position   # Conflicts with swift-format line breaking
   - opening_brace                # Conflicts with swift-format for long declarations
+  - comma  # Conflicts with swift-format (@_implements attribute-argument spacing); swift-format owns comma spacing
 
 opt_in_rules:
   - explicit_init
