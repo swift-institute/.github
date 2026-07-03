@@ -11,7 +11,8 @@ Family taxonomy (Skills/readme/SKILL.md):
       Experiments, Swift-Evolution, swift-institute.org)
   E — sub-package library repo (the dominant family)
   F — placeholder / scaffold (status-blockquote-only README)
-  G — org profile (renders at github.com/<org>; lives at .github/profile/README.md)
+  G — org profile (renders at github.com/<org>; lives in the org's `.github`
+      repo at repo-root `profile/README.md`)
 
 Rules checked (v1):
   Universal:
@@ -248,9 +249,17 @@ def validate_repo(repo: str, repo_root: Path) -> int:
         emit(repo, "README-family-unset",
              f".github/metadata.yaml lacks readme.family field; cannot apply per-family rules")
         return 1
-    # Locate the README. Family G uses .github/profile/README.md; others use top-level README.md.
+    # Locate the README. Family G org profiles live in the org's special
+    # `.github` repo at `profile/README.md`. When the repo under validation IS
+    # that `.github` repo (repo label ends in `/.github`), the profile is at
+    # repo-root `profile/README.md` — NOT a nested `.github/profile/README.md`
+    # (that nested path is the org-relative view, wrong inside the repo itself).
+    # Other repos use top-level README.md.
     if family == "G":
-        readme = repo_root / ".github" / "profile" / "README.md"
+        if repo.rsplit("/", 1)[-1] == ".github":
+            readme = repo_root / "profile" / "README.md"
+        else:
+            readme = repo_root / ".github" / "profile" / "README.md"
     else:
         readme = repo_root / "README.md"
     if not readme.is_file():
