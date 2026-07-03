@@ -291,9 +291,9 @@ jobs:
   # here because this is a runs-on job, not a `uses:` job ([CI-105]). At 6.4 GA
   # (~Sept 2026) this graduates to a gating `swift:6.4` stable leg, retiring the
   # `compiler(<6.4)` §A9 gates (swift-xml / swift-w3c-xml / swift-graph / swift-plist).
-  linux-6.4:
+  linux-6-4:
     name: Ubuntu (Swift 6.4.x nightly, release)
-    if: ${{ !github.event.repository.private && (inputs.job == '' || inputs.job == 'linux-6.4') }}
+    if: ${{ !github.event.repository.private && (inputs.job == '' || inputs.job == 'linux-6-4') }}
     runs-on: ubuntu-latest
     container: swiftlang/swift:nightly-6.4.x-jammy
     continue-on-error: true
@@ -881,7 +881,7 @@ jobs:
     continue-on-error: true
     needs:
       - linux-nightly
-      - linux-6.4
+      - linux-6-4
       - apple-simulator-build
       - swift-linter
       - lint-yaml

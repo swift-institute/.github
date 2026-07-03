@@ -71,7 +71,7 @@ on:
           - macos-release
           - linux-release
           - linux-nightly
-          - linux-6.4
+          - linux-6-4
           - windows-release
           - apple-simulator-build
           - format
