@@ -1,0 +1,85 @@
+# startup-failure-probe-weekly.yml — weekly cross-org startup_failure probe.
+#
+# A `startup_failure` conclusion means a workflow never started (bad YAML, a
+# missing reusable, a `workflow_call` permissions/chain mismatch per
+# [CI-105]/[CI-106], a `permissions: {}` on a reusable per [CI-097]). It is
+# invisible to every per-job gate because NO job runs — `conclusion:
+# startup_failure`, `jobs: []`, no fetchable logs — so a broken CI-definition
+# change to the shared reusables can lurk until the next scheduled firing. This
+# probe queries the recent Actions runs of the four shared `.github` repos every
+# Monday and goes RED if any concluded `startup_failure`.
+#
+# Centralized per [CI-108] (the three tests are all NO — not run against a PR
+# diff, does not commit back to a branch, does not gate a merge → centralize):
+# it runs in swift-institute/.github (public → free minutes) and reads each
+# target's runs via a per-org swift-institute-bot installation token, mirroring
+# the cross-org token-mint pattern of cron-audit-base.yml / link-check-weekly.yml.
+#
+# Detection is a testable pure function in .github/scripts/detect-startup-
+# failures.py; .github/scripts/tests/test-detect-startup-failures.py proves it
+# flags synthetic startup_failure data (non-zero exit) and passes on clean data.
+#
+# [CI-104] canary: this is a schedule-only workflow — after any change, exercise
+# it with `gh workflow run startup-failure-probe-weekly.yml --repo
+# swift-institute/.github --ref main`; the consumer-CI canary does not reach it.
+
+name: startup-failure-probe-weekly
+
+# [CI-090] Standalone workflow (schedule + workflow_dispatch, no workflow_call)
+# MUST declare a top-level permissions floor. Deny-all here; the probe job below
+# grants exactly the `contents: read` its steps need (cross-org actions:read
+# comes from the minted App token, not the ambient GITHUB_TOKEN).
+permissions: {}
+
+on:
+  schedule:
+    - cron: '55 6 * * 1'   # weekly Monday 06:55 UTC (offset from the 06:00–06:50 cron family)
+  workflow_dispatch: {}
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false   # check every shared repo even when one is already red
+      matrix:
+        include:
+          - org: swift-institute
+            repo: swift-institute/.github
+          - org: swift-primitives
+            repo: swift-primitives/.github
+          - org: swift-standards
+            repo: swift-standards/.github
+          - org: swift-foundations
+            repo: swift-foundations/.github
+    steps:
+      - name: Harden runner (audit-mode egress logging)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: Checkout swift-institute/.github (detection script)
+        uses: actions/checkout@v6
+
+      - name: Mint installation token (swift-institute-bot)
+        id: token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
+        with:
+          client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: ${{ matrix.org }}
+          repositories: .github
+          permission-actions: read
+
+      - name: Query recent runs and detect startup_failure
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          TARGET: ${{ matrix.repo }}
+        run: |
+          set -euo pipefail
+          # Most-recent 100 runs across all workflows in the target repo.
+          gh api "/repos/${TARGET}/actions/runs?per_page=100" > /tmp/runs.json
+          # Exits 1 (RED) if any run concluded startup_failure; 0 if clean.
+          python3 .github/scripts/detect-startup-failures.py /tmp/runs.json
