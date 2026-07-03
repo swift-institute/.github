@@ -50,6 +50,11 @@
 #     fine and are the only supported use.
 
 name: CI dispatch (single-job, debug)
+# run-name self-labels each dispatch with its target + job so batch runs are
+# correlatable in the Actions UI and via `gh run list --json displayTitle`
+# (the workflow otherwise has no per-run discriminator — all runs share the
+# workflow name). Enables harvesting fan-out assessments by target.
+run-name: "ci-dispatch → ${{ inputs.target-repo }} · ${{ inputs.job }} @ ${{ inputs.ref }}"
 
 # [CI-090] standalone workflow (workflow_dispatch only, no workflow_call) MUST
 # declare a top-level permissions floor. Deny-all here; the routing job below
