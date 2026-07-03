@@ -42,7 +42,9 @@
         "allowMergeCommit": { "type": "boolean", "description": "Allow merge commits. Default false per [GH-REPO-056] (squash-only)." },
         "allowSquashMerge": { "type": "boolean", "description": "Allow squash merging. Default true per [GH-REPO-056] (squash-only)." },
         "allowRebaseMerge": { "type": "boolean", "description": "Allow rebase merging. Default false per [GH-REPO-056] (squash-only)." },
-        "deleteBranchOnMerge": { "type": "boolean", "description": "Auto-delete head branch on merge. Default true per [GH-REPO-056]." }
+        "deleteBranchOnMerge": { "type": "boolean", "description": "Auto-delete head branch on merge. Default true per [GH-REPO-056]." },
+        "secretScanning": { "type": "boolean", "description": "GitHub secret scanning (public repos only; private needs GHAS). Default true per [GH-REPO-057]." },
+        "secretScanningPushProtection": { "type": "boolean", "description": "Secret-scanning push protection (public repos only). Default true per [GH-REPO-057]." }
       }
     },
     "discussion": {

@@ -174,7 +174,7 @@ jobs:
 
             # 3. Read current GitHub state.
             current=$(gh repo view "$target" \
-              --json description,repositoryTopics,homepageUrl,hasIssuesEnabled,hasDiscussionsEnabled,hasWikiEnabled,hasProjectsEnabled,defaultBranchRef,mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed,deleteBranchOnMerge)
+              --json description,repositoryTopics,homepageUrl,hasIssuesEnabled,hasDiscussionsEnabled,hasWikiEnabled,hasProjectsEnabled,defaultBranchRef,mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed,deleteBranchOnMerge,visibility)
 
             current_desc=$(echo "$current" | jq -r '.description // ""')
             current_homepage=$(echo "$current" | jq -r '.homepageUrl // ""')
@@ -252,6 +252,22 @@ jobs:
             [[ "$desired_del" != "$current_del" ]] && merge_args+=(-F "delete_branch_on_merge=$desired_del")
             repo_diffs=$((repo_diffs + ${#merge_args[@]}))
 
+            # Secret scanning + push protection per [GH-REPO-057] (PUBLIC only;
+            # private repos need GHAS and the PATCH would error). gh repo view
+            # exposes no security surface, so current state is a dedicated call.
+            sec_args=()
+            desired_ss=false; desired_pp=false
+            if [[ "$(echo "$current" | jq -r '.visibility')" == "PUBLIC" ]]; then
+              desired_ss=$(echo "$desired" | jq -r '.settings.secretScanning // true')
+              desired_pp=$(echo "$desired" | jq -r '.settings.secretScanningPushProtection // true')
+              sec=$(gh api "repos/$target" --jq '{ss:(.security_and_analysis.secret_scanning.status // "disabled"), pp:(.security_and_analysis.secret_scanning_push_protection.status // "disabled")}')
+              current_ss=$([[ "$(echo "$sec" | jq -r .ss)" == "enabled" ]] && echo true || echo false)
+              current_pp=$([[ "$(echo "$sec" | jq -r .pp)" == "enabled" ]] && echo true || echo false)
+              [[ "$desired_ss" != "$current_ss" ]] && sec_args+=(secret_scanning)
+              [[ "$desired_pp" != "$current_pp" ]] && sec_args+=(secret_scanning_push_protection)
+              repo_diffs=$((repo_diffs + ${#sec_args[@]}))
+            fi
+
             diffs_found=$((diffs_found + repo_diffs))
 
             # 5. Apply (or print).
@@ -272,11 +288,21 @@ jobs:
                 for a in "${merge_args[@]}"; do printf ' %q' "$a"; done
                 printf '\n'
               fi
+              if [[ ${#sec_args[@]} -gt 0 ]]; then
+                printf '    gh api -X PATCH %q  # security_and_analysis: secret_scanning=%s push_protection=%s\n' "repos/$target" "$desired_ss" "$desired_pp"
+              fi
               summary_lines+=("- \`${target}\`: ${repo_diffs} field(s) — dry-run preview")
             else
               echo "  ${target}: ${repo_diffs} diff(s) — applying"
               [[ ${#edit_args[@]} -gt 0 ]] && gh repo edit "$target" "${edit_args[@]}"
               [[ ${#merge_args[@]} -gt 0 ]] && gh api -X PATCH "repos/$target" "${merge_args[@]}" >/dev/null
+              if [[ ${#sec_args[@]} -gt 0 ]]; then
+                ss_status=$([[ "$desired_ss" == true ]] && echo enabled || echo disabled)
+                pp_status=$([[ "$desired_pp" == true ]] && echo enabled || echo disabled)
+                jq -nc --arg ss "$ss_status" --arg pp "$pp_status" \
+                  '{security_and_analysis:{secret_scanning:{status:$ss},secret_scanning_push_protection:{status:$pp}}}' \
+                  | gh api -X PATCH "repos/$target" --input - >/dev/null
+              fi
               edits_applied=$((edits_applied + repo_diffs))
               summary_lines+=("- \`${target}\`: ${repo_diffs} field(s) applied")
             fi
