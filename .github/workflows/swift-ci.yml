@@ -803,6 +803,57 @@ jobs:
   # .github fires Monday 06:50 UTC and submits dep-graphs for all public
   # consumer repos via `gh api -X POST /repos/<target>/dependency-graph/snapshots`.
 
+  # ─── Advisory results surface (informational, non-gating) ─────────────────
+  # Renders one row per advisory leg (leg name + result) to the run summary so
+  # advisory red is legible in ONE place, instead of scattered across the job
+  # sidebar. Informational ONLY: it is excluded from ci-ok's needs (never a
+  # merge gate) and carries `continue-on-error: true` so a rendering hiccup can
+  # never fail the run. Keyed on always() + not-private like ci-ok — but NOT a
+  # ci-dispatch-selectable job: it declares no `inputs.job` selector and is
+  # absent from ci-dispatch.yml's `job` enum. `needs:` enumerates every advisory
+  # leg per [CI-002] (the continue-on-error legs linux-nightly /
+  # apple-simulator-build / swift-linter + the six nested advisory:true linters).
+  advisory-summary:
+    name: Advisory results (informational)
+    if: ${{ always() && !github.event.repository.private }}
+    continue-on-error: true
+    needs:
+      - linux-nightly
+      - apple-simulator-build
+      - swift-linter
+      - lint-yaml
+      - lint-broken-symlink
+      - lint-license-header
+      - lint-test-support-spine
+      - lint-api-breakage
+      - lint-pr-title
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden runner (audit-mode egress logging)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: Render advisory leg results to the run summary
+        env:
+          NEEDS_JSON: ${{ toJson(needs) }}
+        run: |
+          set -euo pipefail
+          # Informational only — this job is excluded from ci-ok's needs and
+          # never gates the merge. One row per advisory leg (name + result).
+          # ubuntu-latest pre-installs jq.
+          {
+            echo "## Advisory leg results"
+            echo ""
+            echo "Informational only — advisory legs never gate the merge (see \`ci-ok\`)."
+            echo ""
+            echo "| Advisory leg | Result |"
+            echo "| --- | --- |"
+            jq -r 'to_entries | sort_by(.key)[] | "| \(.key) | \(.value.result) |"' <<< "$NEEDS_JSON"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   # ─── Conclusion aggregator ────────────────────────────────────────────────
   # Single required-status-check name for branch protection. needs: lists
   # every job that should gate the merge; ci-ok succeeds iff every needed
