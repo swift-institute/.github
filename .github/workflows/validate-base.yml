@@ -142,7 +142,19 @@ jobs:
               echo "$repo	clone-failed	-" >> /tmp/findings.tsv
               exit 0
             fi
-            python3 "$VALIDATOR" "$repo" "$workdir" >> /tmp/findings.tsv || true
+            # Capture the validator's exit code without tripping `set -e`. The
+            # validators are signal-via-TSV: `__main__` returns 0 even WITH
+            # findings (e.g. validate-harden-runner.py calls main() without
+            # sys.exit), so a nonzero rc genuinely means the validator crashed or
+            # aborted (uncaught exception, or require_yaml()'s sys.exit(2) on
+            # missing PyYAML) — NOT that it found violations. The old `|| true`
+            # swallowed such a crash and left findings.tsv empty → "Total
+            # violations: 0" → false-green, exactly the gap clone-failed closes.
+            rc=0
+            python3 "$VALIDATOR" "$repo" "$workdir" >> /tmp/findings.tsv || rc=$?
+            if [ "$rc" -ne 0 ]; then
+              echo "$repo	validator-crashed	-" >> /tmp/findings.tsv
+            fi
           )
           rm -rf "$workdir"
 
@@ -165,11 +177,15 @@ jobs:
           # (awk emits 0 records on empty input) so the pipeline is
           # pipefail-safe and yields 0 on an empty findings.tsv.
           violations=$(awk -F'\t' -v re="${RULE_ID_REGEX}" '$2 ~ re' /tmp/findings.tsv | wc -l | tr -d ' ')
-          # Clone-failed sentinel gate: the Run-validator step writes a
-          # `<repo><TAB>clone-failed<TAB>-` row and exit 0 when the clone fails,
-          # so a validator that NEVER RAN would otherwise pass silently (field 2
-          # matches no rule regex). Detect these rows explicitly and fail closed.
+          # Sentinel gates: the Run-validator step writes a
+          # `<repo><TAB>clone-failed<TAB>-` row (clone failed) or a
+          # `<repo><TAB>validator-crashed<TAB>-` row (cloned fine but the
+          # validator exited nonzero), then continues, so a validator that
+          # NEVER PRODUCED USABLE OUTPUT would otherwise pass silently (field 2
+          # of either sentinel matches no rule regex, exactly like clone-failed).
+          # Detect both row kinds explicitly and fail closed.
           clone_failures=$(awk -F'\t' '$2 == "clone-failed"' /tmp/findings.tsv | wc -l | tr -d ' ')
+          validator_crashes=$(awk -F'\t' '$2 == "validator-crashed"' /tmp/findings.tsv | wc -l | tr -d ' ')
           echo "total-violations=$violations" >> "$GITHUB_OUTPUT"
           {
             echo "## ${VALIDATOR_SCRIPT} findings"
@@ -180,6 +196,13 @@ jobs:
               echo "> ${clone_failures} target(s) FAILED TO CLONE — the validator did not run. The violation count above is unreliable (false-green risk); treat this run as FAILED and re-run to clear a transient clone error."
               echo
               awk -F'\t' '$2 == "clone-failed" { printf("- clone-failed: `%s`\n", $1) }' /tmp/findings.tsv
+              echo
+            fi
+            if [ "$validator_crashes" -gt 0 ]; then
+              echo "> [!CAUTION]"
+              echo "> ${validator_crashes} target(s) CRASHED THE VALIDATOR — it cloned but exited nonzero (uncaught exception or aborted setup), producing no usable findings. The violation count above is unreliable (false-green risk); treat this run as FAILED and fix the validator or its environment."
+              echo
+              awk -F'\t' '$2 == "validator-crashed" { printf("- validator-crashed: `%s`\n", $1) }' /tmp/findings.tsv
               echo
             fi
             if [ "$violations" -gt 0 ]; then
@@ -198,6 +221,13 @@ jobs:
               echo "::warning::${clone_failures} validator target(s) failed to clone (dry-run: not failing) — a validator did not run; this run's counts are unreliable."
             fi
           fi
-          if { [ "$violations" -gt 0 ] || [ "$clone_failures" -gt 0 ]; } && [ "$DRY_RUN" != "true" ]; then
+          if [ "$validator_crashes" -gt 0 ]; then
+            if [ "$DRY_RUN" != "true" ]; then
+              echo "::error::${validator_crashes} validator target(s) crashed — the validator exited nonzero and produced no usable findings, so a green result here would be false. Failing the aggregation gate (fix the validator or its environment)."
+            else
+              echo "::warning::${validator_crashes} validator target(s) crashed (dry-run: not failing) — the validator exited nonzero; this run's counts are unreliable."
+            fi
+          fi
+          if { [ "$violations" -gt 0 ] || [ "$clone_failures" -gt 0 ] || [ "$validator_crashes" -gt 0 ]; } && [ "$DRY_RUN" != "true" ]; then
             exit 1
           fi
