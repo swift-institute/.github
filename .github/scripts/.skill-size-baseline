@@ -3,11 +3,11 @@
 audit/SKILL.md 1112  # raised 2026-07-02: reflections-drain normative folds (Skills@67bd53f/e8c2f97/75c5313)
 code-surface/SKILL.md 1550
 existing-infrastructure/SKILL.md 1225
-github-repository/SKILL.md 1018
+github-repository/SKILL.md 1003  # ratcheted 2026-07-05: corpus-review wave landed at 1003 (prune-only tighten)
 # modularization/SKILL.md entry removed 2026-07-05: SKILL.md split into navigation-hub (155 lines) + 6 siblings per [SKILL-CREATE-005a]; all modularization files now under the 1000-line ceiling, so no baseline entry is needed.
 readme/sub-package.md 1010
 research-process/SKILL.md 1075  # raised 2026-07-02: reflections-drain normative folds (Skills@67bd53f/e8c2f97/75c5313)
-skill-lifecycle/SKILL.md 1017
+skill-lifecycle/SKILL.md 1015  # ratcheted 2026-07-05: corpus-review wave landed at 1015 (prune-only tighten)
 # supervise/SKILL.md entry removed 2026-07-05: SKILL.md split into navigation-hub (147 lines) + 5 siblings per [SKILL-CREATE-005a]; all supervise files now under the 1000-line ceiling, so no baseline entry is needed.
 swift-package/SKILL.md 1064
 testing/SKILL.md 1156  # raised 2026-07-02: reflections-drain normative folds (Skills@67bd53f/e8c2f97/75c5313)
