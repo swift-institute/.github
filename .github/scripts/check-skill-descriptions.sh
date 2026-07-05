@@ -51,18 +51,21 @@ CEILING="${SKILL_DESCRIPTION_CEILING:-250}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ALLOWLIST="${SCRIPT_DIR}/.skill-description-allowlist"
 
-# Default roots — directories in the swift-institute ecosystem that can hold
-# SKILL.md files. Override by passing explicit roots as args. CI consumers
-# always pass explicit roots; defaults are convenience for ad-hoc local runs.
+# Default roots — directories in the ecosystem that can hold SKILL.md files.
+# Override by passing explicit roots as args. CI consumers always pass
+# explicit roots; defaults are convenience for ad-hoc local runs.
 #
-# Scope note: rule-institute is a PARALLEL institute (legal-domain) with its
-# own skill discipline; it is intentionally OUTSIDE swift-institute's default
-# scope. To audit rule-institute, pass its Skills root explicitly:
-#   ./check-skill-descriptions.sh ~/Developer/rule-institute/Skills
+# Unified with check-skill-sizes.sh's default roots (principal ruling
+# 2026-07-05, REPORT-corpus-review.md §8.5): rule-institute skills symlink
+# into the same session listing, so the 250-char budget rationale applies to
+# them identically — the former deliberate exclusion is retired. The
+# swift-primitives/Skills root was a phantom (no such directory; the
+# primitives skill lives in swift-institute/Skills) and is dropped; re-add
+# if a repo-local Skills/ dir ever materializes per [SKILL-CREATE-011].
 DEFAULT_ROOTS=(
   "${HOME}/Developer/swift-institute/Skills"
   "${HOME}/Developer/swift-institute/Engagement/Skills"
-  "${HOME}/Developer/swift-primitives/Skills"
+  "${HOME}/Developer/rule-institute/Skills"
 )
 
 if [[ $# -gt 0 ]]; then
