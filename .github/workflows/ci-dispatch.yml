@@ -11,8 +11,8 @@
 #     -> swift-ci.yml  (2, workflow_call; universal matrix + quality gates)
 #       -> advisory reusables  (3, e.g. lint-yaml.yml / lint-license-header.yml)
 #
-# THE `job` ENUM — the 12 dispatch-meaningful jobs of swift-ci.yml:
-#   macos-release, linux-release, linux-nightly, windows-release,
+# THE `job` ENUM — the 13 dispatch-meaningful jobs of swift-ci.yml:
+#   macos-release, linux-release, linux-nightly, linux-6-4, windows-release,
 #   apple-simulator-build, format, lint, swift-linter, lint-yaml,
 #   lint-broken-symlink, lint-license-header, lint-test-support-spine.
 # Each is selected by swift-ci.yml's per-job guard
@@ -24,6 +24,10 @@
 #                        ci-ok's `if:` requires `inputs.job == ''`, so ci-ok is
 #                        skipped on any dispatch — offering it would run nothing
 #                        and only muddy the result.
+#   - advisory-summary — the informational advisory-leg renderer, not a unit of
+#                        work. Excluded identically to ci-ok: its `if:` also
+#                        requires `inputs.job == ''`, so it skips on any
+#                        single-job dispatch — offering it would render nothing.
 #   - lint-api-breakage,
 #     lint-pr-title    — PR-only jobs (`if: github.event_name ==
 #                        'pull_request'`). A workflow_dispatch is not a
@@ -87,7 +91,7 @@ on:
           - lint-license-header
           - lint-test-support-spine
       ref:
-        description: "Git ref (branch/tag/SHA) of `target-repo` to build. Forwarded to swift-ci.yml's `ref` input and threaded into the 8 target checkouts, so it selects WHAT CODE is built. Different axis from `gh workflow run --ref <branch>`, which selects the CI-DEFINITION version (which swift-ci.yml / ci-dispatch.yml runs). Default `main`."
+        description: "Git ref (branch/tag/SHA) of `target-repo` to build. Forwarded to swift-ci.yml's `ref` input and threaded into the 9 target checkouts, so it selects WHAT CODE is built. Different axis from `gh workflow run --ref <branch>`, which selects the CI-DEFINITION version (which swift-ci.yml / ci-dispatch.yml runs). Default `main`."
         type: string
         required: false
         default: main

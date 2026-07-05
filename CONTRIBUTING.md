@@ -61,10 +61,10 @@ gh workflow run ci-dispatch.yml -R swift-institute/.github \
   [-f ref=main]
 ```
 
-`job` accepts one of the twelve dispatch-meaningful jobs (`macos-release`,
-`linux-release`, `linux-nightly`, `windows-release`, `apple-simulator-build`,
-`format`, `lint`, `swift-linter`, `lint-yaml`, `lint-broken-symlink`,
-`lint-license-header`, `lint-test-support-spine`).
+`job` accepts one of the thirteen dispatch-meaningful jobs (`macos-release`,
+`linux-release`, `linux-nightly`, `linux-6-4`, `windows-release`,
+`apple-simulator-build`, `format`, `lint`, `swift-linter`, `lint-yaml`,
+`lint-broken-symlink`, `lint-license-header`, `lint-test-support-spine`).
 
 There are two independent ref knobs, easy to conflate:
 

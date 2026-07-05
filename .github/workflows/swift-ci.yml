@@ -91,11 +91,11 @@ on:
       job:
         type: string
         default: ""
-        description: "Dispatch-only single-job selector (set by ci-dispatch.yml). When non-empty, only the job whose id equals this value runs; every other selectable job skips via the composed `inputs.job == '' || inputs.job == '<id>'` guard. Empty default — every push/PR/wrapper call passes nothing — so the `inputs.job == ''` disjunct is true for every job and all jobs run exactly as before. The dispatch enum is fixed to the 12 dispatch-meaningful jobs; see ci-dispatch.yml for the list and the ci-ok / lint-api-breakage / lint-pr-title exclusions."
+        description: "Dispatch-only single-job selector (set by ci-dispatch.yml). When non-empty, only the job whose id equals this value runs; every other selectable job skips via the composed `inputs.job == '' || inputs.job == '<id>'` guard. Empty default — every push/PR/wrapper call passes nothing — so the `inputs.job == ''` disjunct is true for every job and all jobs run exactly as before. The dispatch enum is fixed to the 13 dispatch-meaningful jobs; see ci-dispatch.yml for the list and the ci-ok / lint-api-breakage / lint-pr-title exclusions."
       ref:
         type: string
         default: ""
-        description: "Dispatch-only target ref (set by ci-dispatch.yml). Selects the branch/tag/SHA of `target-repo` to build. Threaded into the `ref:` field of the 8 target checkouts only — NOT the swift-linter engine checkout, which pins its own tool SHA via steps.linter-sha.outputs.sha. Empty default — every push/PR/wrapper call passes nothing — so `actions/checkout` resolves the TRIGGERING ref (github.ref/SHA, i.e. the pushed branch), bit-identical to the pre-dispatch implicit-default checkout. See ci-dispatch.yml."
+        description: "Dispatch-only target ref (set by ci-dispatch.yml). Selects the branch/tag/SHA of `target-repo` to build. Threaded into the `ref:` field of the 9 target checkouts only — NOT the swift-linter engine checkout, which pins its own tool SHA via steps.linter-sha.outputs.sha. Empty default — every push/PR/wrapper call passes nothing — so `actions/checkout` resolves the TRIGGERING ref (github.ref/SHA, i.e. the pushed branch), bit-identical to the pre-dispatch implicit-default checkout. See ci-dispatch.yml."
     secrets:
       PRIVATE_REPO_TOKEN:
         required: false
@@ -873,7 +873,7 @@ jobs:
   # ci-dispatch's exactly-one-job property) and runs only on push/PR. It carries
   # no `inputs.job == '<id>'` selector and is absent from ci-dispatch.yml's `job`
   # enum. `needs:` enumerates every advisory
-  # leg per [CI-002] (the continue-on-error legs linux-nightly /
+  # leg per [CI-002] (the continue-on-error legs linux-nightly / linux-6-4 /
   # apple-simulator-build / swift-linter + the six nested advisory:true linters).
   advisory-summary:
     name: Advisory results (informational)
