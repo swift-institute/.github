@@ -3,11 +3,13 @@
 # A `startup_failure` conclusion means a workflow never started (bad YAML, a
 # missing reusable, a `workflow_call` permissions/chain mismatch per
 # [CI-105]/[CI-106], a `permissions: {}` on a reusable per [CI-097]). It is
-# invisible to every per-job gate because NO job runs — `conclusion:
-# startup_failure`, `jobs: []`, no fetchable logs — so a broken CI-definition
-# change to the shared reusables can lurk until the next scheduled firing. This
-# probe queries the recent Actions runs of the four shared `.github` repos every
-# Monday and goes RED if any concluded `startup_failure`.
+# invisible to every per-job gate because NO job runs: `startup_failure` is
+# GitHub's own conclusion for such a zero-job abort (an empty `jobs` array, no
+# fetchable logs), and that conclusion is the single signal this probe checks —
+# so a broken CI-definition change to the shared reusables can lurk until the
+# next scheduled firing. This probe queries the last 8 days of Actions runs
+# (date-bounded and paginated) for the four shared `.github` repos every Monday
+# and goes RED if any concluded `startup_failure`.
 #
 # Centralized per [CI-108] (the three tests are all NO — not run against a PR
 # diff, does not commit back to a branch, does not gate a merge → centralize):
@@ -79,7 +81,19 @@ jobs:
           TARGET: ${{ matrix.repo }}
         run: |
           set -euo pipefail
-          # Most-recent 100 runs across all workflows in the target repo.
-          gh api "/repos/${TARGET}/actions/runs?per_page=100" > /tmp/runs.json
+          # Date-bounded, paginated window: every run created in the last 8 days
+          # (weekly cadence + 1 day margin) across all workflows in the target
+          # repo. A single 100-run page covered only ~1.67 days on the busiest
+          # repo (~60 runs/day) — a startup_failure older than ~40h was never
+          # seen. `--paginate` walks every page; `--slurp` wraps the per-page
+          # objects into one array (raw --paginate concatenates bare JSON
+          # objects, which json.loads cannot parse); jq then merges the pages'
+          # workflow_runs back into the single {workflow_runs:[...]} object the
+          # detector already accepts. `created=>=` is GitHub's list-runs date
+          # filter; runner is ubuntu-latest so GNU `date -d` is available.
+          SINCE="$(date -u -d '8 days ago' +%Y-%m-%d)"
+          gh api --paginate --slurp \
+            "/repos/${TARGET}/actions/runs?per_page=100&created=>=${SINCE}" \
+            | jq '{workflow_runs: (map(.workflow_runs) | add)}' > /tmp/runs.json
           # Exits 1 (RED) if any run concluded startup_failure; 0 if clean.
           python3 .github/scripts/detect-startup-failures.py /tmp/runs.json

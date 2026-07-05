@@ -51,9 +51,13 @@ def extract_runs(data: Any) -> list[dict]:
 def find_startup_failures(runs: list[dict]) -> list[dict]:
     """Return the subset of runs whose `conclusion` is exactly `startup_failure`.
 
-    Pure function — the testable core. `conclusion` is `None` for in-progress
-    runs and a non-matching string for every other terminal state, so only the
-    exact `startup_failure` value is flagged.
+    Pure function — the testable core. `startup_failure` is GitHub's own
+    `conclusion` for a run that aborted before any job started: such a run has an
+    empty `jobs` array and no fetchable logs. That conclusion is the single
+    signal checked here — there is no separate per-run jobs-API inspection.
+    `conclusion` is `None` for in-progress runs and a non-matching string for
+    every other terminal state, so only the exact `startup_failure` value is
+    flagged.
     """
     return [r for r in runs if isinstance(r, dict) and r.get("conclusion") == STARTUP_FAILURE]
 
