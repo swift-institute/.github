@@ -325,3 +325,12 @@ validators:
     discovery-mode: single-target
     rule-id-regex: '^README-'
     migrate-to-base: yes
+
+  - rule-id: PKG-DEP-008
+    validator-script: .github/scripts/validate-package-identity.py
+    workflow-file: .github/workflows/validate-package-identity.yml
+    status: active
+    self-firing: deferred
+    discovery-mode: per-package-org-sweep
+    rule-id-regex: '^PKG-DEP-008'
+    migrate-to-base: 'no (per-package-org-sweep deferred to B-2)'
