@@ -150,7 +150,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: ${{ inputs.target-repo || github.repository }}
           ref: ${{ inputs.ref }}
@@ -197,7 +197,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: ${{ inputs.target-repo || github.repository }}
           ref: ${{ inputs.ref }}
@@ -246,7 +246,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: ${{ inputs.target-repo || github.repository }}
           ref: ${{ inputs.ref }}
@@ -306,7 +306,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: ${{ inputs.target-repo || github.repository }}
           ref: ${{ inputs.ref }}
@@ -353,7 +353,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: ${{ inputs.target-repo || github.repository }}
           ref: ${{ inputs.ref }}
@@ -427,7 +427,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: ${{ inputs.target-repo || github.repository }}
           ref: ${{ inputs.ref }}
@@ -510,7 +510,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: ${{ inputs.target-repo || github.repository }}
           ref: ${{ inputs.ref }}
@@ -555,14 +555,14 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: ${{ inputs.target-repo || github.repository }}
           ref: ${{ inputs.ref }}
 
       - name: Cache SwiftLint binary
         id: cache-swiftlint
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: /usr/local/bin/swiftlint
           key: ${{ runner.os }}-swiftlint-${{ env.SWIFTLINT_VERSION }}
@@ -637,7 +637,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: ${{ inputs.target-repo || github.repository }}
           ref: ${{ inputs.ref }}
@@ -691,7 +691,7 @@ jobs:
       - name: Cache swift-linter dispatcher binary
         if: ${{ steps.detect.outputs.present == 'true' }}
         id: cache-swift-linter
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: /usr/local/bin/swift-linter
           key: ${{ runner.os }}-swift${{ inputs.swift-version }}-linterbin-${{ steps.linter-sha.outputs.sha }}
@@ -738,7 +738,7 @@ jobs:
       - name: Cache swift-linter standard runner
         if: ${{ steps.detect.outputs.present == 'true' }}
         id: cache-runner
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: /usr/local/bin/swift-linter-runner
           key: ${{ runner.os }}-swift${{ inputs.swift-version }}-linterrunner-${{ steps.runner-key.outputs.digest }}
@@ -747,7 +747,7 @@ jobs:
       # cache missed — both build from this checkout (Runner/ ships inside it).
       - name: Checkout swift-linter (cache miss)
         if: ${{ steps.detect.outputs.present == 'true' && (steps.cache-swift-linter.outputs.cache-hit != 'true' || steps.cache-runner.outputs.cache-hit != 'true') }}
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: swift-foundations/swift-linter
           ref: ${{ steps.linter-sha.outputs.sha }}

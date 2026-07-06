@@ -86,7 +86,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install dependencies (python3, git for sparse-checkout)
         shell: bash
@@ -96,7 +96,7 @@ jobs:
           apt-get install -qq -y python3 git
 
       - name: Fetch audit script (sparse-checkout from swift-institute/.github)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: swift-institute/.github
           ref: main

@@ -122,7 +122,7 @@ jobs:
           apt-get install -qq -y gh
 
       - name: Fetch snapshot helper (sparse-checkout from swift-institute/.github)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: swift-institute/.github
           ref: main
