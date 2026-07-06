@@ -17,6 +17,14 @@ related naming rules share one script). Rules checked (v1):
                    deps without a local manifest are skipped. Direct deps
                    only in v1 (the canonical layered-vocabulary instance is
                    a direct edge).
+  [PKG-NAME-017]   L1 name mirrors the shipped surface: when a primitives-org
+                   package has a detectable root (files named
+                   `X[.Y].Protocol.swift` / `X[.Y].Witness.swift` under
+                   Sources/ — the greppable root-existence test the rule
+                   itself names), the repo name MUST be
+                   `swift-<kebab(root-path)>-primitives` for at least one
+                   detected root stem. Packages with no detectable root use
+                   the family-label register (judgment) and are skipped.
   [MOD-023]        `#externalMacro(module:)` MUST cite the SwiftPM-normalized
                    module name (spaces → underscores), not the collapsed or
                    as-written target name. Target names come from
@@ -112,6 +120,37 @@ def macro_target_names(root: Path) -> set[str] | None:
 def squash(name: str) -> str:
     return name.replace(" ", "").replace("_", "").lower()
 
+
+RULE_MIRROR = "PKG-NAME-017"
+
+
+def kebab(namespace_path: str) -> str:
+    """`Buffer.Linear` → `buffer-linear`; camel humps split (`TernaryLogic`
+    → `ternary-logic`)."""
+    parts = []
+    for seg in namespace_path.split("."):
+        parts.extend(re.findall(r"[A-Z]+(?![a-z])|[A-Z][a-z0-9]*|[a-z0-9]+", seg))
+    return "-".join(p.lower() for p in parts if p)
+
+
+def root_stems(root: Path) -> set[str]:
+    """Namespace paths of shipped roots, per the rule's greppable test:
+    file names `X[.Y].Protocol.swift` / `X[.Y].Witness.swift` under Sources/."""
+    stems = set()
+    src = root / "Sources"
+    if not src.is_dir():
+        return stems
+    for dirpath, dirnames, filenames in os.walk(src):
+        dirnames[:] = [d for d in dirnames if d not in MACRO_SKIP_DIRS]
+        for fn in filenames:
+            m = re.match(r"^(.+)\.(Protocol|Witness)\.swift$", fn)
+            # `A+B.Protocol.swift` is a CONFORMANCE file ([API-IMPL-007]'s
+            # `+` convention — A adopting B's protocol), not a root
+            # declaration; only plain `X[.Y].Protocol.swift` marks a root.
+            if m and "+" not in m.group(1):
+                stems.add(m.group(1))
+    return stems
+
 RE_TARGET = re.compile(
     r'\.(?:target|executableTarget|macro)\s*\(\s*name:\s*"([^"]+)"')
 RE_URL_DEP = re.compile(
@@ -190,6 +229,25 @@ def main(argv: list[str]) -> int:
                      f"dependency '{dep_name}' — SwiftPM rejects duplicate "
                      f"module names at consumer compile time; prefix the "
                      f"pack-target per [PKG-NAME-014]")
+
+    # [PKG-NAME-017] — L1 name mirrors the shipped surface (root register).
+    if (owner == "swift-primitives" and name.endswith("-primitives")
+            and name.startswith("swift-")):
+        middle = name[len("swift-"):-len("-primitives")]
+        stems = root_stems(root)
+        # The name mirrors the package-ROOT namespace path; a Protocol file
+        # may live in a deeper sub-namespace (Render.Async.Sink under
+        # swift-render-async-primitives), so an ancestor-path match conforms.
+        def mirrors(stem: str) -> bool:
+            k = kebab(stem)
+            return k == middle or k.startswith(middle + "-")
+        if stems and not any(mirrors(s) for s in stems):
+            shown = ", ".join(sorted(stems)[:4])
+            emit(repo, RULE_MIRROR,
+                 f"repo name 'swift-{middle}-primitives' mirrors none of the "
+                 f"shipped root namespace(s) [{shown}] ([PKG-NAME-017]: L1 "
+                 f"names are the layer-affixed kebab of the surface; "
+                 f"family-label register applies only in a root vacuum)")
 
     # [MOD-023] — #externalMacro module-name normalization.
     cites = external_macro_cites(root) if (root / "Sources").is_dir() else []

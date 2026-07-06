@@ -397,3 +397,12 @@ validators:
     discovery-mode: per-package-org-sweep
     rule-id-regex: '^MOD-023'
     migrate-to-base: 'no (per-package-org-sweep deferred to B-2)'
+
+  - rule-id: PKG-NAME-017
+    validator-script: .github/scripts/validate-package-naming.py
+    workflow-file: .github/workflows/validate-package-naming.yml
+    status: active
+    self-firing: deferred
+    discovery-mode: per-package-org-sweep
+    rule-id-regex: '^PKG-NAME-017'
+    migrate-to-base: 'no (per-package-org-sweep deferred to B-2)'
