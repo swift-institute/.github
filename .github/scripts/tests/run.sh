@@ -73,6 +73,8 @@ validator_for() {
             echo "$SCRIPTS_DIR/validate-package-naming.py" ;;
         mod-032)
             echo "$SCRIPTS_DIR/validate-package-graph.py" ;;
+        mod-038)
+            echo "$SCRIPTS_DIR/validate-target-imports.py" ;;
         doc-020)
             echo "$SCRIPTS_DIR/validate-docc-structure.py" ;;
         readme-017)
@@ -133,6 +135,7 @@ prefix_for() {
         mod-023)         echo "MOD-023" ;;
         pkg-name-017)    echo "PKG-NAME-017" ;;
         mod-032)         echo "MOD-032" ;;
+        mod-038)         echo "MOD-038" ;;
         doc-020)         echo "DOC-020" ;;
         readme-017)      echo "README-017" ;;
         test-009)        echo "TEST-009" ;;

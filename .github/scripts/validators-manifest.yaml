@@ -406,3 +406,12 @@ validators:
     discovery-mode: per-package-org-sweep
     rule-id-regex: '^PKG-NAME-017'
     migrate-to-base: 'no (per-package-org-sweep deferred to B-2)'
+
+  - rule-id: MOD-038
+    validator-script: .github/scripts/validate-target-imports.py
+    workflow-file: ''
+    status: active
+    self-firing: deferred
+    discovery-mode: per-package-org-sweep
+    rule-id-regex: '^MOD-038'
+    migrate-to-base: 'no (needs dump-package + local dep-manifest resolution; CI form joins the B-2 sweep design)'
