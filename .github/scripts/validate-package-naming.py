@@ -59,6 +59,18 @@ RULE_COLLISION = "PKG-NAME-014"
 RULE_MACRO = "MOD-023"
 FIXTURE_OWNER = "swift-institute-test"
 
+# [PRIM-NAME-001] sanctioned exceptions (principal ruling 2026-07-06, recorded
+# in Audits/PROMOTE-PRIM-NAME-001-2026-07-06.md): org-scoped infrastructure
+# whose established name is itself a deliberate convention —
+#   swift-primitives-linter-rules: the cross-tier `-linter-rules` family
+#     ([PKG-NAME-014] canonical table);
+#   swift-standard-library-extensions: descriptive substrate; no conforming
+#     name improves on it (must sit at L1 — its consumers are L1).
+PRIM_NAME_EXEMPT = frozenset({
+    "swift-primitives-linter-rules",
+    "swift-standard-library-extensions",
+})
+
 RE_EXTERNAL_MACRO = re.compile(r'#externalMacro\s*\(\s*module:\s*"([^"]+)"')
 MACRO_SKIP_DIRS = {".build", ".git", ".swiftpm", ".claude", "node_modules",
                    "checkouts"}
@@ -156,7 +168,8 @@ def main(argv: list[str]) -> int:
         return 0  # non-package repo (Research, Scripts, org site, workspace)
 
     # [PRIM-NAME-001] — primitives-org repo suffix.
-    if owner == "swift-primitives" and not name.endswith("-primitives"):
+    if (owner == "swift-primitives" and not name.endswith("-primitives")
+            and name not in PRIM_NAME_EXEMPT):
         emit(repo, RULE,
              f"package repo '{name}' in the swift-primitives org lacks the "
              f"'-primitives' suffix ([PRIM-NAME-001]); rename the repo or "
