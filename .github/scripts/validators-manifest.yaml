@@ -352,3 +352,12 @@ validators:
     discovery-mode: single-target
     rule-id-regex: '^GH-REPO-063'
     migrate-to-base: 'no (single-target schema<->workflow key guard, embedded in validate-github-metadata.yml)'
+
+  - rule-id: PRIM-NAME-001
+    validator-script: .github/scripts/validate-package-naming.py
+    workflow-file: .github/workflows/validate-package-naming.yml
+    status: active
+    self-firing: deferred
+    discovery-mode: per-package-org-sweep
+    rule-id-regex: '^PRIM-NAME-001'
+    migrate-to-base: 'no (per-package-org-sweep deferred to B-2)'
