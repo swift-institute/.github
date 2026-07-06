@@ -18,7 +18,6 @@ citations institute:research-process/SKILL.md [API-DESIGN-*]
 # Known-missing targets, no confident re-point; annotate per [SKILL-LIFE-027]
 # at next touch. dutch-law:24 and patterns.md:39 are 2026-07-05 ST-13 residue
 # whose annotations never landed.
-artifacts institute:code-surface/SKILL.md Research/typed-throws-rationale.md
 artifacts institute:conversions/SKILL.md swift-primitives/Research/blanket-tagged-init-audit.md
 artifacts institute:implementation/patterns.md swift-carrier-primitives/Research/capability-lift-pattern.md
 artifacts institute:issue-investigation/SKILL.md Research/compiler-pr-copypropagation-mark-dependence-handoff.md
