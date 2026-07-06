@@ -1,0 +1,16 @@
+# .check-canon-allowlist — sanctioned duplicate-definition mirrors for
+# check-canon.sh check 2, per the [SKILL-CREATE-016] three-criteria legality
+# test (distinct loading context; each side names the other + which is
+# canonical; textually identical or explicitly complementary).
+#
+# Line form: <ID> <root-alias:relative-path> — a definition of ID at that
+# path is a sanctioned mirror, not a redefinition. The canonical home is the
+# skill; the mirror is the always-loaded CLAUDE.md "Critical Requirements"
+# block (precedent recorded in [SKILL-CREATE-016] and REPORT-corpus-review
+# §8.6).
+API-NAME-001 workspace:CLAUDE.md
+API-NAME-002 workspace:CLAUDE.md
+API-NAME-003 workspace:CLAUDE.md
+API-ERR-001 workspace:CLAUDE.md
+API-IMPL-005 workspace:CLAUDE.md
+PRIM-FOUND-001 workspace:CLAUDE.md
