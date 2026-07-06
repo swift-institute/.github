@@ -17,6 +17,15 @@ related naming rules share one script). Rules checked (v1):
                    deps without a local manifest are skipped. Direct deps
                    only in v1 (the canonical layered-vocabulary instance is
                    a direct edge).
+  [MOD-023]        `#externalMacro(module:)` MUST cite the SwiftPM-normalized
+                   module name (spaces → underscores), not the collapsed or
+                   as-written target name. Target names come from
+                   `swift package dump-package` (resolves constant-named
+                   targets the manifest regex cannot see); only near-misses
+                   of the package's OWN macro targets fire — cites of
+                   external packages' macro modules pass through. The
+                   dump-package call is gated on `#externalMacro` actually
+                   appearing in Sources/, so non-macro packages stay fast.
 
 Org derivation: the `<repo-name>` argument's owner part. Harness fixtures
 (owner `swift-institute-test/` per tests/run.sh) encode the intended org in
@@ -38,13 +47,58 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import json
+import os
 import re
+import subprocess
 
 from validate_lib import emit
 
 RULE = "PRIM-NAME-001"
 RULE_COLLISION = "PKG-NAME-014"
+RULE_MACRO = "MOD-023"
 FIXTURE_OWNER = "swift-institute-test"
+
+RE_EXTERNAL_MACRO = re.compile(r'#externalMacro\s*\(\s*module:\s*"([^"]+)"')
+MACRO_SKIP_DIRS = {".build", ".git", ".swiftpm", ".claude", "node_modules",
+                   "checkouts"}
+
+
+def external_macro_cites(root: Path) -> list[tuple[Path, int, str]]:
+    out = []
+    for dirpath, dirnames, filenames in os.walk(root / "Sources"):
+        dirnames[:] = [d for d in dirnames if d not in MACRO_SKIP_DIRS]
+        for fn in filenames:
+            if not fn.endswith(".swift"):
+                continue
+            p = Path(dirpath) / fn
+            for i, line in enumerate(p.read_text(encoding="utf-8",
+                                                 errors="replace").splitlines(), 1):
+                m = RE_EXTERNAL_MACRO.search(line)
+                if m:
+                    out.append((p.relative_to(root), i, m.group(1)))
+    return out
+
+
+def macro_target_names(root: Path) -> set[str] | None:
+    """Macro-type target names via dump-package (resolves constant-named
+    targets). None on dump failure — callers skip the check (environment
+    defect, not a finding)."""
+    try:
+        proc = subprocess.run(
+            ["swift", "package", "dump-package", "--package-path", str(root)],
+            capture_output=True, text=True, timeout=180)
+    except (subprocess.SubprocessError, OSError):
+        return None
+    if proc.returncode != 0:
+        return None
+    manifest = json.loads(proc.stdout)
+    return {t.get("name", "") for t in manifest.get("targets", [])
+            if t.get("type") == "macro"}
+
+
+def squash(name: str) -> str:
+    return name.replace(" ", "").replace("_", "").lower()
 
 RE_TARGET = re.compile(
     r'\.(?:target|executableTarget|macro)\s*\(\s*name:\s*"([^"]+)"')
@@ -123,6 +177,25 @@ def main(argv: list[str]) -> int:
                      f"dependency '{dep_name}' — SwiftPM rejects duplicate "
                      f"module names at consumer compile time; prefix the "
                      f"pack-target per [PKG-NAME-014]")
+
+    # [MOD-023] — #externalMacro module-name normalization.
+    cites = external_macro_cites(root) if (root / "Sources").is_dir() else []
+    if cites:
+        macros = macro_target_names(root)
+        if macros:
+            normalized = {m.replace(" ", "_") for m in macros}
+            by_squash = {squash(m): m for m in macros}
+            for rel, lineno, cited in cites:
+                if cited in normalized:
+                    continue
+                target = by_squash.get(squash(cited))
+                if target is None:
+                    continue  # cites an external package's macro module
+                emit(repo, RULE_MACRO,
+                     f"{rel}:{lineno}: #externalMacro(module: \"{cited}\") does "
+                     f"not match the SwiftPM-normalized module name "
+                     f"'{target.replace(' ', '_')}' of macro target '{target}' "
+                     f"([MOD-023]: spaces normalize to underscores)")
     return 0
 
 
