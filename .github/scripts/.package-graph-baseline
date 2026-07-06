@@ -1,0 +1,13 @@
+# .package-graph-baseline — prune-only baseline of KNOWN package-level cycles
+# for validate-package-graph.py ([MOD-032]). Each line: sorted cycle members
+# joined by '+'. Entries shrink/disappear as cycles are broken, never grow
+# without a provenance-carrying commit.
+#
+# 2026-07-06 landing sweep (all five institute org roots, multi-root union):
+# ZERO live cycles — the memory<->storage cycle named in
+# HANDOFF-mechanization-arc Do-Not-Touch was already broken by the ADT/tower
+# arc before this validator landed (premise verified stale per
+# [HANDOFF-016]); no production entry ships.
+#
+# Harness fixture (edge/baselined):
+swift-fx-base-x+swift-fx-base-y

@@ -71,6 +71,8 @@ validator_for() {
             echo "$SCRIPTS_DIR/validate-test-target-layers.py" ;;
         prim-name-001)
             echo "$SCRIPTS_DIR/validate-package-naming.py" ;;
+        mod-032)
+            echo "$SCRIPTS_DIR/validate-package-graph.py" ;;
         doc-020)
             echo "$SCRIPTS_DIR/validate-docc-structure.py" ;;
         readme-017)
@@ -127,6 +129,7 @@ prefix_for() {
         pkg-dep-008)     echo "PKG-DEP-008" ;;
         arch-layer-012)  echo "ARCH-LAYER-012" ;;
         prim-name-001)   echo "PRIM-NAME-001" ;;
+        mod-032)         echo "MOD-032" ;;
         doc-020)         echo "DOC-020" ;;
         readme-017)      echo "README-017" ;;
         test-009)        echo "TEST-009" ;;

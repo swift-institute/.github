@@ -361,3 +361,21 @@ validators:
     discovery-mode: per-package-org-sweep
     rule-id-regex: '^PRIM-NAME-001'
     migrate-to-base: 'no (per-package-org-sweep deferred to B-2)'
+
+  - rule-id: MOD-032
+    validator-script: .github/scripts/validate-package-graph.py
+    workflow-file: ''
+    status: active
+    self-firing: deferred
+    discovery-mode: ''
+    rule-id-regex: '^MOD-032'
+    migrate-to-base: 'no (whole-graph multi-root scan; CI form needs multi-repo checkout design — deferred with B-2 / dep-graph tooling)'
+
+  - rule-id: PRIM-ARCH-002
+    validator-script: .github/scripts/validate-package-graph.py
+    workflow-file: ''
+    status: active
+    self-firing: deferred
+    discovery-mode: ''
+    rule-id-regex: '^MOD-032'
+    migrate-to-base: 'no (covered by MOD-032 acyclicity — computed tiers exist iff acyclic; findings in the primitives org cite both IDs)'
