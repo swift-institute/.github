@@ -1,7 +1,8 @@
-# .naming-vocabulary — DRAFT, PENDING PRINCIPAL RATIFICATION (2026-07-06).
-# NOT consumed by any validator until ratified; on ratification this file
-# becomes the curated list that re-promotes [PKG-NAME-001], [PKG-NAME-002],
-# [PKG-NAME-015] (see their PROMOTE-*-2026-07-06 stop records).
+# .naming-vocabulary — RATIFIED as drafted (principal, 2026-07-06, in-session).
+# The curated conformance-alias + witness-result-noun list that re-promotes
+# [PKG-NAME-001], [PKG-NAME-002], [PKG-NAME-015] (their PROMOTE-*-2026-07-06
+# stop records name this file as the unlock; re-promotion queued in
+# Workspace/BACKLOG.md). [LIVE]/[?] markers retained as drafting provenance.
 #
 # Line form: <namespace> <protocol-alias|-> <witness-result-noun|->
 #   protocol-alias      — the top-level conformance-reading typealias for
