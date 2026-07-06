@@ -379,3 +379,12 @@ validators:
     discovery-mode: ''
     rule-id-regex: '^MOD-032'
     migrate-to-base: 'no (covered by MOD-032 acyclicity — computed tiers exist iff acyclic; findings in the primitives org cite both IDs)'
+
+  - rule-id: PKG-NAME-014
+    validator-script: .github/scripts/validate-package-naming.py
+    workflow-file: .github/workflows/validate-package-naming.yml
+    status: active
+    self-firing: deferred
+    discovery-mode: per-package-org-sweep
+    rule-id-regex: '^PKG-NAME-014'
+    migrate-to-base: 'no (per-package-org-sweep deferred to B-2)'
