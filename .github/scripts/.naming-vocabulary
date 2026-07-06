@@ -1,0 +1,52 @@
+# .naming-vocabulary — DRAFT, PENDING PRINCIPAL RATIFICATION (2026-07-06).
+# NOT consumed by any validator until ratified; on ratification this file
+# becomes the curated list that re-promotes [PKG-NAME-001], [PKG-NAME-002],
+# [PKG-NAME-015] (see their PROMOTE-*-2026-07-06 stop records).
+#
+# Line form: <namespace> <protocol-alias|-> <witness-result-noun|->
+#   protocol-alias      — the top-level conformance-reading typealias for
+#                         Namespace.`Protocol` ([PKG-NAME-002]). Live practice
+#                         includes gerunds (Iterating), adjectives (Observable),
+#                         and domain nouns (Key) — the ratified reading wins,
+#                         not the part of speech.
+#   witness-result-noun — the gated alias for Namespace.Witness
+#                         ([PKG-NAME-015] four gates).
+#   "-"                 — ruled no-alias (consumers use the qualified form).
+# Lines marked [LIVE] are existing shipped aliases (ratify-as-is candidates);
+# [?] marks proposals the drafter flags as genuinely arguable.
+#
+# --- Protocol-declaring namespaces (census 2026-07-06: 30 declaration files) ---
+Bit.Vector - -
+Byte - -
+Coder Coding -            # [?] alias/result-noun would collide if both "Coding"
+Collection - -            # stdlib Collection shadow — gate 3 fails by design
+Collection.Slice - -
+Color - -
+Command - -
+Comparison Comparing -    # [?]
+Equation - -              # [?] "Equating" available if wanted
+Formatter Formatting -
+Hash Key -                # [LIVE] domain noun, shipped
+Initialization Initializing -   # [LIVE]; Witness alias "-": namespace IS the result-noun
+Input - -
+Input.Stream Streaming -  # [?]
+Iterator Iterating Iteration    # [LIVE] alias; result-noun is [PKG-NAME-015]'s own example
+Logic - -
+Logic.Ternary - -
+Memory.Pool - -           # [?] "Pooling" available if wanted
+Observation Observable -  # [LIVE] adjective, shipped
+Ordinal - -
+Parser Parsing Parse      # [?] result-noun "Parse" (a parse) vs "-"
+Parser.Machine.Compile - Compilation
+Render Rendering -        # [PKG-NAME-002]'s own worked example
+Render.Async.Sink - -
+Sequence.Borrowing - -    # namespace is already gerund-formed
+Sequence.Drain - -        # [?] "Draining" available if wanted
+Serializer Serializing Serialization   # result-noun is [PKG-NAME-015]'s own example
+Synchronizer Synchronizing -
+TernaryLogic - -          # compound name — separate [API-NAME-001] matter
+Witness - -               # meta-namespace
+__Span - -
+__Span.Mutable - -
+# Carrier's alias `Carrying` is shipped [LIVE] (swift-carrier-primitives) —
+Carrier Carrying -
