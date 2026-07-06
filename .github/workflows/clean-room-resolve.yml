@@ -1,0 +1,227 @@
+# clean-room-resolve.yml — [CI-112] mirror-bypassed clean-room resolve gate.
+#
+# A fresh runner has no ~/.swiftpm mirrors.json, so `swift package resolve`
+# here is mirror-bypassed BY CONSTRUCTION — the non-substitutable off-machine
+# gate per [CI-112]: it catches empty/unpushed dependency repos (git ls-remote
+# HEAD exits 0 on an empty repo; only refs/heads/main presence is proof) and
+# off-machine package-identity mismatches ([PKG-DEP-008]) that a
+# mirror-backed resolve can never see.
+#
+# Matrix over public consumer-roots (default: the heaviest dependency sinks
+# by Package.resolved pin count — one resolve of swift-pdf exercises ~186
+# pins). Each cell: checkout the consumer only; resolve against REAL remotes
+# with per-org bot-App tokens injected via git insteadOf (pre-publication
+# graphs still contain private repos — the token lets resolve proceed while
+# the two target failure classes still surface); then sweep every resolved
+# pin's remote for refs/heads/main presence.
+#
+# ADVISORY during soak (default gating=false): findings land in the step
+# summary; the run stays green. Flip gating=true before any publication flip
+# (principal decision).
+#
+# Free minutes per [CI-096] (public repo — cost is not an axis); job skips on
+# private hosts per [CI-032]; dispatch surface per [CI-095].
+#
+# Provenance: HANDOFF-meta-ecosystem-followups §1(b) staged spec
+# (seat-approved 2026-07-05), promoted per HANDOFF-mechanization-arc W1.
+# Rule: Skills/ci-cd-workflows/secrets-tokens.md [CI-112]. Outcome record:
+# swift-institute/Audits/PROMOTE-CI-112-2026-07-06.md.
+
+name: clean-room-resolve
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'   # Mondays 06:00 UTC, after the 05:00 sub-org sweep
+  workflow_call:
+    inputs:
+      roots:
+        description: 'JSON array of owner/name consumer-roots to resolve.'
+        type: string
+        required: false
+        default: '["swift-foundations/swift-pdf","swift-foundations/swift-linter","swift-foundations/swift-tests","swift-foundations/swift-html"]'
+      gating:
+        description: 'Fail the run on findings (true) or report-only (false, soak default).'
+        type: boolean
+        required: false
+        default: false
+    outputs:
+      total-findings:
+        value: ${{ jobs.aggregate.outputs.total-findings }}
+  workflow_dispatch:
+    inputs:
+      roots:
+        description: 'JSON array of owner/name consumer-roots to resolve.'
+        type: string
+        required: false
+        default: '["swift-foundations/swift-pdf","swift-foundations/swift-linter","swift-foundations/swift-tests","swift-foundations/swift-html"]'
+      gating:
+        description: 'Fail the run on findings (true) or report-only (false, soak default).'
+        type: boolean
+        required: false
+        default: false
+
+# Top-level `permissions:` OMITTED per [CI-090] — combined reusable workflow;
+# per-job `permissions:` provides the floor.
+
+jobs:
+  resolve:
+    if: ${{ !github.event.repository.private }}     # [CI-032]
+    runs-on: macos-26
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        root: ${{ fromJSON(inputs.roots || '["swift-foundations/swift-pdf","swift-foundations/swift-linter","swift-foundations/swift-tests","swift-foundations/swift-html"]') }}
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: Mint installation token (swift-primitives)
+        id: tok-primitives
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
+        with:
+          client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: swift-primitives
+
+      - name: Mint installation token (swift-standards)
+        id: tok-standards
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
+        with:
+          client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: swift-standards
+
+      - name: Mint installation token (swift-foundations)
+        id: tok-foundations
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
+        with:
+          client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: swift-foundations
+
+      - name: Mint installation token (swift-microsoft)
+        id: tok-microsoft
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
+        with:
+          client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: swift-microsoft
+
+      - name: Configure per-org token injection (git insteadOf)
+        env:
+          TOK_PRIMITIVES: ${{ steps.tok-primitives.outputs.token }}
+          TOK_STANDARDS: ${{ steps.tok-standards.outputs.token }}
+          TOK_FOUNDATIONS: ${{ steps.tok-foundations.outputs.token }}
+          TOK_MICROSOFT: ${{ steps.tok-microsoft.outputs.token }}
+        run: |
+          set -euo pipefail
+          git config --global url."https://x-access-token:${TOK_PRIMITIVES}@github.com/swift-primitives/".insteadOf "https://github.com/swift-primitives/"
+          git config --global url."https://x-access-token:${TOK_STANDARDS}@github.com/swift-standards/".insteadOf "https://github.com/swift-standards/"
+          git config --global url."https://x-access-token:${TOK_FOUNDATIONS}@github.com/swift-foundations/".insteadOf "https://github.com/swift-foundations/"
+          git config --global url."https://x-access-token:${TOK_MICROSOFT}@github.com/swift-microsoft/".insteadOf "https://github.com/swift-microsoft/"
+
+      - name: Clean-room resolve ${{ matrix.root }}
+        env:
+          ROOT: ${{ matrix.root }}
+          SLUG: ${{ strategy.job-index }}
+        run: |
+          set -euo pipefail
+          : > "/tmp/findings-${SLUG}.tsv"
+          test ! -f ~/.swiftpm/configuration/mirrors.json || {
+            echo "::error::runner unexpectedly carries a SwiftPM mirror config"; exit 2; }
+          workdir=$(mktemp -d)
+          echo "CLEANROOM_WORKDIR=$workdir" >> "$GITHUB_ENV"
+          git clone --depth 1 "https://github.com/${ROOT}.git" "$workdir"
+          cd "$workdir"
+          rm -f Package.resolved   # force full identity resolution from the manifest graph
+          if ! swift package resolve 2> /tmp/resolve-err.txt; then
+            printf '%s\tCI-112\tclean-room resolve FAILED: %s\n' \
+              "$ROOT" "$(tr '\n' ' ' < /tmp/resolve-err.txt | cut -c1-400)" \
+              >> "/tmp/findings-${SLUG}.tsv"
+          fi
+
+      - name: Sweep resolved pins for refs/heads/main
+        env:
+          ROOT: ${{ matrix.root }}
+          SLUG: ${{ strategy.job-index }}
+        run: |
+          set -euo pipefail
+          resolved="${CLEANROOM_WORKDIR:-}/Package.resolved"
+          if [ ! -f "$resolved" ]; then
+            echo "no Package.resolved produced (resolve failed earlier) — skipping pin sweep"
+            exit 0
+          fi
+          python3 - "$resolved" "$ROOT" "/tmp/findings-${SLUG}.tsv" <<'EOF'
+          import json, subprocess, sys
+          resolved, root, out = sys.argv[1], sys.argv[2], sys.argv[3]
+          pins = json.load(open(resolved)).get("pins", [])
+          findings = []
+          for pin in pins:
+              loc = pin.get("location", "")
+              if not loc.startswith("http"):
+                  continue
+              r = subprocess.run(["git", "ls-remote", loc, "refs/heads/main"],
+                                 capture_output=True, text=True, timeout=60)
+              if r.returncode != 0 or not r.stdout.strip():
+                  findings.append(f"{root}\tCI-112\tdep '{pin.get('identity')}' at {loc}: "
+                                  f"no refs/heads/main (empty or unpushed repo; "
+                                  f"ls-remote exit {r.returncode})")
+          with open(out, "a") as f:
+              for line in findings:
+                  f.write(line + "\n")
+          print(f"pins swept: {len(pins)}, findings: {len(findings)}")
+          EOF
+
+      - name: Upload cell findings
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: clean-room-findings-${{ strategy.job-index }}
+          path: /tmp/findings-*.tsv
+          if-no-files-found: ignore
+
+  aggregate:
+    needs: resolve
+    if: ${{ always() && !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      total-findings: ${{ steps.report.outputs.total-findings }}
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: Download cell findings
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
+        with:
+          pattern: clean-room-findings-*
+          merge-multiple: true
+          path: /tmp/findings
+
+      - name: Report
+        id: report
+        run: |
+          set -euo pipefail
+          total=$(cat /tmp/findings/findings-*.tsv 2>/dev/null | grep -cE "	CI-112	") || total=0
+          echo "total-findings=$total" >> "$GITHUB_OUTPUT"
+          {
+            echo "## clean-room-resolve findings ([CI-112])"
+            echo "Total: $total"
+            if [ "$total" -gt 0 ]; then
+              echo
+              echo "| Root | Rule | Message |"
+              echo "|---|---|---|"
+              cat /tmp/findings/findings-*.tsv 2>/dev/null | awk -F'\t' '$2 == "CI-112" { gsub(/\|/, "\\|", $3); printf("| `%s` | `%s` | %s |\n", $1, $2, $3) }'
+            fi
+          } > "$GITHUB_STEP_SUMMARY"
+          if [ "$total" -gt 0 ] && [ "${{ inputs.gating }}" = "true" ]; then
+            exit 1
+          fi
