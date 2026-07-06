@@ -1,0 +1,158 @@
+# validate-test-target-layers.yml — verify [ARCH-LAYER-012] test-target
+# layer discipline.
+#
+# Reusable workflow. For the given `org` (or single `repo`), enumerates
+# non-archived repos, clones each (shallow), and runs
+# `.github/scripts/validate-test-target-layers.py` — a manifest check over
+# `swift package dump-package` JSON flagging test-target dependencies on
+# packages ABOVE the host package's layer (tests share Package.swift, so a
+# test-only upward dep is still a package-level layer violation).
+# Sanctioned exceptions live in the sibling `.test-target-layer-allowlist`.
+#
+# Needs a Swift toolchain for dump-package → macos runner, mirroring
+# validate-package-structure.yml.
+#
+# Provenance: HANDOFF-meta-ecosystem-followups §1(e) staged spec, promoted
+# via /promote-rule (HANDOFF-mechanization-arc W1). Outcome record:
+# swift-institute/Audits/PROMOTE-ARCH-LAYER-012-2026-07-06.md.
+
+name: validate-test-target-layers
+
+on:
+  workflow_call:
+    inputs:
+      repo:
+        description: 'Owner/name of a single repo to scan.'
+        type: string
+        required: false
+        default: ''
+      org:
+        description: 'Org to sweep (ignored if repo is set).'
+        type: string
+        required: false
+        default: ''
+      dry-run:
+        description: 'Report findings but do not fail the run.'
+        type: boolean
+        required: false
+        default: false
+      visibility:
+        description: 'Filter targets by visibility (public | private | internal | all).'
+        type: string
+        required: false
+        default: 'public'
+    outputs:
+      total-violations:
+        description: 'Total [ARCH-LAYER-012] findings across all repos.'
+        value: ${{ jobs.scan.outputs.total-violations }}
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: 'Owner/name of a single repo (optional).'
+        type: string
+        required: false
+      org:
+        description: 'Org to sweep (optional; ignored if repo is set).'
+        type: string
+        required: false
+      dry-run:
+        description: 'Report findings but do not fail the run.'
+        type: boolean
+        required: false
+        default: false
+      visibility:
+        description: 'Filter targets by visibility (public | private | internal | all).'
+        type: string
+        required: false
+        default: 'public'
+
+# Top-level `permissions:` OMITTED per [CI-090] — combined
+# (workflow_call + workflow_dispatch) workflow, treated as reusable.
+# Per-job `permissions:` below provides the per-job floor.
+
+jobs:
+  scan:
+    if: ${{ !github.event.repository.private }}     # [CI-032]
+    runs-on: macos-26
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      total-violations: ${{ steps.aggregate.outputs.total-violations }}
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: Mint installation token (swift-institute-bot)
+        id: mint-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
+        with:
+          client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: ${{ inputs.org || github.repository_owner }}
+
+      - name: Checkout swift-institute/.github (validator)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          repository: swift-institute/.github
+          path: institute-github
+          ref: main
+
+      - name: Resolve target repos
+        env:
+          GH_TOKEN: ${{ steps.mint-token.outputs.token }}
+          INPUT_REPO: ${{ inputs.repo }}
+          INPUT_ORG: ${{ inputs.org }}
+          INPUT_VISIBILITY: ${{ inputs.visibility }}
+        run: |
+          set -euo pipefail
+          if [ -n "$INPUT_REPO" ]; then
+            echo "$INPUT_REPO" > /tmp/targets.txt
+          else
+            : "${INPUT_ORG:?org or repo input required}"
+            gh repo list "$INPUT_ORG" --no-archived --limit 1000 --visibility "$INPUT_VISIBILITY" \
+              --json nameWithOwner --jq '.[].nameWithOwner' > /tmp/targets.txt
+          fi
+          echo "Resolved $(wc -l < /tmp/targets.txt | tr -d ' ') target repo(s)."
+
+      - name: Set up Swift toolchain
+        run: swift --version
+
+      - name: Run test-target layer checks
+        env:
+          GH_TOKEN: ${{ steps.mint-token.outputs.token }}
+          VALIDATOR: ${{ github.workspace }}/institute-github/.github/scripts/validate-test-target-layers.py
+        run: |
+          set -euo pipefail
+          : > /tmp/findings.tsv
+          while IFS= read -r repo; do
+            workdir=$(mktemp -d)
+            if gh repo clone "$repo" "$workdir" -- --depth 1 --quiet 2>/dev/null; then
+              if [ -f "$workdir/Package.swift" ]; then
+                python3 "$VALIDATOR" "$repo" "$workdir" >> /tmp/findings.tsv || true
+              fi
+            fi
+            rm -rf "$workdir"
+          done < /tmp/targets.txt
+
+      - name: Aggregate
+        id: aggregate
+        run: |
+          set -euo pipefail
+          violations=$(grep -cE "	ARCH-LAYER-012	" /tmp/findings.tsv) || violations=0
+          echo "total-violations=$violations" >> "$GITHUB_OUTPUT"
+          {
+            echo "## validate-test-target-layers findings"
+            echo "Total: $violations"
+            if [ "$violations" -gt 0 ]; then
+              echo
+              echo "| Repo | Rule | Message |"
+              echo "|---|---|---|"
+              awk -F'\t' '$2 == "ARCH-LAYER-012" { gsub(/\|/, "\\|", $3); printf("| `%s` | `%s` | %s |\n", $1, $2, $3) }' /tmp/findings.tsv
+            fi
+          } > "$GITHUB_STEP_SUMMARY"
+          if [ "$violations" -gt 0 ] && [ "${{ inputs.dry-run }}" != "true" ]; then
+            exit 1
+          fi

@@ -1,0 +1,7 @@
+# .test-target-layer-allowlist — sanctioned [ARCH-LAYER-012] option-2
+# exceptions, keyed `<repo-name> <test-target-name>` per the staged spec.
+# Each entry MUST carry a comment citing the sanction.
+#
+# Harness fixture (edge/swift-spm-fixture-standard — exercises the
+# allowlist path; swift-institute-test/ prefix per the pilot-10 pattern):
+swift-institute-test/swift-spm-fixture-standard SPM Fixture Sanctioned Tests

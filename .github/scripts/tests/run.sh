@@ -67,6 +67,8 @@ validator_for() {
             echo "$SCRIPTS_DIR/validate-manifest-binding.py" ;;
         pkg-dep-008)
             echo "$SCRIPTS_DIR/validate-package-identity.py" ;;
+        arch-layer-012)
+            echo "$SCRIPTS_DIR/validate-test-target-layers.py" ;;
         doc-020)
             echo "$SCRIPTS_DIR/validate-docc-structure.py" ;;
         readme-017)
@@ -121,6 +123,7 @@ prefix_for() {
         ci-105)          echo "CI-105" ;;
         ci-manifest-binding) echo "CI-MANIFEST-BINDING" ;;
         pkg-dep-008)     echo "PKG-DEP-008" ;;
+        arch-layer-012)  echo "ARCH-LAYER-012" ;;
         doc-020)         echo "DOC-020" ;;
         readme-017)      echo "README-017" ;;
         test-009)        echo "TEST-009" ;;

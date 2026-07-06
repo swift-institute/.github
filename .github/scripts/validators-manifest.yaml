@@ -334,3 +334,21 @@ validators:
     discovery-mode: per-package-org-sweep
     rule-id-regex: '^PKG-DEP-008'
     migrate-to-base: 'no (per-package-org-sweep deferred to B-2)'
+
+  - rule-id: ARCH-LAYER-012
+    validator-script: .github/scripts/validate-test-target-layers.py
+    workflow-file: .github/workflows/validate-test-target-layers.yml
+    status: active
+    self-firing: deferred
+    discovery-mode: per-package-org-sweep
+    rule-id-regex: '^ARCH-LAYER-012'
+    migrate-to-base: 'no (per-package-org-sweep deferred to B-2)'
+
+  - rule-id: GH-REPO-063
+    validator-script: .github/scripts/validate-schema-workflow-keys.py
+    workflow-file: .github/workflows/validate-github-metadata.yml
+    status: active
+    self-firing: deferred
+    discovery-mode: single-target
+    rule-id-regex: '^GH-REPO-063'
+    migrate-to-base: 'no (single-target schema<->workflow key guard, embedded in validate-github-metadata.yml)'
