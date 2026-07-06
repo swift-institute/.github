@@ -61,17 +61,27 @@ L2_PREFIXES = ("swift-rfc-", "swift-iso-", "swift-ietf-", "swift-ieee-",
 
 # The layer taxonomy applies to institute packages only; deps hosted outside
 # these orgs (swift-syntax, swift-collections, …) are layer-exempt.
-INSTITUTE_ORGS = frozenset({
-    "swift-primitives", "swift-standards", "swift-foundations",
-    "swift-institute",
-    # Standards per-authority sub-orgs + vendor orgs:
-    "swift-ietf", "swift-iso", "swift-w3c", "swift-whatwg", "swift-ecma",
-    "swift-incits", "swift-ieee", "swift-iec", "swift-arm-ltd",
-    "swift-intel", "swift-riscv", "swift-linux-foundation", "swift-microsoft",
-})
+# Layer derivation is ORG-FIRST: the publishing org IS the layer position
+# (swift-standard-library-extensions lives in the swift-primitives org and is
+# L1 despite its non-`-primitives` name — name-only mapping misclassified it
+# as L3 in the first validation sweep). Name-based mapping is the fallback
+# for hosts/deps whose org is underivable (e.g. harness fixtures).
+ORG_LAYER = {
+    "swift-primitives": 1,
+    "swift-standards": 2,
+    # Standards per-authority sub-orgs + vendor orgs are L2:
+    "swift-ietf": 2, "swift-iso": 2, "swift-w3c": 2, "swift-whatwg": 2,
+    "swift-ecma": 2, "swift-incits": 2, "swift-ieee": 2, "swift-iec": 2,
+    "swift-arm-ltd": 2, "swift-intel": 2, "swift-riscv": 2,
+    "swift-linux-foundation": 2, "swift-microsoft": 2,
+    "swift-foundations": 3,
+}
+INSTITUTE_ORGS = frozenset(ORG_LAYER) | {"swift-institute"}
 
 
-def layer(name: str) -> int | None:
+def layer(name: str, org: str | None = None) -> int | None:
+    if org and org in ORG_LAYER:
+        return ORG_LAYER[org]
     n = name.lower()
     if n.endswith("-primitives"):
         return 1
@@ -118,13 +128,12 @@ def dep_org(entry: dict) -> str | None:
     return None
 
 
-def institute_dep_identities(manifest: dict, host_root: Path) -> set[str]:
-    """Declared dependency identities whose owning org is an institute org.
-    Relative fileSystem paths resolve against the host root; a dep whose org
-    cannot be determined is treated as institute-owned when its identity
-    matches institute naming (conservative: naming is the fallback signal
-    for path deps addressed by bare relative paths)."""
-    out = set()
+def institute_dep_orgs(manifest: dict, host_root: Path) -> dict[str, str | None]:
+    """{lower-cased identity → org} for declared deps whose owning org is an
+    institute org. Relative fileSystem paths resolve against the host root; a
+    dep whose org cannot be determined is kept with org None (name-based
+    layer fallback applies — the conservative signal for bare path deps)."""
+    out: dict[str, str | None] = {}
     for dep in manifest.get("dependencies", []):
         for kind, kind_entries in dep.items():
             for entry in kind_entries:
@@ -137,7 +146,7 @@ def institute_dep_identities(manifest: dict, host_root: Path) -> set[str]:
                     if len(resolved.parts) >= 2:
                         org = resolved.parts[-2]
                 if org is None or org in INSTITUTE_ORGS:
-                    out.add(identity)
+                    out[identity.lower()] = org
     return out
 
 
@@ -151,7 +160,8 @@ def main(argv: list[str]) -> int:
         return 2
 
     host_name = repo.rsplit("/", 1)[-1]
-    host_layer = layer(host_name)
+    host_org = repo.rsplit("/", 1)[0] if "/" in repo else None
+    host_layer = layer(host_name, host_org)
     if host_layer is None:
         return 0  # non-layered repo (tooling, docs) — rule does not apply
 
@@ -169,7 +179,7 @@ def main(argv: list[str]) -> int:
         return 2
     manifest = json.loads(proc.stdout)
 
-    declared = institute_dep_identities(manifest, root)
+    declared = institute_dep_orgs(manifest, root)
     allowlist = load_allowlist(Path(__file__).resolve().parent)
 
     for target in manifest.get("targets", []):
@@ -183,11 +193,11 @@ def main(argv: list[str]) -> int:
             if not product or len(product) < 2 or not product[1]:
                 continue  # byName / target / package-unspecified — same-package
             pkg = str(product[1])
-            if pkg.lower() not in {d.lower() for d in declared}:
+            if pkg.lower() not in declared:
                 # Not a declared external dep of this manifest — out of scope
                 # here ([PKG-DEP-008]'s validator owns identity mismatches).
                 continue
-            dep_layer = layer(pkg)
+            dep_layer = layer(pkg, declared[pkg.lower()])
             if dep_layer is None:
                 continue
             if dep_layer > host_layer:
