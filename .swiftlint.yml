@@ -98,7 +98,7 @@ function_parameter_count:
 custom_rules:
   typed_throws_required:
     name: "Typed Throws Required ([API-ERR-001])"
-    regex: '\bthrows\b\s*(?![\(:])'
+    regex: '(?<!\bfunc provideScope\([^{}]{0,500})\bthrows\b\s*(?![\(:])'
     message: "Throwing functions/methods/inits MUST use typed throws ([API-ERR-001]). Use 'throws(SomeError)' rather than untyped 'throws'."
     severity: warning
     match_kinds:
@@ -107,6 +107,17 @@ custom_rules:
     # untyped-`rethrows` boundaries (e.g. `withUnsafeBytes`) makes a typed
     # `throws(E)` not cleanly expressible, and [API-ERR-001] targets API
     # surface, not test code (principal-confirmed 2026-06-02).
+    #
+    # `func provideScope(...)` declarations are exempted via a bounded
+    # negative lookbehind (ICU/NSRegularExpression requires an explicit
+    # upper bound on variable-length lookbehind quantifiers — unbounded
+    # `*`/`+` fails to compile): Apple's Testing.TestScoping.provideScope
+    # is declared with untyped `throws` upstream, so any conforming
+    # override is signature-forced and cannot express `throws(E)`. Mirrors
+    # the AST untyped-throws rule's TestScoping.provideScope allowlist.
+    # Does NOT cover non-`func` shapes (e.g. a stored `_provideScope`
+    # closure property or an init parameter named `provideScope`) — those
+    # still require a per-site shield.
     excluded:
       - 'Tests/.*'
   no_xctest_import:
