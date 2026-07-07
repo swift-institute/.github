@@ -156,11 +156,26 @@ custom_rules:
     # makes the declaration-vs-reference distinction AST-level and
     # removes the regex fragility. Until that ships, the lookbehinds
     # are the interim fix.
-    regex: '\b(?<!Swift\.)(?<!\.)(?<!struct )(?<!enum )(?<!class )(?<!actor )(?<!typealias )(?<!associatedtype )(?<!throws\()Error\b(?!\.)'
-    message: "Always qualify as 'Swift.Error', not bare 'Error' ([PLAT-ARCH-011]; user-confirmed 2026-05-05). Applies to generic constraints (`<E: Swift.Error>`), conformances (`: Swift.Error`), and any other reference. Avoids ambiguity with namespace-scoped Error types and is the institute's convention everywhere. Declaration sites (`struct/enum/class/actor/typealias/associatedtype Error: Swift.Error`) are exempt — that's [API-ERR-002]'s Nest.Name pattern."
+    # §NOTES fixes (2026-07-07): two false-positive classes exempted.
+    # (a) Backtick-quoted test function names containing "Error" (e.g.
+    #     `@Test func \`Error is Sendable\`()`) — the "Error" substring sits
+    #     inside a declaration-name `identifier` token, never a type
+    #     reference. Dropping `identifier` from match_kinds (keeping only
+    #     `typeidentifier`) exempts the whole class; genuine unqualified-
+    #     Error references (conformances `: Error`, generic constraints
+    #     `<E: Error>`, associatedtype bounds, function types `(Error)->`)
+    #     are all `typeidentifier` and still fire.
+    # (b) Associated-type same-type constraint positions (`Error ==` in a
+    #     where-clause, e.g. `extension Codec where Error == Never`) — the
+    #     added `(?![ \t]*==)` lookahead exempts a bare `Error` immediately
+    #     followed by `==` (dot-qualified `Foo.Error ==` was already exempt
+    #     via the `(?<!\.)` lookbehind).
+    # Validated: the 35 unshielded FP sites across swift-linux/witnesses/
+    # paths/io stop firing with NO shields added; genuine violations fire.
+    regex: '\b(?<!Swift\.)(?<!\.)(?<!struct )(?<!enum )(?<!class )(?<!actor )(?<!typealias )(?<!associatedtype )(?<!throws\()Error\b(?!\.)(?![ \t]*==)'
+    message: "Always qualify as 'Swift.Error', not bare 'Error' ([PLAT-ARCH-011]; user-confirmed 2026-05-05). Applies to generic constraints (`<E: Swift.Error>`), conformances (`: Swift.Error`), and any other reference. Avoids ambiguity with namespace-scoped Error types and is the institute's convention everywhere. Declaration sites (`struct/enum/class/actor/typealias/associatedtype Error: Swift.Error`) are exempt — that's [API-ERR-002]'s Nest.Name pattern. Backtick-quoted test function names and associated-type `Error ==` constraint positions are also exempt (§NOTES 2026-07-07)."
     severity: warning
     match_kinds:
-      - identifier
       - typeidentifier
   # ── Wave 2b additions (2026-05-10) ────────────────────────────────────────
   # Twelve new rules per Wave 2b extraction inventory (see
@@ -249,15 +264,23 @@ custom_rules:
     severity: error
   workaround_marker_present:
     name: "WORKAROUND Comment Discipline ([DOC-045], [PATTERN-016])"
-    # Interim regex per Wave 2b decision 1 (full four-part template
-    # adjacency check is a future swift-linter F-rule). This rule flags
-    # `// WORKAROUND:` markers without a `// WHY:` line within ±5 lines —
-    # SwiftLint regex is single-line; full multi-line template is the
-    # F-rule scope. Until the F-rule ships, this catches the most common
-    # drift: a // WORKAROUND comment with no // WHY explanation in the
-    # immediate vicinity of the declaration.
-    regex: '//\s*WORKAROUND:'
-    message: "Workarounds MUST be paired with // WHY: // WHEN TO REMOVE: // TRACKING: marker comments ([DOC-045], [PATTERN-016]). Verify the four-part template is present within ±5 lines."
+    # Multiline template check (2026-07-07 §C1 rewrite, replacing the prior
+    # blunt single-line `//\s*WORKAROUND:` regex). Fires on a `// WORKAROUND:`
+    # marker that is NOT followed — on the comment lines immediately after
+    # it, in order — by the complete four-part template: `// WHY:`,
+    # `// WHEN TO REMOVE:`, `// TRACKING:`. The lazy `(?:\n[ \t]*//[^\n]*)*?`
+    # gaps between parts allow each part (and the WORKAROUND description
+    # itself) to wrap across multiple `//` continuation lines. A well-formed
+    # four-part template no longer fires (retiring the per-site
+    # `// swiftlint:disable:next workaround_marker_present` shields); a
+    # truncated, bare, or out-of-order template still fires. Validated
+    # against the four real shielded template shapes (machine-primitives,
+    # swift-tests Assertions + Scope.Provider) plus truncated/bare/out-of-
+    # order negatives.
+    regex: '//[ \t]*WORKAROUND:(?![^\n]*(?:\n[ \t]*//[^\n]*)*?\n[ \t]*//[ \t]*WHY:[^\n]*(?:\n[ \t]*//[^\n]*)*?\n[ \t]*//[ \t]*WHEN TO REMOVE:[^\n]*(?:\n[ \t]*//[^\n]*)*?\n[ \t]*//[ \t]*TRACKING:)'
+    message: "Workarounds MUST be paired with the four-part // WHY: // WHEN TO REMOVE: // TRACKING: marker template, in that order, on the comment lines immediately following the // WORKAROUND: marker ([DOC-045], [PATTERN-016])."
+    match_kinds:
+      - comment
     severity: warning
   no_int_bitpattern_arithmetic:
     name: "No Int(bitPattern:) Arithmetic ([CONV-010], [IMPL-010])"
