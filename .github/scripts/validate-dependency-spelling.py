@@ -46,6 +46,16 @@ from validate_lib import emit
 
 RULE = "PKG-DEP-009"
 
+# Repos whose findings are documented known-exceptions: reported with the
+# -EXEMPT rule tag (informational; the aggregation layer counts only exact
+# PKG-DEP-009 rows). swift-html-prism is untouchable by standing rule
+# (HANDOFF-spm-hang-resolution-2026-07-10; normalize-dependency-spellings.py
+# carries the same skip) — its pointfreeco/coenttb spellings are a known,
+# accepted edge until its owning arc addresses the repo.
+KNOWN_EXCEPTIONS = {
+    "swift-foundations/swift-html-prism": "untouchable by standing rule (hang-arc handoff); known mixed edge",
+}
+
 RETIRED_ORGS = ("coenttb", "swift-web-standards")
 
 RE_URL_DEP = re.compile(
@@ -63,6 +73,11 @@ def main() -> int:
         return 2
     repo_name, root = sys.argv[1], Path(sys.argv[2])
 
+    exemption = KNOWN_EXCEPTIONS.get(repo_name) or KNOWN_EXCEPTIONS.get(repo_name.split("/")[-1])
+    rule = f"{RULE}-EXEMPT" if exemption else RULE
+    if exemption:
+        emit(repo_name, rule, f"known-exception repo ({exemption}); findings below are informational")
+
     for manifest in sorted(root.glob("Package*.swift")):
         if not RE_MANIFEST.fullmatch(manifest.name):
             continue
@@ -75,16 +90,16 @@ def main() -> int:
             gh = re.match(r"https://github\.com/([^/]+)/([^/]+?)(\.git)?$", url)
             if gh is None:
                 if url.startswith(("http://", "git@")):
-                    emit(repo_name, RULE, f"{manifest.name}: non-canonical URL form `{url}` — use https://github.com/<org>/<repo>.git")
+                    emit(repo_name, rule, f"{manifest.name}: non-canonical URL form `{url}` — use https://github.com/<org>/<repo>.git")
                 continue
             org = gh.group(1)
             if org in RETIRED_ORGS:
-                emit(repo_name, RULE, f"{manifest.name}: retired-org spelling `{url}` — repoint to the package's current institute org (.git form)")
+                emit(repo_name, rule, f"{manifest.name}: retired-org spelling `{url}` — repoint to the package's current institute org (.git form)")
                 continue
             if not gh.group(3):
-                emit(repo_name, RULE, f"{manifest.name}: bare URL `{url}` — append `.git` (exact-spelling uniformity keeps one canonical location per identity)")
+                emit(repo_name, rule, f"{manifest.name}: bare URL `{url}` — append `.git` (exact-spelling uniformity keeps one canonical location per identity)")
         for m in RE_PATH_DEP.finditer(text):
-            emit(repo_name, RULE, f"{manifest.name}: `.package(path: \"{m.group('path')}\")` — committed manifests use canonical URLs; local resolution belongs to the mirror table")
+            emit(repo_name, rule, f"{manifest.name}: `.package(path: \"{m.group('path')}\")` — committed manifests use canonical URLs; local resolution belongs to the mirror table")
     return 0
 
 
