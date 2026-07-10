@@ -11,11 +11,14 @@ name: Swift DocC (reusable)
 # ────────────────────────────────────────────────────────────────────────
 
 # ─── Acronym preservation list ────────────────────────────────────────
-# All-caps tokens preserved verbatim during the kebab→TitleCase derivation
-# (e.g. `swift-cpu-primitives` → `CPU_Primitives`, NOT `Cpu_Primitives`).
-# Extend when a new spec acronym appears in a package name.
-# Keep alphabetically sorted; space-separated; uppercase.
-# The list itself lives in the `Derive umbrella metadata` step below.
+# Umbrella metadata is now DISCOVERED from the single DocC catalog under
+# `Sources/*/*.docc` (the catalog's parent-directory basename is the display
+# name). The kebab→TitleCase repo-name heuristic — and this acronym list —
+# survive ONLY as a tiebreak when a repo ships MULTIPLE catalogs (all-caps
+# tokens preserved verbatim, e.g. `swift-cpu-primitives` → `CPU_Primitives`,
+# NOT `Cpu_Primitives`). Extend when a new spec acronym appears in a package
+# name. Keep alphabetically sorted; space-separated; uppercase. The list
+# itself lives in the `Derive umbrella metadata` step below.
 
 # Reusable DocC validation workflow for Swift Institute packages using
 # the umbrella-module single-catalog pattern ([DOC-019a]). Acts as a
@@ -62,9 +65,10 @@ name: Swift DocC (reusable)
 #       secrets: inherit
 #
 # All `umbrella-*` and `exclude-modules` inputs are OPTIONAL — when
-# omitted (or empty), values are derived from `${{ github.event.repository.name }}`
-# per the convention above. Pass overrides only when the package's
-# layout deviates.
+# omitted (or empty), values are DISCOVERED from the single DocC catalog
+# under `Sources/*/*.docc` (its parent-directory basename is the umbrella
+# display name); a repo with no catalog is skipped by design. Pass
+# overrides only when the package's layout deviates.
 #
 # Pipeline:
 #   1. `swift build` with symbol-graph emission (preserves @_exported doc comments)
@@ -86,11 +90,11 @@ on:
       umbrella-module:
         type: string
         default: ""
-        description: "Override (default: derived from repo name per swift-{kebab}-primitives → {Title}_Primitives convention; preserves acronyms)."
+        description: "Override (default: discovered from the single Sources/*/*.docc catalog — its parent-directory basename with spaces→underscores)."
       umbrella-display-name:
         type: string
         default: ""
-        description: "Override (default: derived per convention)."
+        description: "Override (default: the discovered DocC catalog's parent-directory basename)."
       umbrella-bundle-id:
         type: string
         default: ""
@@ -98,7 +102,7 @@ on:
       umbrella-docc-path:
         type: string
         default: ""
-        description: "Override (default: Sources/<Display>/<Display>.docc)."
+        description: "Override (default: the discovered Sources/*/*.docc catalog path)."
       exclude-modules:
         type: string
         default: ""
@@ -186,38 +190,94 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Acronym preservation list (see header comment for maintenance).
-          # Alphabetically sorted; space-separated; uppercase.
-          ACRONYMS="ABI ASCII AST CPU CSS HTML IETF IO IP IR ISO JSON RFC SSL TCP TLS UDP URI URL UUID XML YAML"
+          # ─── Discover umbrella metadata from source truth ───────────────
+          # The repo convention is exactly ONE DocC catalog living inside its
+          # umbrella target directory (Sources/<Umbrella Target>/<X>.docc), so
+          # the catalog's parent-directory basename IS the authoritative
+          # umbrella display name. Discovering it beats guessing from the repo
+          # name: the old kebab→TitleCase heuristic diverged from real module
+          # names (e.g. derived Copy_On_Write vs actual Copy_on_Write, or
+          # Svg_Standard vs SVG_Standard) and killed the docs job at
+          # patch-umbrella-symbol-graph.py ("no symbol graph found for umbrella
+          # module ..."). Discovery only replaces the guessing FALLBACK — the
+          # explicit umbrella-* inputs below still win when supplied.
 
-          STEM="${REPO_NAME#swift-}"
+          # One catalog level under each target dir: Sources/<target>/<X>.docc.
+          # nullglob → empty array (not the literal pattern) when none exist.
+          shopt -s nullglob
+          CATALOGS=(Sources/*/*.docc)
+          shopt -u nullglob
 
-          # kebab → Title Case with acronym preservation
           DISPLAY=""
-          IFS='-' read -ra PARTS <<< "$STEM"
-          for part in "${PARTS[@]}"; do
-            upper=$(printf '%s' "$part" | tr '[:lower:]' '[:upper:]')
-            cased="$(printf '%s' "${part:0:1}" | tr '[:lower:]' '[:upper:]')${part:1}"
-            for acr in $ACRONYMS; do
-              if [ "$upper" = "$acr" ]; then
-                cased="$upper"
+          DOCC_PATH=""
+
+          if [ "${#CATALOGS[@]}" -eq 1 ]; then
+            # Single catalog: unambiguous source of truth.
+            DOCC_PATH="${CATALOGS[0]}"
+            DISPLAY="$(basename "$(dirname "$DOCC_PATH")")"
+          elif [ "${#CATALOGS[@]}" -gt 1 ]; then
+            # Multiple catalogs: reuse the legacy repo-name heuristic to choose
+            # the umbrella, preferring the discovered catalog whose parent-dir
+            # basename matches it (tiebreak). Acronyms preserved verbatim
+            # (e.g. swift-cpu-primitives → CPU_Primitives). Falls back to the
+            # first catalog with a warning when none matches.
+            ACRONYMS="ABI ASCII AST CPU CSS HTML IETF IO IP IR ISO JSON RFC SSL TCP TLS UDP URI URL UUID XML YAML"
+            STEM="${REPO_NAME#swift-}"
+            HEURISTIC=""
+            IFS='-' read -ra PARTS <<< "$STEM"
+            for part in "${PARTS[@]}"; do
+              upper=$(printf '%s' "$part" | tr '[:lower:]' '[:upper:]')
+              cased="$(printf '%s' "${part:0:1}" | tr '[:lower:]' '[:upper:]')${part:1}"
+              for acr in $ACRONYMS; do
+                if [ "$upper" = "$acr" ]; then
+                  cased="$upper"
+                  break
+                fi
+              done
+              HEURISTIC="${HEURISTIC:+$HEURISTIC }$cased"
+            done
+            for candidate in "${CATALOGS[@]}"; do
+              name="$(basename "$(dirname "$candidate")")"
+              if [ "$name" = "$HEURISTIC" ]; then
+                DOCC_PATH="$candidate"
+                DISPLAY="$name"
                 break
               fi
             done
-            DISPLAY="${DISPLAY:+$DISPLAY }$cased"
-          done
+            if [ -z "$DOCC_PATH" ]; then
+              DOCC_PATH="${CATALOGS[0]}"
+              DISPLAY="$(basename "$(dirname "$DOCC_PATH")")"
+              echo "::warning::Multiple DocC catalogs under Sources/*/*.docc; none matched repo-name heuristic '$HEURISTIC'. Using '$DISPLAY' ($DOCC_PATH)."
+            else
+              echo "Multiple DocC catalogs under Sources/*/*.docc; selected '$DISPLAY' ($DOCC_PATH) via repo-name heuristic tiebreak."
+            fi
+          fi
 
+          # Dependent fields derive from the discovered display name, mirroring
+          # the previous scheme (spaces→underscores for the module, spaces→
+          # hyphens for the bundle id, <Module>_Test_Support for the exclude).
           MODULE="${DISPLAY// /_}"
           BUNDLE_ID="${REPO_NAME}.${DISPLAY// /-}"
-          DOCC_PATH="Sources/${DISPLAY}/${DISPLAY}.docc"
-          DEFAULT_EXCLUDE="${MODULE}_Test_Support"
+          DEFAULT_EXCLUDE="${MODULE:+${MODULE}_Test_Support}"
 
-          # Override-precedence: input non-empty → use input; else → derive.
+          # Override-precedence: input non-empty → use input; else → discovered
+          # value. An all-inputs caller is unaffected by discovery (the
+          # explicit override path works exactly as before).
           UMBRELLA_MODULE="${INPUT_UMBRELLA_MODULE:-$MODULE}"
           UMBRELLA_DISPLAY_NAME="${INPUT_UMBRELLA_DISPLAY_NAME:-$DISPLAY}"
           UMBRELLA_BUNDLE_ID="${INPUT_UMBRELLA_BUNDLE_ID:-$BUNDLE_ID}"
           UMBRELLA_DOCC_PATH="${INPUT_UMBRELLA_DOCC_PATH:-$DOCC_PATH}"
           EXCLUDE_MODULES="${INPUT_EXCLUDE_MODULES:-$DEFAULT_EXCLUDE}"
+
+          # Skip-by-design (Bucket B): a catalog-less stub/leaf package with no
+          # explicit umbrella-docc-path override has nothing to document.
+          # Signal the downstream build/convert steps (gated on env.SKIP_DOCS)
+          # to skip, and exit this step green.
+          if [ -z "$UMBRELLA_DOCC_PATH" ]; then
+            echo "No DocC catalog found under Sources/*/*.docc for $REPO_NAME and no umbrella-docc-path override supplied — skipping DocC build (catalog-less stub/leaf package)."
+            echo "SKIP_DOCS=true" >> "$GITHUB_ENV"
+            exit 0
+          fi
 
           {
             echo "UMBRELLA_MODULE=$UMBRELLA_MODULE"
@@ -227,7 +287,7 @@ jobs:
             echo "EXCLUDE_MODULES=$EXCLUDE_MODULES"
           } >> "$GITHUB_ENV"
 
-          echo "Derived umbrella metadata for $REPO_NAME:"
+          echo "Discovered umbrella metadata for $REPO_NAME:"
           echo "  module       = $UMBRELLA_MODULE"
           echo "  display name = $UMBRELLA_DISPLAY_NAME"
           echo "  bundle id    = $UMBRELLA_BUNDLE_ID"
@@ -238,6 +298,7 @@ jobs:
         run: swift --version
 
       - name: swift build — emit per-module symbol graphs
+        if: ${{ success() && env.SKIP_DOCS != 'true' }}
         env:
           DOCS_WORK: ${{ runner.temp }}/docs-work
         run: |
@@ -251,6 +312,7 @@ jobs:
           ls "${DOCS_WORK}/symbol-graphs-raw/"
 
       - name: Pool distribution symbol graphs
+        if: ${{ success() && env.SKIP_DOCS != 'true' }}
         run: |
           mkdir -p "${DOCS_WORK}/symbol-graphs"
           cp "${DOCS_WORK}/symbol-graphs-raw"/*.symbols.json "${DOCS_WORK}/symbol-graphs/"
@@ -262,6 +324,7 @@ jobs:
           ls "${DOCS_WORK}/symbol-graphs/"
 
       - name: Fetch patch-umbrella-symbol-graph.py
+        if: ${{ success() && env.SKIP_DOCS != 'true' }}
         uses: actions/checkout@v6
         with:
           repository: swift-institute/.github
@@ -271,6 +334,7 @@ jobs:
           sparse-checkout-cone-mode: false
 
       - name: Isolate umbrella symbol graph
+        if: ${{ success() && env.SKIP_DOCS != 'true' }}
         run: |
           python3 .swift-institute-github/.github/scripts/patch-umbrella-symbol-graph.py \
             --symbol-graph-dir "${DOCS_WORK}/symbol-graphs" \
@@ -280,6 +344,7 @@ jobs:
           ls "${DOCS_WORK}/umbrella-symbol-graph/"
 
       - name: Build distribution archive (docc convert)
+        if: ${{ success() && env.SKIP_DOCS != 'true' }}
         run: |
           mkdir -p "${DOCS_WORK}/archives"
           rm -rf "${DOCS_WORK}/archives/$UMBRELLA_DISPLAY_NAME.doccarchive"
