@@ -163,6 +163,18 @@ jobs:
           app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
           enabled: ${{ inputs.enable-private-repos }}
 
+      # Identity-conflict fast-check ([PKG-DEP-009] class): fails in <1s with the exact edge
+      # named when this repo's manifests spell one identity two ways — the org-drift class
+      # that otherwise hangs SwiftPM 6.2/6.3 until timeout-minutes fires (catalog §A26).
+      # Stale-pin divergence only warns (pin-advance friendly). Wired 2026-07-10 with ratchet
+      # flip 1; script staged by the hang-resolution session.
+      - name: Identity-conflict fast-check
+        shell: bash
+        run: |
+          curl -fsSL -o /tmp/fastcheck.py https://raw.githubusercontent.com/swift-institute/.github/main/.github/scripts/ci-identity-conflict-fastcheck.py
+          if [ -d "${GITHUB_WORKSPACE}/consumer" ]; then TARGET="${GITHUB_WORKSPACE}/consumer"; else TARGET="${GITHUB_WORKSPACE}"; fi
+          python3 /tmp/fastcheck.py "$TARGET"
+
       - name: Select Xcode ${{ env.XCODE_VERSION }}
         run: sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
 
@@ -209,6 +221,18 @@ jobs:
           app-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
           app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
           enabled: ${{ inputs.enable-private-repos }}
+
+      # Identity-conflict fast-check ([PKG-DEP-009] class): fails in <1s with the exact edge
+      # named when this repo's manifests spell one identity two ways — the org-drift class
+      # that otherwise hangs SwiftPM 6.2/6.3 until timeout-minutes fires (catalog §A26).
+      # Stale-pin divergence only warns (pin-advance friendly). Wired 2026-07-10 with ratchet
+      # flip 1; script staged by the hang-resolution session.
+      - name: Identity-conflict fast-check
+        shell: bash
+        run: |
+          curl -fsSL -o /tmp/fastcheck.py https://raw.githubusercontent.com/swift-institute/.github/main/.github/scripts/ci-identity-conflict-fastcheck.py
+          if [ -d "${GITHUB_WORKSPACE}/consumer" ]; then TARGET="${GITHUB_WORKSPACE}/consumer"; else TARGET="${GITHUB_WORKSPACE}"; fi
+          python3 /tmp/fastcheck.py "$TARGET"
 
       - uses: swift-institute/.github/.github/actions/install-system-deps@main
 
@@ -258,6 +282,18 @@ jobs:
           app-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
           app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
           enabled: ${{ inputs.enable-private-repos }}
+
+      # Identity-conflict fast-check ([PKG-DEP-009] class): fails in <1s with the exact edge
+      # named when this repo's manifests spell one identity two ways — the org-drift class
+      # that otherwise hangs SwiftPM 6.2/6.3 until timeout-minutes fires (catalog §A26).
+      # Stale-pin divergence only warns (pin-advance friendly). Wired 2026-07-10 with ratchet
+      # flip 1; script staged by the hang-resolution session.
+      - name: Identity-conflict fast-check
+        shell: bash
+        run: |
+          curl -fsSL -o /tmp/fastcheck.py https://raw.githubusercontent.com/swift-institute/.github/main/.github/scripts/ci-identity-conflict-fastcheck.py
+          if [ -d "${GITHUB_WORKSPACE}/consumer" ]; then TARGET="${GITHUB_WORKSPACE}/consumer"; else TARGET="${GITHUB_WORKSPACE}"; fi
+          python3 /tmp/fastcheck.py "$TARGET"
 
       - uses: swift-institute/.github/.github/actions/install-system-deps@main
 
@@ -319,6 +355,18 @@ jobs:
           app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
           enabled: ${{ inputs.enable-private-repos }}
 
+      # Identity-conflict fast-check ([PKG-DEP-009] class): fails in <1s with the exact edge
+      # named when this repo's manifests spell one identity two ways — the org-drift class
+      # that otherwise hangs SwiftPM 6.2/6.3 until timeout-minutes fires (catalog §A26).
+      # Stale-pin divergence only warns (pin-advance friendly). Wired 2026-07-10 with ratchet
+      # flip 1; script staged by the hang-resolution session.
+      - name: Identity-conflict fast-check
+        shell: bash
+        run: |
+          curl -fsSL -o /tmp/fastcheck.py https://raw.githubusercontent.com/swift-institute/.github/main/.github/scripts/ci-identity-conflict-fastcheck.py
+          if [ -d "${GITHUB_WORKSPACE}/consumer" ]; then TARGET="${GITHUB_WORKSPACE}/consumer"; else TARGET="${GITHUB_WORKSPACE}"; fi
+          python3 /tmp/fastcheck.py "$TARGET"
+
       - uses: swift-institute/.github/.github/actions/install-system-deps@main
 
       - name: Print toolchain info
@@ -365,6 +413,18 @@ jobs:
           app-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
           app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
           enabled: ${{ inputs.enable-private-repos }}
+
+      # Identity-conflict fast-check ([PKG-DEP-009] class): fails in <1s with the exact edge
+      # named when this repo's manifests spell one identity two ways — the org-drift class
+      # that otherwise hangs SwiftPM 6.2/6.3 until timeout-minutes fires (catalog §A26).
+      # Stale-pin divergence only warns (pin-advance friendly). Wired 2026-07-10 with ratchet
+      # flip 1; script staged by the hang-resolution session.
+      - name: Identity-conflict fast-check
+        shell: bash
+        run: |
+          curl -fsSL -o /tmp/fastcheck.py https://raw.githubusercontent.com/swift-institute/.github/main/.github/scripts/ci-identity-conflict-fastcheck.py
+          if [ -d "${GITHUB_WORKSPACE}/consumer" ]; then TARGET="${GITHUB_WORKSPACE}/consumer"; else TARGET="${GITHUB_WORKSPACE}"; fi
+          python3 /tmp/fastcheck.py "$TARGET"
 
       - name: Install Swift
         uses: SwiftyLab/setup-swift@38f54a76b70d989321de9dc7c840618c08cf56e9  # v1.14.0
@@ -439,6 +499,18 @@ jobs:
           app-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
           app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
           enabled: ${{ inputs.enable-private-repos }}
+
+      # Identity-conflict fast-check ([PKG-DEP-009] class): fails in <1s with the exact edge
+      # named when this repo's manifests spell one identity two ways — the org-drift class
+      # that otherwise hangs SwiftPM 6.2/6.3 until timeout-minutes fires (catalog §A26).
+      # Stale-pin divergence only warns (pin-advance friendly). Wired 2026-07-10 with ratchet
+      # flip 1; script staged by the hang-resolution session.
+      - name: Identity-conflict fast-check
+        shell: bash
+        run: |
+          curl -fsSL -o /tmp/fastcheck.py https://raw.githubusercontent.com/swift-institute/.github/main/.github/scripts/ci-identity-conflict-fastcheck.py
+          if [ -d "${GITHUB_WORKSPACE}/consumer" ]; then TARGET="${GITHUB_WORKSPACE}/consumer"; else TARGET="${GITHUB_WORKSPACE}"; fi
+          python3 /tmp/fastcheck.py "$TARGET"
 
       - name: Select Xcode ${{ env.XCODE_VERSION }}
         run: sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
