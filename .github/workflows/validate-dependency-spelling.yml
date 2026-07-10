@@ -1,0 +1,159 @@
+# validate-dependency-spelling.yml — verify [PKG-DEP-009] canonical
+# `.package(url:)` spelling discipline.
+#
+# Reusable workflow. For the given `org` (or single `repo`), enumerates
+# non-archived repos, clones each (shallow), and runs
+# `.github/scripts/validate-dependency-spelling.py` — a manifest-only lint
+# (no build, no resolve) flagging bare (non-`.git`) GitHub URLs, committed
+# `.package(path:)` deps, and retired-org spellings in Package*.swift.
+#
+# WHY: SwiftPM mirror substitution is exact-string and its canonical-location
+# comparison treats each distinct spelling of one identity as a distinct
+# location; a single divergent edge sends SwiftPM 6.2+ graph load into the
+# conflicting-identity path enumeration (exponential — an effective hang on
+# institute-scale graphs). Dossier: swift-institute/Issues/
+# swift-issue-spm-identity-conflict-path-enumeration-hang/ (catalog §A26).
+#
+# Pattern mirrors validate-package-identity.yml (org sweep, pure python3,
+# ubuntu-latest, no toolchain).
+#
+# Provenance: HANDOFF-spm-hang-resolution-2026-07-10 DoD-2b (CI-guard leg of
+# the terminal hang resolution).
+
+name: validate-dependency-spelling
+
+on:
+  workflow_call:
+    inputs:
+      repo:
+        description: 'Owner/name of a single repo to scan.'
+        type: string
+        required: false
+        default: ''
+      org:
+        description: 'Org to sweep (ignored if repo is set).'
+        type: string
+        required: false
+        default: ''
+      dry-run:
+        description: 'Report findings but do not fail the run.'
+        type: boolean
+        required: false
+        default: false
+      visibility:
+        description: 'Filter targets by visibility (public | private | internal | all).'
+        type: string
+        required: false
+        default: 'public'
+    outputs:
+      total-violations:
+        description: 'Total [PKG-DEP-009] findings across all repos.'
+        value: ${{ jobs.scan.outputs.total-violations }}
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: 'Owner/name of a single repo (optional).'
+        type: string
+        required: false
+      org:
+        description: 'Org to sweep (optional; ignored if repo is set).'
+        type: string
+        required: false
+      dry-run:
+        description: 'Report findings but do not fail the run.'
+        type: boolean
+        required: false
+        default: false
+      visibility:
+        description: 'Filter targets by visibility (public | private | internal | all).'
+        type: string
+        required: false
+        default: 'public'
+
+# Top-level `permissions:` OMITTED per [CI-090] — combined
+# (workflow_call + workflow_dispatch) workflow, treated as reusable.
+# Per-job `permissions:` below provides the per-job floor.
+
+jobs:
+  scan:
+    if: ${{ !github.event.repository.private }}     # [CI-032]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    outputs:
+      total-violations: ${{ steps.aggregate.outputs.total-violations }}
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411  # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: Mint installation token (swift-institute-bot)
+        id: mint-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
+        with:
+          client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: ${{ inputs.org || github.repository_owner }}
+
+      - name: Checkout swift-institute/.github (validator)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          repository: swift-institute/.github
+          path: institute-github
+          ref: main
+
+      - name: Resolve target repos
+        env:
+          GH_TOKEN: ${{ steps.mint-token.outputs.token }}
+          INPUT_REPO: ${{ inputs.repo }}
+          INPUT_ORG: ${{ inputs.org }}
+          INPUT_VISIBILITY: ${{ inputs.visibility }}
+        run: |
+          set -euo pipefail
+          if [ -n "$INPUT_REPO" ]; then
+            echo "$INPUT_REPO" > /tmp/targets.txt
+          else
+            : "${INPUT_ORG:?org or repo input required}"
+            gh repo list "$INPUT_ORG" --no-archived --limit 1000 --visibility "$INPUT_VISIBILITY" \
+              --json nameWithOwner --jq '.[].nameWithOwner' > /tmp/targets.txt
+          fi
+          echo "Resolved $(wc -l < /tmp/targets.txt | tr -d ' ') target repo(s)."
+
+      - name: Run dependency-spelling checks
+        env:
+          GH_TOKEN: ${{ steps.mint-token.outputs.token }}
+          VALIDATOR: ${{ github.workspace }}/institute-github/.github/scripts/validate-dependency-spelling.py
+        run: |
+          set -euo pipefail
+          : > /tmp/findings.tsv
+          while IFS= read -r repo; do
+            workdir=$(mktemp -d)
+            if gh repo clone "$repo" "$workdir" -- --depth 1 --quiet 2>/dev/null; then
+              if [ -f "$workdir/Package.swift" ]; then
+                python3 "$VALIDATOR" "$repo" "$workdir" >> /tmp/findings.tsv || true
+              fi
+            fi
+            rm -rf "$workdir"
+          done < /tmp/targets.txt
+
+      - name: Aggregate
+        id: aggregate
+        run: |
+          set -euo pipefail
+          violations=$(grep -cE "	PKG-DEP-009	" /tmp/findings.tsv) || violations=0
+          echo "total-violations=$violations" >> "$GITHUB_OUTPUT"
+          {
+            echo "## validate-dependency-spelling findings"
+            echo "Total: $violations"
+            if [ "$violations" -gt 0 ]; then
+              echo
+              echo "| Repo | Rule | Message |"
+              echo "|---|---|---|"
+              awk -F'\t' '$2 == "PKG-DEP-009" { gsub(/\|/, "\\|", $3); printf("| `%s` | `%s` | %s |\n", $1, $2, $3) }' /tmp/findings.tsv
+            fi
+          } > "$GITHUB_STEP_SUMMARY"
+          if [ "$violations" -gt 0 ] && [ "${{ inputs.dry-run }}" != "true" ]; then
+            exit 1
+          fi
