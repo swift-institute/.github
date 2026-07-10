@@ -628,7 +628,6 @@ jobs:
     runs-on: ubuntu-latest
     container: swift:${{ inputs.swift-version }}
     timeout-minutes: 30
-    continue-on-error: true
     permissions:
       contents: read
     steps:
@@ -783,7 +782,7 @@ jobs:
         # before (private-dep auth configured above; libuuid present).
         env:
           SWIFT_LINTER_RUNNER: /usr/local/bin/swift-linter-runner
-        run: swift-linter "$GITHUB_WORKSPACE/consumer"
+        run: swift-linter "$GITHUB_WORKSPACE/consumer" --exit-policy strict
 
   # ════════════════════════════════════════════════════════════════════════
   # Advisory CI gates — grouped by category for UI clarity.
@@ -883,7 +882,6 @@ jobs:
       - linux-nightly
       - linux-6-4
       - apple-simulator-build
-      - swift-linter
       - lint-yaml
       - lint-broken-symlink
       - lint-license-header
@@ -947,6 +945,7 @@ jobs:
       - windows-release
       - format
       - lint
+      - swift-linter
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:

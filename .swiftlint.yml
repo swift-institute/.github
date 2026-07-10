@@ -42,6 +42,18 @@ disabled_rules:
   - closure_parameter_position   # Conflicts with swift-format line breaking
   - opening_brace                # Conflicts with swift-format for long declarations
   - comma  # Conflicts with swift-format (@_implements attribute-argument spacing); swift-format owns comma spacing
+  # prefer_self_in_static_references (master adjudication 2026-07-10): pulled
+  # from the Tier A opt-in cohort — see the removal note at that list entry
+  # below. Misfires on the institute's nested `struct Test` suite pattern
+  # (`extension Foo { @Suite struct Test { @Test func ... } } }`): the rule
+  # flags `@Test` MACRO ATTRIBUTES as static-member references, and its
+  # autocorrect corrupts them (rewrites the attribute text, breaking the
+  # macro). Confirmed across swift-color, swift-lexer, swift-systems,
+  # swift-bitset-primitives, swift-time-primitives, swift-logic-primitives.
+  # disabled_rules wins over opt_in_rules regardless of declaration order or
+  # parent_config depth, so this single Tier 1 entry kills the false-positive
+  # class fleet-wide for every repo in the parent_config chain.
+  - prefer_self_in_static_references
 
 opt_in_rules:
   - explicit_init
@@ -53,9 +65,13 @@ opt_in_rules:
   - operator_usage_whitespace
   - overridden_super_call
   # Tier A cohort (2026-05-05): consistency / harness rules.
+  # prefer_self_in_static_references REMOVED from this cohort (master
+  # adjudication 2026-07-10) — see the disabled_rules entry above for the
+  # false-positive rationale (nested `@Suite struct Test` / `@Test`-attribute
+  # autocorrect corruption). Left here as a struck-through breadcrumb so a
+  # future cohort re-audit doesn't silently re-add it without re-litigating.
   - direct_return
   - redundant_self
-  - prefer_self_in_static_references
   - vertical_whitespace_between_cases
   # Tier A.5 cohort (2026-05-05): additional pure-consistency opt-ins.
   - modifier_order                          # consistent attribute / access-modifier ordering
