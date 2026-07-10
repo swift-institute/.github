@@ -72,6 +72,7 @@ jobs:
   report:
     needs: sweep
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     if: always() && needs.sweep.result != 'skipped'
     permissions:
       contents: read

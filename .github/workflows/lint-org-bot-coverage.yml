@@ -47,6 +47,7 @@ jobs:
   config:
     if: ${{ !github.event.repository.private }}     # [CI-032]
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
     outputs:
@@ -74,6 +75,7 @@ jobs:
     needs: config
     if: ${{ !github.event.repository.private }}     # [CI-032]
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
     outputs:

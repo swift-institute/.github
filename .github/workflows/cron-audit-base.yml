@@ -185,6 +185,7 @@ jobs:
         org: ${{ fromJSON(inputs.matrix-orgs) }}
     if: ${{ !github.event.repository.private }}     # [CI-032]
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     container: ${{ inputs.container }}
     permissions:
       contents: read
@@ -286,6 +287,7 @@ jobs:
   report:
     needs: sweep
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     if: ${{ !github.event.repository.private && always() && needs.sweep.result != 'skipped' }}     # [CI-032]
     permissions:
       contents: read

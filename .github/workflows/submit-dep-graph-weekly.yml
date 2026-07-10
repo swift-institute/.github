@@ -54,6 +54,7 @@ on:
 jobs:
   config:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
     outputs:
@@ -79,6 +80,7 @@ jobs:
       matrix:
         org: ${{ fromJSON(needs.config.outputs.orgs) }}
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     # Swift toolchain pin per [CI-011]; bump in lockstep with the universal reusable's default.
     # Hardcoded literal: env.* and workflow-level env: are not bound when GitHub Actions
     # resolves container: at job-startup. vars.* (org/repo variables) is the only working
@@ -238,6 +240,7 @@ jobs:
   report:
     needs: sweep
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     if: always() && needs.sweep.result != 'skipped'
     permissions:
       contents: read

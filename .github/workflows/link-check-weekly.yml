@@ -43,6 +43,7 @@ on:
 jobs:
   config:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
     outputs:
@@ -81,6 +82,7 @@ jobs:
   report:
     needs: sweep
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     if: always() && needs.sweep.result != 'skipped'
     permissions:
       contents: read

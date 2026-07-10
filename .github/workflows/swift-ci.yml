@@ -891,6 +891,7 @@ jobs:
       - lint-api-breakage
       - lint-pr-title
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     permissions:
       contents: read
     steps:
@@ -947,6 +948,7 @@ jobs:
       - format
       - lint
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:
