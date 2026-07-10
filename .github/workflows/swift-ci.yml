@@ -171,6 +171,8 @@ jobs:
       - name: Identity-conflict fast-check
         shell: bash
         run: |
+          # swift:*/nightly containers ship no curl ([CI-092]-class gap); no-op on macOS/Windows where curl already exists.
+          command -v curl >/dev/null 2>&1 || { apt-get update -qq && apt-get install -qq -y curl; }
           curl -fsSL -o /tmp/fastcheck.py https://raw.githubusercontent.com/swift-institute/.github/main/.github/scripts/ci-identity-conflict-fastcheck.py
           if [ -d "${GITHUB_WORKSPACE}/consumer" ]; then TARGET="${GITHUB_WORKSPACE}/consumer"; else TARGET="${GITHUB_WORKSPACE}"; fi
           python3 /tmp/fastcheck.py "$TARGET"
@@ -230,6 +232,8 @@ jobs:
       - name: Identity-conflict fast-check
         shell: bash
         run: |
+          # swift:*/nightly containers ship no curl ([CI-092]-class gap); no-op on macOS/Windows where curl already exists.
+          command -v curl >/dev/null 2>&1 || { apt-get update -qq && apt-get install -qq -y curl; }
           curl -fsSL -o /tmp/fastcheck.py https://raw.githubusercontent.com/swift-institute/.github/main/.github/scripts/ci-identity-conflict-fastcheck.py
           if [ -d "${GITHUB_WORKSPACE}/consumer" ]; then TARGET="${GITHUB_WORKSPACE}/consumer"; else TARGET="${GITHUB_WORKSPACE}"; fi
           python3 /tmp/fastcheck.py "$TARGET"
@@ -291,6 +295,8 @@ jobs:
       - name: Identity-conflict fast-check
         shell: bash
         run: |
+          # swift:*/nightly containers ship no curl ([CI-092]-class gap); no-op on macOS/Windows where curl already exists.
+          command -v curl >/dev/null 2>&1 || { apt-get update -qq && apt-get install -qq -y curl; }
           curl -fsSL -o /tmp/fastcheck.py https://raw.githubusercontent.com/swift-institute/.github/main/.github/scripts/ci-identity-conflict-fastcheck.py
           if [ -d "${GITHUB_WORKSPACE}/consumer" ]; then TARGET="${GITHUB_WORKSPACE}/consumer"; else TARGET="${GITHUB_WORKSPACE}"; fi
           python3 /tmp/fastcheck.py "$TARGET"
@@ -363,6 +369,8 @@ jobs:
       - name: Identity-conflict fast-check
         shell: bash
         run: |
+          # swift:*/nightly containers ship no curl ([CI-092]-class gap); no-op on macOS/Windows where curl already exists.
+          command -v curl >/dev/null 2>&1 || { apt-get update -qq && apt-get install -qq -y curl; }
           curl -fsSL -o /tmp/fastcheck.py https://raw.githubusercontent.com/swift-institute/.github/main/.github/scripts/ci-identity-conflict-fastcheck.py
           if [ -d "${GITHUB_WORKSPACE}/consumer" ]; then TARGET="${GITHUB_WORKSPACE}/consumer"; else TARGET="${GITHUB_WORKSPACE}"; fi
           python3 /tmp/fastcheck.py "$TARGET"
@@ -422,6 +430,8 @@ jobs:
       - name: Identity-conflict fast-check
         shell: bash
         run: |
+          # swift:*/nightly containers ship no curl ([CI-092]-class gap); no-op on macOS/Windows where curl already exists.
+          command -v curl >/dev/null 2>&1 || { apt-get update -qq && apt-get install -qq -y curl; }
           curl -fsSL -o /tmp/fastcheck.py https://raw.githubusercontent.com/swift-institute/.github/main/.github/scripts/ci-identity-conflict-fastcheck.py
           if [ -d "${GITHUB_WORKSPACE}/consumer" ]; then TARGET="${GITHUB_WORKSPACE}/consumer"; else TARGET="${GITHUB_WORKSPACE}"; fi
           python3 /tmp/fastcheck.py "$TARGET"
@@ -508,6 +518,8 @@ jobs:
       - name: Identity-conflict fast-check
         shell: bash
         run: |
+          # swift:*/nightly containers ship no curl ([CI-092]-class gap); no-op on macOS/Windows where curl already exists.
+          command -v curl >/dev/null 2>&1 || { apt-get update -qq && apt-get install -qq -y curl; }
           curl -fsSL -o /tmp/fastcheck.py https://raw.githubusercontent.com/swift-institute/.github/main/.github/scripts/ci-identity-conflict-fastcheck.py
           if [ -d "${GITHUB_WORKSPACE}/consumer" ]; then TARGET="${GITHUB_WORKSPACE}/consumer"; else TARGET="${GITHUB_WORKSPACE}"; fi
           python3 /tmp/fastcheck.py "$TARGET"
