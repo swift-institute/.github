@@ -50,6 +50,23 @@ name: Swift CI (reusable)
 # for dispatch does not violate it. Seat-ruled 2026-07-03: this expands the
 # ratified D3 spec from two dispatch inputs to three (target-repo + job + ref).
 #
+# `platform-support` is the second sanctioned exception (CI platform-support
+# arc, 2026-07-14): a DEFAULT-INERT platform-identity declaration. Empty
+# (every existing caller) = the full hard-coded matrix, bit-identical to
+# before the input existed. Non-empty = the caller declares which platform
+# families its package targets, and each platform leg consults the
+# declaration in its `if:` guard. This does NOT re-open matrix derivation —
+# the matrix is still never derived from Package.swift `platforms:` and
+# cost-based collapse is still rejected ([CI-091]/[CI-096]). It exists
+# because a platform-blind matrix MANUFACTURES architectural violations:
+# the only way a POSIX specification package (ISO/IEC 9945 IS POSIX) can
+# green a Windows leg is to emulate POSIX inside the POSIX spec package
+# (swift-iso-9945 06fc4b2 — the manufactured violation this input exists
+# to reverse), corrupting the exact package the leg claims to verify. The platform seam lives at the designated L3 boundary
+# per [PLAT-ARCH-001], never inside an L2 spec package — so the honest fix
+# is a CI-level identity declaration, not source-level platform emulation.
+# Rule promotion tracked in the ci-cd-workflows skill.
+#
 # Caching policy: this workflow does NOT cache `.build/`. Every run does
 # a fresh `swift package resolve` + clone + compile. This matches Apple's
 # canonical `swiftlang/github-workflows/swift_package_test.yml` (995 lines,
@@ -84,6 +101,10 @@ on:
         type: string
         default: ""
         description: "If non-empty, append `--filter <value>` to every `swift test` invocation in this workflow. Hyphens in the value are converted to underscores so the regex matches Swift module identifiers (SwiftPM converts hyphenated target names to underscored module names). Used by per-issue consumer matrices (e.g., swift-institute/Issues calling this reusable per swift-issue-*). Empty default preserves existing consumer behavior."
+      platform-support:
+        type: string
+        default: ""
+        description: "Per-package CI platform-support declaration. Empty default — every existing caller passes nothing — runs the full matrix, bit-identical to before this input existed. Non-empty = comma-separated subset of `apple,linux,windows` (lowercase, no spaces): each platform leg runs only when its family token is present (apple → macos-release + apple-simulator-build; linux → linux-release + linux-nightly + linux-6-4; windows → windows-release). Quality gates (format, lint, swift-linter, advisory linters) are platform-neutral and never consult this input; ci-ok already treats skipped legs as passing. Declare ONLY platform-identity exclusions — a package whose specification or identity excludes a platform (POSIX/ISO-9945 spec packages, per-platform roots like swift-linux / swift-windows). This is NOT a cost knob ([CI-096]) and is NOT derived from Package.swift `platforms:` ([CI-091] — that block is a SwiftPM deployment-target declaration, not a CI-coverage signal). Rationale: a platform-blind matrix forces platform emulation into L2 spec packages to green an illegitimate leg; the platform seam is L3 per [PLAT-ARCH-001]. ci-dispatch.yml passes nothing, so single-job dispatch can still force any leg on any package (debug surface preserved)."
       target-repo:
         type: string
         default: ""
@@ -139,7 +160,7 @@ env:
 jobs:
   macos-release:
     name: macOS (Swift ${{ inputs.swift-version }}, debug)
-    if: ${{ !github.event.repository.private && (inputs.job == '' || inputs.job == 'macos-release') }}
+    if: ${{ !github.event.repository.private && (inputs.job == '' || inputs.job == 'macos-release') && (inputs.platform-support == '' || contains(format(',{0},', inputs.platform-support), ',apple,')) }}
     runs-on: ${{ inputs.macos-runner }}
     timeout-minutes: 45
     permissions:
@@ -199,7 +220,7 @@ jobs:
 
   linux-release:
     name: Ubuntu (Swift ${{ inputs.swift-version }}, release)
-    if: ${{ !github.event.repository.private && (inputs.job == '' || inputs.job == 'linux-release') }}
+    if: ${{ !github.event.repository.private && (inputs.job == '' || inputs.job == 'linux-release') && (inputs.platform-support == '' || contains(format(',{0},', inputs.platform-support), ',linux,')) }}
     runs-on: ubuntu-latest
     container: swift:${{ inputs.swift-version }}
     timeout-minutes: 45
@@ -261,7 +282,7 @@ jobs:
 
   linux-nightly:
     name: Ubuntu (Swift main nightly, release)
-    if: ${{ !github.event.repository.private && (inputs.job == '' || inputs.job == 'linux-nightly') }}
+    if: ${{ !github.event.repository.private && (inputs.job == '' || inputs.job == 'linux-nightly') && (inputs.platform-support == '' || contains(format(',{0},', inputs.platform-support), ',linux,')) }}
     runs-on: ubuntu-latest
     container: swiftlang/swift:nightly-main-jammy
     continue-on-error: true
@@ -335,7 +356,7 @@ jobs:
   # `compiler(<6.4)` §A9 gates (swift-xml / swift-w3c-xml / swift-graph / swift-plist).
   linux-6-4:
     name: Ubuntu (Swift 6.4.x nightly, release)
-    if: ${{ !github.event.repository.private && (inputs.job == '' || inputs.job == 'linux-6-4') }}
+    if: ${{ !github.event.repository.private && (inputs.job == '' || inputs.job == 'linux-6-4') && (inputs.platform-support == '' || contains(format(',{0},', inputs.platform-support), ',linux,')) }}
     runs-on: ubuntu-latest
     container: swiftlang/swift:nightly-6.4.x-jammy
     continue-on-error: true
@@ -398,7 +419,7 @@ jobs:
 
   windows-release:
     name: Windows (Swift ${{ inputs.swift-version }}, debug)
-    if: ${{ !github.event.repository.private && (inputs.job == '' || inputs.job == 'windows-release') }}
+    if: ${{ !github.event.repository.private && (inputs.job == '' || inputs.job == 'windows-release') && (inputs.platform-support == '' || contains(format(',{0},', inputs.platform-support), ',windows,')) }}
     runs-on: windows-latest
     timeout-minutes: 45
     permissions:
@@ -471,7 +492,7 @@ jobs:
   # covers all four Apple simulator platforms and is never collapsed.
   apple-simulator-build:
     name: ${{ matrix.platform }} Simulator (Swift ${{ inputs.swift-version }}, debug)
-    if: ${{ !github.event.repository.private && (inputs.job == '' || inputs.job == 'apple-simulator-build') }}
+    if: ${{ !github.event.repository.private && (inputs.job == '' || inputs.job == 'apple-simulator-build') && (inputs.platform-support == '' || contains(format(',{0},', inputs.platform-support), ',apple,')) }}
     runs-on: ${{ inputs.macos-runner }}
     # [CI-021]/[CI-091] advisory leg during the apple-simulator soak window.
     # continue-on-error keeps these legs non-gating (excluded from ci-ok
