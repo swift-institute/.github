@@ -26,10 +26,13 @@
 # gate-root unification ruling.
 #
 # Modes:
-#   report-only (default) — findings printed, exit 0. This is the wired mode;
-#   flipping any wiring to --enforce requires an explicit principal YES
-#   (HANDOFF-mechanization-arc W0 constraint).
-#   --enforce — exit 1 on any non-baselined finding.
+#   report-only (default) — findings printed, exit 0. This is the script's
+#   default flag behavior, NOT how it is wired.
+#   --enforce — exit 1 on any non-baselined finding. THIS IS THE WIRED MODE:
+#   sync-skills.sh invokes --enforce and aborts the sync on any non-baselined
+#   finding. The explicit principal YES that the W0 constraint required before
+#   flipping the wiring (HANDOFF-mechanization-arc) was given 2026-07-06 and
+#   the flip has landed; the constraint is satisfied, not pending.
 #
 # Baseline (the ratchet): .check-canon-baseline (sibling) — prune-only, same
 # contract as .skill-size-baseline. Allowlist: .check-canon-allowlist
@@ -44,7 +47,9 @@
 # free-account CI-reachability constraint as check-skill-sizes.sh).
 #
 # Invoked by:
-#   - swift-institute/Scripts/sync-skills.sh — local report-only step at sync time.
+#   - swift-institute/Scripts/sync-skills.sh — BLOCKING --enforce step at sync
+#     time (principal YES 2026-07-06); a non-baselined finding aborts the sync
+#     before any symlink work.
 #
 # Provenance: HANDOFF-mechanization-arc.md W0 (principal direction 2026-07-06);
 # REPORT-corpus-review.md (2026-07-05).
