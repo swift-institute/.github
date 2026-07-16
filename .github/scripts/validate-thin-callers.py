@@ -71,9 +71,9 @@ constrain *callers* to centralized reusables, not the reusables themselves.
 
 Detection shape: line-anchored regex against the workflow YAML plus an
 indentation-tracking per-job iterator for [CI-059] (which needs same-job
-co-presence of `uses:` and `secrets: inherit`). All without a YAML parser
-dependency. Mirrors the dependency-free shape of other validators in this
-directory.
+co-presence of `uses:` and `secrets: inherit`). Diagnostic precedence adds a
+PyYAML parse gate through the repository's existing `validate_lib` helper; an
+unparseable workflow can still emit broad diagnostics but cannot suppress one.
 
 Diagnostic precedence: when a canonical, completely parsed `jobs:` mapping
 contains only inline jobs and no job-level reusable-workflow `uses:`, the
@@ -89,6 +89,11 @@ import re
 import sys
 from pathlib import Path
 from typing import Iterator, Tuple
+
+from validate_lib import require_yaml
+
+
+yaml = require_yaml()
 
 # Job-level keys live at column-2+ indentation under `jobs.<job>:`. The
 # line-anchored `^\s+<key>:` form matches every YAML canonical indent
@@ -283,6 +288,33 @@ def has_complete_canonical_jobs_mapping(
     return parsed_job_count == len(jobs)
 
 
+def yaml_jobs_mapping_matches_parsed_jobs(
+    text: str, jobs: list[Tuple[str, str]]
+) -> bool:
+    """Whether PyYAML confirms the same complete job mapping.
+
+    Textual indentation proof alone cannot establish YAML parseability. This
+    second gate fails closed on syntax errors, non-mapping documents/jobs,
+    aliases that resolve to non-mapping jobs, duplicate job names, or any
+    textual/parser disagreement about the job set.
+    """
+    try:
+        document = yaml.safe_load(text)
+    except yaml.YAMLError:
+        return False
+    if not isinstance(document, dict):
+        return False
+    parsed_jobs = document.get("jobs")
+    if not isinstance(parsed_jobs, dict):
+        return False
+    job_names = [name for name, _ in jobs]
+    return (
+        list(parsed_jobs) == job_names
+        and len(parsed_jobs) == len(jobs)
+        and all(isinstance(parsed_jobs[name], dict) for name in job_names)
+    )
+
+
 def gh_repo_074_no_reusable_root_supersedes_inline(text: str) -> bool:
     """Prove that the no-reusable root necessarily repairs inline keys.
 
@@ -295,12 +327,14 @@ def gh_repo_074_no_reusable_root_supersedes_inline(text: str) -> bool:
     jobs = list(iter_jobs(text))
     if not has_complete_canonical_jobs_mapping(text, jobs):
         return False
+    if not yaml_jobs_mapping_matches_parsed_jobs(text, jobs):
+        return False
     if JOB_USES.search(text) or any(
         DIRECT_JOB_USES.search(body) for _, body in jobs
     ):
         return False
     if not all(
-        DIRECT_JOB_RUNS_ON.search(body) or DIRECT_JOB_STEPS.search(body)
+        DIRECT_JOB_RUNS_ON.search(body) and DIRECT_JOB_STEPS.search(body)
         for _, body in jobs
     ):
         return False

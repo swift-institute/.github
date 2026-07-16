@@ -6,11 +6,13 @@ from contextlib import redirect_stdout
 import importlib.util
 from io import StringIO
 from pathlib import Path
+import sys
 import tempfile
 import unittest
 
 
 SCRIPT = Path(__file__).parents[1] / "validate-thin-callers.py"
+sys.path.insert(0, str(SCRIPT.parent))
 SPEC = importlib.util.spec_from_file_location("validate_thin_callers", SCRIPT)
 assert SPEC is not None and SPEC.loader is not None
 module = importlib.util.module_from_spec(SPEC)
@@ -92,6 +94,54 @@ jobs:
         )
         lines = self.validate(workflow)
         self.assertEqual(len(lines), 3)
+
+    def test_runs_on_only_job_retains_both_existing_diagnostics(self) -> None:
+        workflow = """name: CI
+on: [push]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+"""
+        self.assertFalse(
+            module.gh_repo_074_no_reusable_root_supersedes_inline(workflow)
+        )
+        lines = self.validate(workflow)
+        self.assertEqual(len(lines), 2)
+        self.assertTrue(any("inline `runs-on:`" in line for line in lines))
+        self.assertTrue(any("does not reference any reusable" in line for line in lines))
+
+    def test_steps_only_job_retains_both_existing_diagnostics(self) -> None:
+        workflow = """name: CI
+on: [push]
+jobs:
+  build:
+    steps:
+      - run: swift test
+"""
+        self.assertFalse(
+            module.gh_repo_074_no_reusable_root_supersedes_inline(workflow)
+        )
+        lines = self.validate(workflow)
+        self.assertEqual(len(lines), 2)
+        self.assertTrue(any("inline `steps:`" in line for line in lines))
+        self.assertTrue(any("does not reference any reusable" in line for line in lines))
+
+    def test_unparseable_canonical_indentation_fails_closed(self) -> None:
+        workflow = """name: CI
+on: [push]
+jobs:
+  build:
+    runs-on: [ubuntu-latest
+    steps:
+      - run: swift test
+"""
+        self.assertTrue(module.has_complete_canonical_jobs_mapping(
+            workflow, list(module.iter_jobs(workflow))
+        ))
+        self.assertFalse(
+            module.gh_repo_074_no_reusable_root_supersedes_inline(workflow)
+        )
+        self.assertEqual(len(self.validate(workflow)), 3)
 
     def test_many_cofirings_never_create_precedence(self) -> None:
         workflow = """name: CI
