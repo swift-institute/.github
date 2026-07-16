@@ -254,6 +254,15 @@ validators:
     rule-id-regex: '^API-IMPL-006'
     migrate-to-base: 'no (chain-C; see CI-REVIEW-PHASE-B-DESIGN §5)'
 
+  - rule-id: API-IMPL-007
+    validator-script: .github/scripts/validate-file-naming.py
+    workflow-file: .github/workflows/validate-file-naming.yml
+    status: active
+    self-firing: deferred
+    discovery-mode: per-package-org-sweep
+    rule-id-regex: '^API-IMPL-007'
+    migrate-to-base: 'no (chain-C; see CI-REVIEW-PHASE-B-DESIGN §5)'
+
   - rule-id: API-NAME-009
     validator-script: .github/scripts/validate-diagnostic-format.py
     workflow-file: ''
