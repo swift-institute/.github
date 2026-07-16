@@ -262,6 +262,69 @@ def is_pure_extension_file(text: str) -> bool:
     return True
 
 
+def top_level_extension_discriminators(text: str) -> list[dict[str, str | bool]]:
+    """Return the target and canonical discriminator shape of each top-level
+    extension declaration.
+
+    The source is masked before inspection so comments and strings cannot
+    manufacture an extension header, a conformance colon, or a where clause.
+    This is intentionally bounded lexical evidence; an unparsed or mixed shape
+    stays visible rather than being treated as redundant.
+    """
+    masked = mask_non_code(text)
+    matches = list(EXTENSION_DECL_RE.finditer(masked))
+    depths = brace_depths(masked, {match.start() for match in matches})
+    output: list[dict[str, str | bool]] = []
+    for match in matches:
+        if depths.get(match.start()) != 0:
+            continue
+        opening_brace = masked.find("{", match.end())
+        if opening_brace < 0:
+            continue
+        tail = masked[match.end():opening_brace]
+        where_match = re.search(r"\bwhere\b", tail)
+        before_where = tail if where_match is None else tail[:where_match.start()]
+        output.append({
+            "target": match.group("name").strip("`").split("<", 1)[0],
+            "adds_conformance": ":" in before_where,
+            "has_where_clause": where_match is not None,
+        })
+    return output
+
+
+def top_level_extension_keyword_count(text: str) -> int:
+    """Count every unmasked `extension` keyword at lexical top level."""
+    masked = mask_non_code(text)
+    matches = list(re.finditer(r"\bextension\s+", masked))
+    depths = brace_depths(masked, {match.start() for match in matches})
+    return sum(depths.get(match.start()) == 0 for match in matches)
+
+
+def api_impl_007_remediation_supersedes_api_impl_006(text: str) -> bool:
+    """Whether the same canonical API-IMPL-007 repair necessarily removes
+    the API-IMPL-006 occurrence.
+
+    Every top-level extension must already carry a source discriminator:
+    conformance (`:`) or constrained specialization (`where`). Correcting
+    API-IMPL-007 then renames, or splits and renames, every declaration to its
+    extension target plus that discriminator, so no independent filename/type
+    mismatch remains. A member-only extension, a mixed member/constrained file,
+    or any unparsed shape returns False and keeps API-IMPL-006 visible.
+
+    Finding frequency is deliberately absent from this predicate. Prevalence
+    cannot establish semantic redundancy.
+    """
+    if not is_pure_extension_file(text):
+        return False
+    extensions = top_level_extension_discriminators(text)
+    if len(extensions) != top_level_extension_keyword_count(text):
+        return False
+    return bool(extensions) and all(
+        extension["adds_conformance"] or extension["has_where_clause"]
+        for extension in extensions
+    )
+
+
 def validate_extension_file_basename(repo: str, file: Path, repo_root: Path) -> int:
     """For a pure-extension file, verify its basename carries either a
     `+` segment or a ` where ` segment per [API-IMPL-007]. Return finding
@@ -302,8 +365,24 @@ def validate_file_naming(repo: str, repo_root: Path) -> int:
             text = f.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
-        if (is_compound_basename(basename)
-                and not has_matching_top_level_declared_path(text, basename)):
+        pure_extension = (
+            basename not in EXEMPT_BASENAMES
+            and is_pure_extension_file(text)
+        )
+        api_impl_007_finding = (
+            pure_extension
+            and "+" not in basename
+            and " where " not in basename
+        )
+        api_impl_006_finding = (
+            is_compound_basename(basename)
+            and not has_matching_top_level_declared_path(text, basename)
+        )
+        if (api_impl_006_finding
+                and not (
+                    api_impl_007_finding
+                    and api_impl_007_remediation_supersedes_api_impl_006(text)
+                )):
             emit(repo, "API-IMPL-006",
                  f"file name `{f.relative_to(repo_root)}` has a compound "
                  f"basename that matches no top-level declaration or extension "
@@ -311,9 +390,7 @@ def validate_file_naming(repo: str, repo_root: Path) -> int:
                  f"with dots per [API-IMPL-006]")
             findings += 1
         # [API-IMPL-007] — pure-extension files MUST have `+` or where-clause.
-        if basename in EXEMPT_BASENAMES:
-            continue
-        if is_pure_extension_file(text):
+        if pure_extension:
             findings += validate_extension_file_basename(repo, f, repo_root)
     return findings
 
