@@ -74,6 +74,15 @@ indentation-tracking per-job iterator for [CI-059] (which needs same-job
 co-presence of `uses:` and `secrets: inherit`). All without a YAML parser
 dependency. Mirrors the dependency-free shape of other validators in this
 directory.
+
+Diagnostic precedence: when a canonical, completely parsed `jobs:` mapping
+contains only inline jobs and no job-level reusable-workflow `uses:`, the
+absence-of-reusable diagnostic is the [GH-REPO-074] root. Correcting that root
+requires replacing every inline job with a reusable caller, which necessarily
+removes the same jobs' `runs-on:` and `steps:` keys. The two secondary
+diagnostics are therefore omitted only for that proven shape. Mixed,
+non-canonical, partial, and unparsed shapes retain independent diagnostics.
+Finding frequency is deliberately absent from the precedence predicate.
 """
 from __future__ import annotations
 import re
@@ -125,6 +134,9 @@ HAS_SECRETS_INLINE_MAP = re.compile(
 # trailing comment. `\w` and `-` cover all valid job-name shapes in the
 # ecosystem.
 JOB_NAME_LINE = re.compile(r"^([\w-]+):\s*(#.*)?$")
+DIRECT_JOB_RUNS_ON = re.compile(r"^    runs-on:", re.MULTILINE)
+DIRECT_JOB_STEPS = re.compile(r"^    steps:\s*(#.*)?$", re.MULTILINE)
+DIRECT_JOB_USES = re.compile(r"^    uses:\s+\S+", re.MULTILINE)
 
 # Per-authority sub-orgs (11 L2 + 2 L3 per [CI-004b]). Their consumers'
 # hop 1 (consumer -> parent layer wrapper) is cross-org, so [CI-059]'s
@@ -228,6 +240,82 @@ def iter_jobs(text: str) -> Iterator[Tuple[str, str]]:
 
     if current_job is not None:
         yield current_job, "\n".join(current_body)
+
+
+def has_complete_canonical_jobs_mapping(
+    text: str, jobs: list[Tuple[str, str]]
+) -> bool:
+    """Whether `iter_jobs` accounted for one canonical `jobs:` mapping.
+
+    The precedence proof is intentionally narrower than the validator's
+    broad regex diagnostics. Any alias, inline mapping, malformed boundary,
+    non-canonical indentation, duplicate `jobs:` key, or content before the
+    first parsed job makes the proof fail closed so independent findings are
+    retained.
+    """
+    lines = text.split("\n")
+    starts = [
+        index
+        for index, line in enumerate(lines)
+        if re.match(r"^jobs:\s*(#.*)?$", line)
+    ]
+    if len(starts) != 1 or not jobs:
+        return False
+
+    parsed_job_count = 0
+    in_job = False
+    for line in lines[starts[0] + 1 :]:
+        if line and not line[0].isspace() and not line.lstrip().startswith("#"):
+            break
+        stripped = line.lstrip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        indent = len(line) - len(stripped)
+        if indent == 2:
+            if not JOB_NAME_LINE.match(stripped):
+                return False
+            parsed_job_count += 1
+            in_job = True
+            continue
+        if indent < 4 or not in_job:
+            return False
+
+    return parsed_job_count == len(jobs)
+
+
+def gh_repo_074_no_reusable_root_supersedes_inline(text: str) -> bool:
+    """Prove that the no-reusable root necessarily repairs inline keys.
+
+    This is diagnostic factoring, not a change to [GH-REPO-074]. The rule's
+    obligations remain independent in mixed workflows. Suppression is allowed
+    only when every parsed job is an inline job, no job-level reusable caller
+    exists, and every broad-regex inline match is exactly a direct key of those
+    parsed jobs. Prevalence and repository identity are not inputs.
+    """
+    jobs = list(iter_jobs(text))
+    if not has_complete_canonical_jobs_mapping(text, jobs):
+        return False
+    if JOB_USES.search(text) or any(
+        DIRECT_JOB_USES.search(body) for _, body in jobs
+    ):
+        return False
+    if not all(
+        DIRECT_JOB_RUNS_ON.search(body) or DIRECT_JOB_STEPS.search(body)
+        for _, body in jobs
+    ):
+        return False
+
+    parsed_runs_on = sum(
+        len(DIRECT_JOB_RUNS_ON.findall(body)) for _, body in jobs
+    )
+    parsed_steps = sum(len(DIRECT_JOB_STEPS.findall(body)) for _, body in jobs)
+    all_runs_on = len(INLINE_RUNS_ON.findall(text))
+    all_steps = len(INLINE_STEPS.findall(text))
+    return (
+        parsed_runs_on + parsed_steps > 0
+        and parsed_runs_on == all_runs_on
+        and parsed_steps == all_steps
+    )
 
 
 def check_ci_030(repo: str, text: str) -> int:
@@ -361,7 +449,10 @@ def check_ci_yml(repo: str, ci_path: Path) -> int:
     if marker.is_file():
         owner = marker.read_text(encoding="utf-8").strip() or "swift-ietf"
     findings = 0
-    if INLINE_RUNS_ON.search(text):
+    no_reusable_root_supersedes_inline = (
+        gh_repo_074_no_reusable_root_supersedes_inline(text)
+    )
+    if INLINE_RUNS_ON.search(text) and not no_reusable_root_supersedes_inline:
         emit(
             repo,
             "GH-REPO-074",
@@ -371,7 +462,7 @@ def check_ci_yml(repo: str, ci_path: Path) -> int:
             "swift-carrier-primitives/.github/workflows/ci.yml.",
         )
         findings += 1
-    if INLINE_STEPS.search(text):
+    if INLINE_STEPS.search(text) and not no_reusable_root_supersedes_inline:
         emit(
             repo,
             "GH-REPO-074",
