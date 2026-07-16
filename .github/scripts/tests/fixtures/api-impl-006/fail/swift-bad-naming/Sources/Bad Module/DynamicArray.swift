@@ -1,7 +1,8 @@
-// File name `DynamicArray.swift` is a compound name without dot
-// separation — VIOLATION of [API-IMPL-006]. Should be `Array.Dynamic.swift`
-// per the dotted-nested-path convention.
+// File name `DynamicArray.swift` does not match the declared full type path
+// `Array.Dynamic` — VIOLATION of [API-IMPL-006].
 
-public struct DynamicArray {
-    public init() {}
+extension Array {
+    public struct Dynamic {
+        public init() {}
+    }
 }
