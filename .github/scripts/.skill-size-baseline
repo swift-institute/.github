@@ -8,5 +8,5 @@ github-repository/SKILL.md 1003  # ratcheted 2026-07-05: corpus-review wave land
 research-process/SKILL.md 1075  # raised 2026-07-02: reflections-drain normative folds (Skills@67bd53f/e8c2f97/75c5313)
 skill-lifecycle/SKILL.md 1021  # raised 2026-07-05: NEW [SKILL-CREATE-016] dedupe-legality rule, principal-ratified (REPORT-corpus-review.md §8.6); prior same-day ratchet 1017→1015 superseded
 # supervise/SKILL.md entry removed 2026-07-05: SKILL.md split into navigation-hub (147 lines) + 5 siblings per [SKILL-CREATE-005a]; all supervise files now under the 1000-line ceiling, so no baseline entry is needed.
-swift-package/SKILL.md 1036  # 2026-07-06: net of PKG-NAME-014 compression (-32) + three TEXT-ONLY stop annotations (+4; PROMOTE-PKG-DEP-006/-PKG-NAME-002/-PKG-NAME-015 records)
+swift-package/SKILL.md 1116  # 2026-07-18: refreshed after restoring [PKG-DEP-009..012] (added post-baseline) + D2 provenance purge; prior 1036 baseline predated those rules
 testing/SKILL.md 1169  # raised 2026-07-12: routing-arc reflections fold [TEST-040] (Skills@68b20e5); prior 1156 was already 1-under actual pre-fold
