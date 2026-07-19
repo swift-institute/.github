@@ -695,7 +695,7 @@ jobs:
       - name: Lint
         run: swiftlint lint --strict --reporter github-actions-logging
 
-  # ─── swift-linter (Phase 1 advisory; swiftsyntax-based AST linter) ───────
+  # ─── swift-linter (gating; swiftsyntax-based AST linter) ─────────────────
   # SwiftSyntax-based AST linter at swift-foundations/swift-linter. Phase 1
   # ships R5 (`unchecked_call_site`): flags `__unchecked:` argument labels
   # at call sites only — distinguishing call-site uses (anti-pattern per
@@ -707,7 +707,10 @@ jobs:
   # for the architecture (Option C standalone CLI, Option F symbol-graph
   # extension) and 6-phase phasing.
   #
-  # Phase 1: advisory (continue-on-error: true). The linter is run-from-source
+  # GATING (principal ruling 2026-07-19; the Phase-1 "advisory" label is
+  # retired): the job is in ci-ok's needs, and `--exit-policy strict` exits
+  # non-zero exactly when any finding has severity `.error` — warning-severity
+  # findings are emitted but never fail the run. The linter is run-from-source
   # via `swift run --package-path` against a checkout of swift-linter. Once
   # the package is published with a binary release, this step swaps to a
   # cached-binary install (mirroring the SwiftLint job above).
@@ -718,8 +721,8 @@ jobs:
   # doc's Phase-3 § (A-dynamic composite key).
 
   swift-linter:
-    name: swift-linter (Phase 1+3, advisory)
-    # Phase 1 advisory (continue-on-error). FILE-GATED: lints only consumers
+    name: swift-linter
+    # FILE-GATED: lints only consumers
     # that ship a `Lint.swift` at the repo root (the consumer config shape per
     # swift-linter [LINT-SETUP-001]); consumers without one short-circuit at the
     # detect step (cheap no-op). No opt-in input — the file IS the activation
@@ -978,7 +981,8 @@ jobs:
   # no `inputs.job == '<id>'` selector and is absent from ci-dispatch.yml's `job`
   # enum. `needs:` enumerates every advisory
   # leg per [CI-002] (the continue-on-error legs linux-nightly / linux-6-4 /
-  # apple-simulator-build / swift-linter + the six nested advisory:true linters).
+  # apple-simulator-build + the six nested advisory:true linters; swift-linter
+  # is GATING — it sits in ci-ok's needs, not here).
   advisory-summary:
     name: Advisory results (informational)
     if: ${{ always() && !github.event.repository.private && inputs.job == '' }}
