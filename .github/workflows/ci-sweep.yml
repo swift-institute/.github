@@ -1,0 +1,196 @@
+# ci-sweep.yml — nightly full-matrix rotation sweep (R1/R2 ruling 2026-07-20).
+#
+# PURPOSE
+# Per-push CI runs a fast tier (see swift-ci.yml's plan job); the FULL
+# platform contract ([CI-010]/[CI-091]) is re-verified here on a rotating
+# nightly slice of the public fleet, plus unconditionally on tag refs.
+# This replaces per-push breadth: the advisory legs (apple-simulator-build,
+# linux-nightly, linux-6-4) and the cross-platform gating legs run for every
+# repo at least once per rotation period instead of on every push.
+#
+# ROTATION
+# The fleet (all public, non-archived, non-fork repos of every active org in
+# the orgs manifest) is deterministically partitioned into `slices` buckets
+# by a stable hash of the repo name; each night runs bucket
+# (day-of-year % slices). Default slices=7 → every repo gets a full-matrix
+# verification at least weekly. Dispatch with an explicit `repos` list for
+# canary/manual runs.
+#
+# BUDGET
+# Jobs here run under swift-institute/.github's own org concurrency quota, so
+# the sweep never competes with consumer-push queues in the layer orgs.
+# max-parallel bounds simultaneous swift-ci calls (each spawns 5 macOS jobs
+# against the 5-concurrent free-tier macOS pool).
+#
+# CALL CHAIN (depth 3, under the 4-level workflow_call limit):
+#   ci-sweep.yml (1) -> swift-ci.yml (2, tier=full) -> advisory reusables (3)
+#
+# REPORTING
+# The report job aggregates this run's job conclusions per swept repo into
+# the step summary and upserts a tracking issue in swift-institute/.github
+# ([README-167] shape) listing repos with failing gating legs.
+#
+# [CI-104]: canary scheduled workflows via `gh workflow run` — e.g.
+#   gh workflow run ci-sweep.yml -R swift-institute/.github \
+#     -f repos="swift-primitives/swift-bool-algebra-primitives"
+
+name: ci-sweep
+
+# [CI-090] standalone workflow: deny-all floor; per-job grants below.
+permissions: {}
+
+on:
+  schedule:
+    - cron: '11 2 * * *'   # nightly 02:11 UTC (offset from the weekly 06:xx family)
+  workflow_dispatch:
+    inputs:
+      repos:
+        description: "Space/comma-separated owner/name list to sweep (canary or manual re-verify). Empty = tonight's rotation slice."
+        type: string
+        required: false
+        default: ""
+      slices:
+        description: "Number of rotation buckets the fleet is partitioned into (default 7 → weekly full coverage)."
+        type: string
+        required: false
+        default: "7"
+
+jobs:
+  select:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    outputs:
+      repos: ${{ steps.slice.outputs.repos }}
+    steps:
+      - name: Harden runner (audit-mode egress logging)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: Read orgs manifest
+        id: orgs
+        uses: swift-institute/.github/.github/actions/read-orgs@main
+        with:
+          filter: '.name'
+
+      - name: Enumerate fleet and select slice
+        id: slice
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ORGS_JSON: ${{ steps.orgs.outputs.orgs }}
+          REPOS_OVERRIDE: ${{ inputs.repos }}
+          SLICES: ${{ inputs.slices || '7' }}
+        run: |
+          set -euo pipefail
+          if [ -n "$REPOS_OVERRIDE" ]; then
+            # Manual/canary list: normalize separators to newlines.
+            fleet=$(tr ', ' '\n\n' <<<"$REPOS_OVERRIDE" | sed '/^$/d')
+            selected="$fleet"
+            echo "Override list: $(wc -l <<<"$selected") repos."
+          else
+            fleet=""
+            while IFS= read -r org; do
+              # Public-repo listing needs no elevated token.
+              repos=$(gh repo list "$org" --limit 2000 --visibility public \
+                --json nameWithOwner,isArchived,isFork \
+                --jq '.[] | select(.isArchived==false and .isFork==false) | .nameWithOwner')
+              fleet="${fleet}${repos}"$'\n'
+            done < <(jq -r '.[]' <<<"$ORGS_JSON")
+            fleet=$(sed '/^$/d' <<<"$fleet" | sort -u)
+            total=$(wc -l <<<"$fleet" | tr -d ' ')
+            bucket=$(( $(date -u +%j | sed 's/^0*//') % SLICES ))
+            selected=$(awk -v s="$SLICES" -v b="$bucket" '
+              { h=0; for (i=1; i<=length($0); i++) h=(h*31+index("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_/.", substr($0,i,1)))%1000003 }
+              h % s == b' <<<"$fleet")
+            echo "Fleet=$total repos; slices=$SLICES; tonight's bucket=$bucket; selected=$(wc -l <<<"$selected" | tr -d ' ')."
+          fi
+          # Matrix ceiling guard — no silent caps: log what is dropped.
+          count=$(sed '/^$/d' <<<"$selected" | wc -l | tr -d ' ')
+          if [ "$count" -gt 200 ]; then
+            echo "::warning::Slice has $count repos; capping at 200 for this run. Increase 'slices' — the overflow is DROPPED tonight:"
+            sed '/^$/d' <<<"$selected" | tail -n +201
+            selected=$(sed '/^$/d' <<<"$selected" | head -n 200)
+          fi
+          json=$(sed '/^$/d' <<<"$selected" | jq -R . | jq -cs .)
+          echo "repos=$json" >> "$GITHUB_OUTPUT"
+
+  sweep:
+    name: sweep (${{ matrix.repo }})
+    needs: select
+    if: ${{ needs.select.outputs.repos != '[]' && needs.select.outputs.repos != '' }}
+    strategy:
+      fail-fast: false
+      # Each swift-ci call schedules 5 macOS jobs; the free-tier macOS pool is
+      # 5 concurrent. max-parallel 3 keeps the sweep from monopolizing this
+      # org's Linux pool while macOS legs serialize naturally.
+      max-parallel: 3
+      matrix:
+        repo: ${{ fromJSON(needs.select.outputs.repos) }}
+    # Pure `uses:` routing job ([CI-080] carve-out; [CI-105] no
+    # continue-on-error on a `uses:` job). [CI-106]: grant >= the called
+    # reusable's per-job needs.
+    permissions:
+      contents: read
+    uses: ./.github/workflows/swift-ci.yml
+    secrets: inherit
+    with:
+      target-repo: ${{ matrix.repo }}
+      tier: full
+
+  report:
+    needs: [select, sweep]
+    if: ${{ always() && needs.select.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Harden runner (audit-mode egress logging)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - name: Aggregate per-repo results
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SWEPT_REPOS: ${{ needs.select.outputs.repos }}
+        run: |
+          set -euo pipefail
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs?per_page=100" --paginate \
+            -q '.jobs[] | [.name, .conclusion] | @tsv' > /tmp/jobs.tsv
+          {
+            echo "## ci-sweep results"
+            echo ""
+            echo "| Swept repo | Failing jobs |"
+            echo "| --- | --- |"
+          } > "$RUNNER_TEMP/body.md"
+          fail_count=0
+          # Job names look like: "sweep (owner/name) / <job> ...".
+          while IFS= read -r repo; do
+            fails=$(awk -F'\t' -v r="sweep ($repo) /" 'index($1, r)==1 && $2=="failure" {sub(/^[^\/]*\/ /,"",$1); printf "%s; ", $1}' /tmp/jobs.tsv)
+            if [ -n "$fails" ]; then
+              echo "| $repo | $fails |" >> "$RUNNER_TEMP/body.md"
+              fail_count=$((fail_count+1))
+            fi
+          done < <(jq -r '.[]' <<<"$SWEPT_REPOS")
+          if [ "$fail_count" -eq 0 ]; then
+            echo "| _none_ | all swept repos green |" >> "$RUNNER_TEMP/body.md"
+          fi
+          echo "FAIL_COUNT=$fail_count" >> "$GITHUB_ENV"
+          cat "$RUNNER_TEMP/body.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upsert tracking issue
+        if: ${{ env.FAIL_COUNT != '0' }}
+        uses: swift-institute/.github/.github/actions/upsert-tracking-issue@main
+        with:
+          repo: ${{ github.repository }}
+          title: "ci-sweep: full-matrix failures (nightly rotation)"
+          title-prefix: "ci-sweep: full-matrix failures"
+          body-file: ${{ runner.temp }}/body.md
+          label: ci-sweep
+          gh-token: ${{ github.token }}
