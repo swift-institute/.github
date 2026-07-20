@@ -1,0 +1,77 @@
+# NOTIFY LINTER REPUBLISH — instant [CI-116] rule-pack freshness
+#
+# Called by the five linter rule-pack repos on push to main:
+#
+#   swift-primitives/swift-primitives-linter-rules
+#   swift-primitives/swift-linter-primitives
+#   swift-standards/swift-standards-linter-rules
+#   swift-foundations/swift-institute-linter-rules
+#   swift-foundations/swift-linter-rules
+#
+# Dispatches swift-foundations/swift-linter's publish-ci-binaries.yml so the
+# rolling `ci-binaries` release rebuilds against the new pack HEAD immediately,
+# instead of waiting for the digest-gated freshness cron. The publish
+# workflow's digest gate makes duplicate or racing dispatches no-ops, so this
+# needs no dedup of its own.
+#
+# Credential: the swift-institute-bot App (installed org-wide on
+# swift-foundations), minted per-job and downscoped to actions:write on the
+# single swift-linter repository. `github.token` cannot start workflows in
+# another repository, which is why the App token exists here at all. No
+# standing PAT is involved. Callers sit in other orgs, so per [CI-109] they
+# explicit-forward the App secrets rather than relying on `secrets: inherit`.
+#
+# Permissions shape: reusable ⇒ no top-level `permissions:` per [CI-090] (and
+# not deny-all per [CI-097]); the job itself drops the installation-default
+# GITHUB_TOKEN grant to nothing — all work happens with the minted App token.
+
+name: Notify linter republish
+
+on:
+  workflow_call:
+    secrets:
+      SWIFT_INSTITUTE_BOT_APP_CLIENT_ID:
+        required: false
+        description: >
+          swift-institute-bot App Client ID (org-level secret; preferred
+          name era). Preferred over the legacy numeric App ID when both
+          are present (create-github-app-token@v3 resolution order).
+      SWIFT_INSTITUTE_BOT_APP_ID:
+        required: false
+        description: >
+          Legacy-era numeric App ID secret name carried by some orgs
+          (e.g. swift-primitives). Fallback when _APP_CLIENT_ID is absent.
+      SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY:
+        required: true
+        description: >
+          swift-institute-bot App private key (org-level secret).
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
+        with:
+          egress-policy: audit
+
+      - id: app-token
+        name: Mint App token (swift-foundations/swift-linter, actions:write)
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
+        with:
+          client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+          app-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: swift-foundations
+          repositories: swift-linter
+          permission-actions: write
+
+      - name: Dispatch publish-ci-binaries
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          gh workflow run publish-ci-binaries.yml \
+            --repo swift-foundations/swift-linter \
+            --ref main
