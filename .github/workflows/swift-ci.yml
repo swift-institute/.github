@@ -203,11 +203,11 @@ jobs:
       legs: ${{ steps.classify.outputs.legs }}
     steps:
       - name: Harden runner (audit-mode egress logging)
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: ${{ inputs.target-repo || github.repository }}
           ref: ${{ inputs.ref }}
@@ -222,7 +222,7 @@ jobs:
       # executed script rides the same trust anchor as every other `uses:`
       # reference into this repo — no unpinned run-time code fetch.
       - name: Checkout CI scripts
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: swift-institute/.github
           path: .ci-scripts
@@ -310,11 +310,11 @@ jobs:
       contents: read
     steps:
       - name: Harden runner (audit-mode egress logging)
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: ${{ inputs.target-repo || github.repository }}
           ref: ${{ inputs.ref }}
@@ -358,11 +358,11 @@ jobs:
       contents: read
     steps:
       - name: Harden runner (audit-mode egress logging)
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: ${{ inputs.target-repo || github.repository }}
           ref: ${{ inputs.ref }}
@@ -408,11 +408,11 @@ jobs:
       contents: read
     steps:
       - name: Harden runner (audit-mode egress logging)
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: ${{ inputs.target-repo || github.repository }}
           ref: ${{ inputs.ref }}
@@ -469,11 +469,11 @@ jobs:
       contents: read
     steps:
       - name: Harden runner (audit-mode egress logging)
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: ${{ inputs.target-repo || github.repository }}
           ref: ${{ inputs.ref }}
@@ -517,11 +517,11 @@ jobs:
       contents: read
     steps:
       - name: Harden runner (audit-mode egress logging)
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: ${{ inputs.target-repo || github.repository }}
           ref: ${{ inputs.ref }}
@@ -592,11 +592,11 @@ jobs:
         platform: [iOS, tvOS, watchOS, visionOS]
     steps:
       - name: Harden runner (audit-mode egress logging)
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: ${{ inputs.target-repo || github.repository }}
           ref: ${{ inputs.ref }}
@@ -676,11 +676,11 @@ jobs:
       contents: read
     steps:
       - name: Harden runner (audit-mode egress logging)
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: ${{ inputs.target-repo || github.repository }}
           ref: ${{ inputs.ref }}
@@ -722,18 +722,18 @@ jobs:
       contents: read
     steps:
       - name: Harden runner (audit-mode egress logging)
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: ${{ inputs.target-repo || github.repository }}
           ref: ${{ inputs.ref }}
 
       - name: Cache SwiftLint binary
         id: cache-swiftlint
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: /usr/local/bin/swiftlint
           key: ${{ runner.os }}-swiftlint-${{ env.SWIFTLINT_VERSION }}
@@ -807,11 +807,11 @@ jobs:
       contents: read
     steps:
       - name: Harden runner (audit-mode egress logging)
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: ${{ inputs.target-repo || github.repository }}
           ref: ${{ inputs.ref }}
@@ -907,7 +907,7 @@ jobs:
       - name: Cache swift-linter dispatcher binary
         if: ${{ steps.detect.outputs.present == 'true' && steps.binaries.outputs.ok != 'true' }}
         id: cache-swift-linter
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: /usr/local/bin/swift-linter
           key: ${{ runner.os }}-swift${{ inputs.swift-version }}-linterbin-${{ steps.linter-sha.outputs.sha }}
@@ -954,7 +954,7 @@ jobs:
       - name: Cache swift-linter standard runner
         if: ${{ steps.detect.outputs.present == 'true' && steps.binaries.outputs.ok != 'true' }}
         id: cache-runner
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: /usr/local/bin/swift-linter-runner
           key: ${{ runner.os }}-swift${{ inputs.swift-version }}-linterrunner-${{ steps.runner-key.outputs.digest }}
@@ -963,7 +963,7 @@ jobs:
       # cache missed — both build from this checkout (Runner/ ships inside it).
       - name: Checkout swift-linter (cache miss)
         if: ${{ steps.detect.outputs.present == 'true' && steps.binaries.outputs.ok != 'true' && (steps.cache-swift-linter.outputs.cache-hit != 'true' || steps.cache-runner.outputs.cache-hit != 'true') }}
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: swift-foundations/swift-linter
           ref: ${{ steps.linter-sha.outputs.sha }}
@@ -1120,7 +1120,7 @@ jobs:
       contents: read
     steps:
       - name: Harden runner (audit-mode egress logging)
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
 
