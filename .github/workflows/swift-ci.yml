@@ -15,6 +15,18 @@ name: Swift CI (reusable)
 # + Ubuntu (Swift 6.3 release) + Ubuntu (Swift main nightly,
 # continue-on-error) + Windows (Swift 6.3).
 #
+# TIERED SCHEDULING (R1/R2 principal ruling 2026-07-20): the matrix SHAPE
+# above remains the ecosystem platform contract ([CI-010]/[CI-091] unchanged),
+# but its full execution is scheduled, not per-push. A `plan` job classifies
+# each run into a tier — lint (format+lint+swift-linter), build (+
+# linux-release; the default), or full (everything, incl. advisory legs).
+# Tags, '[ci full]', consumer workflow_dispatch, and ci-sweep.yml always get
+# full; '[ci lint]' or docs/lint-config-only diffs get lint. The nightly
+# ci-sweep.yml rotation re-verifies the full contract fleet-wide. Rationale:
+# free-tier runner CONCURRENCY (5 macOS/org) — not minutes — is the binding
+# budget; per-push full matrices spent it on advisory legs and produced
+# multi-hour queue tails (measured 2026-07-20).
+#
 # Consume from a caller package's .github/workflows/ci.yml via:
 #
 #   jobs:
@@ -105,6 +117,10 @@ on:
         type: string
         default: ""
         description: "Per-package CI platform-support declaration. Empty default — every existing caller passes nothing — runs the full matrix, bit-identical to before this input existed. Non-empty = comma-separated subset of `apple,linux,windows` (lowercase, no spaces): each platform leg runs only when its family token is present (apple → macos-release + apple-simulator-build; linux → linux-release + linux-nightly + linux-6-4; windows → windows-release). Quality gates (format, lint, swift-linter, advisory linters) are platform-neutral and never consult this input; ci-ok already treats skipped legs as passing. Declare ONLY platform-identity exclusions — a package whose specification or identity excludes a platform (POSIX/ISO-9945 spec packages, per-platform roots like swift-linux / swift-windows). This is NOT a cost knob ([CI-096]) and is NOT derived from Package.swift `platforms:` ([CI-091] — that block is a SwiftPM deployment-target declaration, not a CI-coverage signal). Rationale: a platform-blind matrix forces platform emulation into L2 spec packages to green an illegitimate leg; the platform seam is L3 per [PLAT-ARCH-001]. ci-dispatch.yml passes nothing, so single-job dispatch can still force any leg on any package (debug surface preserved)."
+      tier:
+        type: string
+        default: ""
+        description: "Verification-tier override (sanctioned default-inert input; R1/R2 principal ruling 2026-07-20). Empty default — existing push/PR/wrapper calls pass nothing — routes tier selection to the plan job's classifier: tag refs, workflow_dispatch, and '[ci full]' → full; '[ci lint]' or a docs/lint-config-only diff → lint; everything else → build. Non-empty forces 'lint' | 'build' | 'full' (ci-sweep.yml passes 'full' for the nightly rotation sweep). The tier gates SCHEDULING only — the matrix SHAPE ([CI-010]/[CI-091]) is untouched: every leg stays defined in this file and the full tier runs all of them; tags and sweeps always get the complete platform contract."
       target-repo:
         type: string
         default: ""
@@ -158,9 +174,125 @@ env:
   XCODE_VERSION: "26.6"
 
 jobs:
+  # ─── Tier plan (R1/R2 principal ruling 2026-07-20) ───────────────────────
+  # Selects the verification tier for this run and runs the identity-conflict
+  # fast-check ONCE (previously duplicated into every leg). Tier semantics:
+  #   lint  — format + lint + swift-linter (Linux-only; the mass lint-
+  #           compliance fast path; target <2min wall-clock)
+  #   build — lint tier + linux-release (default for ordinary pushes)
+  #   full  — the complete [CI-010]/[CI-091] platform contract including the
+  #           advisory legs; unconditional on tag refs; forced by ci-sweep.yml
+  #           and the '[ci full]' commit token.
+  # ci-ok includes plan in its needs:, so a plan failure (e.g. an identity
+  # conflict) fails the run even though every leg skips. Single-job dispatch
+  # bypasses the plan entirely (inputs.job != '' → plan skips; each leg's
+  # job-selector disjunct still fires), preserving ci-dispatch's
+  # exactly-one-job property. Every leg guard composes `!cancelled()` so a
+  # SKIPPED plan (dispatch) doesn't auto-skip the selected leg, while a
+  # FAILED plan yields empty legs output → every leg skips → ci-ok red via
+  # plan in needs.
+  plan:
+    name: Plan (tier + identity fast-check)
+    if: ${{ !github.event.repository.private && inputs.job == '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      tier: ${{ steps.classify.outputs.tier }}
+      legs: ${{ steps.classify.outputs.legs }}
+    steps:
+      - name: Harden runner (audit-mode egress logging)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@v6
+        with:
+          repository: ${{ inputs.target-repo || github.repository }}
+          ref: ${{ inputs.ref }}
+
+      # Identity-conflict fast-check ([PKG-DEP-009] class): fails in <1s with
+      # the exact edge named when this repo's manifests spell one identity two
+      # ways — the org-drift class that otherwise hangs SwiftPM 6.2/6.3 until
+      # timeout-minutes fires (catalog §A26). Runs ONCE here for the whole run
+      # (R1 consolidation 2026-07-20; previously duplicated into all 6 legs);
+      # plan sits in ci-ok's needs so a conflict still fails the run.
+      - name: Identity-conflict fast-check
+        shell: bash
+        run: |
+          command -v curl >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1 || { sudo apt-get update -qq && sudo apt-get install -qq -y curl python3; }
+          curl -fsSL -o /tmp/fastcheck.py https://raw.githubusercontent.com/swift-institute/.github/main/.github/scripts/ci-identity-conflict-fastcheck.py
+          python3 /tmp/fastcheck.py "${GITHUB_WORKSPACE}"
+
+      - name: Classify tier
+        id: classify
+        shell: bash
+        env:
+          FORCED_TIER: ${{ inputs.tier }}
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          HEAD_MSG: ${{ github.event.head_commit.message }}
+        run: |
+          set -euo pipefail
+          TIER="$FORCED_TIER"
+          # Tag refs always get the full platform contract (release boundary).
+          if [ -z "$TIER" ]; then
+            case "$GITHUB_REF" in refs/tags/*) TIER="full" ;; esac
+          fi
+          # Commit-token override (push events; HEAD_MSG empty on PR events).
+          if [ -z "$TIER" ]; then
+            case "$HEAD_MSG" in
+              *"[ci full]"*)  TIER="full" ;;
+              *"[ci lint]"*)  TIER="lint" ;;
+              *"[ci build]"*) TIER="build" ;;
+            esac
+          fi
+          # Manual consumer dispatch = someone asking for verification → full.
+          if [ -z "$TIER" ] && [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            TIER="full"
+          fi
+          # Auto-downgrade to lint when the pushed range touches ONLY
+          # docs/metadata/lint-config classes. Fail-safe: any classification
+          # obstacle (force-push zeros, unfetchable before-SHA, empty diff)
+          # falls through to the build tier.
+          if [ -z "$TIER" ] && [ "$EVENT_NAME" = "push" ] && [ -n "$BEFORE_SHA" ] && [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]; then
+            git fetch --no-tags --depth=1 origin "$BEFORE_SHA" 2>/dev/null || true
+            if git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
+              CHANGED=$(git diff --name-only "$BEFORE_SHA" "$GITHUB_SHA" || true)
+              if [ -n "$CHANGED" ]; then
+                NON_MECHANICAL=false
+                while IFS= read -r f; do
+                  case "$f" in
+                    *.md|LICENSE*|CITATION*|.gitignore|.spi.yml|.github/*|Lint.swift|Lint/*|.swiftlint.yml|.swift-format|*.docc/*) ;;
+                    *) NON_MECHANICAL=true; break ;;
+                  esac
+                done <<< "$CHANGED"
+                if [ "$NON_MECHANICAL" = "false" ]; then TIER="lint"; fi
+              fi
+            fi
+          fi
+          [ -n "$TIER" ] || TIER="build"
+          case "$TIER" in
+            lint)  LEGS="format,lint,swift-linter" ;;
+            build) LEGS="format,lint,swift-linter,linux-release" ;;
+            full)  LEGS="format,lint,swift-linter,linux-release,macos-release,windows-release,linux-nightly,linux-6-4,apple-simulator-build,lint-yaml,lint-broken-symlink,lint-license-header,lint-test-support-spine,advisory-summary" ;;
+            *) echo "::error::Unknown tier '$TIER' (expected lint|build|full)"; exit 1 ;;
+          esac
+          echo "tier=$TIER" >> "$GITHUB_OUTPUT"
+          echo "legs=$LEGS" >> "$GITHUB_OUTPUT"
+          echo "Selected tier: $TIER"
+          echo "legs: $LEGS"
+          {
+            echo "## CI tier: \`$TIER\`"
+            echo ""
+            echo "Selected legs: \`$LEGS\`. Tags, '[ci full]', ci-sweep, and consumer workflow_dispatch force the full platform contract; ci-ok attests the SELECTED tier (R1/R2 ruling 2026-07-20)."
+          } >> "$GITHUB_STEP_SUMMARY"
+
   macos-release:
     name: macOS (Swift ${{ inputs.swift-version }}, debug)
-    if: ${{ !github.event.repository.private && (inputs.job == '' || inputs.job == 'macos-release') && (inputs.platform-support == '' || contains(format(',{0},', inputs.platform-support), ',apple,')) }}
+    needs: plan
+    if: ${{ !cancelled() && !github.event.repository.private && (inputs.job == 'macos-release' || (inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',macos-release,'))) && (inputs.platform-support == '' || contains(format(',{0},', inputs.platform-support), ',apple,')) }}
     runs-on: ${{ inputs.macos-runner }}
     timeout-minutes: 45
     permissions:
@@ -184,20 +316,6 @@ jobs:
           app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
           enabled: ${{ inputs.enable-private-repos }}
 
-      # Identity-conflict fast-check ([PKG-DEP-009] class): fails in <1s with the exact edge
-      # named when this repo's manifests spell one identity two ways — the org-drift class
-      # that otherwise hangs SwiftPM 6.2/6.3 until timeout-minutes fires (catalog §A26).
-      # Stale-pin divergence only warns (pin-advance friendly). Wired 2026-07-10 with ratchet
-      # flip 1; script staged by the hang-resolution session.
-      - name: Identity-conflict fast-check
-        shell: bash
-        run: |
-          # swift:*/nightly containers ship no curl and no python3 ([CI-092]-class gap); no-op on macOS/Windows where both already exist.
-          command -v curl >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1 || { apt-get update -qq && apt-get install -qq -y curl python3; }
-          curl -fsSL -o /tmp/fastcheck.py https://raw.githubusercontent.com/swift-institute/.github/main/.github/scripts/ci-identity-conflict-fastcheck.py
-          if [ -d "${GITHUB_WORKSPACE}/consumer" ]; then TARGET="${GITHUB_WORKSPACE}/consumer"; else TARGET="${GITHUB_WORKSPACE}"; fi
-          python3 /tmp/fastcheck.py "$TARGET"
-
       - name: Select Xcode ${{ env.XCODE_VERSION }}
         run: sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
 
@@ -220,7 +338,8 @@ jobs:
 
   linux-release:
     name: Ubuntu (Swift ${{ inputs.swift-version }}, release)
-    if: ${{ !github.event.repository.private && (inputs.job == '' || inputs.job == 'linux-release') && (inputs.platform-support == '' || contains(format(',{0},', inputs.platform-support), ',linux,')) }}
+    needs: plan
+    if: ${{ !cancelled() && !github.event.repository.private && (inputs.job == 'linux-release' || (inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',linux-release,'))) && (inputs.platform-support == '' || contains(format(',{0},', inputs.platform-support), ',linux,')) }}
     runs-on: ubuntu-latest
     container: swift:${{ inputs.swift-version }}
     timeout-minutes: 45
@@ -245,20 +364,6 @@ jobs:
           app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
           enabled: ${{ inputs.enable-private-repos }}
 
-      # Identity-conflict fast-check ([PKG-DEP-009] class): fails in <1s with the exact edge
-      # named when this repo's manifests spell one identity two ways — the org-drift class
-      # that otherwise hangs SwiftPM 6.2/6.3 until timeout-minutes fires (catalog §A26).
-      # Stale-pin divergence only warns (pin-advance friendly). Wired 2026-07-10 with ratchet
-      # flip 1; script staged by the hang-resolution session.
-      - name: Identity-conflict fast-check
-        shell: bash
-        run: |
-          # swift:*/nightly containers ship no curl and no python3 ([CI-092]-class gap); no-op on macOS/Windows where both already exist.
-          command -v curl >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1 || { apt-get update -qq && apt-get install -qq -y curl python3; }
-          curl -fsSL -o /tmp/fastcheck.py https://raw.githubusercontent.com/swift-institute/.github/main/.github/scripts/ci-identity-conflict-fastcheck.py
-          if [ -d "${GITHUB_WORKSPACE}/consumer" ]; then TARGET="${GITHUB_WORKSPACE}/consumer"; else TARGET="${GITHUB_WORKSPACE}"; fi
-          python3 /tmp/fastcheck.py "$TARGET"
-
       - uses: swift-institute/.github/.github/actions/install-system-deps@main
 
       - name: Print toolchain info
@@ -282,7 +387,8 @@ jobs:
 
   linux-nightly:
     name: Ubuntu (Swift main nightly, release)
-    if: ${{ !github.event.repository.private && (inputs.job == '' || inputs.job == 'linux-nightly') && (inputs.platform-support == '' || contains(format(',{0},', inputs.platform-support), ',linux,')) }}
+    needs: plan
+    if: ${{ !cancelled() && !github.event.repository.private && (inputs.job == 'linux-nightly' || (inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',linux-nightly,'))) && (inputs.platform-support == '' || contains(format(',{0},', inputs.platform-support), ',linux,')) }}
     runs-on: ubuntu-latest
     container: swiftlang/swift:nightly-main-jammy
     continue-on-error: true
@@ -307,20 +413,6 @@ jobs:
           app-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
           app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
           enabled: ${{ inputs.enable-private-repos }}
-
-      # Identity-conflict fast-check ([PKG-DEP-009] class): fails in <1s with the exact edge
-      # named when this repo's manifests spell one identity two ways — the org-drift class
-      # that otherwise hangs SwiftPM 6.2/6.3 until timeout-minutes fires (catalog §A26).
-      # Stale-pin divergence only warns (pin-advance friendly). Wired 2026-07-10 with ratchet
-      # flip 1; script staged by the hang-resolution session.
-      - name: Identity-conflict fast-check
-        shell: bash
-        run: |
-          # swift:*/nightly containers ship no curl and no python3 ([CI-092]-class gap); no-op on macOS/Windows where both already exist.
-          command -v curl >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1 || { apt-get update -qq && apt-get install -qq -y curl python3; }
-          curl -fsSL -o /tmp/fastcheck.py https://raw.githubusercontent.com/swift-institute/.github/main/.github/scripts/ci-identity-conflict-fastcheck.py
-          if [ -d "${GITHUB_WORKSPACE}/consumer" ]; then TARGET="${GITHUB_WORKSPACE}/consumer"; else TARGET="${GITHUB_WORKSPACE}"; fi
-          python3 /tmp/fastcheck.py "$TARGET"
 
       - uses: swift-institute/.github/.github/actions/install-system-deps@main
 
@@ -356,7 +448,8 @@ jobs:
   # `compiler(<6.4)` §A9 gates (swift-xml / swift-w3c-xml / swift-graph / swift-plist).
   linux-6-4:
     name: Ubuntu (Swift 6.4.x nightly, release)
-    if: ${{ !github.event.repository.private && (inputs.job == '' || inputs.job == 'linux-6-4') && (inputs.platform-support == '' || contains(format(',{0},', inputs.platform-support), ',linux,')) }}
+    needs: plan
+    if: ${{ !cancelled() && !github.event.repository.private && (inputs.job == 'linux-6-4' || (inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',linux-6-4,'))) && (inputs.platform-support == '' || contains(format(',{0},', inputs.platform-support), ',linux,')) }}
     runs-on: ubuntu-latest
     container: swiftlang/swift:nightly-6.4.x-jammy
     continue-on-error: true
@@ -382,20 +475,6 @@ jobs:
           app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
           enabled: ${{ inputs.enable-private-repos }}
 
-      # Identity-conflict fast-check ([PKG-DEP-009] class): fails in <1s with the exact edge
-      # named when this repo's manifests spell one identity two ways — the org-drift class
-      # that otherwise hangs SwiftPM 6.2/6.3 until timeout-minutes fires (catalog §A26).
-      # Stale-pin divergence only warns (pin-advance friendly). Wired 2026-07-10 with ratchet
-      # flip 1; script staged by the hang-resolution session.
-      - name: Identity-conflict fast-check
-        shell: bash
-        run: |
-          # swift:*/nightly containers ship no curl and no python3 ([CI-092]-class gap); no-op on macOS/Windows where both already exist.
-          command -v curl >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1 || { apt-get update -qq && apt-get install -qq -y curl python3; }
-          curl -fsSL -o /tmp/fastcheck.py https://raw.githubusercontent.com/swift-institute/.github/main/.github/scripts/ci-identity-conflict-fastcheck.py
-          if [ -d "${GITHUB_WORKSPACE}/consumer" ]; then TARGET="${GITHUB_WORKSPACE}/consumer"; else TARGET="${GITHUB_WORKSPACE}"; fi
-          python3 /tmp/fastcheck.py "$TARGET"
-
       - uses: swift-institute/.github/.github/actions/install-system-deps@main
 
       - name: Print toolchain info
@@ -419,7 +498,8 @@ jobs:
 
   windows-release:
     name: Windows (Swift ${{ inputs.swift-version }}, debug)
-    if: ${{ !github.event.repository.private && (inputs.job == '' || inputs.job == 'windows-release') && (inputs.platform-support == '' || contains(format(',{0},', inputs.platform-support), ',windows,')) }}
+    needs: plan
+    if: ${{ !cancelled() && !github.event.repository.private && (inputs.job == 'windows-release' || (inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',windows-release,'))) && (inputs.platform-support == '' || contains(format(',{0},', inputs.platform-support), ',windows,')) }}
     runs-on: windows-latest
     timeout-minutes: 45
     permissions:
@@ -442,20 +522,6 @@ jobs:
           app-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
           app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
           enabled: ${{ inputs.enable-private-repos }}
-
-      # Identity-conflict fast-check ([PKG-DEP-009] class): fails in <1s with the exact edge
-      # named when this repo's manifests spell one identity two ways — the org-drift class
-      # that otherwise hangs SwiftPM 6.2/6.3 until timeout-minutes fires (catalog §A26).
-      # Stale-pin divergence only warns (pin-advance friendly). Wired 2026-07-10 with ratchet
-      # flip 1; script staged by the hang-resolution session.
-      - name: Identity-conflict fast-check
-        shell: bash
-        run: |
-          # swift:*/nightly containers ship no curl and no python3 ([CI-092]-class gap); no-op on macOS/Windows where both already exist.
-          command -v curl >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1 || { apt-get update -qq && apt-get install -qq -y curl python3; }
-          curl -fsSL -o /tmp/fastcheck.py https://raw.githubusercontent.com/swift-institute/.github/main/.github/scripts/ci-identity-conflict-fastcheck.py
-          if [ -d "${GITHUB_WORKSPACE}/consumer" ]; then TARGET="${GITHUB_WORKSPACE}/consumer"; else TARGET="${GITHUB_WORKSPACE}"; fi
-          python3 /tmp/fastcheck.py "$TARGET"
 
       - name: Install Swift
         uses: SwiftyLab/setup-swift@38f54a76b70d989321de9dc7c840618c08cf56e9  # v1.14.0
@@ -492,7 +558,8 @@ jobs:
   # covers all four Apple simulator platforms and is never collapsed.
   apple-simulator-build:
     name: ${{ matrix.platform }} Simulator (Swift ${{ inputs.swift-version }}, debug)
-    if: ${{ !github.event.repository.private && (inputs.job == '' || inputs.job == 'apple-simulator-build') && (inputs.platform-support == '' || contains(format(',{0},', inputs.platform-support), ',apple,')) }}
+    needs: plan
+    if: ${{ !cancelled() && !github.event.repository.private && (inputs.job == 'apple-simulator-build' || (inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',apple-simulator-build,'))) && (inputs.platform-support == '' || contains(format(',{0},', inputs.platform-support), ',apple,')) }}
     runs-on: ${{ inputs.macos-runner }}
     # [CI-021]/[CI-091] advisory leg during the apple-simulator soak window.
     # continue-on-error keeps these legs non-gating (excluded from ci-ok
@@ -530,20 +597,6 @@ jobs:
           app-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
           app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
           enabled: ${{ inputs.enable-private-repos }}
-
-      # Identity-conflict fast-check ([PKG-DEP-009] class): fails in <1s with the exact edge
-      # named when this repo's manifests spell one identity two ways — the org-drift class
-      # that otherwise hangs SwiftPM 6.2/6.3 until timeout-minutes fires (catalog §A26).
-      # Stale-pin divergence only warns (pin-advance friendly). Wired 2026-07-10 with ratchet
-      # flip 1; script staged by the hang-resolution session.
-      - name: Identity-conflict fast-check
-        shell: bash
-        run: |
-          # swift:*/nightly containers ship no curl and no python3 ([CI-092]-class gap); no-op on macOS/Windows where both already exist.
-          command -v curl >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1 || { apt-get update -qq && apt-get install -qq -y curl python3; }
-          curl -fsSL -o /tmp/fastcheck.py https://raw.githubusercontent.com/swift-institute/.github/main/.github/scripts/ci-identity-conflict-fastcheck.py
-          if [ -d "${GITHUB_WORKSPACE}/consumer" ]; then TARGET="${GITHUB_WORKSPACE}/consumer"; else TARGET="${GITHUB_WORKSPACE}"; fi
-          python3 /tmp/fastcheck.py "$TARGET"
 
       - name: Select Xcode ${{ env.XCODE_VERSION }}
         run: sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
@@ -603,7 +656,8 @@ jobs:
 
   format:
     name: swift-format lint
-    if: ${{ !github.event.repository.private && (inputs.job == '' || inputs.job == 'format') }}
+    needs: plan
+    if: ${{ !cancelled() && !github.event.repository.private && (inputs.job == 'format' || (inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',format,'))) }}
     runs-on: ubuntu-latest
     container: swift:${{ inputs.swift-version }}
     timeout-minutes: 15
@@ -648,7 +702,8 @@ jobs:
 
   lint:
     name: SwiftLint
-    if: ${{ !github.event.repository.private && (inputs.job == '' || inputs.job == 'lint') }}
+    needs: plan
+    if: ${{ !cancelled() && !github.event.repository.private && (inputs.job == 'lint' || (inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',lint,'))) }}
     runs-on: ubuntu-latest
     container: swift:${{ inputs.swift-version }}
     timeout-minutes: 15
@@ -732,7 +787,8 @@ jobs:
     # (was DISABLED 2026-05-08 while the linter repo was private). Builds the
     # linter from source via `swift run`; private-dep auth comes from the same
     # configure-private-repos step the build/test matrix jobs use.
-    if: ${{ !github.event.repository.private && (inputs.job == '' || inputs.job == 'swift-linter') }}
+    needs: plan
+    if: ${{ !cancelled() && !github.event.repository.private && (inputs.job == 'swift-linter' || (inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',swift-linter,'))) }}
     runs-on: ubuntu-latest
     container: swift:${{ inputs.swift-version }}
     timeout-minutes: 30
@@ -905,14 +961,16 @@ jobs:
 
   lint-yaml:
     name: yamllint (γ-2, advisory)
-    if: ${{ !github.event.repository.private && (inputs.job == '' || inputs.job == 'lint-yaml') }}
+    needs: plan
+    if: ${{ !cancelled() && !github.event.repository.private && (inputs.job == 'lint-yaml' || (inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',lint-yaml,'))) }}
     uses: ./.github/workflows/lint-yaml.yml
     with:
       advisory: true
 
   lint-broken-symlink:
     name: Broken symlinks (γ-2, advisory)
-    if: ${{ !github.event.repository.private && (inputs.job == '' || inputs.job == 'lint-broken-symlink') }}
+    needs: plan
+    if: ${{ !cancelled() && !github.event.repository.private && (inputs.job == 'lint-broken-symlink' || (inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',lint-broken-symlink,'))) }}
     uses: ./.github/workflows/lint-broken-symlink.yml
     with:
       advisory: true
@@ -930,14 +988,16 @@ jobs:
 
   lint-license-header:
     name: License header (γ-1b Stage 1, advisory)
-    if: ${{ !github.event.repository.private && (inputs.job == '' || inputs.job == 'lint-license-header') }}
+    needs: plan
+    if: ${{ !cancelled() && !github.event.repository.private && (inputs.job == 'lint-license-header' || (inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',lint-license-header,'))) }}
     uses: ./.github/workflows/lint-license-header.yml
     with:
       advisory: true
 
   lint-test-support-spine:
     name: Test Support Spine ([MOD-024], advisory)
-    if: ${{ !github.event.repository.private && (inputs.job == '' || inputs.job == 'lint-test-support-spine') }}
+    needs: plan
+    if: ${{ !cancelled() && !github.event.repository.private && (inputs.job == 'lint-test-support-spine' || (inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',lint-test-support-spine,'))) }}
     uses: ./.github/workflows/lint-test-support-spine.yml
     with:
       advisory: true     # Phase β. Drop in Phase γ.
@@ -985,9 +1045,13 @@ jobs:
   # is GATING — it sits in ci-ok's needs, not here).
   advisory-summary:
     name: Advisory results (informational)
-    if: ${{ always() && !github.event.repository.private && inputs.job == '' }}
+    # Tier-gated (R2 ruling 2026-07-20): the advisory legs it renders run only
+    # in the full tier, so the summary is meaningful only there. On lint/build
+    # tiers it skips with the legs.
+    if: ${{ !cancelled() && !github.event.repository.private && inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',advisory-summary,') }}
     continue-on-error: true
     needs:
+      - plan
       - linux-nightly
       - linux-6-4
       - apple-simulator-build
@@ -1047,8 +1111,14 @@ jobs:
   #     pass with `with: { advisory: true }` and aren't gating until their
   #     respective γ-flips land
   ci-ok:
+    # plan sits in needs (R1 ruling 2026-07-20): a plan failure (identity
+    # conflict / classifier error) fails ci-ok even though every leg skips.
+    # Tier-skipped legs pass via the existing skipped-as-passing semantics —
+    # ci-ok attests "the SELECTED tier passed"; the full-contract attestation
+    # lives at tag refs and the nightly ci-sweep rotation.
     if: ${{ always() && !github.event.repository.private && inputs.job == '' }}
     needs:
+      - plan
       - macos-release
       - linux-release
       - windows-release
