@@ -275,7 +275,7 @@ jobs:
                 NON_MECHANICAL=false
                 while IFS= read -r f; do
                   case "$f" in
-                    *.md|LICENSE*|CITATION*|.gitignore|.spi.yml|.github/*|Lint.swift|Lint/*|.swiftlint.yml|.swift-format|*.docc/*) ;;
+                    *.md|LICENSE*|CITATION*|.gitignore|.spi.yml|Lint.swift|Lint/*|.swiftlint.yml|.swift-format|*.docc/*) ;;
                     *) NON_MECHANICAL=true; break ;;
                   esac
                 done <<< "$CHANGED"
