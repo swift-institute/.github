@@ -819,6 +819,46 @@ jobs:
             echo "No Lint.swift at repo root — skipping swift-linter (no-op)."
           fi
 
+      # ── Prebuilt-binary fast path (approved 2026-07-20) ──
+      # Downloads the dispatcher + standard runner published by
+      # swift-foundations/swift-linter's publish-ci-binaries.yml (rolling
+      # non-semver `ci-binaries` release; built inside swift:6.3, the same
+      # image this job runs in). Replaces the per-repo cache bake: Actions
+      # caches are REPOSITORY-scoped, so the old composite-key cache made
+      # every consumer repo rebuild after any engine/rule-pack commit
+      # (measured 2026-07-20: 18 of 28 runs cold, 393-1450s; median job
+      # 502s). Verification: sha256sum -c against the release's SHA256SUMS
+      # ([CI-082]-class; trust anchor is GitHub TLS + release write-control,
+      # the same anchor the previous ls-remote + main-ref checkout relied
+      # on). On ANY download/verify failure this step reports ok=false and
+      # the legacy source-build fallback below runs instead — never red on
+      # a missing/misshapen release.
+      - name: Download prebuilt linter binaries
+        if: ${{ steps.detect.outputs.present == 'true' }}
+        id: binaries
+        shell: bash
+        run: |
+          set -uo pipefail
+          command -v curl >/dev/null 2>&1 || { apt-get update -qq && apt-get install -qq -y curl ca-certificates; }
+          base="https://github.com/swift-foundations/swift-linter/releases/download/ci-binaries"
+          dir=$(mktemp -d)
+          ok=true
+          for f in SHA256SUMS MANIFEST.txt swift-linter swift-linter-runner; do
+            curl -fsSL --retry 2 -o "$dir/$f" "$base/$f" || { ok=false; break; }
+          done
+          if [ "$ok" = "true" ]; then
+            (cd "$dir" && sha256sum -c SHA256SUMS) || ok=false
+          fi
+          if [ "$ok" = "true" ]; then
+            install -m 0755 "$dir/swift-linter" /usr/local/bin/swift-linter
+            install -m 0755 "$dir/swift-linter-runner" /usr/local/bin/swift-linter-runner
+            echo "Prebuilt binaries installed. Build manifest:"
+            cat "$dir/MANIFEST.txt"
+          else
+            echo "::warning::ci-binaries download/verify failed; falling back to per-repo source build."
+          fi
+          echo "ok=$ok" >> "$GITHUB_OUTPUT"
+
       - name: Configure private-dep access
         if: ${{ steps.detect.outputs.present == 'true' }}
         uses: swift-institute/.github/.github/actions/configure-private-repos@main
@@ -846,13 +886,15 @@ jobs:
       # `.build/` cache — [CI-040] honored), exact-match with no restore-keys
       # ([CI-042]). No tag / no release: tracks `main` per the ecosystem
       # branch:"main" convention.
+      # ── Legacy source-build FALLBACK (runs only when the prebuilt-binary
+      # download above failed; see steps.binaries) ──
       - name: Resolve swift-linter main HEAD
-        if: ${{ steps.detect.outputs.present == 'true' }}
+        if: ${{ steps.detect.outputs.present == 'true' && steps.binaries.outputs.ok != 'true' }}
         id: linter-sha
         run: echo "sha=$(git ls-remote https://github.com/swift-foundations/swift-linter.git main | cut -f1)" >> "$GITHUB_OUTPUT"
 
       - name: Cache swift-linter dispatcher binary
-        if: ${{ steps.detect.outputs.present == 'true' }}
+        if: ${{ steps.detect.outputs.present == 'true' && steps.binaries.outputs.ok != 'true' }}
         id: cache-swift-linter
         uses: actions/cache@v5
         with:
@@ -879,7 +921,7 @@ jobs:
       # one shared rebuild → instant warm thereafter, so the baked rule set
       # always tracks latest-committed main. No tag / no version pin.
       - name: Resolve standard rule-pack HEADs (composite runner key)
-        if: ${{ steps.detect.outputs.present == 'true' }}
+        if: ${{ steps.detect.outputs.present == 'true' && steps.binaries.outputs.ok != 'true' }}
         id: runner-key
         shell: bash
         run: |
@@ -899,7 +941,7 @@ jobs:
           echo "Runner composite digest=$digest (engine=$engine primrules=$primrules instrules=$instrules unirules=$unirules linterprim=$linterprim)"
 
       - name: Cache swift-linter standard runner
-        if: ${{ steps.detect.outputs.present == 'true' }}
+        if: ${{ steps.detect.outputs.present == 'true' && steps.binaries.outputs.ok != 'true' }}
         id: cache-runner
         uses: actions/cache@v5
         with:
@@ -909,7 +951,7 @@ jobs:
       # Checkout the engine source when EITHER the dispatcher or the runner
       # cache missed — both build from this checkout (Runner/ ships inside it).
       - name: Checkout swift-linter (cache miss)
-        if: ${{ steps.detect.outputs.present == 'true' && (steps.cache-swift-linter.outputs.cache-hit != 'true' || steps.cache-runner.outputs.cache-hit != 'true') }}
+        if: ${{ steps.detect.outputs.present == 'true' && steps.binaries.outputs.ok != 'true' && (steps.cache-swift-linter.outputs.cache-hit != 'true' || steps.cache-runner.outputs.cache-hit != 'true') }}
         uses: actions/checkout@v6
         with:
           repository: swift-foundations/swift-linter
@@ -917,7 +959,7 @@ jobs:
           path: swift-linter
 
       - name: Build swift-linter dispatcher (cache miss)
-        if: ${{ steps.detect.outputs.present == 'true' && steps.cache-swift-linter.outputs.cache-hit != 'true' }}
+        if: ${{ steps.detect.outputs.present == 'true' && steps.binaries.outputs.ok != 'true' && steps.cache-swift-linter.outputs.cache-hit != 'true' }}
         shell: bash   # the swift:N container's default run-shell is dash; need bash for `set -o pipefail`
         run: |
           set -euo pipefail
@@ -925,7 +967,7 @@ jobs:
           install -m 0755 swift-linter/.build/debug/swift-linter /usr/local/bin/swift-linter
 
       - name: Build swift-linter standard runner (cache miss)
-        if: ${{ steps.detect.outputs.present == 'true' && steps.cache-runner.outputs.cache-hit != 'true' }}
+        if: ${{ steps.detect.outputs.present == 'true' && steps.binaries.outputs.ok != 'true' && steps.cache-runner.outputs.cache-hit != 'true' }}
         shell: bash
         run: |
           set -euo pipefail
