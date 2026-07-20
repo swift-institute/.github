@@ -82,11 +82,11 @@ jobs:
       missing-count: ${{ steps.audit.outputs.missing-count }}
     steps:
       - name: Harden runner (audit-mode egress logging)
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install dependencies (python3, git for sparse-checkout)
         shell: bash
@@ -96,7 +96,7 @@ jobs:
           apt-get install -qq -y python3 git
 
       - name: Fetch audit script (sparse-checkout from swift-institute/.github)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: swift-institute/.github
           ref: main
