@@ -218,12 +218,23 @@ jobs:
       # timeout-minutes fires (catalog §A26). Runs ONCE here for the whole run
       # (R1 consolidation 2026-07-20; previously duplicated into all 6 legs);
       # plan sits in ci-ok's needs so a conflict still fails the run.
+      # Vendored via checkout (not curl from raw.githubusercontent) so the
+      # executed script rides the same trust anchor as every other `uses:`
+      # reference into this repo — no unpinned run-time code fetch.
+      - name: Checkout CI scripts
+        uses: actions/checkout@v6
+        with:
+          repository: swift-institute/.github
+          path: .ci-scripts
       - name: Identity-conflict fast-check
         shell: bash
         run: |
-          command -v curl >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1 || { sudo apt-get update -qq && sudo apt-get install -qq -y curl python3; }
-          curl -fsSL -o /tmp/fastcheck.py https://raw.githubusercontent.com/swift-institute/.github/main/.github/scripts/ci-identity-conflict-fastcheck.py
-          python3 /tmp/fastcheck.py "${GITHUB_WORKSPACE}"
+          command -v python3 >/dev/null 2>&1 || { sudo apt-get update -qq && sudo apt-get install -qq -y python3; }
+          # Move the script out and drop the checkout BEFORE scanning, so the
+          # scripts repo's own files (incl. test fixtures) are never scanned.
+          cp "${GITHUB_WORKSPACE}/.ci-scripts/.github/scripts/ci-identity-conflict-fastcheck.py" "${RUNNER_TEMP}/fastcheck.py"
+          rm -rf "${GITHUB_WORKSPACE}/.ci-scripts"
+          python3 "${RUNNER_TEMP}/fastcheck.py" "${GITHUB_WORKSPACE}"
 
       - name: Classify tier
         id: classify
