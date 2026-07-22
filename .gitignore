@@ -1,0 +1,16 @@
+# ========== ORGANIZATION PROFILE (auto-synced, do not edit) ==========
+# Source: swift-institute/Scripts/sync-gitignore.sh
+
+# Python bytecode — runtime ephemera. Never durable, never staged.
+#
+# Created 2026-07-15 (Principal ruling Q4, arc skill-corpus-phase1). This repo
+# had NO .gitignore at all, so its only dirty entry was an unignorable
+# __pycache__/ that no actor could legitimately commit and none could clear:
+# staging it violates the ephemera rule, excluding it leaves the leaf
+# permanently dirty. This file closes that trap.
+__pycache__/
+*.pyc
+
+.DS_Store
+Package.resolved
+# ========== END ORGANIZATION PROFILE ==========
