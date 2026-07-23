@@ -114,6 +114,8 @@ iso:
 # ISO/IEC joint specifications: authority is "ISO/IEC" in the rendered description.
 # Stored under iso-iec to disambiguate; generator handles the AUTHORITY-FULL rendering.
 iso-iec:
+  '8824': 'Abstract Syntax Notation One (ASN.1)'
+  '8825': 'ASN.1 encoding rules (BER/CER/DER)'
   '9899': 'Programming languages - C'
 
 ieee:
