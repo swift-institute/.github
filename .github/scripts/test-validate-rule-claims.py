@@ -68,8 +68,12 @@ def run_validator(skills: pathlib.Path, gh: pathlib.Path):
 
 # Each mutation: (name, expected check tag, mutate(skills, gh))
 def m_missing_verification_artifact(skills, gh):
+    # Named `validate-*.py` on purpose: that is the in-repo manifest convention,
+    # so absence IS evidence. A bare name like `ghost-script.py` is correctly
+    # reported as UNVERIFIED rather than missing, because it could live in a
+    # sibling repo that is not checked out -- so it would not test this check.
     f = skills / "fixture" / "SKILL.md"
-    f.write_text(f.read_text().replace("real-enforcer.py", "ghost-script.py"))
+    f.write_text(f.read_text().replace("real-enforcer.py", "validate-ghost.py"))
     return f
 
 

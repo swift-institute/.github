@@ -135,13 +135,79 @@ class Finding:
         return f"  [{self.check}] {self.rule or '-'} ({self.path.name}): {self.msg}"
 
 
-def artifact_exists(github_root: pathlib.Path, name: str) -> bool:
+def resolve_artifact(github_root: pathlib.Path, name: str,
+                     workspace_root: pathlib.Path | None = None) -> str:
+    """Return 'found' | 'missing' | 'unverifiable'.
+
+    Citations come in two flavours and conflating them produced four false
+    positives on first run (2026-07-25, caught by ECO-CI1):
+
+      * IN-REPO      `validate-thin-callers.py`      -> .github/{scripts,workflows}
+      * WORKSPACE    `swift-institute/Scripts/x.sh`  -> a SIBLING repo, one level
+                                                        ABOVE the .github root
+
+    Resolving only against the .github root reported every sibling-repo citation
+    as missing. Worse, that is the failure direction that looks like a real
+    finding, so it got reported upstream as a deleted script before anyone ran
+    `ls`.
+
+    'unverifiable' exists because sibling repos are not checked out in CI (and
+    swift-institute/Scripts is private). Absence there is NOT evidence of
+    deletion, so it must be surfaced as a logged skip rather than silently
+    passed or falsely reported.
+    """
     base = name.split("/")[-1]
     for sub in ("workflows", "scripts", "actions"):
         if (github_root / ".github" / sub / base).is_file():
-            return True
-    # composite actions and repo-root files
-    return (github_root / base).is_file()
+            return "found"
+    if (github_root / name).is_file() or (github_root / base).is_file():
+        return "found"
+
+    if workspace_root is not None:
+        # Citations are workspace-relative: strip a leading repo name if the
+        # citation already carries one, then try both spellings.
+        candidates = [workspace_root / name]
+        parts = name.split("/")
+        if len(parts) > 1:
+            candidates.append(workspace_root / "/".join(parts[1:]))
+            candidates.append(workspace_root.parent / name)
+        for c in candidates:
+            if c.is_file():
+                return "found"
+        # Does the sibling repo the citation names even exist here?
+        top = parts[0] if len(parts) > 1 else None
+        if top and not (workspace_root / top).is_dir() \
+                and not (workspace_root.parent / top).is_dir():
+            return "unverifiable"
+        if len(parts) > 1:
+            return "missing"
+
+        # BARE filename ("sync-gitignore.sh"), which carries no location. Search
+        # a bounded set of sibling locations before concluding anything: one
+        # level of sibling repo, plus each one's Scripts/ dir.
+        for sib in sorted(workspace_root.iterdir()):
+            if not sib.is_dir() or sib.name.startswith("."):
+                continue
+            if (sib / base).is_file() or (sib / "Scripts" / base).is_file():
+                return "found"
+
+        # Still not found. Two bare-name classes live in THIS repo by
+        # convention, so absence IS evidence for them:
+        #   * `*.yml`            -> .github/workflows/
+        #   * `validate-*.py`    -> .github/scripts/ (manifest convention)
+        # Any other bare name (a Script-class `.sh`, a helper `.py`) may live in
+        # a sibling repo that simply is not checked out, so absence proves
+        # nothing and must be reported as unverified rather than missing.
+        if base.endswith(".yml") or (base.startswith("validate-")
+                                     and base.endswith(".py")):
+            return "missing"
+        return "unverifiable"
+    return "unverifiable"
+
+
+def artifact_exists(github_root: pathlib.Path, name: str,
+                    workspace_root: pathlib.Path | None = None) -> bool:
+    return resolve_artifact(github_root, name, workspace_root) != "missing"
 
 
 def read_artifact(github_root: pathlib.Path, name: str) -> str | None:
@@ -170,14 +236,18 @@ def split_rule_blocks(text: str) -> list[tuple[str, str]]:
     return blocks
 
 
-def check_c1(skill_files, github_root) -> list[Finding]:
+def check_c1(skill_files, github_root, workspace_root, skips) -> list[Finding]:
     out = []
     for f in skill_files:
         text = f.read_text(errors="replace")
         for rid, block in split_rule_blocks(text):
             for tag in VERIFICATION_RE.findall(block):
                 for art in ARTIFACT_IN_TAG_RE.findall(tag):
-                    if not artifact_exists(github_root, art):
+                    state = resolve_artifact(github_root, art, workspace_root)
+                    if state == "unverifiable":
+                        skips.append(f"C1 {rid or '-'}: `{art}` (sibling repo "
+                                     f"not present here)")
+                    elif state == "missing":
                         out.append(Finding(
                             "C1", rid, f,
                             f"[VERIFICATION] names `{art}`, which does not exist"))
@@ -218,17 +288,22 @@ def _claims(block: str):
             yield art, m.group("verb").lower()
 
 
-def check_c2(skill_files, github_root) -> list[Finding]:
+def check_c2(skill_files, github_root, workspace_root, skips) -> list[Finding]:
     """GATE: a rule naming an enforcer must name one that exists.
 
-    Purely mechanical -- no false positives possible. This is the arm that
-    catches a rule citing a mechanism deleted out from under it.
+    Mechanical, but only where the artifact is RESOLVABLE here -- citations
+    into sibling repos absent from this checkout are logged as skips, never
+    reported as missing. See resolve_artifact().
     """
     out = []
     for f in skill_files:
         for rid, block in split_rule_blocks(f.read_text(errors="replace")):
             for art, verb in _claims(block):
-                if not artifact_exists(github_root, art):
+                state = resolve_artifact(github_root, art, workspace_root)
+                if state == "unverifiable":
+                    skips.append(f"C2 {rid or '-'}: `{art}` (sibling repo not "
+                                 f"present here)")
+                elif state == "missing":
                     out.append(Finding(
                         "C2", rid, f,
                         f"claims `{art}` {verb} it, but `{art}` does not exist"))
@@ -341,18 +416,54 @@ def check_c3(skill_files, schema: dict) -> list[Finding]:
     return out
 
 
+def check_c3b(skill_files) -> list[Finding]:
+    """GATE: a rule stating the same numeric bound twice must agree with itself.
+
+    Suggested by ECO-CI1 2026-07-25 after [GH-REPO-023] turned out to be a
+    THREE-way disagreement: the statement says 2-10, the schema example in the
+    same file says 3-10, and metadata-schema.json declares 0-20. Adjudicating
+    "the skill is canonical" is ambiguous until the skill agrees with itself.
+    """
+    out = []
+    for f in skill_files:
+        text = f.read_text(errors="replace")
+        for b in BOUND_BINDINGS:
+            rid = b["rule"]
+            blocks = dict(split_rule_blocks(text))
+            if rid not in blocks:
+                continue
+            m = b["pattern"].search(blocks[rid])
+            if not m:
+                continue
+            stated = (int(m.group(1)), int(m.group(2)))
+            # Any other "N-M entries per [RULE]" restatement in the same file.
+            for om in re.finditer(
+                    rf"(\d+)\s*-\s*(\d+)\s+entries per \[{re.escape(rid)}\]",
+                    text):
+                other = (int(om.group(1)), int(om.group(2)))
+                if other != stated:
+                    out.append(Finding(
+                        "C3b", rid, f,
+                        f"states bound {stated[0]}-{stated[1]} but restates it "
+                        f"as {other[0]}-{other[1]} elsewhere in the same file — "
+                        f"the rule contradicts itself"))
+    return out
+
+
 def run(skills_root: pathlib.Path, github_root: pathlib.Path,
-        schema_path: pathlib.Path) -> list[Finding]:
+        schema_path: pathlib.Path, workspace_root: pathlib.Path | None = None):
     skill_files = sorted(skills_root.rglob("*.md"))
     skill_files = [p for p in skill_files if ".git/" not in str(p)]
     if not skill_files:
         print(f"error: no .md files under {skills_root}", file=sys.stderr)
         raise SystemExit(2)
     schema = json.loads(schema_path.read_text()) if schema_path.is_file() else {}
-    gating = (check_c1(skill_files, github_root)
-              + check_c2(skill_files, github_root)
+    skips: list[str] = []
+    gating = (check_c1(skill_files, github_root, workspace_root, skips)
+              + check_c2(skill_files, github_root, workspace_root, skips)
               + check_c2b(skill_files, github_root)
-              + check_c3(skill_files, schema))
+              + check_c3(skill_files, schema)
+              + check_c3b(skill_files))
     advisory = check_c4_advisory(skill_files, github_root)
 
     # Coverage. A validator that checked 3 things and found 3 is not the same
@@ -366,7 +477,7 @@ def run(skills_root: pathlib.Path, github_root: pathlib.Path,
             claims += len(list(_claims(block)))
     cov = {"files": len(skill_files), "verification_artifacts": tags,
            "prose_claims": claims, "claim_bindings": len(CLAIM_BINDINGS),
-           "bound_bindings": len(BOUND_BINDINGS)}
+           "bound_bindings": len(BOUND_BINDINGS), "skipped": skips}
     return gating, advisory, cov
 
 
@@ -380,15 +491,27 @@ def main() -> int:
     ap.add_argument("--schema", type=pathlib.Path, default=None)
     ap.add_argument("--advisory", action="store_true",
                     help="also print non-gating heuristic findings")
+    ap.add_argument("--workspace", type=pathlib.Path, default=None,
+                    help="root holding sibling institute repos; citations like "
+                         "`swift-institute/Scripts/x.sh` resolve against it. "
+                         "Defaults to the .github repo's parent.")
     args = ap.parse_args()
     schema = args.schema or (args.github / "metadata-schema.json")
+    workspace = args.workspace or args.github.resolve().parent
 
-    gating, advisory, cov = run(args.skills, args.github, schema)
+    gating, advisory, cov = run(args.skills, args.github, schema, workspace)
     print(f"[GH-REPO-063a] checked {cov['files']} skill files: "
           f"{cov['verification_artifacts']} VERIFICATION artifacts, "
           f"{cov['prose_claims']} prose claims, "
           f"{cov['claim_bindings']} bound claims, "
           f"{cov['bound_bindings']} bound numerics.")
+    if cov["skipped"]:
+        # Logged, never silent: an unresolvable citation is not a pass.
+        print(f"[GH-REPO-063a] {len(cov['skipped'])} citation(s) NOT VERIFIED "
+              f"(sibling repo absent from this checkout — absence here is not "
+              f"evidence of deletion):")
+        for s in cov["skipped"]:
+            print(f"  - {s}")
 
     if args.advisory and advisory:
         print(f"[GH-REPO-063a] {len(advisory)} ADVISORY (non-gating, heuristic — "
