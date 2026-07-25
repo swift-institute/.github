@@ -47,6 +47,16 @@
         "secretScanningPushProtection": { "type": "boolean", "description": "Secret-scanning push protection (public repos only). Default true per [GH-REPO-057]." }
       }
     },
+    "sidebar": {
+      "type": "object",
+      "description": "Repo 'About' sidebar section visibility per [GH-REPO-054]. Declared but NOT consumed by any workflow, deliberately: GitHub exposes no REST or GraphQL surface for these toggles, so enforcement is a manual gear-icon click and this block is the audit-able record of intended state until an API exists. It is declared here because [GH-REPO-054] and [GH-REPO-060] instruct maintainers to author it, and the top-level additionalProperties:false would otherwise fail a repo that follows that instruction. Do not read this as a live setting: adding a consumer is a change to [GH-REPO-054], not to this schema.",
+      "additionalProperties": false,
+      "properties": {
+        "showReleases": { "type": "boolean", "description": "Show the Releases section. Default true per [GH-REPO-054] — every Swift package publishes tagged releases." },
+        "showPackages": { "type": "boolean", "description": "Show the Packages section. Default false per [GH-REPO-054] — Institute packages distribute via SwiftPM, not the GitHub Packages registry." },
+        "showDeployments": { "type": "boolean", "description": "Show the Deployments section. Default false per [GH-REPO-054] — Institute packages run no GitHub Actions deployments." }
+      }
+    },
     "discussion": {
       "type": "string",
       "format": "uri",
