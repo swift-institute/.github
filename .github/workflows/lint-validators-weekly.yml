@@ -345,6 +345,65 @@ jobs:
       dry-run: ${{ inputs.dry-run || false }}
     secrets: inherit
 
+  # [GH-REPO-063a] rule-text <-> mechanism drift. ADVISORY ONLY: it reports into
+  # the run summary and never fails the run. It is deliberately NOT gating yet --
+  # there are 5 live findings, and a gate that is red on arrival gets disabled
+  # rather than drained (LEAD-ECO ruling 2026-07-25). Sequence: advisory ->
+  # drain the 5 -> flip to gating by deleting the `exit 0` below.
+  #
+  # Embedded here rather than in its own reusable workflow, matching its
+  # `workflow-file: ''` manifest entry. Note it is a `runs-on:`/`steps:` job, so
+  # [CI-105] (continue-on-error invalid alongside `uses:`) does not apply -- and
+  # advisory status is expressed in the step itself, not via continue-on-error.
+  scan-rule-claims:
+    needs: config
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Harden runner (audit-mode egress logging)
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout swift-institute/.github (validator + schema)
+        uses: actions/checkout@v7
+        with:
+          path: institute-github
+
+      - name: Checkout swift-institute/Skills (rule corpus)
+        uses: actions/checkout@v7
+        with:
+          repository: swift-institute/Skills
+          path: institute-skills
+
+      - name: Run rule-claim guard (advisory)
+        shell: bash
+        run: |
+          set -uo pipefail
+          python3 institute-github/.github/scripts/validate-rule-claims.py \
+            --skills institute-skills \
+            --github institute-github \
+            --schema institute-github/metadata-schema.json \
+            --advisory | tee /tmp/rule-claims.txt
+          status=${PIPESTATUS[0]}
+          {
+            echo "### [GH-REPO-063a] rule-claim guard (advisory)"
+            echo
+            echo '```'
+            cat /tmp/rule-claims.txt
+            echo '```'
+            echo
+            if [ "$status" -ne 0 ]; then
+              echo "Findings above are REAL but NOT gating yet. Drain them, then"
+              echo "remove the trailing \`exit 0\` in this job to make it a gate."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          # Advisory by design -- see the job comment. Exit status is reported in
+          # the summary above rather than failing the run.
+          exit 0
+
   report:
     needs:
       - scan-thin-callers
