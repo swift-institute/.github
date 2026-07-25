@@ -345,11 +345,18 @@ jobs:
       dry-run: ${{ inputs.dry-run || false }}
     secrets: inherit
 
-  # [GH-REPO-063a] rule-text <-> mechanism drift. ADVISORY ONLY: it reports into
-  # the run summary and never fails the run. It is deliberately NOT gating yet --
-  # there are 5 live findings, and a gate that is red on arrival gets disabled
-  # rather than drained (LEAD-ECO ruling 2026-07-25). Sequence: advisory ->
-  # drain the 5 -> flip to gating by deleting the `exit 0` below.
+  # [GH-REPO-063a] rule-text <-> mechanism drift. GATING as of 2026-07-25.
+  #
+  # Landed advisory-first because a gate that is red on arrival gets disabled
+  # rather than drained. Of the 5 findings it opened with, 4 were false (a
+  # resolution-base defect, fixed in 19a01c0) and the 5th, [GH-REPO-023], was
+  # drained; the gate therefore arrives GREEN. Flipped on LEAD-ECO approval.
+  #
+  # NOTE for anyone re-reading this: the flip was NOT "delete the trailing
+  # `exit 0`", which is what the advisory version's own comment said. The last
+  # command in the step is the redirect into $GITHUB_STEP_SUMMARY, which always
+  # succeeds -- so deleting the exit would have produced a gate that can never
+  # fail. It has to propagate the validator's status explicitly.
   #
   # Embedded here rather than in its own reusable workflow, matching its
   # `workflow-file: ''` manifest entry. Note it is a `runs-on:`/`steps:` job, so
@@ -378,7 +385,7 @@ jobs:
           repository: swift-institute/Skills
           path: institute-skills
 
-      - name: Run rule-claim guard (advisory)
+      - name: Run rule-claim guard
         shell: bash
         run: |
           set -uo pipefail
@@ -389,20 +396,22 @@ jobs:
             --advisory | tee /tmp/rule-claims.txt
           status=${PIPESTATUS[0]}
           {
-            echo "### [GH-REPO-063a] rule-claim guard (advisory)"
+            echo "### [GH-REPO-063a] rule-claim guard"
             echo
             echo '```'
             cat /tmp/rule-claims.txt
             echo '```'
             echo
             if [ "$status" -ne 0 ]; then
-              echo "Findings above are REAL but NOT gating yet. Drain them, then"
-              echo "remove the trailing \`exit 0\` in this job to make it a gate."
+              echo "A rule's claim about a mechanism no longer matches the"
+              echo "mechanism. Fix the rule text or the mechanism -- do not"
+              echo "silence the check; that is how the drift got here."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
-          # Advisory by design -- see the job comment. Exit status is reported in
-          # the summary above rather than failing the run.
-          exit 0
+          # Gating: propagate the validator's status. `--advisory` only ADDS the
+          # heuristic C4 findings to the printed report; they never affect the
+          # exit code, so they cannot red the build.
+          exit "$status"
 
   report:
     needs:
