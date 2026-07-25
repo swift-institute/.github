@@ -156,7 +156,7 @@ jobs:
         shell: bash
     steps:
       - name: Harden runner (audit-mode egress logging)
-        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
 
@@ -167,7 +167,7 @@ jobs:
           apt-get update -qq
           apt-get install -qq -y python3
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: swift-institute/.github/.github/actions/configure-private-repos@main
         with:
@@ -325,7 +325,7 @@ jobs:
 
       - name: Fetch patch-umbrella-symbol-graph.py
         if: ${{ success() && env.SKIP_DOCS != 'true' }}
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: swift-institute/.github
           ref: main
