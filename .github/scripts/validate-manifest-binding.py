@@ -385,6 +385,28 @@ def main(repo: str, repo_root: str, skills_skill_md: str | None = None) -> int:
     if skill_md_path is None:
         return findings
 
+    # Arg-3 sanity: an explicit override pointing at some OTHER skill's SKILL.md
+    # makes check 3 report every active CI rule-id as un-promoted, because none
+    # of them are cited there. That produced 12 spurious findings for one caller.
+    # Emit ONE attributable finding and skip checks 1 + 3 rather than a cascade
+    # of misleading ones. This must stay a finding, not a bare non-zero exit:
+    # the calling workflow runs the validator under `|| true`, so an exit code
+    # with no finding would be swallowed and the gate would pass green on a
+    # misconfigured run. Only the explicit-override path is checked; discovery
+    # steps 2 and 3 resolve by construction, and the hermetic fixtures pass no
+    # third argument at all.
+    if skills_skill_md and skill_md_path.parent.name != "ci-cd-workflows":
+        emit(
+            repo,
+            RULE,
+            f"arg 3 ({skills_skill_md!r}) does not look like the ci-cd-workflows "
+            f"SKILL.md — its parent directory is {skill_md_path.parent.name!r}, not "
+            f"'ci-cd-workflows'. Checks 1 and 3 are skipped rather than reporting "
+            f"every active CI rule-id as un-promoted against the wrong skill. Pass "
+            f"Skills/ci-cd-workflows/SKILL.md, or omit arg 3 to use discovery.",
+        )
+        return findings + 1
+
     try:
         skill_md_text = skill_md_path.read_text(encoding="utf-8")
     except OSError as e:
