@@ -12,10 +12,16 @@ Rule checked: [CI-MANIFEST-BINDING] — bidirectional binding between
 SKILL.md.
 
 Checks:
-  1. Every `[VERIFICATION: WF <script>.py (...)]` annotation in
-     Skills/ci-cd-workflows/SKILL.md cites a `<script>.py` whose basename
-     appears in some manifest entry's `validator-script` field. Catches
-     SKILL.md citing renamed/removed validators (skill-side drift).
+  1. Every `[VERIFICATION: WF <script>.py (...)]` annotation in the
+     Skills/ci-cd-workflows skill — SKILL.md AND its companion files —
+     cites a `<script>.py` whose basename appears in some manifest entry's
+     `validator-script` field. Catches the skill citing renamed/removed
+     validators (skill-side drift). Companion files are in scope because
+     SKILL.md is a navigation hub carrying NO citations at all: all 23 live
+     in six siblings, so reading the hub alone made this check vacuous.
+     Scoped to a directory named `ci-cd-workflows` so hermetic fixtures,
+     which drop a synthetic SKILL.md beside unrelated README.md files,
+     keep single-file behaviour. See skill_citation_corpus().
   2. Every validate-*.py file existing on disk under .github/scripts/ is
      referenced by ≥1 manifest entry (non-empty validator-script). Catches
      orphan validators (script added without manifest update).
@@ -170,6 +176,40 @@ def cited_script_basenames(skill_md_text: str) -> set[str]:
 def cited_rule_ids(skill_md_text: str) -> set[str]:
     """Extract every `[<RULE-ID>]` citation present in SKILL.md."""
     return set(RULE_ID_CITATION_RE.findall(skill_md_text))
+
+
+def skill_citation_corpus(skill_md_path: Path) -> tuple[str, list[str]]:
+    """Concatenate SKILL.md with its companion files, for check 1 only.
+
+    Check 1 must see every `[VERIFICATION: WF ...]` citation the skill makes,
+    and in the ci-cd-workflows corpus those live in the companion files rather
+    than in SKILL.md: the hub is 174 lines of navigation and carries ZERO
+    citations of any kind, while 23 sit in six siblings. Reading SKILL.md
+    alone therefore extracted citations from an empty set, so check 1 passed
+    vacuously for its entire life.
+
+    Widening is scoped to a real skill directory (parent named
+    `ci-cd-workflows`). The hermetic fixtures drop a synthetic
+    `<repo_root>/SKILL.md` beside unrelated README.md files -- three of which
+    carry VERIFICATION citations -- so an unscoped glob would feed fixture
+    prose into check 1 and change fixture outcomes.
+
+    Check 3 deliberately does NOT use this. It asks whether a rule was
+    promoted into the hub's rule index, and the hub is the canonical
+    promotion point; accepting a companion-only citation would LOOSEN it.
+    """
+    texts = [skill_md_path.read_text(encoding="utf-8")]
+    names = [skill_md_path.name]
+    if skill_md_path.parent.name == "ci-cd-workflows":
+        for sibling in sorted(skill_md_path.parent.glob("*.md")):
+            if sibling == skill_md_path:
+                continue
+            try:
+                texts.append(sibling.read_text(encoding="utf-8"))
+            except OSError:
+                continue
+            names.append(sibling.name)
+    return "\n".join(texts), names
 
 
 def main(repo: str, repo_root: str, skills_skill_md: str | None = None) -> int:
@@ -351,15 +391,18 @@ def main(repo: str, repo_root: str, skills_skill_md: str | None = None) -> int:
         emit(repo, RULE, f"SKILL.md read failed at {skill_md_path}: {e}")
         return findings + 1
 
-    # Check 1: every `WF <script>.py` citation in SKILL.md must appear in the
+    # Check 1: every `WF <script>.py` citation in the skill (SKILL.md AND its
+    # companion files -- see skill_citation_corpus) must appear in the
     # manifest's referenced_scripts (basename match).
+    citation_text, citation_files = skill_citation_corpus(skill_md_path)
     manifest_basenames = {Path(p).name for p in referenced_scripts}
-    for script_basename in sorted(cited_script_basenames(skill_md_text)):
+    for script_basename in sorted(cited_script_basenames(citation_text)):
         if script_basename not in manifest_basenames:
             emit(
                 repo,
                 RULE,
-                f"SKILL.md cites `[VERIFICATION: WF {script_basename} ...]` but no "
+                f"the ci-cd-workflows skill ({', '.join(citation_files)}) cites "
+                f"`[VERIFICATION: WF {script_basename} ...]` but no "
                 f"manifest entry has validator-script with basename {script_basename!r} "
                 f"— per [CI-MANIFEST-BINDING] check 1, every Skills-side WF citation "
                 f"MUST resolve to a manifest entry (prevents skill-side drift after "
