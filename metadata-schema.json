@@ -48,14 +48,9 @@
       }
     },
     "discussion": {
-      "type": "object",
-      "description": "Centralized discussion-thread tracking metadata per [GH-REPO-090..093]. Authored by sync-discussion-threads-nightly.yml; consumed by validate-readme.yml when verifying [README-040] discussion-link blocks.",
-      "additionalProperties": false,
-      "properties": {
-        "url": { "type": "string", "format": "uri" },
-        "category": { "type": "string" },
-        "thread_id": { "type": "string" }
-      }
+      "type": "string",
+      "format": "uri",
+      "description": "Centralized discussion-thread URL per [GH-REPO-090..093]. A STRING, per [GH-REPO-091], which is canonical and names the accepted form https://github.com/orgs/swift-institute/discussions/{N}. This matches the only live consumer: sync-discussion-threads.yml reads the field as a scalar (yq -r '.discussion // \"\"') and writes it back as a quoted scalar (yq -i '.discussion = \"$URL\"'). Previously typed as an object with url/category/thread_id; no workflow or script ever read those sub-fields, and the object form rejected the very files this ecosystem's own workflow authors. Do not widen to accept both shapes — a scalar read of a mapping yields a serialized map that passes a non-empty test, so a dual-shape schema would license silent corruption rather than a loud failure."
     },
     "socialPreview": {
       "type": "object",
