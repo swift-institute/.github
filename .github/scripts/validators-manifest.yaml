@@ -433,3 +433,12 @@ validators:
     discovery-mode: per-package-org-sweep
     rule-id-regex: '^MOD-038'
     migrate-to-base: 'no (needs dump-package + local dep-manifest resolution; CI form joins the B-2 sweep design)'
+
+  - rule-id: GH-REPO-063a
+    validator-script: .github/scripts/validate-rule-claims.py
+    workflow-file: ''
+    status: active
+    self-firing: deferred
+    discovery-mode: single-target
+    rule-id-regex: '^GH-REPO-063a'
+    migrate-to-base: 'no (not yet wired to a workflow; enabling it would gate CI on 5 live findings, so advisory-first wiring is pending LEAD-ECO)'
