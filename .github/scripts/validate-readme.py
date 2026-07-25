@@ -50,21 +50,31 @@ from validate_lib import emit, require_yaml
 
 yaml = require_yaml()
 
+# Institute rule IDs are one or more UPPER-CASE segments (a curated first
+# segment guards against external spec citations like [RFC-7231] / [ISO-8601])
+# followed by a numeric suffix: [README-017], [API-NAME-009], and multi-segment
+# shapes such as [PLAT-ARCH-008e] or [ARCH-LAYER-007]. The `(?:-[A-Z][A-Z0-9]*)*`
+# clause carries the intermediate segments the earlier `-[0-9]+` tail dropped.
 FORBIDDEN_RULE_ID = re.compile(
-    r"\[(README|MEM|DOC|API|MOD|PRIM|IMPL|PLAT|TEST|SWIFT-TEST|BENCH|INST-TEST|"
+    r"\[(README|MEM|DOC|API|MOD|PRIM|IMPL|PLAT|ARCH|TEST|SWIFT-TEST|BENCH|INST-TEST|"
     r"PATTERN|GH-REPO|SKILL|RES|EXP|BLOG|REFL|AUDIT|CONV|IDX|LEG|NL-WET|RL|"
     r"COPY|SEM|API-NAME|API-ERR|API-IMPL|API-LAYER|MEM-COPY|MEM-OWN|MEM-LIFE|"
     r"MEM-LINEAR|MEM-REF|MEM-SAFE|MEM-SEND|MEM-UNSAFE|MEM-SPAN|"
     r"INFRA|MOD-EXCEPT|CI|README-PROC|SOC|SUPER|HANDOFF|COLLAB|GIT|"
     r"FREVIEW|SAVE|DOC-MARKUP|RELEASE|META|REFL-PROC|SKILL-CREATE|"
-    r"SKILL-LIFE|REFL-PROC)-[0-9]+[a-z]?\]"
+    r"SKILL-LIFE|REFL-PROC)(?:-[A-Z][A-Z0-9]*)*-[0-9]+[a-z]?\]"
 )
 H1_LINE = re.compile(r"^#\s+\S")
 H2_LINE = re.compile(r"^##\s+\S")
 BADGE_LINE = re.compile(r"^!\[")
 DEV_STATUS_BADGE = re.compile(r"!\[Development Status\]\(https://img\.shields\.io/badge/")
 INSTALL_DEP_RE = re.compile(r"\.package\(", re.MULTILINE)
-INSTALL_TARGET_RE = re.compile(r"\.target\(", re.MULTILINE)
+# A target-configuration block may be declared with any of SwiftPM's
+# target-declaration forms. Test-support packages (swift-testing, swift-tests,
+# swift-testing-performance) legitimately wire their product into a
+# `.testTarget(...)`, and executable-consuming packages into
+# `.executableTarget(...)`; the bare `.target(` form under-matched both.
+INSTALL_TARGET_RE = re.compile(r"\.(?:target|testTarget|executableTarget)\(", re.MULTILINE)
 F_STATUS_VALUES = {"Pre-implementation", "Namespace-reservation", "Unnecessary", "Archived"}
 F_STATUS_LINE = re.compile(r">\s*\*\*Status:\s*([^*]+?)\*\*")
 
@@ -92,29 +102,69 @@ def detect_family(metadata_path: Path) -> str | None:
     return None
 
 
-def has_throws_non_never(repo_root: Path) -> bool:
-    """[README-013] threshold: any public throws(NonNever) signature in Sources/."""
+# A type declaration whose simple name denotes an error type the package OWNS.
+# Type *aliases* are excluded on purpose: `typealias Error = Dep.Error` re-exports
+# a dependency's error and is not ownership.
+_ERROR_DECL_RE = re.compile(
+    r"\b(?:enum|struct|final\s+class|class|actor)\s+([A-Za-z_][A-Za-z0-9_]*)"
+)
+_PUBLIC_THROWS_RE = re.compile(r"\bpublic[^\n]*\bthrows\(([^)]+)\)")
+
+
+def _thrown_type_name(thrown: str) -> str:
+    """Reduce a typed-throws payload to the error type's own simple name.
+
+    `Self.Error` -> `Error`; `ISO_9945.Kernel.Thread.Affinity.Error` -> `Error`;
+    `MyError<Token>` -> `MyError`; `Trap<Value>` -> `Trap`.
+    """
+    base = thrown.split("<", 1)[0].split("[", 1)[0]   # drop generic arguments
+    tail = base.rsplit(".", 1)[-1].strip()            # last dotted segment
+    m = re.match(r"[A-Za-z_][A-Za-z0-9_]*", tail)
+    return m.group(0) if m else ""
+
+
+def declares_thrown_error(repo_root: Path) -> bool:
+    """[README-013] threshold: the package throws an error type it DECLARES in
+    its own Sources.
+
+    A facade / re-export package (darwin, linux, random, identities, strings,
+    uuids, logger-handlers, ...) throws a *dependency-owned* error type and
+    declares no error enum of its own. The README-013 remedy — documenting the
+    package's OWN error tree — is impossible for such a package, so it must not
+    fire. The finding keys on ownership: a public `throws(T)` whose T resolves to
+    a type the package itself declares.
+    """
     sources = repo_root / "Sources"
     if not sources.is_dir():
         return False
-    pattern = re.compile(r"\bpublic[^\n]*\bthrows\(([^)]+)\)")
+    declared: set[str] = set()
+    thrown: set[str] = set()
     for f in sources.rglob("*.swift"):
         try:
             content = f.read_text()
         except Exception:
             continue
-        for match in pattern.finditer(content):
+        for match in _ERROR_DECL_RE.finditer(content):
+            name = match.group(1)
+            if "Error" in name:
+                declared.add(name)
+        for match in _PUBLIC_THROWS_RE.finditer(content):
             err_type = match.group(1).strip()
             if err_type and err_type != "Never":
-                return True
-    return False
+                name = _thrown_type_name(err_type)
+                if name:
+                    thrown.add(name)
+    return bool(declared & thrown)
 
 
 def validate_universal(repo: str, readme: Path, content: str) -> int:
     findings = 0
     nonblank = [ln for ln in content.splitlines() if ln.strip()]
-    # [README-017] H1 present and exactly one
-    h1_count = sum(1 for ln in content.splitlines() if H1_LINE.match(ln))
+    # [README-017] H1 present and exactly one. Count over fence-stripped content
+    # (mirroring the [README-026] scan) so a shell comment inside a ```bash fence
+    # — `# Required`, `# Visit http://localhost:8080` — is not miscounted as an H1.
+    h1_source = strip_code_blocks(content)
+    h1_count = sum(1 for ln in h1_source.splitlines() if H1_LINE.match(ln))
     if h1_count == 0:
         emit(repo, "README-017", f"{readme.name}: missing H1 title (first heading must be `# `)")
         findings += 1
@@ -169,7 +219,7 @@ def validate_family_e(repo: str, readme: Path, content: str, repo_root: Path) ->
                  f"{readme.name}: Installation section missing `.target(dependencies: ...)` block")
             findings += 1
     # [README-013] Error Handling threshold (Decision 5)
-    if has_throws_non_never(repo_root) and "## Error Handling" not in content:
+    if declares_thrown_error(repo_root) and "## Error Handling" not in content:
         emit(repo, "README-013",
              f"{readme.name}: package has public throws(NonNever) signatures but README "
              f"lacks `## Error Handling` section (Wave 2b finalization Decision 5 threshold)")

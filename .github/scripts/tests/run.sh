@@ -77,7 +77,7 @@ validator_for() {
             echo "$SCRIPTS_DIR/validate-target-imports.py" ;;
         doc-020)
             echo "$SCRIPTS_DIR/validate-docc-structure.py" ;;
-        readme-017)
+        readme-008|readme-013|readme-017|readme-026)
             echo "$SCRIPTS_DIR/validate-readme.py" ;;
         test-009)
             echo "$SCRIPTS_DIR/validate-file-naming.py" ;;
@@ -137,7 +137,10 @@ prefix_for() {
         mod-032)         echo "MOD-032" ;;
         mod-038)         echo "MOD-038" ;;
         doc-020)         echo "DOC-020" ;;
+        readme-008)      echo "README-008" ;;
+        readme-013)      echo "README-013" ;;
         readme-017)      echo "README-017" ;;
+        readme-026)      echo "README-026" ;;
         test-009)        echo "TEST-009" ;;
         *)               echo "" ;;
     esac
