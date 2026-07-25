@@ -5,6 +5,12 @@ A validator that catches nothing is indistinguishable from a clean corpus, so
 this asserts in BOTH directions: a clean fixture must pass, and each of four
 deliberate breakages must be caught by the intended check.
 
+FIXTURE CONVENTION: a mutation MUST obey the naming convention the rule keys on,
+or it silently stops testing anything while still passing. The C1 mutation once
+used a bare `ghost-script.py`; when bare non-`validate-*` names became correctly
+UNVERIFIABLE, that mutation asserted nothing -- caught only because the harness
+went red. Changing a classifier can silently retire a test that still passes.
+
 FALSE-PASS GUARD: before trusting "the validator caught it", each mutation is
 asserted to (a) EXIST and (b) DIFFER from the baseline. Without this a crashed
 mutation generator yields a validator that fires on a missing/empty file, and

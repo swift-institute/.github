@@ -525,8 +525,21 @@ def main() -> int:
         for f in gating:
             print(f)
         return 1
-    print(f"[GH-REPO-063a] OK — all gated rule claims match their mechanisms"
-          f"{f' ({len(advisory)} advisory)' if advisory else ''}.")
+    # The clean line MUST carry the unverified count. "OK" beside a silent skip
+    # list reads as "everything was checked", which is the vacuous-green shape
+    # this validator exists to catch -- one level up. If coverage is bounded,
+    # the bound has to be a number someone sees, not a line in a log.
+    tail = []
+    if cov["skipped"]:
+        tail.append(f"{len(cov['skipped'])} NOT VERIFIED")
+    if advisory:
+        tail.append(f"{len(advisory)} advisory")
+    suffix = f" ({', '.join(tail)})" if tail else ""
+    print(f"[GH-REPO-063a] OK — all VERIFIABLE gated rule claims match their "
+          f"mechanisms{suffix}.")
+    if cov["skipped"]:
+        print("[GH-REPO-063a] NOTE: green here does NOT mean those citations "
+              "were checked. Deleting one of them would still pass.")
     return 0
 
 
