@@ -14,8 +14,8 @@
     },
     "topics": {
       "type": "array",
-      "minItems": 0,
-      "maxItems": 20,
+      "minItems": 2,
+      "maxItems": 10,
       "uniqueItems": true,
       "description": "GitHub-side topic tags propagated to the repo. Per-repo editorial — each repo establishes its own topic set based on its content. The schema validates SHAPE only (kebab-case, length, uniqueness, count cap); vocabulary is open. The `swift-` prefix is conventionally avoided on the org's own repos because it repeats the org name, but the schema does not enforce that.",
       "items": {
