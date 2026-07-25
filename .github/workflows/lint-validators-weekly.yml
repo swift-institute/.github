@@ -350,7 +350,7 @@ jobs:
   # Landed advisory-first because a gate that is red on arrival gets disabled
   # rather than drained. Of the 5 findings it opened with, 4 were false (a
   # resolution-base defect, fixed in 19a01c0) and the 5th, [GH-REPO-023], was
-  # drained; the gate therefore arrives GREEN. Flipped on LEAD-ECO approval.
+  # drained; the gate therefore arrives GREEN. Flipped on maintainer approval.
   #
   # NOTE for anyone re-reading this: the flip was NOT "delete the trailing
   # `exit 0`", which is what the advisory version's own comment said. The last

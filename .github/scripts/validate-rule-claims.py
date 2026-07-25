@@ -140,7 +140,7 @@ def resolve_artifact(github_root: pathlib.Path, name: str,
     """Return 'found' | 'missing' | 'unverifiable'.
 
     Citations come in two flavours and conflating them produced four false
-    positives on first run (2026-07-25, caught by ECO-CI1):
+    positives on first run (2026-07-25, caught in internal review):
 
       * IN-REPO      `validate-thin-callers.py`      -> .github/{scripts,workflows}
       * WORKSPACE    `swift-institute/Scripts/x.sh`  -> a SIBLING repo, one level
@@ -419,7 +419,7 @@ def check_c3(skill_files, schema: dict) -> list[Finding]:
 def check_c3b(skill_files) -> list[Finding]:
     """GATE: a rule stating the same numeric bound twice must agree with itself.
 
-    Suggested by ECO-CI1 2026-07-25 after [GH-REPO-023] turned out to be a
+    Suggested in internal review 2026-07-25 after [GH-REPO-023] turned out to be a
     THREE-way disagreement: the statement says 2-10, the schema example in the
     same file says 3-10, and metadata-schema.json declares 0-20. Adjudicating
     "the skill is canonical" is ambiguous until the skill agrees with itself.

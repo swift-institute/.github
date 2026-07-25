@@ -441,4 +441,4 @@ validators:
     self-firing: deferred
     discovery-mode: single-target
     rule-id-regex: '^GH-REPO-063a'
-    migrate-to-base: 'no (not yet wired to a workflow; enabling it would gate CI on 5 live findings, so advisory-first wiring is pending LEAD-ECO)'
+    migrate-to-base: 'no (not yet wired to a workflow; enabling it would gate CI on 5 live findings, so advisory-first wiring is pending maintainer review)'
