@@ -25,15 +25,21 @@ Usage:
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
 
+# Workspace root. Override with DEV_ROOT; defaults to ~/Developer, matching the
+# convention used elsewhere in this repo. Never hardcode an absolute home path
+# here -- this repository is PUBLIC.
+DEV_ROOT = Path(os.environ.get("DEV_ROOT", Path.home() / "Developer"))
+
 ORG_DIRS = {
-    "primitives": Path("/Users/coen/Developer/swift-primitives"),
-    "standards": Path("/Users/coen/Developer/swift-standards"),
-    "foundations": Path("/Users/coen/Developer/swift-foundations"),
-    "iso": Path("/Users/coen/Developer/swift-iso"),
+    "primitives": DEV_ROOT / "swift-primitives",
+    "standards": DEV_ROOT / "swift-standards",
+    "foundations": DEV_ROOT / "swift-foundations",
+    "iso": DEV_ROOT / "swift-iso",
 }
 
 TS_SUFFIX = " Test Support"
