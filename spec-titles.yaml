@@ -52,6 +52,7 @@ rfc:
   '5646': 'Tags for Identifying Languages'
   '5890': 'Internationalized Domain Names for Applications (IDNA): Definitions and Document Framework'
   '5952': 'A Recommendation for IPv6 Address Text Representation'
+  '6066': 'Transport Layer Security (TLS) Extensions: Extension Definitions'
   '6068': "The 'mailto' URI Scheme"
   '6238': 'TOTP: Time-Based One-Time Password Algorithm'
   '6265': 'HTTP State Management Mechanism'
@@ -61,6 +62,7 @@ rfc:
   '6585': 'Additional HTTP Status Codes'
   '6749': 'The OAuth 2.0 Authorization Framework'
   '6750': 'The OAuth 2.0 Authorization Framework: Bearer Token Usage'
+  '6797': 'HTTP Strict Transport Security (HSTS)'
   '6891': 'Extension Mechanisms for DNS (EDNS(0))'
   '6902': 'JavaScript Object Notation (JSON) Patch'
   '7230': 'Hypertext Transfer Protocol (HTTP/1.1): Message Syntax and Routing'
@@ -110,6 +112,7 @@ iso:
   '15924': 'Script codes'
   '21320': 'Document Container File (ZIP)'
   '32000': 'Document management - Portable document format'
+  '80000-1': 'Quantities and units — Part 1: General'
 
 # ISO/IEC joint specifications: authority is "ISO/IEC" in the rendered description.
 # Stored under iso-iec to disambiguate; generator handles the AUTHORITY-FULL rendering.
@@ -117,15 +120,26 @@ iso-iec:
   '8824': 'Abstract Syntax Notation One (ASN.1)'
   '8825': 'ASN.1 encoding rules (BER/CER/DER)'
   '9899': 'Programming languages - C'
+  '9945': 'Portable Operating System Interface (POSIX)'
+  '14496-22': 'Open Font Format'
 
 ieee:
   '754': 'IEEE Standard for Floating-Point Arithmetic'
+  # swift-ieee-1003 implements only Chapter 12 (Utility Conventions); its repo
+  # description narrows accordingly. The title here stays the full spec title.
+  '1003': 'Standard for Information Technology — Portable Operating System Interface (POSIX)'
 
 iec:
   '61966': 'sRGB color space'
+  '80000-13': 'Quantities and units — Part 13: Information science and technology'
 
 incits:
   '4-1986': 'US-ASCII'
+
+# ECMA-48 renders as "ECMA 48" through the numeric single-spec branch; ECMA's own
+# house style hyphenates ("ECMA-48"). Noted as a generator-rendering wrinkle.
+ecma:
+  '48': 'Control Functions for Coded Character Sets'
 
 # WHATWG and W3C use named standards (not numbered); their descriptions follow
 # the L2 named-standard template:
@@ -145,6 +159,8 @@ w3c:
   epub: 'EPUB 3.3'
   svg: 'Scalable Vector Graphics 2'
   css: 'CSS'
+  png: 'Portable Network Graphics (PNG) Specification (Second Edition)'
+  xml: 'Extensible Markup Language (XML) 1.0 (Fifth Edition)'
 
 # Add new entries below as new spec-id packages enter the ecosystem.
 # Maintainer authors the entry in the same PR that creates the new repo's
