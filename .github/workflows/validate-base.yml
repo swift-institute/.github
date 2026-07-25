@@ -98,13 +98,42 @@ jobs:
           echo "::error::Unknown discovery-mode: '${MODE}'. Valid values: single-target | wrapper-host-multi-file | per-package-org-sweep (deferred to B-2)."
           exit 1
 
+      # Dependabot and fork pull_request runs receive NO repository or
+      # organization secrets by design, so both App inputs arrive empty and
+      # create-github-app-token fails hard with "client-id ... must be set to a
+      # non-empty string". Every Dependabot PR in this repo therefore showed a
+      # wall of red across ~18 validator workflows. The damage was not the red
+      # itself: the reds were attributable to Dependabot and ignored, so a
+      # genuine regression arriving on such a PR would have been invisible in
+      # that noise.
       - name: Mint installation token (swift-institute-bot)
         id: mint-token
+        if: ${{ github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
         with:
           client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
           private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
+
+      # Report which credential the scan will use. This is deliberately NOT
+      # written to $GITHUB_STEP_SUMMARY here: the Aggregate step writes that
+      # file with `>` (truncate), so anything logged there earlier is erased.
+      # The path is emitted as an annotation and as an output, and the Aggregate
+      # step renders it into the summary it owns -- a skip nobody can read is
+      # indistinguishable from a pass.
+      - name: Resolve scan credentials
+        id: creds
+        env:
+          APP_TOKEN: ${{ steps.mint-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          if [ -n "${APP_TOKEN}" ]; then
+            echo "path=swift-institute-bot App token" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Scan credentials::swift-institute-bot App token (full scan scope)"
+          else
+            echo "path=GITHUB_TOKEN fallback (App secrets unavailable on this event)" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Scan credentials::App secrets are unavailable on this event (Dependabot or fork PR), falling back to the automatic GITHUB_TOKEN. Public targets are scanned normally; a PRIVATE target cannot be cloned and will surface as clone-failed rather than passing quietly."
+          fi
 
       - name: Checkout swift-institute/.github (validator host)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -116,7 +145,7 @@ jobs:
       - name: Resolve target repo
         id: targets
         env:
-          GH_TOKEN: ${{ steps.mint-token.outputs.token }}
+          GH_TOKEN: ${{ steps.mint-token.outputs.token || github.token }}
           INPUT_REPO: ${{ inputs.target-repo }}
         run: |
           set -euo pipefail
@@ -129,7 +158,7 @@ jobs:
       - name: Run validator
         id: check
         env:
-          GH_TOKEN: ${{ steps.mint-token.outputs.token }}
+          GH_TOKEN: ${{ steps.mint-token.outputs.token || github.token }}
           VALIDATOR: ${{ github.workspace }}/institute-github/${{ inputs.validator-script }}
         run: |
           set -euo pipefail
@@ -164,6 +193,7 @@ jobs:
           RULE_ID_REGEX: ${{ inputs.rule-id-regex }}
           DRY_RUN: ${{ inputs.dry-run }}
           VALIDATOR_SCRIPT: ${{ inputs.validator-script }}
+          CREDS_PATH: ${{ steps.creds.outputs.path }}
         run: |
           set -euo pipefail
           # Count findings with the SAME field-match predicate the summary
@@ -190,6 +220,11 @@ jobs:
           {
             echo "## ${VALIDATOR_SCRIPT} findings"
             echo "Total violations: $violations"
+            # Which credential the scan used. Rendered here because this block
+            # writes $GITHUB_STEP_SUMMARY with `>` and would erase anything an
+            # earlier step wrote. Without it, a GITHUB_TOKEN-scoped run and a
+            # full App-token run produce identical-looking summaries.
+            echo "Scan credentials: ${CREDS_PATH:-unknown}"
             echo
             if [ "$clone_failures" -gt 0 ]; then
               echo "> [!CAUTION]"
