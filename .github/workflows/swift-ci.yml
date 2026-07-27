@@ -117,7 +117,7 @@ on:
       platform-support:
         type: string
         default: ""
-        description: "Per-package CI platform-support declaration. Empty default preserves pre-input behavior: the build tier selects Linux and the full tier keeps every platform leg eligible. Non-empty = comma-separated subset of `apple,linux,windows` (lowercase, no spaces): each platform leg runs only when its family token is present (apple → macos-release + apple-simulator-build; linux → linux-release + linux-nightly + linux-6-4; windows → windows-release). On the ordinary build tier, the same declaration selects exactly one supported release leg in deterministic priority order: Linux, then Windows, then macOS. Quality gates (format, lint, swift-linter, advisory linters) are platform-neutral and never consult this input; ci-ok already treats skipped legs as passing. Declare ONLY platform-identity exclusions — a package whose specification or identity excludes a platform (POSIX/ISO-9945 spec packages, per-platform roots like swift-linux / swift-windows). This is NOT a cost knob ([CI-096]) and is NOT derived from Package.swift `platforms:` ([CI-091] — that block is a SwiftPM deployment-target declaration, not a CI-coverage signal). Rationale: a platform-blind matrix forces platform emulation into L2 spec packages to green an illegitimate leg; the platform seam is L3 per [PLAT-ARCH-001]. ci-dispatch.yml passes nothing, so single-job dispatch can still force any leg on any package (debug surface preserved)."
+        description: "Per-package CI platform-support declaration. Empty default preserves pre-input behavior: the build tier selects Linux and the full tier keeps every platform leg eligible. Non-empty = comma-separated subset of `apple,linux,windows` (lowercase, no spaces); unknown, duplicate, or empty family tokens fail the plan. Each platform leg runs only when its family token is present (apple → macos-release + apple-simulator-build; linux → linux-release + linux-nightly + linux-6-4; windows → windows-release). On the ordinary build tier, the same declaration selects exactly one supported release leg in deterministic priority order: Linux, then Windows, then macOS. Quality gates (format, lint, swift-linter, advisory linters) are platform-neutral and never consult this input; ci-ok already treats skipped legs as passing. Declare ONLY platform-identity exclusions — a package whose specification or identity excludes a platform (POSIX/ISO-9945 spec packages, per-platform roots like swift-linux / swift-windows). This is NOT a cost knob ([CI-096]) and is NOT derived from Package.swift `platforms:` ([CI-091] — that block is a SwiftPM deployment-target declaration, not a CI-coverage signal). Rationale: a platform-blind matrix forces platform emulation into L2 spec packages to green an illegitimate leg; the platform seam is L3 per [PLAT-ARCH-001]. ci-dispatch.yml passes nothing, so single-job dispatch can still force any leg on any package (debug surface preserved)."
       tier:
         type: string
         default: ""
@@ -250,6 +250,42 @@ jobs:
           PLATFORM_SUPPORT: ${{ inputs.platform-support }}
         run: |
           set -euo pipefail
+          if [ -n "$PLATFORM_SUPPORT" ]; then
+            REMAINING_FAMILIES="$PLATFORM_SUPPORT"
+            SEEN_FAMILIES=","
+            while [ -n "$REMAINING_FAMILIES" ]; do
+              case "$REMAINING_FAMILIES" in
+                *,*)
+                  FAMILY="${REMAINING_FAMILIES%%,*}"
+                  REMAINING_FAMILIES="${REMAINING_FAMILIES#*,}"
+                  ;;
+                *)
+                  FAMILY="$REMAINING_FAMILIES"
+                  REMAINING_FAMILIES=""
+                  ;;
+              esac
+              case "$FAMILY" in
+                apple|linux|windows) ;;
+                *)
+                  echo "::error::invalid platform-support family '$FAMILY' in '$PLATFORM_SUPPORT'"
+                  exit 1
+                  ;;
+              esac
+              case "$SEEN_FAMILIES" in
+                *",$FAMILY,"*)
+                  echo "::error::duplicate platform-support family '$FAMILY' in '$PLATFORM_SUPPORT'"
+                  exit 1
+                  ;;
+              esac
+              SEEN_FAMILIES="${SEEN_FAMILIES}${FAMILY},"
+            done
+            case "$PLATFORM_SUPPORT" in
+              *,)
+                echo "::error::platform-support contains an empty trailing family: '$PLATFORM_SUPPORT'"
+                exit 1
+                ;;
+            esac
+          fi
           TIER="$FORCED_TIER"
           # Tag refs always get the full platform contract (release boundary).
           if [ -z "$TIER" ]; then
