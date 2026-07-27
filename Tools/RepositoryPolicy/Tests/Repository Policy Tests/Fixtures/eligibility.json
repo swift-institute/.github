@@ -1,0 +1,146 @@
+[
+  {
+    "name": "eligible public SwiftPM package",
+    "repository": {
+      "id": 1,
+      "name": "swift-example",
+      "full_name": "swift-foundations/swift-example",
+      "visibility": "public",
+      "archived": false,
+      "disabled": false,
+      "fork": false,
+      "size": 12
+    },
+    "manifest_kind": "file",
+    "pvr": "disabled",
+    "decision": "enable"
+  },
+  {
+    "name": "already converged",
+    "repository": {
+      "id": 2,
+      "name": "swift-example",
+      "full_name": "swift-foundations/swift-example",
+      "visibility": "public",
+      "archived": false,
+      "disabled": false,
+      "fork": false,
+      "size": 12
+    },
+    "manifest_kind": "file",
+    "pvr": "enabled",
+    "decision": "converged"
+  },
+  {
+    "name": "private",
+    "repository": {
+      "id": 3,
+      "name": "swift-private",
+      "full_name": "swift-foundations/swift-private",
+      "visibility": "private",
+      "archived": false,
+      "disabled": false,
+      "fork": false,
+      "size": 12
+    },
+    "manifest_kind": "file",
+    "pvr": "disabled",
+    "decision": "not-public"
+  },
+  {
+    "name": "archived",
+    "repository": {
+      "id": 4,
+      "name": "swift-archived",
+      "full_name": "swift-foundations/swift-archived",
+      "visibility": "public",
+      "archived": true,
+      "disabled": false,
+      "fork": false,
+      "size": 12
+    },
+    "manifest_kind": "file",
+    "pvr": "disabled",
+    "decision": "archived"
+  },
+  {
+    "name": "disabled",
+    "repository": {
+      "id": 5,
+      "name": "swift-disabled",
+      "full_name": "swift-foundations/swift-disabled",
+      "visibility": "public",
+      "archived": false,
+      "disabled": true,
+      "fork": false,
+      "size": 12
+    },
+    "manifest_kind": "file",
+    "pvr": "disabled",
+    "decision": "disabled"
+  },
+  {
+    "name": "fork",
+    "repository": {
+      "id": 6,
+      "name": "swift-fork",
+      "full_name": "swift-foundations/swift-fork",
+      "visibility": "public",
+      "archived": false,
+      "disabled": false,
+      "fork": true,
+      "size": 12
+    },
+    "manifest_kind": "file",
+    "pvr": "disabled",
+    "decision": "fork"
+  },
+  {
+    "name": "empty",
+    "repository": {
+      "id": 7,
+      "name": "swift-empty",
+      "full_name": "swift-foundations/swift-empty",
+      "visibility": "public",
+      "archived": false,
+      "disabled": false,
+      "fork": false,
+      "size": 0
+    },
+    "manifest_kind": null,
+    "pvr": null,
+    "decision": "empty"
+  },
+  {
+    "name": "non SwiftPM",
+    "repository": {
+      "id": 8,
+      "name": "website",
+      "full_name": "swift-institute/website",
+      "visibility": "public",
+      "archived": false,
+      "disabled": false,
+      "fork": false,
+      "size": 12
+    },
+    "manifest_kind": null,
+    "pvr": null,
+    "decision": "missing-root-manifest"
+  },
+  {
+    "name": "denied owner",
+    "repository": {
+      "id": 9,
+      "name": "package",
+      "full_name": "tenthijeboonkkamp/package",
+      "visibility": "public",
+      "archived": false,
+      "disabled": false,
+      "fork": false,
+      "size": 12
+    },
+    "manifest_kind": "file",
+    "pvr": "disabled",
+    "decision": "denied-owner"
+  }
+]
