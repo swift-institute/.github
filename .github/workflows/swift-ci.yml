@@ -18,8 +18,9 @@ name: Swift CI (reusable)
 # TIERED SCHEDULING (R1/R2 principal ruling 2026-07-20): the matrix SHAPE
 # above remains the ecosystem platform contract ([CI-010]/[CI-091] unchanged),
 # but its full execution is scheduled, not per-push. A `plan` job classifies
-# each run into a tier — lint (format+lint+swift-linter), build (+
-# linux-release; the default), or full (everything, incl. advisory legs).
+# each run into a tier — lint (format+lint+swift-linter), build (+ the
+# caller's primary supported release leg; the default), or full (everything,
+# incl. advisory legs).
 # Tags, '[ci full]', consumer workflow_dispatch, and ci-sweep.yml always get
 # full; '[ci lint]' or docs/lint-config-only diffs get lint. The nightly
 # ci-sweep.yml rotation re-verifies the full contract fleet-wide. Rationale:
@@ -116,7 +117,7 @@ on:
       platform-support:
         type: string
         default: ""
-        description: "Per-package CI platform-support declaration. Empty default — every existing caller passes nothing — runs the full matrix, bit-identical to before this input existed. Non-empty = comma-separated subset of `apple,linux,windows` (lowercase, no spaces): each platform leg runs only when its family token is present (apple → macos-release + apple-simulator-build; linux → linux-release + linux-nightly + linux-6-4; windows → windows-release). Quality gates (format, lint, swift-linter, advisory linters) are platform-neutral and never consult this input; ci-ok already treats skipped legs as passing. Declare ONLY platform-identity exclusions — a package whose specification or identity excludes a platform (POSIX/ISO-9945 spec packages, per-platform roots like swift-linux / swift-windows). This is NOT a cost knob ([CI-096]) and is NOT derived from Package.swift `platforms:` ([CI-091] — that block is a SwiftPM deployment-target declaration, not a CI-coverage signal). Rationale: a platform-blind matrix forces platform emulation into L2 spec packages to green an illegitimate leg; the platform seam is L3 per [PLAT-ARCH-001]. ci-dispatch.yml passes nothing, so single-job dispatch can still force any leg on any package (debug surface preserved)."
+        description: "Per-package CI platform-support declaration. Empty default preserves pre-input behavior: the build tier selects Linux and the full tier keeps every platform leg eligible. Non-empty = comma-separated subset of `apple,linux,windows` (lowercase, no spaces): each platform leg runs only when its family token is present (apple → macos-release + apple-simulator-build; linux → linux-release + linux-nightly + linux-6-4; windows → windows-release). On the ordinary build tier, the same declaration selects exactly one supported release leg in deterministic priority order: Linux, then Windows, then macOS. Quality gates (format, lint, swift-linter, advisory linters) are platform-neutral and never consult this input; ci-ok already treats skipped legs as passing. Declare ONLY platform-identity exclusions — a package whose specification or identity excludes a platform (POSIX/ISO-9945 spec packages, per-platform roots like swift-linux / swift-windows). This is NOT a cost knob ([CI-096]) and is NOT derived from Package.swift `platforms:` ([CI-091] — that block is a SwiftPM deployment-target declaration, not a CI-coverage signal). Rationale: a platform-blind matrix forces platform emulation into L2 spec packages to green an illegitimate leg; the platform seam is L3 per [PLAT-ARCH-001]. ci-dispatch.yml passes nothing, so single-job dispatch can still force any leg on any package (debug surface preserved)."
       tier:
         type: string
         default: ""
@@ -179,7 +180,9 @@ jobs:
   # fast-check ONCE (previously duplicated into every leg). Tier semantics:
   #   lint  — format + lint + swift-linter (Linux-only; the mass lint-
   #           compliance fast path; target <2min wall-clock)
-  #   build — lint tier + linux-release (default for ordinary pushes)
+  #   build — lint tier + the primary supported release leg (default for
+  #           ordinary pushes: Linux unless platform-support declares a
+  #           platform-specific package)
   #   full  — the complete [CI-010]/[CI-091] platform contract including the
   #           advisory legs; unconditional on tag refs; forced by ci-sweep.yml
   #           and the '[ci full]' commit token.
@@ -244,6 +247,7 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           BEFORE_SHA: ${{ github.event.before }}
           HEAD_MSG: ${{ github.event.head_commit.message }}
+          PLATFORM_SUPPORT: ${{ inputs.platform-support }}
         run: |
           set -euo pipefail
           TIER="$FORCED_TIER"
@@ -286,7 +290,18 @@ jobs:
           [ -n "$TIER" ] || TIER="build"
           case "$TIER" in
             lint)  LEGS="format,lint,swift-linter" ;;
-            build) LEGS="format,lint,swift-linter,linux-release" ;;
+            build)
+              case ",$PLATFORM_SUPPORT," in
+                ",,"|*,linux,*) PRIMARY_BUILD="linux-release" ;;
+                *,windows,*) PRIMARY_BUILD="windows-release" ;;
+                *,apple,*) PRIMARY_BUILD="macos-release" ;;
+                *)
+                  echo "::error::platform-support has no recognized platform family: '$PLATFORM_SUPPORT'"
+                  exit 1
+                  ;;
+              esac
+              LEGS="format,lint,swift-linter,$PRIMARY_BUILD"
+              ;;
             full)  LEGS="format,lint,swift-linter,linux-release,macos-release,windows-release,linux-nightly,linux-6-4,apple-simulator-build,lint-yaml,lint-broken-symlink,lint-license-header,lint-test-support-spine,advisory-summary" ;;
             *) echo "::error::Unknown tier '$TIER' (expected lint|build|full)"; exit 1 ;;
           esac
