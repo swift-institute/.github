@@ -144,6 +144,42 @@ extension RepositoryPolicy {
         return receipt
     }
 
+    public static func validateSurfaces(
+        client: GitHubClient,
+        scope: Scope,
+        policy: SurfacePolicy
+    ) async throws -> SurfaceSweepReport {
+        let repositories: [Repository]
+        if let fullName = scope.repository {
+            repositories = [try await client.repository(fullName)]
+        } else {
+            repositories = try await client.repositories(
+                organization: scope.organization!
+            )
+        }
+
+        var reports = [SurfaceReport]()
+        for repository in repositories.sorted(by: { $0.fullName < $1.fullName }) {
+            guard staticExclusion(of: repository) == nil else { continue }
+            guard try await client.rootManifestKind(repository.fullName) == "file" else {
+                continue
+            }
+            let repositoryClass =
+                policy.actionGrants
+                .first { $0.repository == repository.fullName }?
+                .repositoryClass ?? .package
+            reports.append(
+                try validateSurface(
+                    repository: repository.fullName,
+                    repositoryClass: repositoryClass,
+                    files: try await client.surfaceFiles(repository.fullName),
+                    policy: policy
+                )
+            )
+        }
+        return SurfaceSweepReport(reports: reports)
+    }
+
     private static func verifyEnabled(
         client: GitHubClient,
         repository: String

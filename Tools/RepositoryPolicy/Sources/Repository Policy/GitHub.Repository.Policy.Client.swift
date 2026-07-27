@@ -59,6 +59,62 @@ extension RepositoryPolicy {
             return try JSONDecoder().decode(Content.self, from: response.data).type
         }
 
+        public func surfaceFiles(_ fullName: String) async throws -> [String: String] {
+            var pending = [
+                ".github/workflows",
+                ".github/actions",
+                ".github/ISSUE_TEMPLATE",
+            ]
+            var files = [String: String]()
+            while let path = pending.popLast() {
+                let response = try await request(
+                    method: "GET",
+                    path: "/repos/\(fullName)/contents/\(path)"
+                )
+                if response.status == 404 {
+                    continue
+                }
+                guard response.status == 200 else {
+                    throw error(
+                        method: "GET",
+                        path: "/repos/\(fullName)/contents/\(path)",
+                        response: response
+                    )
+                }
+
+                if let entries = try? JSONDecoder().decode([Content].self, from: response.data) {
+                    for entry in entries.sorted(by: { $0.path < $1.path }).reversed() {
+                        if entry.type == "dir" {
+                            pending.append(entry.path)
+                        } else if entry.type == "file", isGovernedSurface(path: entry.path) {
+                            pending.append(entry.path)
+                        }
+                    }
+                    continue
+                }
+
+                let content = try JSONDecoder().decode(Content.self, from: response.data)
+                guard content.type == "file", isGovernedSurface(path: content.path) else {
+                    continue
+                }
+                guard
+                    content.encoding == "base64",
+                    let encoded = content.content,
+                    let data = Data(
+                        base64Encoded: encoded,
+                        options: .ignoreUnknownCharacters
+                    ),
+                    let source = String(data: data, encoding: .utf8)
+                else {
+                    throw ConfigurationError(
+                        "\(fullName): could not decode governed file \(content.path)"
+                    )
+                }
+                files[content.path] = source
+            }
+            return files
+        }
+
         public func vulnerabilityReporting(
             _ fullName: String
         ) async throws -> VulnerabilityReporting {
@@ -117,8 +173,24 @@ extension RepositoryPolicy {
             )
         }
 
+        private func isGovernedSurface(path: String) -> Bool {
+            if path.hasPrefix(".github/ISSUE_TEMPLATE/") {
+                return true
+            }
+            if path.hasPrefix(".github/workflows/") {
+                return path.hasSuffix(".yml") || path.hasSuffix(".yaml")
+            }
+            if path.hasPrefix(".github/actions/") {
+                return path.hasSuffix("/action.yml") || path.hasSuffix("/action.yaml")
+            }
+            return false
+        }
+
         private struct Content: Decodable {
             let type: String
+            let path: String
+            let encoding: String?
+            let content: String?
         }
 
         private struct PrivateVulnerabilityReporting: Decodable {

@@ -248,6 +248,44 @@ struct RepositoryPolicyTests {
         #expect(exempted.exemptionsApplied == 2)
     }
 
+    @Test
+    func remoteSurfaceSnapshotUsesTheSameTypedPolicy() throws {
+        let report = try RepositoryPolicy.validateSurface(
+            repository: "swift-foundations/swift-example",
+            repositoryClass: .package,
+            files: [
+                ".github/workflows/ci.yml": """
+                    name: CI
+                    on: [push, pull_request]
+                    jobs:
+                      ci:
+                        uses: swift-foundations/.github/.github/workflows/swift-ci.yml@main
+                    """,
+                ".github/ISSUE_TEMPLATE/bug.yml": "name: Bug\n",
+                "Sources/Example.swift": "public struct Example {}\n",
+            ],
+            policy: .init(
+                schemaVersion: 1,
+                actionGrants: [
+                    .init(
+                        repositoryClass: .package,
+                        path: ".github/workflows/ci.yml",
+                        kind: .thinCaller,
+                        triggers: ["pull_request", "push"],
+                        uses: [
+                            "swift-foundations/.github/.github/workflows/swift-ci.yml@main"
+                        ]
+                    )
+                ],
+                exemptions: []
+            )
+        )
+
+        #expect(report.actionFiles == 1)
+        #expect(report.issueFormFiles == 1)
+        #expect(report.violations.map(\.identifier) == ["REPO-FORMS-001"])
+    }
+
     private func repositoryFixture(files: [String: String]) throws -> URL {
         let root =
             FileManager.default.temporaryDirectory

@@ -34,6 +34,34 @@ enum Main {
             organization: arguments.organization,
             repository: arguments.repository
         )
+        if let surfacePolicy = arguments.surfacePolicy {
+            let policy = try RepositoryPolicy.SurfacePolicy.load(
+                from: URL(filePath: surfacePolicy)
+            )
+            let report = try await RepositoryPolicy.validateSurfaces(
+                client: .init(token: token, baseURL: baseURL),
+                scope: scope,
+                policy: policy
+            )
+            try write(report, to: arguments.surfaceReport)
+            guard report.passed else {
+                for repository in report.reports {
+                    for violation in repository.violations {
+                        FileHandle.standardError.write(
+                            Data(
+                                (
+                                    "\(repository.repository)/\(violation.path): "
+                                        + "\(violation.identifier): \(violation.message)\n"
+                                ).utf8
+                            )
+                        )
+                    }
+                }
+                throw RepositoryPolicy.ConfigurationError(
+                    "repository surface policy rejected the selected scope"
+                )
+            }
+        }
         let receipt = try await RepositoryPolicy.run(
             client: .init(token: token, baseURL: baseURL),
             configuration: .init(
@@ -48,6 +76,17 @@ enum Main {
                 + "eligible=\(receipt.eligible) converged=\(receipt.converged) "
                 + "enabled=\(receipt.enabled) would-enable=\(receipt.wouldEnable)"
         )
+    }
+
+    private static func write<T: Encodable>(_ value: T, to path: String?) throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        var data = try encoder.encode(value)
+        data.append(0x0A)
+        if let path {
+            try data.write(to: URL(filePath: path), options: .atomic)
+        }
+        FileHandle.standardOutput.write(data)
     }
 
     private static func validate(_ arguments: ValidationArguments) throws {
@@ -86,6 +125,8 @@ enum Main {
         var dryRun = true
         var journal: String
         var receipt: String
+        var surfacePolicy: String?
+        var surfaceReport: String?
 
         init(_ arguments: [String]) throws {
             let temporary = FileManager.default.temporaryDirectory
@@ -115,6 +156,10 @@ enum Main {
                     journal = value
                 case "--receipt":
                     receipt = value
+                case "--surface-policy":
+                    surfacePolicy = value
+                case "--surface-report":
+                    surfaceReport = value
                 default:
                     throw RepositoryPolicy.ConfigurationError("unknown argument \(name)")
                 }

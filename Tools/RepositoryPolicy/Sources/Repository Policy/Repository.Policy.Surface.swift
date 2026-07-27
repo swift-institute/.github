@@ -146,17 +146,56 @@ extension RepositoryPolicy {
         public var passed: Bool { violations.isEmpty }
     }
 
+    public struct SurfaceSweepReport: Codable, Equatable, Sendable {
+        public let reports: [SurfaceReport]
+
+        public init(reports: [SurfaceReport]) {
+            self.reports = reports.sorted { $0.repository < $1.repository }
+        }
+
+        public var passed: Bool {
+            reports.allSatisfy(\.passed)
+        }
+    }
+
     public static func validateSurface(
         repository: String,
         repositoryClass: RepositoryClass,
         root: URL,
         policy: SurfacePolicy
     ) throws -> SurfaceReport {
+        try validateSurface(
+            repository: repository,
+            repositoryClass: repositoryClass,
+            snapshot: SurfaceSnapshot(root: root),
+            policy: policy
+        )
+    }
+
+    public static func validateSurface(
+        repository: String,
+        repositoryClass: RepositoryClass,
+        files: [String: String],
+        policy: SurfacePolicy
+    ) throws -> SurfaceReport {
+        try validateSurface(
+            repository: repository,
+            repositoryClass: repositoryClass,
+            snapshot: SurfaceSnapshot(files: files),
+            policy: policy
+        )
+    }
+
+    private static func validateSurface(
+        repository: String,
+        repositoryClass: RepositoryClass,
+        snapshot: SurfaceSnapshot,
+        policy: SurfacePolicy
+    ) throws -> SurfaceReport {
         guard repository.split(separator: "/", omittingEmptySubsequences: false).count == 2 else {
             throw ConfigurationError("repository must use owner/name form")
         }
 
-        let snapshot = try SurfaceSnapshot(root: root)
         var violations = [SurfaceViolation]()
         var exemptionsApplied = 0
 
@@ -324,6 +363,33 @@ private struct SurfaceSnapshot {
                 && (url.lastPathComponent == "action.yml" || url.lastPathComponent == "action.yaml")
             if isWorkflow || isAction {
                 let source = try String(contentsOf: url, encoding: .utf8)
+                actions.append(
+                    try ActionFile(
+                        path: path,
+                        source: source,
+                        manifestIsAction: isAction
+                    )
+                )
+            }
+        }
+        self.actions = actions.sorted { $0.path < $1.path }
+        self.issueForms = issueForms.sorted()
+    }
+
+    init(files: [String: String]) throws {
+        var actions = [ActionFile]()
+        var issueForms = [String]()
+        for (path, source) in files {
+            if path.hasPrefix(".github/ISSUE_TEMPLATE/") {
+                issueForms.append(path)
+            }
+            let isWorkflow =
+                path.hasPrefix(".github/workflows/")
+                && (path.hasSuffix(".yml") || path.hasSuffix(".yaml"))
+            let isAction =
+                path.hasPrefix(".github/actions/")
+                && (path.hasSuffix("/action.yml") || path.hasSuffix("/action.yaml"))
+            if isWorkflow || isAction {
                 actions.append(
                     try ActionFile(
                         path: path,
