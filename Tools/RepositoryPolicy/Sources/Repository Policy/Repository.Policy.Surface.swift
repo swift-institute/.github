@@ -80,6 +80,14 @@ extension RepositoryPolicy {
             self.exemptions = exemptions
         }
 
+        public static var instituteDefaultURL: URL {
+            URL(filePath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appending(path: "Policy/repository-surfaces.json")
+        }
+
         public static func load(from url: URL) throws -> Self {
             let policy = try JSONDecoder().decode(Self.self, from: Data(contentsOf: url))
             guard policy.schemaVersion == 1 else {

@@ -286,6 +286,17 @@ struct RepositoryPolicyTests {
         #expect(report.violations.map(\.identifier) == ["REPO-FORMS-001"])
     }
 
+    @Test
+    func instituteDefaultSurfacePolicyIsLoadableAndDenyByDefault() throws {
+        let policy = try RepositoryPolicy.SurfacePolicy.load(
+            from: RepositoryPolicy.SurfacePolicy.instituteDefaultURL
+        )
+
+        #expect(policy.schemaVersion == 1)
+        #expect(!policy.actionGrants.isEmpty)
+        #expect(policy.exemptions.isEmpty)
+    }
+
     private func repositoryFixture(files: [String: String]) throws -> URL {
         let root =
             FileManager.default.temporaryDirectory

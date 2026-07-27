@@ -34,33 +34,31 @@ enum Main {
             organization: arguments.organization,
             repository: arguments.repository
         )
-        if let surfacePolicy = arguments.surfacePolicy {
-            let policy = try RepositoryPolicy.SurfacePolicy.load(
-                from: URL(filePath: surfacePolicy)
-            )
-            let report = try await RepositoryPolicy.validateSurfaces(
-                client: .init(token: token, baseURL: baseURL),
-                scope: scope,
-                policy: policy
-            )
-            try write(report, to: arguments.surfaceReport)
-            guard report.passed else {
-                for repository in report.reports {
-                    for violation in repository.violations {
-                        FileHandle.standardError.write(
-                            Data(
-                                (
-                                    "\(repository.repository)/\(violation.path): "
-                                        + "\(violation.identifier): \(violation.message)\n"
-                                ).utf8
-                            )
+        let policy = try RepositoryPolicy.SurfacePolicy.load(
+            from: URL(filePath: arguments.surfacePolicy)
+        )
+        let report = try await RepositoryPolicy.validateSurfaces(
+            client: .init(token: token, baseURL: baseURL),
+            scope: scope,
+            policy: policy
+        )
+        try write(report, to: arguments.surfaceReport)
+        guard report.passed else {
+            for repository in report.reports {
+                for violation in repository.violations {
+                    FileHandle.standardError.write(
+                        Data(
+                            (
+                                "\(repository.repository)/\(violation.path): "
+                                    + "\(violation.identifier): \(violation.message)\n"
+                            ).utf8
                         )
-                    }
+                    )
                 }
-                throw RepositoryPolicy.ConfigurationError(
-                    "repository surface policy rejected the selected scope"
-                )
             }
+            throw RepositoryPolicy.ConfigurationError(
+                "repository surface policy rejected the selected scope"
+            )
         }
         let receipt = try await RepositoryPolicy.run(
             client: .init(token: token, baseURL: baseURL),
@@ -125,13 +123,16 @@ enum Main {
         var dryRun = true
         var journal: String
         var receipt: String
-        var surfacePolicy: String?
-        var surfaceReport: String?
+        var surfacePolicy: String
+        var surfaceReport: String
 
         init(_ arguments: [String]) throws {
             let temporary = FileManager.default.temporaryDirectory
             journal = temporary.appending(path: "repository-policy-journal.jsonl").path
             receipt = temporary.appending(path: "repository-policy-receipt.json").path
+            surfacePolicy = RepositoryPolicy.SurfacePolicy.instituteDefaultURL.path
+            surfaceReport =
+                temporary.appending(path: "repository-surface-report.json").path
 
             var index = 1
             while index < arguments.count {
