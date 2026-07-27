@@ -672,7 +672,7 @@ jobs:
 
       - name: Discover SwiftPM-generated scheme
         # The scheme name is NOT always the package name — a package may
-        # rename its product/namespace (e.g. [MOD-031]), so deriving the
+        # rename its product/namespace (a [MOD-TARGET] decision), so deriving the
         # scheme from the manifest name alone breaks. Probe
         # `xcodebuild -list -json`; fall back to `swift package describe`.
         # (Matches the proven L1-wrapper discovery shape.)
@@ -1079,7 +1079,7 @@ jobs:
     with:
       advisory: true
 
-  # ─── γ-1 L1 identity invariants + Phase β [MOD-024] ──────────────────────
+  # ─── L1 identity invariants + Test Support dependency integrity ──────────
   # Per-package source-content audits. License-header runs on ubuntu-latest
   # no-container (pure Python). Test Support Spine uses swift:6.3 because
   # it invokes `swift package dump-package`. Each has its own flip schedule
@@ -1099,7 +1099,7 @@ jobs:
       advisory: true
 
   lint-test-support-spine:
-    name: Test Support Spine ([MOD-024], advisory)
+    name: Test Support dependency integrity (advisory)
     needs: plan
     if: ${{ !cancelled() && !github.event.repository.private && (inputs.job == 'lint-test-support-spine' || (inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',lint-test-support-spine,'))) }}
     uses: ./.github/workflows/lint-test-support-spine.yml

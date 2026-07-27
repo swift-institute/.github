@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""validate-target-imports.py — [MOD-038] every source import is a declared edge.
+"""Validate that every source import has a declared target dependency edge.
 
-Rule checked: [MOD-038] — every module a target's sources `import` (any
+Rule checked: [TARGET-IMPORT-EDGE] — every module a target's sources `import` (any
 form) MUST appear in that target's `dependencies:` in Package.swift, as a
 same-package target dependency or a cross-package product dependency.
 Excepted: the target's own module and toolchain/SDK-supplied modules. An
@@ -28,14 +28,11 @@ Unresolvable dep manifests degrade soft: their products' member modules are
 unknown, so any import that MIGHT come from them is skipped (no finding) —
 the checker under-reports rather than false-fires when a dep isn't on disk.
 
-Output: TSV `repo<TAB>MOD-038<TAB>message` (validate_lib.emit).
+Output: TSV `repo<TAB>TARGET-IMPORT-EDGE<TAB>message`.
 
 Usage:
   validate-target-imports.py <repo-name> <repo-root>
 
-Provenance: REPORT-corpus-review.md §5 SPEC'D batch, promoted via
-/promote-rule per HANDOFF-mechanization-arc W1. Outcome record:
-swift-institute/Audits/PROMOTE-MOD-038-2026-07-06.md.
 """
 from __future__ import annotations
 
@@ -48,7 +45,7 @@ from pathlib import Path
 
 from validate_lib import emit
 
-RULE = "MOD-038"
+RULE = "TARGET-IMPORT-EDGE"
 
 SKIP_DIRS = {".build", ".git", ".swiftpm", ".claude", "node_modules", "checkouts"}
 
@@ -223,7 +220,7 @@ def main(argv: list[str]) -> int:
                 continue  # soft mode: a non-local dep might supply it
             emit(repo, RULE,
                  f"{rel}:{line}: target '{name}' imports '{module}' without a "
-                 f"declared dependency edge ([MOD-038]: transitive-build riding "
+                 f"declared dependency edge ([TARGET-IMPORT-EDGE]: transitive-build riding "
                  f"is a scheduling race; declare the target/product dependency)")
     return 0
 

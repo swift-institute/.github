@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""validate-package-graph.py — [MOD-032] package-graph acyclicity.
+"""Validate package-graph acyclicity.
 
 Rules checked:
-  [MOD-032]       Package dependencies MUST be acyclic at the PACKAGE-graph
+  [PACKAGE-CYCLE] Package dependencies MUST be acyclic at the PACKAGE-graph
                   level, not merely the target-graph level. SwiftPM tolerates
                   target-acyclic/package-cyclic configurations; the institute
                   forbids them ("works today by accident" is not timeless).
@@ -20,23 +20,13 @@ deps to identities), and report every strongly-connected component of size
 longer cycles). Edges point only at packages present in the scanned set, so
 run the sweep over the WORKSPACE root to catch cross-org cycles.
 
-Baseline: sibling `.package-graph-baseline` — prune-only; each line is a
-sorted `<member>+<member>+…` cycle key with a provenance comment. The known
-live memory↔storage cycle ships baselined (fixing it is ADT/tower-arc
-terrain per HANDOFF-mechanization-arc Do-Not-Touch). Baselined cycles are
-reported as `(baselined)` and do not count as findings.
-
-Output: TSV findings `repo<TAB>MOD-032<TAB>message` (validate_lib.emit).
+Output: TSV findings `repo<TAB>PACKAGE-CYCLE<TAB>message`.
 
 Usage:
   validate-package-graph.py <repo-name> <repo-root> [<extra-root> ...]
   (extra roots union into one graph — pass the org dirs together to catch
   cross-org cycles without sweeping out-of-scope trees)
 
-Provenance: REPORT-corpus-review.md §5 NONE batch, promoted via /promote-rule
-per HANDOFF-mechanization-arc W1. Outcome records:
-swift-institute/Audits/PROMOTE-MOD-032-2026-07-06.md (+ the PRIM-ARCH-002
-covered-by disposition record).
 """
 from __future__ import annotations
 
@@ -47,13 +37,12 @@ from pathlib import Path
 
 from validate_lib import emit
 
-RULE = "MOD-032"
+RULE = "PACKAGE-CYCLE"
 
-# coenttb is the workspace's hard scope exclusion (never grep/consume);
 # swiftlang is the upstream toolchain checkout; fixtures/Fixtures are
 # synthetic manifest trees (incl. this validator's own harness fixtures).
 SKIP_DIRS = {".build", ".git", ".swiftpm", ".claude", "node_modules",
-             "checkouts", ".trash", "Library", "coenttb", "swiftlang",
+             "checkouts", ".trash", "Library", "swiftlang",
              "fixtures", "Fixtures"}
 
 RE_URL_DEP = re.compile(r'\.package\s*\(\s*(?:name:\s*"[^"]+"\s*,\s*)?url:\s*"([^"]+)"')
@@ -150,17 +139,6 @@ def sccs(graph: dict[str, set[str]]):
     return result
 
 
-def load_baseline(script_dir: Path) -> set[str]:
-    path = script_dir / ".package-graph-baseline"
-    out = set()
-    if path.is_file():
-        for line in path.read_text(encoding="utf-8").splitlines():
-            line = line.split("#", 1)[0].strip()
-            if line:
-                out.add(line)
-    return out
-
-
 def main(argv: list[str]) -> int:
     if len(argv) < 3:
         print(f"usage: {Path(argv[0]).name} <repo-name> <repo-root> [<extra-root> ...]",
@@ -178,19 +156,12 @@ def main(argv: list[str]) -> int:
             graph.setdefault(node, set()).update(deps)
     nodes = set(graph)
     graph = {n: {d for d in deps if d in nodes} for n, deps in graph.items()}
-    baseline = load_baseline(Path(__file__).resolve().parent)
-
     for comp in sccs(graph):
-        key = "+".join(comp)
-        if key in baseline:
-            print(f"# baselined cycle (not a finding): {' <-> '.join(comp)}")
-            continue
         prim = all(n.endswith("-primitives") for n in comp)
-        cite = "MOD-032 + PRIM-ARCH-002" if prim else "MOD-032"
+        cite = "PACKAGE-CYCLE + PRIM-ARCH-002" if prim else "PACKAGE-CYCLE"
         emit(repo, RULE,
              f"package-level cycle: {' <-> '.join(comp)} ({cite}; SwiftPM may "
-             f"tolerate it at target level — still forbidden; break the cycle "
-             f"or baseline with provenance)")
+             f"tolerate it at target level — still forbidden; break the cycle)")
     return 0
 
 

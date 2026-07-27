@@ -1,0 +1,10 @@
+# Pass fixture — active rule and verification citation live in a companion.
+validators:
+  - rule-id: CI-996
+    validator-script: .github/scripts/validate-companion.py
+    workflow-file: .github/workflows/validate-companion.yml
+    status: active
+    self-firing: deferred
+    discovery-mode: single-target
+    rule-id-regex: '^CI-996'
+    migrate-to-base: yes

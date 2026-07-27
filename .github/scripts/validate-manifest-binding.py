@@ -9,7 +9,7 @@ CI-097 self-firing flip → uncomment cascade.
 
 Rule checked: [CI-MANIFEST-BINDING] — bidirectional binding between
 .github/scripts/validators-manifest.yaml and the ci-cd-workflows skill's
-SKILL.md.
+hub-and-companion corpus.
 
 Checks:
   1. Every `[VERIFICATION: WF <script>.py (...)]` annotation in the
@@ -27,9 +27,10 @@ Checks:
      orphan validators (script added without manifest update).
   3. For every manifest entry with `status: active` whose `rule-id`
      matches the ci-cd-workflows numeric shape `^CI-\\d+[a-z]?$` (e.g.,
-     CI-040, CI-004b), the rule-id MUST appear in SKILL.md as
-     `[<rule-id>]`. Catches manifest entries for rules not promoted into
-     the skill (manifest-side drift).
+     CI-040, CI-004b), the rule-id MUST appear in SKILL.md or one of its
+     companion files as `[<rule-id>]`. Hubs route by topic and do not
+     duplicate every companion-defined identifier. Catches manifest
+     entries for rules absent from the skill corpus (manifest-side drift).
   4. Every entry with `status: deprecated` has empty `validator-script`
      AND empty `workflow-file`. Catches ghost lint (deprecated entry left
      referencing a retired script).
@@ -49,13 +50,12 @@ is in the valid enum.
 Scope decision for check 3
 --------------------------
 Check 3 fires only for rule-ids matching `^CI-\\d+[a-z]?$`. Aggregate
-labels (`CI-MANIFEST-BINDING`, `GH-REPO-METADATA`, `MOD-PACKAGE-STRUCTURE`,
+labels (`CI-MANIFEST-BINDING`, `GH-REPO-METADATA`, `PACKAGE-STRUCTURE`,
 `README-PRESENCE`, `DOC-CATALOG`, `PATTERN-001`) and other-skill rules
 (`GH-REPO-074`, `API-IMPL-006`, `API-NAME-009`, `PLAT-ARCH-008`, etc.)
 are exempt because they would not be expected to appear in the
-ci-cd-workflows SKILL.md. Their SKILL.md cross-checks belong to other
-skills' future validator instances (out of scope for this binding
-validator).
+ci-cd-workflows corpus. Their skill cross-checks belong to other skills'
+future validator instances (out of scope for this binding validator).
 
 SKILL.md discovery
 ------------------
@@ -103,7 +103,8 @@ RULE = "CI-MANIFEST-BINDING"
 VERIFICATION_BLOCK_RE = re.compile(r"\[VERIFICATION:([^\]]+)\]")
 SCRIPT_REF_RE = re.compile(r"\bWF\s+(validate-[\w-]+\.py)\b")
 
-# Rule-id citation pattern in SKILL.md; matches `[CI-001]`, `[CI-004b]`, etc.
+# Rule-id citation pattern in the skill corpus; matches `[CI-001]`,
+# `[CI-004b]`, etc.
 # Conservative: only checks the bracket-form citation (the canonical
 # cross-reference shape across all swift-institute skills). Allows
 # trailing lowercase letter ([CI-004b], [PATTERN-005a]) per the skill
@@ -174,12 +175,12 @@ def cited_script_basenames(skill_md_text: str) -> set[str]:
 
 
 def cited_rule_ids(skill_md_text: str) -> set[str]:
-    """Extract every `[<RULE-ID>]` citation present in SKILL.md."""
+    """Extract every `[<RULE-ID>]` citation present in skill Markdown."""
     return set(RULE_ID_CITATION_RE.findall(skill_md_text))
 
 
 def skill_citation_corpus(skill_md_path: Path) -> tuple[str, list[str]]:
-    """Concatenate SKILL.md with its companion files, for check 1 only.
+    """Concatenate SKILL.md with its companion files for checks 1 and 3.
 
     Check 1 must see every `[VERIFICATION: WF ...]` citation the skill makes,
     and in the ci-cd-workflows corpus those live in the companion files rather
@@ -194,9 +195,9 @@ def skill_citation_corpus(skill_md_path: Path) -> tuple[str, list[str]]:
     carry VERIFICATION citations -- so an unscoped glob would feed fixture
     prose into check 1 and change fixture outcomes.
 
-    Check 3 deliberately does NOT use this. It asks whether a rule was
-    promoted into the hub's rule index, and the hub is the canonical
-    promotion point; accepting a companion-only citation would LOOSEN it.
+    Check 3 uses the same corpus. The hub routes readers to companions and
+    does not duplicate every companion-defined identifier, so hub-only rule
+    discovery would falsely report every mechanically bound companion rule.
     """
     texts = [skill_md_path.read_text(encoding="utf-8")]
     names = [skill_md_path.name]
@@ -432,16 +433,17 @@ def main(repo: str, repo_root: str, skills_skill_md: str | None = None) -> int:
             )
             findings += 1
 
-    # Check 3: every active ci-cd-workflows rule-id must appear in SKILL.md as
-    # `[<rule-id>]`. Scope: rule-ids matching CI_CD_RULE_ID_RE (see docstring).
-    skill_md_rule_ids = cited_rule_ids(skill_md_text)
+    # Check 3: every active ci-cd-workflows rule-id must appear in the skill
+    # corpus as `[<rule-id>]`. Scope: rule-ids matching CI_CD_RULE_ID_RE.
+    skill_rule_ids = cited_rule_ids(citation_text)
     for rule_id in sorted(active_ci_rule_ids):
-        if rule_id not in skill_md_rule_ids:
+        if rule_id not in skill_rule_ids:
             emit(
                 repo,
                 RULE,
                 f"manifest entry {rule_id!r} has status=active but rule-id is not "
-                f"cited in SKILL.md as `[{rule_id}]` — per [CI-MANIFEST-BINDING] "
+                f"cited in the skill corpus as `[{rule_id}]` — per "
+                f"[CI-MANIFEST-BINDING] "
                 f"check 3, every active ci-cd-workflows rule MUST be promoted into "
                 f"the skill (prevents manifest-side drift / orphaned validators).",
             )

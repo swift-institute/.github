@@ -25,7 +25,7 @@ related naming rules share one script). Rules checked (v1):
                    `swift-<kebab(root-path)>-primitives` for at least one
                    detected root stem. Packages with no detectable root use
                    the family-label register (judgment) and are skipped.
-  [MOD-023]        `#externalMacro(module:)` MUST cite the SwiftPM-normalized
+  [PKG-NAME-EXTERNAL-MACRO] `#externalMacro(module:)` MUST cite the SwiftPM-normalized
                    module name (spaces → underscores), not the collapsed or
                    as-written target name. Target names come from
                    `swift package dump-package` (resolves constant-named
@@ -64,7 +64,7 @@ from validate_lib import emit
 
 RULE = "PRIM-NAME-001"
 RULE_COLLISION = "PKG-NAME-014"
-RULE_MACRO = "MOD-023"
+RULE_MACRO = "PKG-NAME-EXTERNAL-MACRO"
 FIXTURE_OWNER = "swift-institute-test"
 
 # [PRIM-NAME-001] sanctioned exceptions (principal ruling 2026-07-06, recorded
@@ -249,7 +249,7 @@ def main(argv: list[str]) -> int:
                  f"names are the layer-affixed kebab of the surface; "
                  f"family-label register applies only in a root vacuum)")
 
-    # [MOD-023] — #externalMacro module-name normalization.
+    # [PKG-NAME-EXTERNAL-MACRO] — module-name normalization.
     cites = external_macro_cites(root) if (root / "Sources").is_dir() else []
     if cites:
         macros = macro_target_names(root)
@@ -266,7 +266,7 @@ def main(argv: list[str]) -> int:
                      f"{rel}:{lineno}: #externalMacro(module: \"{cited}\") does "
                      f"not match the SwiftPM-normalized module name "
                      f"'{target.replace(' ', '_')}' of macro target '{target}' "
-                     f"([MOD-023]: spaces normalize to underscores)")
+                     f"([PKG-NAME-EXTERNAL-MACRO]: spaces normalize to underscores)")
     return 0
 
 

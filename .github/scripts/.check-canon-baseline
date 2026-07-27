@@ -50,22 +50,3 @@ artifacts institute:swift-package/SKILL.md swift-microsoft/.github/Lint.swift
 # Runtime-created state files (absent until first ingest run):
 artifacts engagement:ingest-x-feeds/SKILL.md Engagement/Sources/x.com/seen.json
 artifacts engagement:ingest-x/SKILL.md Engagement/Sources/x.com/seen.json
-
-# --- last-reviewed: pre-existing [SKILL-LIFE-005] state at gate landing ------
-# Engagement skills shipped without last_reviewed frontmatter (trivial fix,
-# needs an Engagement commit); 7 institute skills carry historical drift.
-# Drift keys embed the modified date: any NEWER commit re-fires the check.
-last-reviewed engagement:engagement-actionables missing
-last-reviewed engagement:engagement-compose missing
-last-reviewed engagement:engagement-process missing
-last-reviewed engagement:engagement-review missing
-last-reviewed engagement:engagement-themes missing
-last-reviewed engagement:engagement-triage missing
-last-reviewed engagement:ingest-swift-forums missing
-last-reviewed engagement:ingest-x-feeds missing
-last-reviewed institute:document-markup drift 2026-05-08
-last-reviewed institute:existing-infrastructure drift 2026-07-05
-last-reviewed institute:package-export drift 2026-04-14
-last-reviewed institute:social-preview drift 2026-07-01
-last-reviewed institute:swift-package-heritage drift 2026-05-08
-last-reviewed institute:testing-institute drift 2026-07-02

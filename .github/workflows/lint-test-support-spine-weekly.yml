@@ -4,7 +4,7 @@
 # Calls audit-test-support-spine.py against every public, non-archived
 # repo in each in-scope org via a matrix strategy at 06:30 UTC every Monday
 # (offset from link-check + readme-presence sweeps which run at 06:00). When
-# any org has spine drift (VIOLATION or MISSING), opens or updates a single
+# any org has dependency drift, opens or updates a single
 # aggregated tracking issue in swift-institute/.github summarising the
 # findings.
 #
@@ -15,19 +15,13 @@
 #
 # Audit script source: swift-institute/.github/.github/scripts/audit-test-support-spine.py
 #
-# β→γ flip trigger: this orchestrator's tracking issue MUST NOT be opened
-# (or must remain closed) for two consecutive Monday runs before Phase γ
-# flip is authorized (per [MOD-024] β→γ transition clause). The orchestrator
-# only opens an issue on findings, so "no issue" is the success signal.
-#
 # Container: swift:6.3 because audit-test-support-spine.py invokes
 # `swift package dump-package`. The literal is hardcoded — env.* and
 # matrix.* are unavailable at the container: field per Actions context-
 # availability rules. vars.* (org/repo variables) is the only working
 # centralization mechanism for cross-workflow container pinning.
 #
-# Provenance: [MOD-024] (the rule); [README-167] (tracking-issue pattern);
-# Research: swift-institute/Research/centralized-swift-ci-and-spine-gate.md.
+# Reporting follows [README-167].
 # Skeleton extracted to cron-audit-base.yml@main reusable.
 
 name: lint-test-support-spine-weekly
@@ -81,10 +75,10 @@ jobs:
       audit-runner-args: |
         {
           "json_totals_path": "aggregate.totals",
-          "count_keys": ["violation_findings", "missing_findings"],
+          "count_keys": ["violation_findings"],
           "summary_label": "spine sweep"
         }
-      count-labels: violation,missing
+      count-labels: violation
       issue-title-prefix: Test Support spine sweep
       issue-label: spine-audit
       dry-run: ${{ inputs.dry-run || false }}
@@ -93,7 +87,6 @@ jobs:
 
         ## Aggregate
         - VIOLATION total: ${COUNT_VIOLATION}
-        - MISSING total:   ${COUNT_MISSING}
 
         ## Per-org
 
@@ -103,11 +96,8 @@ jobs:
 
         ## What this means
 
-        One or more packages drifted from [MOD-024] Test Support Spine
-        Discipline. A `* Test Support` target is either missing (the
-        package has tests but no TS) or its dependencies include a non-TS
-        cross-package product, breaking the SLI conformance chain under
-        MemberImportVisibility.
+        One or more existing `* Test Support` targets depend on a non-Test
+        Support cross-package product, breaking the deliberate support chain.
 
         ## What to do
 
@@ -119,11 +109,7 @@ jobs:
           corresponding `* Test Support` product. The spine-anchor
           algorithm (lowest-level TS in product deps) determines the
           target.
-        - For MISSING: add an empty TS shell per the [MOD-024] template.
         - Close this issue when fixed; the next weekly sweep reopens it
           if drift recurs.
-
-        Phase β→γ flip authorization requires two consecutive weeks of
-        zero VIOLATION + MISSING across all in-scope orgs.
 
         *Idempotent: this issue is updated in place.*

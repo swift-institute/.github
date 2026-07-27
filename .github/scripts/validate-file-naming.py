@@ -249,7 +249,7 @@ def is_pure_extension_file(text: str) -> bool:
     inside an extension or other top-level construct.
 
     The nested-type check handles the institute namespace-dispatch pattern
-    per [MOD-031] where types are declared inside a parent-namespace
+    per [MOD-TARGET] where types are declared inside a parent-namespace
     extension. Those files DECLARE types and must not be classified as
     pure-extension per [API-IMPL-007].
     """

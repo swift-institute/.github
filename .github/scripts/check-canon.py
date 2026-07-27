@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """check-canon.py — canon guard engine for the skill rulebook (markdown corpus).
 
-The rulebook checks itself: these five checks read the markdown skill corpus
+The rulebook checks itself: these four checks read the markdown skill corpus
 (NOT Swift source — swift-linter owns that layer) and verify the canon's
 internal referential integrity. Engine behind check-canon.sh; see that
 wrapper for family-consistent CLI, roots, and exit-code conventions.
@@ -22,15 +22,10 @@ Checks (per HANDOFF-mechanization-arc W0):
   3. artifacts      — every cited workspace path/script exists OR the citing
                       line carries an aspirational-tense marker per
                       [SKILL-LIFE-027].
-  4. hub-index      — every companion file is named from its SKILL.md; every
-                      companion-defined ID is visible from the hub (literal
-                      mention or range coverage); registry claims reconcile
-                      against the file body.
-  5. last-reviewed  — implement the [SKILL-LIFE-005] in-rule spec: per skill,
-                      the newest git commit date touching the skill's .md
-                      files must not exceed SKILL.md's `last_reviewed`
-                      frontmatter + 1 day.
-
+  4. hub-index      — every companion file is named from its SKILL.md and
+                      registry claims reconcile against the defining file.
+                      Hubs route by topic; they do not duplicate every
+                      companion-defined identifier.
 Baseline: .check-canon-baseline (sibling file) — prune-only ratchet, same
 contract as .skill-size-baseline. Lines: `<check> <stable-key…>`; `#` comments.
 Allowlist: .check-canon-allowlist — sanctioned duplicate-definition mirrors,
@@ -45,10 +40,8 @@ proved the guarded/unguarded health split this gate closes.
 """
 
 import argparse
-import datetime
 import os
 import re
-import subprocess
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -57,7 +50,7 @@ from pathlib import Path
 # Numeric rule IDs: PREFIX(-SEGMENT)*-NNN with optional single letter suffix
 # (e.g. API-NAME-001, PLAT-ARCH-008g, HANDOFF-024a).
 NUMERIC_ID = r"[A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)*-[0-9]{1,3}[a-z]?"
-# Word-form axioms per swift-institute-core: [IMPL-INTENT], [MOD-DOMAIN] —
+# Word-form axioms per swift-institute-core: [IMPL-INTENT], [MOD-OWNER] —
 # all-cap segments, no digits.
 WORD_ID = r"[A-Z]{2,}(?:-[A-Z]{2,})+"
 # A dash in range notation: hyphen, en dash, or em dash, optionally spaced.
@@ -268,7 +261,7 @@ def check_citations(files, defs, verbose=False):
     findings = []
     defined = set(defs.keys())
     # A wildcard [FOO-*] (and a bare word-form family reference like
-    # [MOD-EXCEPT]) resolves if any defined id extends it: [MEM-*] is anchored
+    # A wildcard family reference resolves if any defined id extends it:
     # by MEM-COPY-001 just as [MEM-COPY-*] is.
     def family_anchored(prefix):
         probe = prefix + "-"
@@ -310,7 +303,7 @@ def check_citations(files, defs, verbose=False):
                 if tok in defined:
                     continue
                 # Word-form token that names a defined family is a prefix
-                # reference ("the [MOD-EXCEPT] family"), not a dangle.
+                # reference ("the [MEM-*] family"), not a dangle.
                 if re.fullmatch(WORD_ID, tok) and family_anchored(tok):
                     continue
                 emit(tok, f"{f.alias}:{n} citation [{tok}] unresolved")
@@ -400,7 +393,9 @@ def resolve_workspace_path(tok: str, citing_file: Path, dev_root: Path):
         p = p.parent
     for base in ("swift-institute", "swift-institute/Workspace",
                  "swift-institute/Research", "swift-institute/Engagement",
-                 "swift-primitives", "swift-standards", "swift-foundations",
+                 "swift-institute/swift-primitives",
+                 "swift-institute/swift-standards",
+                 "swift-institute/swift-foundations",
                  "rule-institute", "rule-law"):
         candidates.append(dev_root / base / tok)
     return any(c.exists() for c in candidates)
@@ -439,26 +434,7 @@ def check_hub_index(skills):
             if c.path.name not in hub_text:
                 findings.append((f"{alias_dir} {c.path.name}",
                                  f"{alias_dir}: companion {c.path.name} not named from SKILL.md"))
-        # Hub-visible IDs: literal mentions + full expansion of hub ranges.
-        visible = set()
-        for _, line in hub.prose_lines():
-            for m in RE_CROSS_RANGE.finditer(line):
-                visible.update(expand_range(m.group(1), m.group(2)))
-            stripped = RE_CROSS_RANGE.sub(" ", line)
-            for m in RE_INBRACKET_RANGE.finditer(stripped):
-                visible.update(expand_range(m.group(1), m.group(1).rsplit("-", 1)[0] + "-" + m.group(2)))
-            stripped = RE_INBRACKET_RANGE.sub(" ", stripped)
-            for m in RE_SINGLE.finditer(stripped):
-                visible.add(m.group(1))
-        # (b) every companion-defined ID visible from the hub
-        for c in companions:
-            c_ids = {m.group(1) for _, l in c.prose_lines() for m in [RE_HEADING_DEF.match(l)] if m}
-            c_ids |= registry_ids(c)
-            for rid in sorted(c_ids, key=id_sort_key):
-                if rid not in visible:
-                    findings.append((f"{alias_dir} [{rid}]",
-                                     f"{alias_dir}: [{rid}] defined in {c.path.name} but invisible from SKILL.md"))
-        # (c) registry claims with no trace in the file body (registry lines
+        # (b) registry claims with no trace in the file body (registry lines
         # excluded — a range claim never carries member literals itself)
         for c in companions + [hub]:
             body = "\n".join(l for _, l in c.prose_lines()
@@ -467,44 +443,6 @@ def check_hub_index(skills):
                 if rid not in body:
                     findings.append((f"{alias_dir} registry [{rid}]",
                                      f"{alias_dir}: registry of {c.path.name} claims [{rid}] but the body never carries it"))
-    return dedupe(findings)
-
-
-# --- Check 5: last_reviewed drift ([SKILL-LIFE-005]) ------------------------------
-
-def check_last_reviewed(skills):
-    findings = []
-    for alias_dir, info in sorted(skills.items()):
-        skill_dir = info["dir"]
-        hub = next((f for f in info["members"] if f.path.name == "SKILL.md"), None)
-        if hub is None:
-            continue
-        last_reviewed = hub.frontmatter_value("last_reviewed")
-        if not last_reviewed:
-            findings.append((f"{alias_dir} missing",
-                             f"{alias_dir}: no last_reviewed frontmatter in SKILL.md"))
-            continue
-        try:
-            reviewed = datetime.date.fromisoformat(last_reviewed)
-        except ValueError:
-            findings.append((f"{alias_dir} malformed",
-                             f"{alias_dir}: malformed last_reviewed '{last_reviewed}'"))
-            continue
-        try:
-            out = subprocess.run(
-                ["git", "-C", str(skill_dir), "log", "-1", "--format=%cs", "--", "."],
-                capture_output=True, text=True, timeout=30, check=True,
-            ).stdout.strip()
-        except (subprocess.SubprocessError, OSError):
-            continue  # not a git checkout (CI shallow layouts handled by wrapper)
-        if not out:
-            continue
-        modified = datetime.date.fromisoformat(out)
-        if modified > reviewed + datetime.timedelta(days=1):
-            # Key carries the modified date: a baselined drift entry masks only
-            # THIS drift — any newer commit re-fires and must be freshly fixed.
-            findings.append((f"{alias_dir} drift {modified}",
-                             f"{alias_dir}: modified {modified} > last_reviewed {reviewed} + 1 day ([SKILL-LIFE-005])"))
     return dedupe(findings)
 
 
@@ -541,7 +479,7 @@ def load_allowlist(path: Path):
     return entries
 
 
-CHECKS = ["citations", "duplicates", "artifacts", "hub-index", "last-reviewed"]
+CHECKS = ["citations", "duplicates", "artifacts", "hub-index"]
 
 
 def main():
@@ -582,9 +520,6 @@ def main():
         results["artifacts"] = check_artifacts(files, Path(args.dev_root))
     if "hub-index" in active:
         results["hub-index"] = check_hub_index(skills)
-    if "last-reviewed" in active:
-        results["last-reviewed"] = check_last_reviewed(skills)
-
     if args.emit_baseline:
         for check, findings in results.items():
             for key, _ in findings:

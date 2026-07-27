@@ -164,7 +164,8 @@ def is_l1_primitives(repo_name: str) -> bool:
     if not repo_name.endswith("-primitives"):
         return False
     # L1 platform packages are exempt (kernel-primitives, cpu-primitives are at L1
-    # but allowed platform-conditional code per [MOD-EXCEPT-001]).
+    # but allowed platform-conditional code through this validator's explicit
+    # platform-package allowlist).
     return repo_name not in {"swift-kernel-primitives", "swift-cpu-primitives"}
 
 

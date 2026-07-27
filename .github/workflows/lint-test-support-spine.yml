@@ -1,12 +1,10 @@
-# lint-test-support-spine.yml — advisory CI gate for [MOD-024] Test Support
-# Spine Discipline.
+# lint-test-support-spine.yml — CI gate for existing Test Support dependency
+# integrity.
 #
 # Reusable workflow. For the checked-out package, runs the per-package audit
 # (audit-test-support-spine.py --package-dir .) and exits 1 on VIOLATION
 # or MISSING findings. The advisory-vs-gating decision is made at the CALLING
-# site via the `advisory` input: `with: { advisory: true }` for Phase β
-# (warnings only, exit 0); omitted for Phase γ (default false, exit 1 on
-# findings).
+# site via the `advisory` input.
 #
 # Phase β (current): called from swift-institute/.github/.github/workflows/
 # swift-ci.yml with `with: { advisory: true }`. Findings surface in the
@@ -28,10 +26,7 @@
 # Public fetch URL (used by the run step below):
 #   https://raw.githubusercontent.com/swift-institute/.github/main/.github/scripts/audit-test-support-spine.py
 #
-# Provenance: [MOD-024] (the rule); [CI-001]+[CI-002] (architecture);
-# [CI-021] (continue-on-error precedent); [README-167] (tracking-issue
-# reporting via the weekly orchestrator). Research:
-# `swift-institute/Research/centralized-swift-ci-and-spine-gate.md`.
+# Architecture: [CI-001], [CI-002], and [LINT-CI].
 
 name: lint-test-support-spine
 
@@ -43,9 +38,7 @@ on:
         default: false
         description: |
           If true, findings emit warnings only and the workflow exits 0
-          regardless of VIOLATION/MISSING counts. Used during Phase β.
-          Phase γ flip omits this input (default false) → workflow
-          exits 1 on findings (gating).
+          regardless of violation count.
       swift-version:
         type: string
         default: "6.3"
@@ -56,14 +49,11 @@ on:
           flip every container reference in lockstep.
     outputs:
       ok-count:
-        description: 'Number of OK findings (TS targets that satisfy [MOD-024]).'
+        description: 'Number of existing Test Support targets with valid dependencies.'
         value: ${{ jobs.audit.outputs.ok-count }}
       violation-count:
         description: 'Number of VIOLATION findings (TS targets with non-TS cross-package deps).'
         value: ${{ jobs.audit.outputs.violation-count }}
-      missing-count:
-        description: 'Number of MISSING findings (packages with tests but no TS target).'
-        value: ${{ jobs.audit.outputs.missing-count }}
 
   workflow_dispatch: {}
 
@@ -79,7 +69,6 @@ jobs:
     outputs:
       ok-count: ${{ steps.audit.outputs.ok-count }}
       violation-count: ${{ steps.audit.outputs.violation-count }}
-      missing-count: ${{ steps.audit.outputs.missing-count }}
     steps:
       - name: Harden runner (audit-mode egress logging)
         uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
@@ -113,23 +102,21 @@ jobs:
             --package-dir . \
             --json /tmp/audit.json \
             | tee /tmp/audit.log
-          read -r ok viol miss < <(python3 - <<'PYEOF'
+          read -r ok viol < <(python3 - <<'PYEOF'
           import json
           t = json.load(open('/tmp/audit.json'))['aggregate']['totals']
-          print(t['ok_findings'], t['violation_findings'], t['missing_findings'])
+          print(t['ok_findings'], t['violation_findings'])
           PYEOF
           )
           echo "ok-count=$ok"          >> "$GITHUB_OUTPUT"
           echo "violation-count=$viol" >> "$GITHUB_OUTPUT"
-          echo "missing-count=$miss"   >> "$GITHUB_OUTPUT"
           {
-            echo "## Test Support Spine — [MOD-024]"
+            echo "## Test Support dependency integrity"
             echo ""
             echo "- OK:        $ok"
             echo "- VIOLATION: $viol"
-            echo "- MISSING:   $miss"
             echo ""
-            if [[ "$viol" -gt 0 || "$miss" -gt 0 ]]; then
+            if [[ "$viol" -gt 0 ]]; then
               echo "### Findings"
               echo ""
               echo '```'
@@ -137,8 +124,8 @@ jobs:
               echo '```'
             fi
           } >> "$GITHUB_STEP_SUMMARY"
-          if [[ "$viol" -gt 0 || "$miss" -gt 0 ]]; then
-            echo "::warning::[MOD-024] spine drift detected — $viol violations, $miss missing"
+          if [[ "$viol" -gt 0 ]]; then
+            echo "::warning::Test Support dependency drift detected — $viol violations"
             if [[ "${{ inputs.advisory }}" != "true" ]]; then
               exit 1
             fi

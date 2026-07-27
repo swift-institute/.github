@@ -10,7 +10,7 @@
 #
 # Examples that PASS:
 #   ci(swift-ci): absorb format + lint as parallel jobs
-#   ci: wire Phase β [MOD-024] Test Support Spine advisory gate
+#   ci: wire Test Support dependency audit
 #   docs: clarify cron orchestrator layering
 #
 # Examples that FAIL (advisory warning only):

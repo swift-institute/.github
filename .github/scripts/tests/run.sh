@@ -132,10 +132,10 @@ prefix_for() {
         arch-layer-012)  echo "ARCH-LAYER-012" ;;
         prim-name-001)   echo "PRIM-NAME-001" ;;
         pkg-name-014)    echo "PKG-NAME-014" ;;
-        mod-023)         echo "MOD-023" ;;
+        mod-023)         echo "PKG-NAME-EXTERNAL-MACRO" ;;
         pkg-name-017)    echo "PKG-NAME-017" ;;
-        mod-032)         echo "MOD-032" ;;
-        mod-038)         echo "MOD-038" ;;
+        mod-032)         echo "PACKAGE-CYCLE" ;;
+        mod-038)         echo "TARGET-IMPORT-EDGE" ;;
         doc-020)         echo "DOC-020" ;;
         readme-008)      echo "README-008" ;;
         readme-013)      echo "README-013" ;;

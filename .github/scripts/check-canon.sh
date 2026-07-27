@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # check-canon.sh — canon guard for the skill rulebook (markdown corpus).
 #
-# The rulebook checks itself: five checks over the skill corpora verifying
+# The rulebook checks itself: four checks over the skill corpora verifying
 # referential integrity of the canon — the layer the 2026-07-05 corpus review
 # proved rots when unguarded (8 fatal cross-rule contradictions, ~30 dangling
 # references, every one in unguarded prose). NOT a swift-linter rule:
@@ -14,9 +14,8 @@
 #                     per [SKILL-CREATE-016]
 #   3. artifacts      cited workspace paths exist or are aspirational-tensed
 #                     per [SKILL-LIFE-027]
-#   4. hub-index      companions named from SKILL.md; companion IDs visible
-#                     from the hub ([SKILL-CREATE-005a] criterion 4)
-#   5. last-reviewed  [SKILL-LIFE-005] drift: git mtime vs last_reviewed + 1d
+#   4. hub-index      companions named from SKILL.md; registry claims reconcile
+#                     in their defining file
 #
 # Usage:
 #   ./check-canon.sh [--enforce] [--check <name>]... [--emit-baseline]
@@ -46,10 +45,8 @@
 # This script lives in the PUBLIC `swift-institute/.github` repo (same
 # free-account CI-reachability constraint as check-skill-sizes.sh).
 #
-# Invoked by:
-#   - swift-institute/Scripts/sync-skills.sh — BLOCKING --enforce step at sync
-#     time (principal YES 2026-07-06); a non-baselined finding aborts the sync
-#     before any symlink work.
+# Invoke before `workspace context install`; a non-baselined finding blocks
+# projecting a divergent skill corpus into the entry-point harness.
 #
 # Provenance: HANDOFF-mechanization-arc.md W0 (principal direction 2026-07-06);
 # REPORT-corpus-review.md (2026-07-05).

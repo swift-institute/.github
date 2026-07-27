@@ -19,7 +19,7 @@
 #   - validate-thin-callers      [CI-030], [CI-059], [GH-REPO-074]
 #   - validate-file-naming       [API-IMPL-006]
 #   - validate-github-metadata   [GH-REPO-METADATA]
-#   - validate-package-structure [MOD-PACKAGE-STRUCTURE]
+#   - validate-package-structure [PACKAGE-STRUCTURE]
 #
 # Out of scope: validate-sub-org-wrappers (already self-firing with its
 # own hardcoded sub-org matrix; structurally different axis from the
@@ -502,7 +502,7 @@ jobs:
           ### validate-github-metadata ([GH-REPO-METADATA])
           Job status: \`${RESULT_GITHUB_METADATA}\`. Per-org breakdown in run summary.
 
-          ### validate-package-structure ([MOD-PACKAGE-STRUCTURE])
+          ### validate-package-structure ([PACKAGE-STRUCTURE])
           Job status: \`${RESULT_PACKAGE_STRUCTURE}\`. Per-org breakdown in run summary.
 
           ## Per-validator coverage (cross-org single-target, Phase D Wave B)
