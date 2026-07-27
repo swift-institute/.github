@@ -1,0 +1,52 @@
+# Canonical dependabot config (swift + github-actions ecosystems) —
+# synced by Scripts/sync-dependabot.sh per [GH-REPO-077].
+#
+# This template is written to tool-host packages — per-package repos
+# that ship a CLI tool AND host its reusable invocation workflow
+# (`on: workflow_call:`) in their own .github/workflows/. The reusable
+# owns version-pinned action refs because it IS consumed by downstream
+# repos.
+#
+# Reference case: swift-foundations/swift-linter
+# (CLI in Package.swift + lint.yml reusable consumed by ecosystem repos).
+#
+# Per [GH-REPO-074]'s tool-reusables carve-out, the workflow file
+# co-locates with its tool package rather than centralizing at
+# <org>/.github — the tool and its invocation glue share a lifecycle
+# (single SHA pin, single release, no two-repo coordination), mirroring
+# the broader open-source convention (actions/setup-node,
+# swift-actions/setup-swift, golangci/golangci-lint-action).
+version: 2
+updates:
+  - package-ecosystem: "swift"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 10
+    groups:
+      swift:
+        patterns: ["*"]
+    labels:
+      - "dependencies"
+      - "swift"
+    commit-message:
+      prefix: "chore(deps)"
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 10
+    groups:
+      actions:
+        patterns: ["*"]
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "chore(deps)"

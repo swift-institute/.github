@@ -1,0 +1,36 @@
+# Canonical dependabot config (github-actions ecosystem only) —
+# synced by Scripts/sync-dependabot.sh per [GH-REPO-077].
+#
+# This template is written to .github repos that own bespoke workflow
+# jobs with version-pinned action refs (master reusables + layer
+# wrappers that ADD jobs beyond delegation). Today that's:
+#   - swift-institute/.github (the master)
+#   - swift-primitives/.github (L1 wrapper with embedded / Wasm /
+#     Android / static-musl / Apple-simulator jobs)
+#
+# Pure pass-through layer wrappers (swift-foundations/.github,
+# swift-standards/.github) and stub .github repos (swift-ietf/.github,
+# swift-iso/.github, swift-iec/.github) own no bumpable action pins
+# and MUST NOT have a dependabot.yml.
+#
+# The existing self-tuned dependabot.yml at swift-institute/.github
+# (weekly cadence, post-centralization comment) is a permitted variant
+# of this template — same ecosystem, same scope, different cadence.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 10
+    groups:
+      actions:
+        patterns: ["*"]
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "chore(deps)"
