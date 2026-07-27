@@ -11,41 +11,76 @@ import Glibc
 enum Main {
     static func main() async {
         do {
-            let arguments = try Arguments(CommandLine.arguments)
-            guard let token = ProcessInfo.processInfo.environment["GH_TOKEN"], !token.isEmpty else {
-                throw RepositoryPolicy.ConfigurationError("GH_TOKEN is required")
+            if CommandLine.arguments.dropFirst().first == "validate" {
+                try validate(ValidationArguments(Array(CommandLine.arguments.dropFirst(2))))
+            } else {
+                try await reconcile(ReconcileArguments(CommandLine.arguments))
             }
-            let api = ProcessInfo.processInfo.environment["GITHUB_API_URL"] ?? "https://api.github.com"
-            guard let baseURL = URL(string: api) else {
-                throw RepositoryPolicy.ConfigurationError("GITHUB_API_URL is invalid")
-            }
-            let scope = try RepositoryPolicy.Scope(
-                organization: arguments.organization,
-                repository: arguments.repository
-            )
-            let receipt = try await RepositoryPolicy.run(
-                client: .init(token: token, baseURL: baseURL),
-                configuration: .init(
-                    scope: scope,
-                    dryRun: arguments.dryRun,
-                    journal: URL(filePath: arguments.journal),
-                    receipt: URL(filePath: arguments.receipt)
-                )
-            )
-            print(
-                "repository-policy: scope=\(receipt.scope) examined=\(receipt.examined) " +
-                    "eligible=\(receipt.eligible) converged=\(receipt.converged) " +
-                    "enabled=\(receipt.enabled) would-enable=\(receipt.wouldEnable)"
-            )
         } catch {
-            FileHandle.standardError.write(
-                Data("repository-policy: \(error)\n".utf8)
-            )
+            FileHandle.standardError.write(Data("repository-policy: \(error)\n".utf8))
             exit(1)
         }
     }
 
-    private struct Arguments {
+    private static func reconcile(_ arguments: ReconcileArguments) async throws {
+        guard let token = ProcessInfo.processInfo.environment["GH_TOKEN"], !token.isEmpty else {
+            throw RepositoryPolicy.ConfigurationError("GH_TOKEN is required")
+        }
+        let api = ProcessInfo.processInfo.environment["GITHUB_API_URL"] ?? "https://api.github.com"
+        guard let baseURL = URL(string: api) else {
+            throw RepositoryPolicy.ConfigurationError("GITHUB_API_URL is invalid")
+        }
+        let scope = try RepositoryPolicy.Scope(
+            organization: arguments.organization,
+            repository: arguments.repository
+        )
+        let receipt = try await RepositoryPolicy.run(
+            client: .init(token: token, baseURL: baseURL),
+            configuration: .init(
+                scope: scope,
+                dryRun: arguments.dryRun,
+                journal: URL(filePath: arguments.journal),
+                receipt: URL(filePath: arguments.receipt)
+            )
+        )
+        print(
+            "repository-policy: scope=\(receipt.scope) examined=\(receipt.examined) "
+                + "eligible=\(receipt.eligible) converged=\(receipt.converged) "
+                + "enabled=\(receipt.enabled) would-enable=\(receipt.wouldEnable)"
+        )
+    }
+
+    private static func validate(_ arguments: ValidationArguments) throws {
+        let policy = try RepositoryPolicy.SurfacePolicy.load(
+            from: URL(filePath: arguments.policy)
+        )
+        let report = try RepositoryPolicy.validateSurface(
+            repository: arguments.repository,
+            repositoryClass: arguments.repositoryClass,
+            root: URL(filePath: arguments.root),
+            policy: policy
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        var data = try encoder.encode(report)
+        data.append(0x0A)
+        if let reportPath = arguments.report {
+            try data.write(to: URL(filePath: reportPath), options: .atomic)
+        }
+        FileHandle.standardOutput.write(data)
+        guard report.passed else {
+            for violation in report.violations {
+                FileHandle.standardError.write(
+                    Data(
+                        "\(violation.path): \(violation.identifier): \(violation.message)\n".utf8
+                    )
+                )
+            }
+            exit(1)
+        }
+    }
+
+    private struct ReconcileArguments {
         var organization: String?
         var repository: String?
         var dryRun = true
@@ -71,7 +106,9 @@ enum Main {
                     repository = value
                 case "--dry-run":
                     guard let parsed = Bool(value) else {
-                        throw RepositoryPolicy.ConfigurationError("--dry-run must be true or false")
+                        throw RepositoryPolicy.ConfigurationError(
+                            "--dry-run must be true or false"
+                        )
                     }
                     dryRun = parsed
                 case "--journal":
@@ -83,6 +120,58 @@ enum Main {
                 }
                 index += 2
             }
+        }
+    }
+
+    private struct ValidationArguments {
+        let repository: String
+        let repositoryClass: RepositoryPolicy.RepositoryClass
+        let root: String
+        let policy: String
+        let report: String?
+
+        init(_ arguments: [String]) throws {
+            var values = [String: String]()
+            var index = 0
+            while index < arguments.count {
+                let name = arguments[index]
+                guard index + 1 < arguments.count else {
+                    throw RepositoryPolicy.ConfigurationError("missing value for \(name)")
+                }
+                guard name.hasPrefix("--") else {
+                    throw RepositoryPolicy.ConfigurationError("unknown argument \(name)")
+                }
+                values[name] = arguments[index + 1]
+                index += 2
+            }
+            guard let repository = values.removeValue(forKey: "--repository") else {
+                throw RepositoryPolicy.ConfigurationError("--repository is required")
+            }
+            guard
+                let classValue = values.removeValue(forKey: "--class"),
+                let repositoryClass = RepositoryPolicy.RepositoryClass(rawValue: classValue)
+            else {
+                throw RepositoryPolicy.ConfigurationError(
+                    "--class must be package, tool, or control-plane"
+                )
+            }
+            guard let root = values.removeValue(forKey: "--root") else {
+                throw RepositoryPolicy.ConfigurationError("--root is required")
+            }
+            guard let policy = values.removeValue(forKey: "--policy") else {
+                throw RepositoryPolicy.ConfigurationError("--policy is required")
+            }
+            let report = values.removeValue(forKey: "--report")
+            guard values.isEmpty else {
+                throw RepositoryPolicy.ConfigurationError(
+                    "unknown argument \(values.keys.sorted().joined(separator: ", "))"
+                )
+            }
+            self.repository = repository
+            self.repositoryClass = repositoryClass
+            self.root = root
+            self.policy = policy
+            self.report = report
         }
     }
 }

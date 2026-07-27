@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "actionGrants": [
+    {
+      "repositoryClass": "package",
+      "path": ".github/workflows/ci.yml",
+      "kind": "thin-caller",
+      "triggers": [
+        "pull_request",
+        "push",
+        "workflow_dispatch"
+      ],
+      "uses": [
+        "swift-foundations/.github/.github/workflows/swift-ci.yml@main",
+        "swift-institute/.github/.github/workflows/swift-docs.yml@main",
+        "swift-primitives/.github/.github/workflows/swift-ci.yml@main",
+        "swift-standards/.github/.github/workflows/swift-ci.yml@main"
+      ]
+    }
+  ],
+  "exemptions": []
+}
