@@ -1,3 +1,4 @@
+
 # sync-metadata.yml — propagate .github/metadata.yaml to GitHub state.
 #
 # Reusable workflow. Reads each in-scope repo's .github/metadata.yaml, diffs
@@ -76,6 +77,19 @@ jobs:
         with:
           egress-policy: audit
 
+      - name: Check out the central repository-policy product
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: swift-institute/.github
+          ref: main
+          path: institute-ci
+          persist-credentials: false
+
+      - name: Select Swift 6.3
+        uses: SwiftyLab/setup-swift@38f54a76b70d989321de9dc7c840618c08cf56e9 # v1.14.0
+        with:
+          swift-version: '6.3'
+
       - name: Validate inputs
         env:
           INPUT_REPO: ${{ inputs.repo }}
@@ -112,6 +126,25 @@ jobs:
           private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
           owner: ${{ steps.scope.outputs.owner }}
           repositories: ${{ steps.scope.outputs.repositories }}
+          permission-administration: write
+          permission-contents: read
+          permission-metadata: read
+
+      - name: Reconcile private vulnerability reporting
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          INPUT_REPO: ${{ inputs.repo }}
+          INPUT_ORG: ${{ inputs.org }}
+          DRY_RUN: ${{ inputs.dry-run }}
+        run: |
+          swift run \
+            --package-path institute-ci/Tools/RepositoryPolicy \
+            repository-policy \
+            --repository "$INPUT_REPO" \
+            --organization "$INPUT_ORG" \
+            --dry-run "$DRY_RUN" \
+            --journal "${RUNNER_TEMP}/repository-policy-journal.jsonl" \
+            --receipt "${RUNNER_TEMP}/repository-policy-receipt.json"
 
       - name: Enumerate org repos
         if: ${{ inputs.repo == '' }}
