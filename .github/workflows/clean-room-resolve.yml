@@ -2,18 +2,16 @@
 #
 # A fresh runner has no ~/.swiftpm mirrors.json, so `swift package resolve`
 # here is mirror-bypassed BY CONSTRUCTION — the non-substitutable off-machine
-# gate per [CI-112]: it catches empty/unpushed dependency repos (git ls-remote
-# HEAD exits 0 on an empty repo; only refs/heads/main presence is proof) and
-# off-machine package-identity mismatches ([PKG-DEP-008]) that a
+# gate per [CI-112]: it catches empty/unpushed dependency repos and off-machine
+# package-identity mismatches ([PKG-DEP-008]) that a
 # mirror-backed resolve can never see.
 #
-# Matrix over public consumer-roots (default: the heaviest dependency sinks
-# by Package.resolved pin count — one resolve of swift-pdf exercises ~186
-# pins). Each cell: checkout the consumer only; resolve against REAL remotes
+# Matrix over public consumer-roots (default: the heaviest dependency sinks).
+# Each cell checks out the consumer only and resolves against REAL remotes
 # with per-org bot-App tokens injected via git insteadOf (pre-publication
 # graphs still contain private repos — the token lets resolve proceed while
-# the two target failure classes still surface); then sweep every resolved
-# pin's remote for refs/heads/main presence.
+# the two target failure classes still surface). Package.resolved is generated,
+# ignored diagnostic state; the gate never commits, deletes, or inspects pins.
 #
 # ADVISORY during soak (default gating=false): findings land in the step
 # summary; the run stays green. Flip gating=true before any publication flip
@@ -138,44 +136,13 @@ jobs:
           echo "CLEANROOM_WORKDIR=$workdir" >> "$GITHUB_ENV"
           git clone --depth 1 "https://github.com/${ROOT}.git" "$workdir"
           cd "$workdir"
-          rm -f Package.resolved   # force full identity resolution from the manifest graph
+          test -z "$(git ls-files | grep -E '(^|/)Package\.resolved$')" || {
+            echo "::error::Package.resolved must not be tracked"; exit 2; }
           if ! swift package resolve 2> /tmp/resolve-err.txt; then
             printf '%s\tCI-112\tclean-room resolve FAILED: %s\n' \
               "$ROOT" "$(tr '\n' ' ' < /tmp/resolve-err.txt | cut -c1-400)" \
               >> "/tmp/findings-${SLUG}.tsv"
           fi
-
-      - name: Sweep resolved pins for refs/heads/main
-        env:
-          ROOT: ${{ matrix.root }}
-          SLUG: ${{ strategy.job-index }}
-        run: |
-          set -euo pipefail
-          resolved="${CLEANROOM_WORKDIR:-}/Package.resolved"
-          if [ ! -f "$resolved" ]; then
-            echo "no Package.resolved produced (resolve failed earlier) — skipping pin sweep"
-            exit 0
-          fi
-          python3 - "$resolved" "$ROOT" "/tmp/findings-${SLUG}.tsv" <<'EOF'
-          import json, subprocess, sys
-          resolved, root, out = sys.argv[1], sys.argv[2], sys.argv[3]
-          pins = json.load(open(resolved)).get("pins", [])
-          findings = []
-          for pin in pins:
-              loc = pin.get("location", "")
-              if not loc.startswith("http"):
-                  continue
-              r = subprocess.run(["git", "ls-remote", loc, "refs/heads/main"],
-                                 capture_output=True, text=True, timeout=60)
-              if r.returncode != 0 or not r.stdout.strip():
-                  findings.append(f"{root}\tCI-112\tdep '{pin.get('identity')}' at {loc}: "
-                                  f"no refs/heads/main (empty or unpushed repo; "
-                                  f"ls-remote exit {r.returncode})")
-          with open(out, "a") as f:
-              for line in findings:
-                  f.write(line + "\n")
-          print(f"pins swept: {len(pins)}, findings: {len(findings)}")
-          EOF
 
       - name: Upload cell findings
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
