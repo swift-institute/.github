@@ -2,6 +2,10 @@
 
 A layered Swift package ecosystem organized around shared conventions.
 
+The public contributor front door is
+[swift-institute/Workspace](https://github.com/swift-institute/Workspace): clone it for the
+package inventory, setup instructions, synchronization tooling, and checkout diagnostics.
+
 ## Why
 
 Rules sit at the heart of every system we build on. When rules are expressed clearly and consistently, everything built on top of them becomes simpler, safer, and more predictable. We believe rules deserve a form that can be validated rather than interpreted — and Swift's type system makes that possible.
@@ -10,7 +14,10 @@ Swift Institute applies that idea to infrastructure itself: specifications becom
 
 ## How it is organized
 
-The ecosystem is a set of GitHub organizations, one per layer. Layers depend downward only, and every package shares the same dependency rules, naming conventions, typed error handling, memory-ownership discipline, and API shape — so compile-time guarantees hold across the entire stack rather than stopping at package boundaries.
+The realised ecosystem spans GitHub organizations for three package layers. Layers are intended
+to depend downward only, and packages are converging on shared dependency, naming, typed-error,
+memory-ownership, and API-shape conventions. Components and Applications remain planned layers,
+not evidence of a populated package tier.
 
 | Layer | Organization | Role |
 |-------|--------------|------|
@@ -26,6 +33,7 @@ Layer 2 is an organization of organizations: each standards authority has its ow
 
 | If you want to... | Go to |
 |-------------------|-------|
+| Set up the ecosystem or inspect its public package inventory | [Workspace](https://github.com/swift-institute/Workspace) |
 | Read the website, architecture overview, or blog | [swift-institute.org](https://swift-institute.org) |
 | Use atomic primitives | [swift-primitives](https://github.com/swift-primitives) |
 | Consume an RFC, ISO, W3C, or WHATWG specification | [swift-standards](https://github.com/swift-standards) |
@@ -38,7 +46,7 @@ Layer 2 is an organization of organizations: each standards authority has its ow
 
 ## Status
 
-Public alpha. All layer organizations are public and packages continue to land repository by repository; APIs may change until first tagged releases.
+Public alpha. The realised layer organizations are public and packages continue to land repository by repository; APIs may change until first tagged releases.
 
 Swift Institute is an independent open-source project, not affiliated with Apple or the Swift open-source project.
 
@@ -46,4 +54,6 @@ Maintained by [Coen ten Thije Boonkkamp](https://github.com/coenttb) — contrib
 
 ## License
 
-All packages use the Apache License 2.0.
+Policy requires Apache License 2.0 for packages in the three realised layers. The public fleet is
+being reconciled against that policy; until that work is complete, each repository's `LICENSE`
+file is the authority for that repository.
