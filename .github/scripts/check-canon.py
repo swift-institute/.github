@@ -27,7 +27,7 @@ Checks (per HANDOFF-mechanization-arc W0):
                       Hubs route by topic; they do not duplicate every
                       companion-defined identifier.
 Baseline: .check-canon-baseline (sibling file) — prune-only ratchet, same
-contract as .skill-size-baseline. Lines: `<check> <stable-key…>`; `#` comments.
+contract as the retired skill-size baseline. Lines: `<check> <stable-key…>`; `#` comments.
 Allowlist: .check-canon-allowlist — sanctioned duplicate-definition mirrors,
 lines: `<ID> <root-alias:relative-path>`.
 

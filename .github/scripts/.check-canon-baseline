@@ -1,5 +1,5 @@
 # .check-canon-baseline — prune-only ratchet for check-canon.sh findings.
-# Same contract as .skill-size-baseline: entries may shrink or disappear as
+# Same contract as the retired skill-size baseline: entries may shrink or disappear as
 # fixes land, never grow (a new finding is a regression, not baseline
 # material). Baselined 2026-07-06 at canon-guard landing (report-only
 # rollout per HANDOFF-mechanization-arc W0); adjudication notes inline.
