@@ -192,6 +192,57 @@ stop?"** Spend the investigation there.
 When you do record a suspected cause, keep measurement and inference visibly
 apart. A future reader cannot separate them later if the document does not.
 
+## 11. The shell reports "ran and failed" and "ran and succeeded" identically
+
+Added 2026-07-28, from a design session that had **read this register's companion
+finding the day before and hit the same class of false green anyway**. That is the
+argument for writing it here rather than in the document that occasioned it: this
+lesson does not transfer by having been read once.
+
+Three distinct instrument failures, all the same shape — *the probe answered a
+question other than the one asked, and its answer looked like an answer.*
+
+**A pipeline's exit status is the last stage's.** Reading a command's result
+through `… | tail -5` reports `tail`'s status, not the command's. In this session
+`swift package unedit` appeared to exit 0 while printing an error; re-run unpiped
+it exits 1. The same trap had already produced a false green for a *failed build*
+in a prior session, which is the more expensive direction — a build that failed
+entered a record as passing.
+
+> Never read an evidence-producing command's status through a pipe. Redirect to a
+> file and read it, or set `-o pipefail`. **A green from a pipeline whose last
+> stage is a pager is not a measurement of the first stage.**
+
+**"Not found" and "nothing to search" are the same output.** A probe reported a
+compiled marker absent from a build directory, which would have become the
+finding *this mechanism does not work on that build system*. It was the
+instrument: the path probed was a symlink into the real output directory, and
+neither `find` nor `grep -r` descended it. What exposed it was a positive control
+asking *can this probe find any known string here at all?* — which also came back
+empty.
+
+> Before believing a zero, make the instrument return non-zero **on the same
+> path, in the same invocation shape**. A control run somewhere else proves the
+> tool works, not that this probe was pointed at anything.
+
+**Make the fixture's own failure visible in the result.** A baseline measurement
+here reported its marker absent from compiled output three rounds running. Both
+causes were the fixture — a missing `origin`, then manifests copied with absolute
+URLs still pointing at the original — and neither was the finding. The only
+reason a broken baseline did not become the headline number is that the
+measurement printed the marker count beside every timing instead of printing a
+duration alone.
+
+> Report the evidence alongside the number, every round. A timing loop that
+> prints only timings cannot distinguish *fast* from *did nothing*, and the
+> second is much more common than it feels.
+
+The connecting rule, which is §8's *"made to fail through the whole path"* applied
+to measurement rather than to gates: **exit status attests that a process ran, never
+that it was configured.** Between "the thing under test failed" and "the harness
+failed to test it" the shell is silent, and it is silent in the direction that
+looks like success.
+
 ---
 
 ## The shape underneath all of these
