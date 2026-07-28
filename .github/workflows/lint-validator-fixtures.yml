@@ -33,12 +33,18 @@ on:
       - '.github/scripts/validate_lib.py'
       - '.github/scripts/tests/**'
       - '.github/workflows/lint-validator-fixtures.yml'
+      # test-ci-ok-aggregate.py extracts its subject from swift-ci.yml, so an
+      # edit there is an edit to what this suite tests.
+      - '.github/workflows/swift-ci.yml'
   pull_request:
     paths:
       - '.github/scripts/validate-*.py'
       - '.github/scripts/validate_lib.py'
       - '.github/scripts/tests/**'
       - '.github/workflows/lint-validator-fixtures.yml'
+      # test-ci-ok-aggregate.py extracts its subject from swift-ci.yml, so an
+      # edit there is an edit to what this suite tests.
+      - '.github/workflows/swift-ci.yml'
   schedule:
     - cron: '0 7 * * 3'   # weekly Wednesday 07:00 UTC, clear of the Tuesday sweep
   workflow_dispatch: {}
@@ -80,6 +86,17 @@ jobs:
           set -euo pipefail
           bash .github/scripts/tests/run.sh | tee /tmp/fixtures.txt
 
+      # swift-ci.yml's tier classifier and ci-ok aggregator are shell embedded
+      # in a workflow, so run.sh's repo-shaped fixtures cannot reach them. This
+      # suite extracts both step bodies from swift-ci.yml and feeds them the
+      # shapes they must reject — including the build-free run that reported
+      # success for eight days.
+      - name: Run ci-ok aggregator controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/tests/test-ci-ok-aggregate.py 2>&1 | tee /tmp/ci-ok-controls.txt
+
       - name: Step summary
         if: always()
         shell: bash
@@ -92,5 +109,11 @@ jobs:
             echo
             echo '```'
             tail -n 40 /tmp/fixtures.txt 2>/dev/null || echo "(suite produced no output)"
+            echo '```'
+            echo
+            echo "### ci-ok aggregator controls"
+            echo
+            echo '```'
+            tail -n 30 /tmp/ci-ok-controls.txt 2>/dev/null || echo "(controls produced no output)"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"

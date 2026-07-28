@@ -18,15 +18,30 @@ name: Swift CI (reusable)
 # TIERED SCHEDULING (R1/R2 principal ruling 2026-07-20): the matrix SHAPE
 # above remains the ecosystem platform contract ([CI-010]/[CI-091] unchanged),
 # but its full execution is scheduled, not per-push. A `plan` job classifies
-# each run into a tier — lint (format+lint+swift-linter), build (+ the
-# caller's primary supported release leg; the default), or full (everything,
-# incl. advisory legs).
+# each run into a tier — build (format+lint+swift-linter + the caller's
+# primary supported release leg; the default) or full (everything, incl.
+# advisory legs).
 # Tags, '[ci full]', consumer workflow_dispatch, and ci-sweep.yml always get
-# full; '[ci lint]' or docs/lint-config-only diffs get lint. The nightly
-# ci-sweep.yml rotation re-verifies the full contract fleet-wide. Rationale:
-# free-tier runner CONCURRENCY (5 macOS/org) — not minutes — is the binding
-# budget; per-push full matrices spent it on advisory legs and produced
-# multi-hour queue tails (measured 2026-07-20).
+# full. The nightly ci-sweep.yml rotation re-verifies the full contract
+# fleet-wide. Rationale: free-tier runner CONCURRENCY (5 macOS/org) — not
+# minutes — is the binding budget; per-push full matrices spent it on advisory
+# legs and produced multi-hour queue tails (measured 2026-07-20). The build
+# tier schedules no macOS job, so it costs nothing on that binding constraint.
+#
+# THE `lint` TIER WAS RETIRED 2026-07-28. It selected format+lint+swift-linter
+# and no build leg at all, and ci-ok's aggregator counted a SKIPPED gating leg
+# as passing — so a lint-tier run compiled nothing and reported `success` on
+# the one required status check. Measured over the 476 public non-archived
+# repos of the 17 orgs in the manifest, 2026-07-20 (when tiers landed) through
+# 2026-07-28: 588 of 998 green runs of the universal reusable were build-free,
+# across 288 repositories. One of them hid a Signal 4 trap in
+# swift-array-primitives for six days (swift-primitives/swift-array-primitives#3).
+#
+# Its premise — "a docs-only diff cannot change the build outcome" — is false
+# on this fleet, because packages float their dependencies on `main` with no
+# Package.resolved. The tree that a mechanical push builds is not the tree the
+# last build-tier run verified. A sound fast path would have to key on the
+# resolved graph, not on the diff; until something does, `build` is the floor.
 #
 # Consume from a caller package's .github/workflows/ci.yml via:
 #
@@ -117,11 +132,11 @@ on:
       platform-support:
         type: string
         default: ""
-        description: "Per-package CI platform-support declaration. Empty default preserves pre-input behavior: the build tier selects Linux and the full tier keeps every platform leg eligible. Non-empty = comma-separated subset of `apple,linux,windows` (lowercase, no spaces); unknown, duplicate, or empty family tokens fail the plan. Each platform leg runs only when its family token is present (apple → macos-release + apple-simulator-build; linux → linux-release + linux-nightly + linux-6-4; windows → windows-release). On the ordinary build tier, the same declaration selects exactly one supported release leg in deterministic priority order: Linux, then Windows, then macOS. Quality gates (format, lint, swift-linter, advisory linters) are platform-neutral and never consult this input; ci-ok already treats skipped legs as passing. Declare ONLY platform-identity exclusions — a package whose specification or identity excludes a platform (POSIX/ISO-9945 spec packages, per-platform roots like swift-linux / swift-windows). This is NOT a cost knob ([CI-096]) and is NOT derived from Package.swift `platforms:` ([CI-091] — that block is a SwiftPM deployment-target declaration, not a CI-coverage signal). Rationale: a platform-blind matrix forces platform emulation into L2 spec packages to green an illegitimate leg; the platform seam is L3 per [PLAT-ARCH-001]. ci-dispatch.yml passes nothing, so single-job dispatch can still force any leg on any package (debug surface preserved)."
+        description: "Per-package CI platform-support declaration. Empty default preserves pre-input behavior: the build tier selects Linux and the full tier keeps every platform leg eligible. Non-empty = comma-separated subset of `apple,linux,windows` (lowercase, no spaces); unknown, duplicate, or empty family tokens fail the plan. Each platform leg runs only when its family token is present (apple → macos-release + apple-simulator-build; linux → linux-release + linux-nightly + linux-6-4; windows → windows-release). On the ordinary build tier, the same declaration selects exactly one supported release leg in deterministic priority order: Linux, then Windows, then macOS. Quality gates (format, lint, swift-linter, advisory linters) are platform-neutral and never consult this input. The plan applies this filter to `legs` itself, so `legs` is the single expected-execution list and ci-ok can require every gating leg named there to have SUCCEEDED (a gating leg that is skipped without the plan having excluded it now fails the run). Declare ONLY platform-identity exclusions — a package whose specification or identity excludes a platform (POSIX/ISO-9945 spec packages, per-platform roots like swift-linux / swift-windows). This is NOT a cost knob ([CI-096]) and is NOT derived from Package.swift `platforms:` ([CI-091] — that block is a SwiftPM deployment-target declaration, not a CI-coverage signal). Rationale: a platform-blind matrix forces platform emulation into L2 spec packages to green an illegitimate leg; the platform seam is L3 per [PLAT-ARCH-001]. ci-dispatch.yml passes nothing, so single-job dispatch can still force any leg on any package (debug surface preserved)."
       tier:
         type: string
         default: ""
-        description: "Verification-tier override (sanctioned default-inert input; R1/R2 principal ruling 2026-07-20). Empty default — existing push/PR/wrapper calls pass nothing — routes tier selection to the plan job's classifier: tag refs, workflow_dispatch, and '[ci full]' → full; '[ci lint]' or a docs/lint-config-only diff → lint; everything else → build. Non-empty forces 'lint' | 'build' | 'full' (ci-sweep.yml passes 'full' for the nightly rotation sweep). The tier gates SCHEDULING only — the matrix SHAPE ([CI-010]/[CI-091]) is untouched: every leg stays defined in this file and the full tier runs all of them; tags and sweeps always get the complete platform contract."
+        description: "Verification-tier override (sanctioned default-inert input; R1/R2 principal ruling 2026-07-20). Empty default — existing push/PR/wrapper calls pass nothing — routes tier selection to the plan job's classifier: tag refs, workflow_dispatch, and '[ci full]' → full; everything else → build. Non-empty forces 'build' | 'full' (ci-sweep.yml passes 'full' for the nightly rotation sweep). 'lint' was RETIRED 2026-07-28 and now fails the plan with a pointed error rather than being silently honoured: it selected no build leg, and ci-ok counted the resulting skips as passes, so it produced a green required check over a run that compiled nothing. The tier gates SCHEDULING only — the matrix SHAPE ([CI-010]/[CI-091]) is untouched: every leg stays defined in this file and the full tier runs all of them; tags and sweeps always get the complete platform contract."
       target-repo:
         type: string
         default: ""
@@ -240,14 +255,24 @@ jobs:
   # ─── Tier plan (R1/R2 principal ruling 2026-07-20) ───────────────────────
   # Selects the verification tier for this run and runs the identity-conflict
   # fast-check ONCE (previously duplicated into every leg). Tier semantics:
-  #   lint  — format + lint + swift-linter (Linux-only; the mass lint-
-  #           compliance fast path; target <2min wall-clock)
-  #   build — lint tier + the primary supported release leg (default for
-  #           ordinary pushes: Linux unless platform-support declares a
-  #           platform-specific package)
+  #   build — format + lint + swift-linter + the primary supported release leg
+  #           (default for ordinary pushes: Linux unless platform-support
+  #           declares a platform-specific package)
   #   full  — the complete [CI-010]/[CI-091] platform contract including the
   #           advisory legs; unconditional on tag refs; forced by ci-sweep.yml
   #           and the '[ci full]' commit token.
+  # Both tiers compile the package. That is the invariant `gating` exists to
+  # carry: it is the subset of `legs` that ci-ok requires to have SUCCEEDED,
+  # and the plan refuses to emit one that contains no build leg. See the
+  # retired-lint-tier note in the header for what a build-free green cost.
+  #
+  # `legs` is platform-filtered here rather than only at each job's guard, so
+  # there is exactly ONE list of what is expected to run and ci-ok can compare
+  # against it. (Two lists in two places that must agree, with nothing holding
+  # them together, is this repository's cheapest silent-drop — see
+  # VALIDATOR-DISCIPLINE.md §3.) Each leg keeps its own platform clause as a
+  # redundant belt: it can only remove a leg this filter already removed.
+  #
   # ci-ok includes plan in its needs:, so a plan failure (e.g. an identity
   # conflict) fails the run even though every leg skips. Single-job dispatch
   # bypasses the plan entirely (inputs.job != '' → plan skips; each leg's
@@ -266,6 +291,7 @@ jobs:
     outputs:
       tier: ${{ steps.classify.outputs.tier }}
       legs: ${{ steps.classify.outputs.legs }}
+      gating: ${{ steps.classify.outputs.gating }}
     steps:
       - name: Harden runner (audit-mode egress logging)
         uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
@@ -307,7 +333,6 @@ jobs:
         env:
           FORCED_TIER: ${{ inputs.tier }}
           EVENT_NAME: ${{ github.event_name }}
-          BEFORE_SHA: ${{ github.event.before }}
           HEAD_MSG: ${{ github.event.head_commit.message }}
           PLATFORM_SUPPORT: ${{ inputs.platform-support }}
         run: |
@@ -349,15 +374,22 @@ jobs:
             esac
           fi
           TIER="$FORCED_TIER"
+          # Retired 2026-07-28. Reject rather than silently promote to build:
+          # a caller still passing 'lint' believes it is getting a cheap run
+          # and should learn that the cheap run no longer exists.
+          if [ "$TIER" = "lint" ]; then
+            echo "::error::tier 'lint' was retired 2026-07-28. It selected no build leg, and ci-ok counted the resulting skips as passes, so it reported success over a run that compiled nothing. Pass 'build' (or nothing) or 'full'."
+            exit 1
+          fi
           # Tag refs always get the full platform contract (release boundary).
           if [ -z "$TIER" ]; then
             case "$GITHUB_REF" in refs/tags/*) TIER="full" ;; esac
           fi
           # Commit-token override (push events; HEAD_MSG empty on PR events).
+          # '[ci lint]' is deliberately absent: it now falls through to build.
           if [ -z "$TIER" ]; then
             case "$HEAD_MSG" in
               *"[ci full]"*)  TIER="full" ;;
-              *"[ci lint]"*)  TIER="lint" ;;
               *"[ci build]"*) TIER="build" ;;
             esac
           fi
@@ -365,29 +397,8 @@ jobs:
           if [ -z "$TIER" ] && [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             TIER="full"
           fi
-          # Auto-downgrade to lint when the pushed range touches ONLY
-          # docs/metadata/lint-config classes. Fail-safe: any classification
-          # obstacle (force-push zeros, unfetchable before-SHA, empty diff)
-          # falls through to the build tier.
-          if [ -z "$TIER" ] && [ "$EVENT_NAME" = "push" ] && [ -n "$BEFORE_SHA" ] && [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]; then
-            git fetch --no-tags --depth=1 origin "$BEFORE_SHA" 2>/dev/null || true
-            if git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
-              CHANGED=$(git diff --name-only "$BEFORE_SHA" "$GITHUB_SHA" || true)
-              if [ -n "$CHANGED" ]; then
-                NON_MECHANICAL=false
-                while IFS= read -r f; do
-                  case "$f" in
-                    *.md|LICENSE*|CITATION*|.gitignore|.spi.yml|Lint.swift|Lint/*|.swiftlint.yml|.swift-format|*.docc/*) ;;
-                    *) NON_MECHANICAL=true; break ;;
-                  esac
-                done <<< "$CHANGED"
-                if [ "$NON_MECHANICAL" = "false" ]; then TIER="lint"; fi
-              fi
-            fi
-          fi
           [ -n "$TIER" ] || TIER="build"
           case "$TIER" in
-            lint)  LEGS="format,lint,swift-linter" ;;
             build)
               case ",$PLATFORM_SUPPORT," in
                 ",,"|*,linux,*) PRIMARY_BUILD="linux-release" ;;
@@ -401,16 +412,68 @@ jobs:
               LEGS="format,lint,swift-linter,$PRIMARY_BUILD"
               ;;
             full)  LEGS="format,lint,swift-linter,linux-release,macos-release,windows-release,linux-nightly,linux-6-4,apple-simulator-build,lint-yaml,lint-broken-symlink,lint-license-header,lint-test-support-spine,advisory-summary" ;;
-            *) echo "::error::Unknown tier '$TIER' (expected lint|build|full)"; exit 1 ;;
+            *) echo "::error::Unknown tier '$TIER' (expected build|full)"; exit 1 ;;
           esac
+          # Apply the platform-support exclusion to `legs` itself, so `legs`
+          # is the ONE list of what this run expects to execute. The build
+          # tier already picked a supported primary; this is what narrows the
+          # full tier.
+          if [ -n "$PLATFORM_SUPPORT" ]; then
+            KEPT=""
+            for LEG in $(tr ',' ' ' <<< "$LEGS"); do
+              case "$LEG" in
+                macos-release|apple-simulator-build) FAMILY="apple" ;;
+                linux-release|linux-nightly|linux-6-4) FAMILY="linux" ;;
+                windows-release) FAMILY="windows" ;;
+                *) FAMILY="" ;;
+              esac
+              if [ -n "$FAMILY" ]; then
+                case ",$PLATFORM_SUPPORT," in
+                  *",$FAMILY,"*) ;;
+                  *) continue ;;
+                esac
+              fi
+              KEPT="${KEPT:+$KEPT,}$LEG"
+            done
+            LEGS="$KEPT"
+          fi
+          # The gating subset — exactly ci-ok's needs minus `plan`. ci-ok
+          # requires each of these to have SUCCEEDED and every other gating
+          # job to have SKIPPED, which is what makes a leg that quietly stops
+          # running a failure instead of a green.
+          GATING=""
+          BUILD_LEGS=""
+          for LEG in $(tr ',' ' ' <<< "$LEGS"); do
+            case "$LEG" in
+              format|lint|swift-linter)
+                GATING="${GATING:+$GATING,}$LEG" ;;
+              macos-release|linux-release|windows-release)
+                GATING="${GATING:+$GATING,}$LEG"
+                BUILD_LEGS="${BUILD_LEGS:+$BUILD_LEGS,}$LEG" ;;
+            esac
+          done
+          # Fail closed on a build-free plan. Unreachable while both tiers
+          # carry a release leg; it is here so that a future tier, or a
+          # platform-support value that filters every build leg away, cannot
+          # quietly reintroduce the vacuous green this replaced.
+          if [ -z "$BUILD_LEGS" ]; then
+            echo "::error::tier '$TIER' with platform-support '$PLATFORM_SUPPORT' selected no gating build leg. ci-ok would attest a run that compiled nothing; refusing to plan it."
+            exit 1
+          fi
           echo "tier=$TIER" >> "$GITHUB_OUTPUT"
           echo "legs=$LEGS" >> "$GITHUB_OUTPUT"
+          echo "gating=$GATING" >> "$GITHUB_OUTPUT"
           echo "Selected tier: $TIER"
           echo "legs: $LEGS"
+          echo "gating: $GATING"
           {
             echo "## CI tier: \`$TIER\`"
             echo ""
-            echo "Selected legs: \`$LEGS\`. Tags, '[ci full]', ci-sweep, and consumer workflow_dispatch force the full platform contract; ci-ok attests the SELECTED tier (R1/R2 ruling 2026-07-20)."
+            echo "Selected legs: \`$LEGS\`"
+            echo ""
+            echo "Gating legs (every one must SUCCEED for \`ci-ok\`): \`$GATING\`"
+            echo ""
+            echo "Tags, '[ci full]', ci-sweep, and consumer workflow_dispatch force the full platform contract. \`ci-ok\` attests the SELECTED tier and names it — a gating leg that is skipped without appearing here fails the run (2026-07-28)."
           } >> "$GITHUB_STEP_SUMMARY"
 
   macos-release:
@@ -1257,9 +1320,21 @@ jobs:
 
   # ─── Conclusion aggregator ────────────────────────────────────────────────
   # Single required-status-check name for branch protection. needs: lists
-  # every job that should gate the merge; ci-ok succeeds iff every needed
-  # job succeeded (or was skipped — visibility-gate path on private repos).
-  # Cancelled or failed needs propagate to ci-ok failing.
+  # every job that should gate the merge. ci-ok succeeds iff the plan
+  # succeeded, every gating job the plan SELECTED succeeded, every gating job
+  # it did NOT select skipped, and at least one build leg actually compiled
+  # the package.
+  #
+  # It used to be `all(.result == "success" or .result == "skipped")`, which
+  # cannot distinguish the three ways a needed job reports `skipped`:
+  #   (a) the plan did not select it for this tier   — legitimate
+  #   (b) its `if:` guard drifted, its job id was renamed, or it was dropped
+  #       from the matrix                            — an inert gate
+  #   (c) no build leg was selected at all           — a green over nothing
+  # (a) is now proved against `needs.plan.outputs.gating` rather than assumed;
+  # (b) fails; (c) is refused in the plan AND again here. This is the
+  # "fail closed on did-not-run" rule from VALIDATOR-DISCIPLINE.md §3: scanned
+  # nothing must never be reportable as found nothing.
   #
   # Rationale: branch protection on consumer repos requires only `ci-ok`
   # rather than every individual job name. Adding/removing jobs in this
@@ -1279,9 +1354,9 @@ jobs:
   ci-ok:
     # plan sits in needs (R1 ruling 2026-07-20): a plan failure (identity
     # conflict / classifier error) fails ci-ok even though every leg skips.
-    # Tier-skipped legs pass via the existing skipped-as-passing semantics —
-    # ci-ok attests "the SELECTED tier passed"; the full-contract attestation
-    # lives at tag refs and the nightly ci-sweep rotation.
+    # ci-ok attests "the SELECTED tier passed, and the selected tier built
+    # the package"; the full PLATFORM contract still comes from tag refs and
+    # the nightly ci-sweep rotation.
     if: ${{ always() && !github.event.repository.private && inputs.job == '' }}
     needs:
       - plan
@@ -1296,11 +1371,78 @@ jobs:
     permissions:
       contents: read
     steps:
+      # The body of this step is executed verbatim, against synthetic
+      # NEEDS_JSON / PLANNED_GATING pairs, by
+      # .github/scripts/tests/test-ci-ok-aggregate.py — which extracts it from
+      # THIS file so the bytes under test are the bytes that ship. Keep the
+      # step name stable; the extractor keys on it and fails if it is gone.
       - name: Aggregate required-job results
+        shell: bash
         env:
           NEEDS_JSON: ${{ toJson(needs) }}
+          PLANNED_GATING: ${{ needs.plan.outputs.gating }}
+          PLANNED_TIER: ${{ needs.plan.outputs.tier }}
         run: |
           set -euo pipefail
-          # success or skipped → pass; failure or cancelled → fail.
           # ubuntu-latest pre-installs jq.
-          jq --exit-status 'all(.result == "success" or .result == "skipped")' <<< "$NEEDS_JSON"
+          RC=0
+
+          PLAN_RESULT="$(jq -r '.plan.result' <<< "$NEEDS_JSON")"
+          if [ "$PLAN_RESULT" != "success" ]; then
+            echo "::error::plan did not succeed (result: $PLAN_RESULT) — no verification tier was established, so there is nothing to attest."
+            RC=1
+          fi
+          if [ -z "${PLANNED_GATING:-}" ]; then
+            echo "::error::the plan named no gating legs. A run with nothing required cannot report success."
+            RC=1
+          fi
+
+          BUILT=""
+          RESULTS=""
+          while IFS= read -r JOB; do
+            if [ -z "$JOB" ] || [ "$JOB" = "plan" ]; then
+              continue
+            fi
+            RESULT="$(jq -r --arg j "$JOB" '.[$j].result' <<< "$NEEDS_JSON")"
+            case ",${PLANNED_GATING:-}," in
+              *",$JOB,"*) EXPECTED="success" ;;
+              *)          EXPECTED="skipped" ;;
+            esac
+            if [ "$RESULT" != "$EXPECTED" ]; then
+              if [ "$EXPECTED" = "success" ]; then
+                echo "::error::gating leg '$JOB' was selected by the plan but its result is '$RESULT', not 'success'. A selected leg that does not pass — including one that silently skips — fails this run."
+              else
+                echo "::error::gating leg '$JOB' ran (result '$RESULT') without the plan selecting it. The plan and the job guards have drifted apart; one of them is wrong."
+              fi
+              RC=1
+            fi
+            case "$JOB" in
+              macos-release|linux-release|windows-release)
+                if [ "$RESULT" = "success" ]; then
+                  BUILT="${BUILT:+$BUILT,}$JOB"
+                fi
+                ;;
+            esac
+            RESULTS="${RESULTS}| \`$JOB\` | $EXPECTED | $RESULT |"$'\n'
+          done < <(jq -r 'keys[]' <<< "$NEEDS_JSON")
+
+          if [ -z "$BUILT" ]; then
+            echo "::error::no gating build leg succeeded — this run compiled nothing. ci-ok attests a build, not a lint pass."
+            RC=1
+          fi
+
+          {
+            if [ "$RC" -eq 0 ]; then
+              echo "## ci-ok: pass (tier \`${PLANNED_TIER:-unknown}\`)"
+            else
+              echo "## ci-ok: FAIL (tier \`${PLANNED_TIER:-unknown}\`)"
+            fi
+            echo ""
+            echo "Attested: built on \`${BUILT:-nothing}\`. Gating legs selected by the plan: \`${PLANNED_GATING:-none}\`."
+            echo ""
+            echo "| Gating job | Expected | Result |"
+            echo "| --- | --- | --- |"
+            printf '%s' "$RESULTS"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          exit "$RC"
