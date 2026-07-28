@@ -49,6 +49,11 @@ on:
         type: string
         required: false
         default: ''
+      validator-ref:
+        description: 'Git ref of swift-institute/.github to load the validator script from. Defaults to main. Pin the same SHA you pin this workflow to, or the script still floats.'
+        type: string
+        required: false
+        default: 'main'
       dry-run:
         description: 'Run checks but do not fail the job on findings.'
         type: boolean
@@ -66,6 +71,11 @@ on:
         type: string
         required: false
         default: ''
+      validator-ref:
+        description: 'Git ref of swift-institute/.github to load the validator script from.'
+        type: string
+        required: false
+        default: 'main'
       dry-run:
         description: 'Run checks but do not fail the job on findings.'
         type: boolean
@@ -144,5 +154,6 @@ jobs:
       rule-id-regex: '^skill-'
       discovery-mode: single-target
       target-repo: ${{ inputs.repo }}
+      validator-ref: ${{ inputs.validator-ref }}
       dry-run: ${{ inputs.dry-run == true }}
     secrets: inherit
