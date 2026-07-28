@@ -601,6 +601,28 @@ is what made a *second* surprise legible — two packages accounted for 352 s of
 2747 s of engine time, both because of an upstream break, not because linting is
 slow.
 
+### The same day, the same shape: enumerating processes by name
+
+Two sessions independently tried to attribute machine load before scheduling a
+timing measurement. One enumerated `swift-build` and `swift-frontend` and **missed
+a `swift-test` running at 118% CPU**. The other matched `swift-frontend` and
+**missed `clang` entirely — roughly 180% of the machine.** Both then reasoned from
+a total that was missing its largest term.
+
+> **A process filter written from memory is a predicate built out of what you
+> expect to find.** It cannot report what it did not think of, and its output
+> looks identical whether the missing class is absent or merely unmatched.
+
+Enumerate the population unfiltered — rank by CPU and read the top of the list —
+*then* attribute. The same move as §1, one layer down: the filter is the thing
+that needs a control, and the control is the unfiltered count beside the filtered
+one.
+
+A load average will not save you here either. It is a single number that says
+something is busy without saying what, and on a shared machine most of it may not
+be builds at all — one measurement attributed a load of 111 largely to an
+application's UI renderer.
+
 ## The shape underneath all of these
 
 Three failures here compounded, and none was visible alone:
