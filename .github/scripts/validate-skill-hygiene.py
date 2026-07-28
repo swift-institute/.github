@@ -117,6 +117,19 @@ SKIP_LINK_PREFIXES = ("http://", "https://", "mailto:", "tel:", "#", "<")
 # that the person adding the mention is the one who records it.
 SANCTIONED_REFERENCES = ".github/sanctioned-references"
 
+# Namespaces the Institute owns, by shape rather than by enumeration. The orgs
+# manifest lists 17, but that is a bot-convergence scope authored for nightly
+# settings sweeps, not a namespace watch list -- inheriting it left 42 of the
+# fleet's 59 org namespaces unwatched. 54 of those 59 match this shape.
+#
+# By shape and not by list for a specific reason: the remaining five are
+# unrelated ventures and a personal account, and a public file enumerating them
+# would be the disclosure it is meant to guard against. That is the same bind as
+# checking in a list of private repositories, and it is not closeable -- you
+# cannot watch for a name you are unwilling to write down. Those five stay
+# unwatched, and the list header says so.
+INSTITUTE_NAMESPACE = re.compile(r"^(?:swift|rule)-[a-z0-9-]+$")
+
 # owner/name, both GitHub-identifier shaped. The name may lead with a dot so
 # that `swift-institute/.github` is seen. Trailing punctuation is trimmed
 # afterwards rather than excluded here: prose ends references with a full stop
@@ -304,7 +317,7 @@ def check_references(
     seen = set()
     for lineno, line in enumerate(text.splitlines(), start=1):
         for owner, name in REFERENCE.findall(line):
-            if owner not in watched:
+            if owner not in watched and not INSTITUTE_NAMESPACE.match(owner):
                 continue
             name = name.rstrip(TRAILING_PUNCT)
             if not name or name == ".":
