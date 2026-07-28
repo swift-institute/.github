@@ -29,25 +29,34 @@
 # status are filtered out by default; orchestrators wanting them can
 # pass `include-archived: 'true'` (or filter explicitly).
 #
-# NOT IN THIS MANIFEST, and why (measured 2026-07-28):
+# SCOPE — enumerate everything, filter afterwards (measured 2026-07-28):
 #
-# The principal's account is a member of 59 orgs holding 2,638 repos, of
-# which 474 are public and non-archived — the only repos any of these
-# sweeps can act on. 473 of those 474 sit in the 17 orgs below. The one
-# exception is `rule-institute/.github`, in the legal-domain `rule-*`
-# ecosystem rather than the Swift Institute one.
+# Enumeration is deliberately unfiltered: 59 orgs holding 2,638 repos, of
+# which 474 are public and non-archived. That discipline is load-bearing —
+# an earlier sweep went wrong by mistaking a count of "what had been looked
+# at" for the population — so nothing here licenses enumerating selectively.
+# The filter is a separate step applied AFTER enumeration, and both numbers
+# get reported.
 #
-# Do NOT add `rule-institute` here to close that gap. The gap is not the
-# manifest: the `swift-institute-bot` App is NOT INSTALLED on that org, so
-# minting an installation token fails with `Not Found` from
-# get-a-repository-installation-for-the-authenticated-app (verified by
-# dispatch, run 30370255166). Adding the org would convert one repo that
-# silently never converges into a matrix leg that fails every night.
+# Applying scope: 473 of the 474 are in-scope and sit in the 17 orgs below.
+# The one exclusion is `rule-institute/.github`.
 #
-# Closing it properly means installing the App on `rule-institute` first —
-# an org-owner action, and a decision about whether the rule-* ecosystem is
-# in scope for Swift Institute automation at all. Until then this comment is
-# the record that 473/474, not 474/474, is the reachable population.
+# `rule-institute` is OUT OF SCOPE by principal ruling, 2026-07-28: it is a
+# peer institute of swift-institute, not part of swift-institute's
+# automation. Independently verified the same day: the `swift-institute-bot`
+# App is not installed on that org, so minting a token fails with `Not
+# Found` (dispatch run 30370255166). Two reasons, one decision.
+#
+# So the in-scope population is 473, and convergence against it is 473/473.
+# This is a settled boundary, not unfinished business — do not add the org
+# here to "close the gap", and do not install the App to enable it.
+#
+# NARROW READING WARNING: out of scope for CONVERGENCE is not out of scope
+# for REFERENCE HYGIENE. The skills corpus's sanctioned-reference check
+# deliberately watches `rule-*` namespaces by shape, because a mention of a
+# peer institute in public Institute prose is exactly the cross-institute
+# reference it exists to surface. That watch is unaffected by this ruling
+# and must not be narrowed to match it. Different purposes, different scopes.
 
 - name: swift-primitives
   layer: L1
