@@ -397,6 +397,59 @@ the range with its conditions, and say which end you trust and why.
 
 ---
 
+## 14. A working copy is a cache of the repository, and it goes stale silently
+
+Found 2026-07-28, after two sessions independently ruled from a checkout that
+was **12 commits behind `origin/main`**.
+
+The failure is not carelessness — both sessions did the right thing. One was
+told a rule second-hand and, rather than trusting the relay, opened
+`Skills/github/SKILL.md` and read it. The file was there, it parsed, it said
+what the relay said. It was also two hours out of date: a commit that morning
+had deleted the clause being enforced and reversed the guidance on an adjacent
+one.
+
+The consequences were real and asymmetric:
+
+- A rule that **no longer existed** was enforced against another session twice,
+  producing a delete-and-re-file cycle for three legitimate issues.
+- Board fields were set on three items from a vocabulary deleted that morning,
+  making them the **only 3 classified rows out of 103** — the exact outcome the
+  current text warns against.
+- Two other skills had been rewritten in the same window, one of which had
+  already been used to brief a third session. Those rules happened to survive
+  the rewrite. **That was luck, not diligence**, and it is the reason this is a
+  method note rather than an incident report.
+
+> **Reading the source yourself is not the control. Reading the *current*
+> source is.** A stale working copy is indistinguishable from the repository:
+> same path, same filename, valid content, no warning anywhere in the output.
+
+What makes this worse than an ordinary cache is that the staleness is
+**invisible at the point of use and silent at the point of decision**. Nothing
+in `cat SKILL.md` says "12 commits behind". Compare §12: the control passed and
+the reason was a second cache nobody had cleared. Same shape, one layer out —
+here the cache is the checkout itself.
+
+Cheap habits that close it:
+
+```sh
+git -C <repo> fetch -q origin && git -C <repo> rev-list --count HEAD..origin/main
+gh api repos/<owner>/<repo>/contents/<path> --jq .content | base64 -d
+```
+
+The first reports staleness as a number; the second bypasses the working copy
+entirely and is the right instrument when a decision rests on the file's exact
+current text. Both were used to establish the facts above.
+
+**And do not fix it by pulling someone else's checkout.** Where several sessions
+share a tree, `git pull` over another actor's uncommitted work is the
+destructive operation the shared-checkout rules exist to prevent. Read from
+`origin` or from your own clone; leave the shared tree alone. *Measured after
+the fact: the checkout above was current again within the hour, which is the
+other half of the problem — a hazard that resolves on its own teaches nobody,
+and returns.*
+
 ## The shape underneath all of these
 
 Three failures here compounded, and none was visible alone:
