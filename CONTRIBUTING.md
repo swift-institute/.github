@@ -43,8 +43,9 @@ export PATH="$HOME/Developer/swift-institute/Scripts:$PATH"
 ```
 
 After that, `swift-format` on the command line resolves to the pinned wrapper
-and produces byte-identical output to CI. The rule and rationale live in the
-ci-cd-workflows skill as `[CI-093]`.
+and produces byte-identical output to CI. The pinned wrapper is the only
+supported invocation precisely so that local formatting and CI formatting
+cannot diverge.
 
 ## Running a single CI job on demand
 

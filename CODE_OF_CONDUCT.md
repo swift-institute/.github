@@ -14,7 +14,7 @@ This Code of Conduct applies to all Swift Institute project spaces, including:
 
 - All repositories under the [swift-institute](https://github.com/swift-institute)
   organization and the Swift Institute ecosystem organizations listed in the
-  [repository README](README.md)
+  [organization profile](profile/README.md)
 - Issue trackers, pull request discussions, and any review conversations
 - Blog post discussions on any platform, when the post is a Swift Institute publication
 - Swift Evolution pitches and proposals authored under the Swift Institute name
