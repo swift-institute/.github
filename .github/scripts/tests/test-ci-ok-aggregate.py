@@ -39,6 +39,7 @@ GATING_JOBS = [
     "macos-release",
     "linux-release",
     "windows-release",
+    "linux-6-4",
     "format",
     "lint",
     "swift-linter",
@@ -160,7 +161,8 @@ class AggregatorTests(ShellHarness):
 
     def test_full_tier_passes(self):
         code, log, _ = self.aggregate(
-            "format,lint,swift-linter,linux-release,macos-release,windows-release",
+            "format,lint,swift-linter,linux-release,macos-release,"
+            "windows-release,linux-6-4",
             {job: "success" for job in GATING_JOBS},
             tier="full",
         )
@@ -327,7 +329,7 @@ class ClassifierTests(ShellHarness):
         self.assertNotIn("apple-simulator-build", legs)
         self.assertEqual(
             outputs["gating"].split(","),
-            ["format", "lint", "swift-linter", "linux-release"],
+            ["format", "lint", "swift-linter", "linux-release", "linux-6-4"],
         )
 
     def test_apple_only_package_builds_on_macos(self):
@@ -349,10 +351,109 @@ class ClassifierTests(ShellHarness):
                         f"no build leg in gating set {outputs['gating']!r}",
                     )
 
+    def test_linux_6_4_is_gating_on_the_build_tier(self):
+        """Principal ruling 2026-07-28: force the 6.4 migration.
+
+        The point of the ruling is that ORDINARY PUSHES feel it, so this
+        asserts the build tier specifically. Gating it only on `full` would
+        leave every push unaffected and look identical in the workflow diff.
+        """
+        code, log, outputs = self.classify()
+        self.assertEqual(code, 0, log)
+        self.assertEqual(outputs["tier"], "build")
+        self.assertIn("linux-6-4", outputs["legs"].split(","))
+        self.assertIn("linux-6-4", outputs["gating"].split(","))
+
+    def test_linux_6_4_does_not_satisfy_the_compiled_something_invariant(self):
+        # A nightly is not a supported toolchain. If it ever became the only
+        # build-ish leg selected, ci-ok must still refuse the run rather than
+        # attest a build against a toolchain the fleet does not ship on.
+        code, log, _ = AggregatorTests().run_script(
+            NEEDS_JSON=json.dumps(
+                {
+                    job: {"result": ("success" if job in ("plan", "format", "lint", "swift-linter", "linux-6-4") else "skipped")}
+                    for job in GATING_JOBS
+                }
+            ),
+            PLANNED_GATING="format,lint,swift-linter,linux-6-4",
+            PLANNED_TIER="build",
+        )
+        self.assertNotEqual(code, 0, log)
+        self.assertIn("compiled nothing", log)
+
+    def test_platform_support_excluding_linux_drops_the_6_4_leg(self):
+        # An Apple-only package must not be gated on a Linux nightly.
+        code, log, outputs = self.classify(PLATFORM_SUPPORT="apple")
+        self.assertEqual(code, 0, log)
+        self.assertNotIn("linux-6-4", outputs["legs"].split(","))
+        self.assertNotIn("linux-6-4", outputs["gating"].split(","))
+
     def test_unknown_platform_family_fails(self):
         code, log, _ = self.classify(PLATFORM_SUPPORT="solaris")
         self.assertNotEqual(code, 0, log)
         self.assertIn("invalid platform-support family", log)
+
+
+class GatingCorrespondenceTests(unittest.TestCase):
+    """Three places must agree about which jobs gate, with nothing joining them.
+
+    A leg is gating only if ALL of: the classifier can emit it into `gating`,
+    `ci-ok` lists it in `needs:` (otherwise the aggregator never sees it — the
+    `needs` context is all it reads), and the job does not carry
+    `continue-on-error: true` (which makes a failure report as success to the
+    run). Miss any one and the leg looks gating in the diff and gates nothing.
+    That is the two-lists-that-must-agree silent drop from
+    swift-institute/Internal's VALIDATOR-DISCIPLINE.md §3, and the classifier
+    controls above cannot catch it because `needs:` and `continue-on-error`
+    are workflow structure, not part of the extracted script.
+    """
+
+    document = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    classifier = extract("plan", CLASSIFY_STEP)
+
+    def gating_legs(self):
+        needs = self.document["jobs"]["ci-ok"]["needs"]
+        return [job for job in needs if job != "plan"]
+
+    def test_every_ci_ok_need_can_be_emitted_into_the_gating_set(self):
+        for job in self.gating_legs():
+            with self.subTest(job=job):
+                self.assertIn(
+                    job,
+                    self.classifier,
+                    f"ci-ok needs '{job}' but the classifier never puts it in "
+                    "`gating`, so it would be required to have SKIPPED",
+                )
+
+    def test_no_gating_leg_is_continue_on_error(self):
+        for job in self.gating_legs():
+            with self.subTest(job=job):
+                self.assertNotEqual(
+                    self.document["jobs"][job].get("continue-on-error"),
+                    True,
+                    f"'{job}' is in ci-ok's needs but carries "
+                    "continue-on-error: true, so its failure reports as success",
+                )
+
+    def test_linux_6_4_gates(self):
+        # The 2026-07-28 ruling, asserted at all three sites at once.
+        self.assertIn("linux-6-4", self.gating_legs())
+        self.assertNotEqual(
+            self.document["jobs"]["linux-6-4"].get("continue-on-error"), True
+        )
+        self.assertNotIn(
+            "linux-6-4",
+            self.document["jobs"]["advisory-summary"]["needs"],
+            "linux-6-4 is gating; it must not also be rolled up as advisory",
+        )
+
+    def test_linux_nightly_stays_advisory(self):
+        # The deliberate asymmetry: both are nightlies, only 6.4 is a
+        # migration target. If this ever flips, it should be on purpose.
+        self.assertNotIn("linux-nightly", self.gating_legs())
+        self.assertIs(
+            self.document["jobs"]["linux-nightly"].get("continue-on-error"), True
+        )
 
 
 if __name__ == "__main__":

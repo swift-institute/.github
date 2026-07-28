@@ -426,7 +426,7 @@ jobs:
                   exit 1
                   ;;
               esac
-              LEGS="format,lint,swift-linter,$PRIMARY_BUILD"
+              LEGS="format,lint,swift-linter,$PRIMARY_BUILD,linux-6-4"
               ;;
             full)  LEGS="format,lint,swift-linter,linux-release,macos-release,windows-release,linux-nightly,linux-6-4,apple-simulator-build,lint-yaml,lint-broken-symlink,lint-license-header,lint-test-support-spine,advisory-summary" ;;
             *) echo "::error::Unknown tier '$TIER' (expected build|full)"; exit 1 ;;
@@ -467,6 +467,13 @@ jobs:
               macos-release|linux-release|windows-release)
                 GATING="${GATING:+$GATING,}$LEG"
                 BUILD_LEGS="${BUILD_LEGS:+$BUILD_LEGS,}$LEG" ;;
+              # Gating since 2026-07-28 (principal ruling: force the 6.4
+              # migration). Deliberately NOT added to BUILD_LEGS: the
+              # compiled-something invariant stays anchored on a SUPPORTED
+              # toolchain, so no future tier carrying only the nightly can
+              # satisfy it.
+              linux-6-4)
+                GATING="${GATING:+$GATING,}$LEG" ;;
             esac
           done
           # Fail closed on a build-free plan. Unreachable while both tiers
@@ -645,10 +652,36 @@ jobs:
   # leg Apple/swiftlang run as `nightly-6.4.x` in
   # swiftlang/github-workflows/.github/workflows/swift_package_test.yml — and it
   # answers "does 6.4 specifically pass" without conflating 6.4 + 6.5 changes.
-  # Advisory per [CI-021]/[CI-091]: continue-on-error, excluded from ci-ok
-  # needs, listed in advisory-summary. continue-on-error is valid at job level
-  # here because this is a runs-on job, not a `uses:` job ([CI-105]). At 6.4 GA
-  # (~Sept 2026) this graduates to a gating `swift:6.4` stable leg, retiring the
+  # GATING since 2026-07-28, by principal ruling, to force the 6.4 migration.
+  # It sits in ci-ok's needs and is out of advisory-summary. This reverses the
+  # posture recorded a few lines above under the Xcode pin — that paragraph is
+  # kept rather than deleted, because its reasoning is still correct about what
+  # this costs; the principal chose to pay it. Two consequences are accepted,
+  # not defects:
+  #
+  #   - The container is a NIGHTLY (swiftlang/swift:nightly-6.4.x-jammy). A
+  #     repository can go from green to red with no commit in between. Do not
+  #     go looking for the change that caused it; there may not be one.
+  #   - Some reds cannot be fixed here at all. swift-institute/Issues#58 is an
+  #     upstream `swift-frontend` abort under release + whole-module
+  #     optimisation on Linux x86_64, reproducing on 6.3, 6.4 and 6.5-dev, and
+  #     nothing goes to swiftlang/swift by standing ruling. Repositories in
+  #     that class stay red until upstream fixes it. Measured 2026-07-28: 5 of
+  #     the 62 newly-red repositories are this class. Do not burn a day on one.
+  #
+  # Blast radius measured before landing, over the 454 repositories swept at
+  # full tier in the complete 7-night rotation 2026-07-22..28: the leg ran on
+  # all 454 and failed on 158 (35%), of which 96 already fail the 6.3 gating
+  # leg. So 62 repositories go newly red — and 42 of those 62 are ONE cause,
+  # `swift-linux-foundation/swift-linux-standard` referencing
+  # `IORING_POLL_ADD_LEVEL` / `IORING_TIMEOUT_MULTISHOT`, which are out of
+  # scope in this container. Fix that package and two thirds of the fleet-wide
+  # red clears at once.
+  #
+  # continue-on-error was dropped here; it was valid at job level because this
+  # is a runs-on job, not a `uses:` job ([CI-105]). [CI-010]'s nightly-tolerance
+  # rule targets `linux-nightly` by name and does not reach this job. At 6.4 GA
+  # (~Sept 2026) this becomes a `swift:6.4` STABLE leg, retiring the
   # `compiler(<6.4)` §A9 gates (swift-xml / swift-w3c-xml / swift-graph / swift-plist).
   linux-6-4:
     name: Ubuntu (Swift 6.4.x nightly, release)
@@ -656,7 +689,6 @@ jobs:
     if: ${{ !cancelled() && !github.event.repository.private && (inputs.job == 'linux-6-4' || (inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',linux-6-4,'))) && (inputs.platform-support == '' || contains(format(',{0},', inputs.platform-support), ',linux,')) }}
     runs-on: ubuntu-latest
     container: swiftlang/swift:nightly-6.4.x-jammy
-    continue-on-error: true
     timeout-minutes: 45
     permissions:
       contents: read
@@ -1286,9 +1318,10 @@ jobs:
   # ci-dispatch's exactly-one-job property) and runs only on push/PR. It carries
   # no `inputs.job == '<id>'` selector and is absent from ci-dispatch.yml's `job`
   # enum. `needs:` enumerates every advisory
-  # leg per [CI-002] (the continue-on-error legs linux-nightly / linux-6-4 /
+  # leg per [CI-002] (the continue-on-error legs linux-nightly /
   # apple-simulator-build + the six nested advisory:true linters; swift-linter
-  # is GATING — it sits in ci-ok's needs, not here).
+  # and, since 2026-07-28, linux-6-4 are GATING — they sit in ci-ok's needs,
+  # not here).
   advisory-summary:
     name: Advisory results (informational)
     # Tier-gated (R2 ruling 2026-07-20): the advisory legs it renders run only
@@ -1299,7 +1332,6 @@ jobs:
     needs:
       - plan
       - linux-nightly
-      - linux-6-4
       - apple-simulator-build
       - lint-yaml
       - lint-broken-symlink
@@ -1362,8 +1394,11 @@ jobs:
   # interpolate anything.
   #
   # Excluded from needs: by design:
-  #   - linux-nightly (continue-on-error: true; nightly toolchain
-  #     instability is not the consumer's defect to fix)
+  #   - linux-nightly (continue-on-error: true; `main`-nightly toolchain
+  #     instability is not the consumer's defect to fix). Note the deliberate
+  #     asymmetry with linux-6-4, which IS gating from 2026-07-28: both run
+  #     nightly containers, but 6.4 is a toolchain the fleet is being migrated
+  #     ONTO, while `main` is not. Same instability, different purpose.
   #   - All advisory linters (lint-yaml, lint-broken-symlink,
   #     lint-foundation-family-import [retired], lint-license-header,
   #     lint-test-support-spine, lint-api-breakage, lint-pr-title) — they
@@ -1381,6 +1416,7 @@ jobs:
       - macos-release
       - linux-release
       - windows-release
+      - linux-6-4
       - format
       - lint
       - swift-linter
