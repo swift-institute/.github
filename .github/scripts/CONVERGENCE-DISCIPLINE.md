@@ -507,6 +507,53 @@ the fact: the checkout above was current again within the hour, which is the
 other half of the problem — a hazard that resolves on its own teaches nobody,
 and returns.*
 
+### The same shape, inverted: a working copy you have already repaired
+
+Found 2026-07-28, during the ten-repo uniformity sweep.
+
+The task was to name every repository whose `ci.yml` pins a Swift toolchain
+below the 6.3.3 manifest floor — a real defect, because such a repository
+cannot take the floor without turning red. The scan ran across all 442 local
+repositories and returned **zero**.
+
+The zero was an artifact of the scanner having already fixed the thing it was
+scanning for. Eight of those `ci.yml` files had been replaced with canonical
+thin callers an hour earlier in the same session; the sub-6.3 pins were gone
+from the working trees and still present on every one of those repositories'
+published `main`. Re-run against `origin/main` and the contents API, the same
+scan named **ten** repositories.
+
+> **A working-tree scan returns zero once you have already fixed the thing you
+> are scanning for, and that zero looks identical to "was never broken."**
+
+§14 is a stale checkout reading *older* than the repository. This is a checkout
+reading *newer* — repaired, uncommitted or unmerged, and therefore
+unrepresentative in the opposite direction. Both present as a clean result with
+nothing in the output to distinguish them from the truth, and this one is worse
+in one respect: **the person most likely to run the census is the person who
+just did the repair**, so the contamination correlates exactly with who is
+looking.
+
+It generalises past the obvious case. Any before/after measurement taken from a
+tree you have been editing inherits your edits. So does a census run midway
+through a sweep, and so does one run after a partial sweep where some branches
+merged and others did not — which was the actual state here: five repositories
+fast-forwarded, five held on a branch, and the working tree resembling neither.
+
+Cheap habits that close it:
+
+```sh
+git -C <repo> show origin/main:<path>                      # published state, not yours
+gh api repos/<owner>/<repo>/contents/<path> --jq .content | base64 -d
+git -C <repo> status --porcelain                           # am I standing in an edit?
+```
+
+**State which tree a census measured, every time — working copy, `origin/main`,
+or the API.** The three answer different questions and diverge silently. The
+sweep above reported "0 of 442" fleet-wide and had to be corrected in the same
+document: true of the working trees, false of what had shipped, because three
+repositories' fixes were still sitting on an unmerged branch.
+
 ## 15. Verification goes where suspicion already is. The gap is everywhere else.
 
 The register above is a list of things that were checked and turned out wrong.
