@@ -123,7 +123,15 @@ jobs:
                 echo "$repo	clone-failed	-" >> /tmp/findings.tsv
                 exit 0
               fi
-              python3 "$VALIDATOR" "$repo" "$workdir" >> /tmp/findings.tsv || true
+              # The old `|| true` swallowed a validator crash and left no
+              # trace, so an interpreter error read as "no findings". Record
+              # the crash as a sentinel row and let Aggregate fail on it,
+              # matching validate-base.yml.
+              rc=0
+              python3 "$VALIDATOR" "$repo" "$workdir" >> /tmp/findings.tsv || rc=$?
+              if [ "$rc" -ne 0 ]; then
+                echo "$repo	validator-crashed	-" >> /tmp/findings.tsv
+              fi
             )
             rm -rf "$workdir"
           done < /tmp/targets.txt
@@ -132,21 +140,48 @@ jobs:
         id: aggregate
         run: |
           set -euo pipefail
-          violations=$(grep -cE "	GH-REPO-074" /tmp/findings.tsv) || violations=0
+          # RULE_RE must list EVERY rule validate-thin-callers.py can emit.
+          # It counted GH-REPO-074 alone until 2026-07-28, while the validator
+          # has emitted CI-030 and CI-059 since Pilot 17 — so every CI-030 and
+          # CI-059 finding was computed, discarded, and left out of the table
+          # too. Measured across the 473 public non-archived repos that day:
+          # 9 live CI-059 findings, of which the ones in swift-standards and
+          # swift-ieee were the whole of those orgs' findings, so both legs
+          # reported success while carrying real violations.
+          RULE_RE='^(GH-REPO-074|CI-030|CI-059)$'
+          violations=$(awk -F'\t' -v re="$RULE_RE" '$2 ~ re' /tmp/findings.tsv | wc -l | tr -d ' ')
+          clone_failures=$(awk -F'\t' '$2 == "clone-failed"' /tmp/findings.tsv | wc -l | tr -d ' ')
+          validator_crashes=$(awk -F'\t' '$2 == "validator-crashed"' /tmp/findings.tsv | wc -l | tr -d ' ')
           echo "total-violations=$violations" >> "$GITHUB_OUTPUT"
           {
             echo "## validate-thin-callers findings"
             echo "Total violations: $violations"
             echo
+            if [ "$clone_failures" -gt 0 ] || [ "$validator_crashes" -gt 0 ]; then
+              echo "> [!CAUTION]"
+              echo "> ${clone_failures} target(s) failed to clone and ${validator_crashes} crashed the validator — those repos were NOT scanned, so the count above is a floor, not a total. Treat this run as failed."
+              echo
+              awk -F'\t' '$2 == "clone-failed" || $2 == "validator-crashed" { printf("- %s: `%s`\n", $2, $1) }' /tmp/findings.tsv
+              echo
+            fi
             if [ "$violations" -gt 0 ]; then
               echo "| Repo | Rule | Message |"
               echo "|---|---|---|"
-              awk -F'\t' '$2 ~ /^GH-REPO-074/{
+              awk -F'\t' -v re="$RULE_RE" '$2 ~ re {
                 gsub(/\|/, "\\|", $3);
                 printf("| `%s` | `%s` | %s |\n", $1, $2, $3)
               }' /tmp/findings.tsv
             fi
           } > "$GITHUB_STEP_SUMMARY"
-          if [ "$violations" -gt 0 ] && [ "${{ inputs.dry-run }}" != "true" ]; then
+          # Also to stdout. The block above is redirected to the step summary,
+          # which is invisible from the run list, from the API, and from a
+          # notification — so a leg that failed said nothing anyone could read
+          # without opening it. This line is what makes the cause legible.
+          echo "validate-thin-callers: ${violations} violation(s), ${clone_failures} clone failure(s), ${validator_crashes} validator crash(es)"
+          if [ "$clone_failures" -gt 0 ] || [ "$validator_crashes" -gt 0 ]; then
+            echo "::error::${clone_failures} clone failure(s) and ${validator_crashes} validator crash(es) — those targets were never scanned, so a green result here would be false."
+          fi
+          if { [ "$violations" -gt 0 ] || [ "$clone_failures" -gt 0 ] || [ "$validator_crashes" -gt 0 ]; } \
+             && [ "${{ inputs.dry-run }}" != "true" ]; then
             exit 1
           fi

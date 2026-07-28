@@ -181,7 +181,13 @@ jobs:
                 exit 0
               fi
 
-              python3 "$VALIDATOR_SCRIPT" "$repo" /tmp/pkg.json >> /tmp/findings/all.tsv || true
+              # The validator exits 1 to mean "found violations", so only
+              # rc >= 2 is a crash worth a sentinel.
+              rc=0
+              python3 "$VALIDATOR_SCRIPT" "$repo" /tmp/pkg.json >> /tmp/findings/all.tsv || rc=$?
+              if [ "$rc" -gt 1 ]; then
+                echo "$repo	validator-crashed	-" >> /tmp/findings/all.tsv
+              fi
             )
             rm -rf "$workdir"
           done < /tmp/targets.txt
@@ -191,8 +197,16 @@ jobs:
         run: |
           set -euo pipefail
           total_repos=$(wc -l < /tmp/targets.txt | tr -d ' ')
-          violations=$(grep -cE "	PACKAGE-" /tmp/findings/all.tsv) || violations=0
+          violations=$(awk -F'\t' '$2 ~ /^PACKAGE-/' /tmp/findings/all.tsv | wc -l | tr -d ' ')
           repos_with_violations=$(awk -F'\t' '$2 ~ /^PACKAGE-/{print $1}' /tmp/findings/all.tsv | sort -u | wc -l | tr -d ' ')
+          # The check step has always written clone-failed and
+          # package-describe-failed sentinel rows, and nothing has ever read
+          # them: neither matches /^PACKAGE-/, so a repo that could not be
+          # cloned or whose manifest would not resolve counted as clean. A
+          # target the validator never saw must not be reportable as a target
+          # with no findings.
+          clone_failures=$(awk -F'\t' '$2 == "clone-failed"' /tmp/findings/all.tsv | wc -l | tr -d ' ')
+          not_scanned=$(awk -F'\t' '$2 == "package-describe-failed" || $2 == "validator-crashed"' /tmp/findings/all.tsv | wc -l | tr -d ' ')
 
           echo "repos-scanned=$total_repos" >> "$GITHUB_OUTPUT"
           echo "repos-with-violations=$repos_with_violations" >> "$GITHUB_OUTPUT"
@@ -205,6 +219,13 @@ jobs:
             echo "Repos with violations: $repos_with_violations"
             echo "Total violations: $violations"
             echo
+            if [ "$clone_failures" -gt 0 ] || [ "$not_scanned" -gt 0 ]; then
+              echo "> [!CAUTION]"
+              echo "> ${clone_failures} target(s) failed to clone and ${not_scanned} could not be described or crashed the validator — those repos were NOT scanned, so the counts above are a floor, not a total. Treat this run as failed."
+              echo
+              awk -F'\t' '$2 == "clone-failed" || $2 == "package-describe-failed" || $2 == "validator-crashed" { printf("- %s: `%s` %s\n", $2, $1, $3) }' /tmp/findings/all.tsv
+              echo
+            fi
             if [ "$violations" -gt 0 ]; then
               echo "### Per-repo findings"
               echo
@@ -216,7 +237,13 @@ jobs:
               }' /tmp/findings/all.tsv
             fi
           } > "$GITHUB_STEP_SUMMARY"
+          # Also to stdout — see the note in validate-thin-callers.yml.
+          echo "validate-package-structure: ${violations} violation(s) in ${repos_with_violations}/${total_repos} repo(s), ${clone_failures} clone failure(s), ${not_scanned} not-scanned"
+          if [ "$clone_failures" -gt 0 ] || [ "$not_scanned" -gt 0 ]; then
+            echo "::error::${clone_failures} clone failure(s) and ${not_scanned} target(s) that could not be described or crashed the validator — those targets were never scanned, so a green result here would be false."
+          fi
 
-          if [ "$violations" -gt 0 ] && [ "${{ inputs.dry-run }}" != "true" ]; then
+          if { [ "$violations" -gt 0 ] || [ "$clone_failures" -gt 0 ] || [ "$not_scanned" -gt 0 ]; } \
+             && [ "${{ inputs.dry-run }}" != "true" ]; then
             exit 1
           fi

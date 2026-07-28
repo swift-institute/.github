@@ -378,8 +378,48 @@ jobs:
           repositories: .github
           permission-issues: write
 
+      # The per-leg breakdown used to exist only in each cell's step summary,
+      # which is not reachable from the run list, the API, or a notification.
+      # So a reader who saw "72 jobs, some red" had to open cells one at a time
+      # to learn anything, and for three consecutive weeks nobody did. The job
+      # list for this very run IS available over the API, so name the failing
+      # legs in the issue itself.
+      - name: Enumerate this run's failing legs
+        id: legs
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          RUN_ID: ${{ github.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! gh api --paginate \
+                 "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/jobs" \
+                 --jq '.jobs[] | [.conclusion, .name] | @tsv' > /tmp/jobs.tsv 2>/tmp/jobs.err; then
+            # Fail soft, loudly. Losing the breakdown must not lose the issue.
+            echo "::warning::Could not enumerate this run's jobs ($(head -c 200 /tmp/jobs.err)); the issue will carry job-level status only."
+            : > /tmp/jobs.tsv
+          fi
+          total=$(wc -l < /tmp/jobs.tsv | tr -d ' ')
+          failed=$(awk -F'\t' '$1 != "success" && $1 != "skipped" && $2 ~ /^scan-/' /tmp/jobs.tsv | wc -l | tr -d ' ')
+          {
+            if [ "$total" -eq 0 ]; then
+              echo "_The per-leg breakdown could not be retrieved for this run._"
+            else
+              echo "**${failed} of ${total} jobs failing.** The failing scan legs:"
+              echo
+              awk -F'\t' '$1 != "success" && $1 != "skipped" && $2 ~ /^scan-/ {
+                printf("- `%s`\n", $2)
+              }' /tmp/jobs.tsv | sort
+            fi
+          } > /tmp/legs.md
+          echo "failed=${failed}" >> "$GITHUB_OUTPUT"
+          echo "total=${total}"   >> "$GITHUB_OUTPUT"
+          cat /tmp/legs.md
+
       - name: Build issue body
         env:
+          FAILED_LEGS: ${{ steps.legs.outputs.failed }}
+          TOTAL_JOBS: ${{ steps.legs.outputs.total }}
           RESULT_THIN_CALLERS: ${{ needs.scan-thin-callers.result }}
           RESULT_FILE_NAMING: ${{ needs.scan-file-naming.result }}
           RESULT_GITHUB_METADATA: ${{ needs.scan-github-metadata.result }}
@@ -419,8 +459,10 @@ jobs:
           cat > "${RUNNER_TEMP}/issue-body.md" <<EOF
           # Validators weekly sweep — ${today}
 
-          See the [run summary](${RUN_URL}) for the per-cell breakdown; each
-          matrix cell's step summary contains the per-org per-rule findings table.
+          $(cat /tmp/legs.md 2>/dev/null || echo "_Per-leg breakdown unavailable._")
+
+          Each failing leg's step summary names the specific repos and rules;
+          the [run summary](${RUN_URL}) links them all.
 
           ## Per-validator coverage (cross-org per-package-org-sweep)
 
@@ -475,13 +517,39 @@ jobs:
           *Idempotent: this issue is updated in place.*
           EOF
 
+          # The count goes in the TITLE, not only the body. The issue list is
+          # the only surface anyone sees without clicking, and a title that
+          # reads the same whether one leg or forty are failing carries no
+          # information at all.
           {
-            echo "ISSUE_TITLE=Validators weekly sweep ${today}"
+            echo "ISSUE_TITLE=Validators weekly sweep — ${FAILED_LEGS:-?} leg(s) failing (${today})"
             echo "FILE_ISSUE=true"
             echo "CLEAN_RUN=false"
           } >> "$GITHUB_ENV"
 
+      # upsert-tracking-issue applies the label on CREATE only, and falls back
+      # to a label-less create when the label does not exist on the target
+      # repo. `lint-validators` did not exist when issue #34 was created on
+      # 2026-05-19, so it never got one — and the edit path cannot repair that.
+      # Ensuring the label exists BEFORE the upsert is what makes the label
+      # contract hold for the next created issue; the reconcile step below
+      # repairs the issue that already exists.
+      - name: Ensure the tracking label exists
+        if: ${{ inputs.dry-run != true }}
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh label create lint-validators \
+            --repo swift-institute/.github \
+            --color 'B60205' \
+            --description 'Weekly cross-org validator sweep findings' \
+            2>/dev/null && echo "created label lint-validators" \
+            || echo "label lint-validators already present"
+
       - name: Upsert tracking issue
+        id: upsert
         if: ${{ env.FILE_ISSUE == 'true' && inputs.dry-run != true }}
         uses: swift-institute/.github/.github/actions/upsert-tracking-issue@main
         with:
@@ -492,6 +560,74 @@ jobs:
           label: 'lint-validators'
           gh-token: ${{ steps.token.outputs.token }}
 
+      # The upsert labels on CREATE only, so an issue that was created before
+      # the label existed stays unlabelled forever — it is edited, never
+      # recreated. Issue #34 had been in exactly that state since 2026-05-19.
+      # Applying the label on every run makes it self-healing, and `gh issue
+      # edit --add-label` is idempotent.
+      - name: Reconcile the label on the tracking issue
+        if: ${{ env.FILE_ISSUE == 'true' && inputs.dry-run != true && steps.upsert.outputs.issue-number != '' }}
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          ISSUE: ${{ steps.upsert.outputs.issue-number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh issue edit "$ISSUE" --repo swift-institute/.github \
+            --add-label lint-validators
+          echo "issue #${ISSUE} carries label lint-validators"
+
+      # `gh issue edit --body-file` rewrites the body and NOTIFIES NOBODY. That
+      # is the mechanism by which this sweep went unread: issue #34 was created
+      # once in May and silently rewritten every week after, accumulating zero
+      # comments and zero notifications while the fleet stayed red.
+      #
+      # A comment does notify, and it leaves a dated trail, so the tenth
+      # consecutive red week is visible as such instead of looking like the
+      # first. Posted only when the failing-leg count CHANGES, so the issue does
+      # not become a weekly drip that trains everyone to mute it — the case this
+      # is trying to fix, arrived at from the other direction.
+      - name: Comment when the failing-leg count changes
+        if: ${{ env.FILE_ISSUE == 'true' && inputs.dry-run != true && steps.upsert.outputs.issue-number != '' }}
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          ISSUE: ${{ steps.upsert.outputs.issue-number }}
+          FAILED_LEGS: ${{ steps.legs.outputs.failed }}
+          TOTAL_JOBS: ${{ steps.legs.outputs.total }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          marker='<!-- lint-validators-legcount -->'
+          previous=$(gh issue view "$ISSUE" --repo swift-institute/.github \
+            --json comments --jq \
+            "[.comments[] | select(.body | contains(\"${marker}\"))] | last | .body // \"\"" \
+            | grep -oE 'legs=[0-9]+' | tail -1 | cut -d= -f2 || true)
+          previous="${previous:-none}"
+          current="${FAILED_LEGS:-?}"
+          if [ "$previous" = "$current" ]; then
+            echo "Failing-leg count unchanged at ${current}; not commenting."
+            exit 0
+          fi
+          # Written to a file rather than passed inline: a multi-line --body
+          # argument has to sit at column 0 to render, which terminates the
+          # enclosing YAML block scalar. The repo's own CI-090/CI-103/CI-105
+          # validators caught that on the first attempt.
+          {
+            printf '%s legs=%s\n\n' "$marker" "$current"
+            printf '**Failing legs: %s → %s** (of %s jobs) — [run](%s)\n\n' \
+              "$previous" "$current" "${TOTAL_JOBS:-?}" "$RUN_URL"
+            cat /tmp/legs.md 2>/dev/null || true
+          } > "${RUNNER_TEMP}/leg-comment.md"
+          gh issue comment "$ISSUE" --repo swift-institute/.github \
+            --body-file "${RUNNER_TEMP}/leg-comment.md"
+          echo "commented: ${previous} -> ${current}"
+
+      # Mirrors the upsert's own lookup. This searched `--label lint-validators`
+      # while the upsert searches by title-prefix, and the issue carries no
+      # label — so the two never referred to the same issue and the close path
+      # could not fire even on a fully clean fleet. Guard mirror conditions on
+      # mirrored predicates, or the path you did not exercise is the broken one.
       - name: Close tracking issue when clean
         if: ${{ env.CLEAN_RUN == 'true' && inputs.dry-run != true }}
         env:
@@ -502,11 +638,16 @@ jobs:
           existing=$(gh issue list \
             --repo swift-institute/.github \
             --state open \
-            --label lint-validators \
+            --search 'Validators weekly sweep in:title' \
             --json number \
             --jq '.[].number' || echo "")
+          if [ -z "$existing" ]; then
+            echo "Fleet clean and no open sweep issue to close."
+            exit 0
+          fi
           for n in $existing; do
             gh issue close "$n" \
               --repo swift-institute/.github \
-              --comment "All 10 validators clean as of ${{ github.run_id }}; auto-closing."
+              --comment "All 10 validators clean as of run ${{ github.run_id }}; auto-closing."
+            echo "closed #${n}"
           done

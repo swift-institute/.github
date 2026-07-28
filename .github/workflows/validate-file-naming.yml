@@ -120,7 +120,15 @@ jobs:
                 echo "$repo	clone-failed	-" >> /tmp/findings.tsv
                 exit 0
               fi
-              python3 "$VALIDATOR" "$repo" "$workdir" >> /tmp/findings.tsv || true
+              # validate-file-naming.py exits 1 to mean "found violations" and
+              # 2 for a usage error, so only rc >= 2 is a crash. Getting this
+              # wrong in the other direction — treating rc 1 as a crash —
+              # marks every repo WITH findings as unscanned.
+              rc=0
+              python3 "$VALIDATOR" "$repo" "$workdir" >> /tmp/findings.tsv || rc=$?
+              if [ "$rc" -gt 1 ]; then
+                echo "$repo	validator-crashed	-" >> /tmp/findings.tsv
+              fi
             )
             rm -rf "$workdir"
           done < /tmp/targets.txt
@@ -129,21 +137,50 @@ jobs:
         id: aggregate
         run: |
           set -euo pipefail
-          violations=$(grep -cE "	API-IMPL-[0-9]+" /tmp/findings.tsv) || violations=0
+          # RULE_RE must list EVERY rule validate-file-naming.py can emit.
+          # It counted API-IMPL-* alone until 2026-07-28, while the validator
+          # has emitted TEST-009 since Pilot 9 — so TEST-009 was scanned,
+          # found, and then dropped from both the count and the table.
+          # Measured across the 473 public non-archived repos that day: 753
+          # live TEST-009 findings in 181 repos, entirely invisible. In
+          # swift-ecma the single TEST-009 finding was the org's only finding,
+          # so that leg reported success while carrying a real violation.
+          RULE_RE='^(API-IMPL-[0-9]+|TEST-009)$'
+          violations=$(awk -F'\t' -v re="$RULE_RE" '$2 ~ re' /tmp/findings.tsv | wc -l | tr -d ' ')
+          clone_failures=$(awk -F'\t' '$2 == "clone-failed"' /tmp/findings.tsv | wc -l | tr -d ' ')
+          validator_crashes=$(awk -F'\t' '$2 == "validator-crashed"' /tmp/findings.tsv | wc -l | tr -d ' ')
           echo "total-violations=$violations" >> "$GITHUB_OUTPUT"
           {
             echo "## validate-file-naming findings"
             echo "Total violations: $violations"
             echo
+            if [ "$clone_failures" -gt 0 ] || [ "$validator_crashes" -gt 0 ]; then
+              echo "> [!CAUTION]"
+              echo "> ${clone_failures} target(s) failed to clone and ${validator_crashes} crashed the validator — those repos were NOT scanned, so the count above is a floor, not a total. Treat this run as failed."
+              echo
+              awk -F'\t' '$2 == "clone-failed" || $2 == "validator-crashed" { printf("- %s: `%s`\n", $2, $1) }' /tmp/findings.tsv
+              echo
+            fi
             if [ "$violations" -gt 0 ]; then
+              echo "### By rule"
+              echo
+              awk -F'\t' -v re="$RULE_RE" '$2 ~ re {n[$2]++} END {for (r in n) printf("- `%s`: %d\n", r, n[r])}' /tmp/findings.tsv | sort
+              echo
               echo "| Repo | Rule | Message |"
               echo "|---|---|---|"
-              awk -F'\t' '$2 ~ /^API-IMPL-/{
+              awk -F'\t' -v re="$RULE_RE" '$2 ~ re {
                 gsub(/\|/, "\\|", $3);
                 printf("| `%s` | `%s` | %s |\n", $1, $2, $3)
               }' /tmp/findings.tsv
             fi
           } > "$GITHUB_STEP_SUMMARY"
-          if [ "$violations" -gt 0 ] && [ "${{ inputs.dry-run }}" != "true" ]; then
+          # Also to stdout — see the note in validate-thin-callers.yml on why
+          # a step-summary-only report is a report nobody reads.
+          echo "validate-file-naming: ${violations} violation(s), ${clone_failures} clone failure(s), ${validator_crashes} validator crash(es)"
+          if [ "$clone_failures" -gt 0 ] || [ "$validator_crashes" -gt 0 ]; then
+            echo "::error::${clone_failures} clone failure(s) and ${validator_crashes} validator crash(es) — those targets were never scanned, so a green result here would be false."
+          fi
+          if { [ "$violations" -gt 0 ] || [ "$clone_failures" -gt 0 ] || [ "$validator_crashes" -gt 0 ]; } \
+             && [ "${{ inputs.dry-run }}" != "true" ]; then
             exit 1
           fi
