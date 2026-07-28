@@ -57,6 +57,14 @@ on:
         type: string
         required: false
         default: ''
+      validator-ref:
+        # Pinning the caller pins the workflow but NOT the script it runs, so
+        # without this a green result cannot be attributed to a version of the
+        # checker. Default main = the behaviour every caller had before.
+        description: 'Git ref of swift-institute/.github to load the validator script from. Defaults to main. Pass a commit SHA to make a run reproducible from its caller.'
+        type: string
+        required: false
+        default: 'main'
       dry-run:
         description: 'Run checks but do not fail the job on findings.'
         type: boolean
@@ -135,12 +143,29 @@ jobs:
             echo "::notice title=Scan credentials::App secrets are unavailable on this event (Dependabot or fork PR), falling back to the automatic GITHUB_TOKEN. Public targets are scanned normally; a PRIVATE target cannot be cloned and will surface as clone-failed rather than passing quietly."
           fi
 
+      # Defaults to main, which is what every caller got before validator-ref
+      # existed. A caller that pins this workflow to a SHA should pin the same
+      # SHA here: otherwise it pins the workflow but not the script the workflow
+      # runs, and a green result still cannot be attributed to a version.
       - name: Checkout swift-institute/.github (validator host)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: swift-institute/.github
           path: institute-github
-          ref: main
+          ref: ${{ inputs.validator-ref }}
+
+      # The ref is echoed because a pinned-but-ignored parameter looks exactly
+      # like a pinned-and-honoured one in a green run. This line is what makes
+      # the difference observable after the fact.
+      - name: Report validator source
+        shell: bash
+        env:
+          VALIDATOR_REF: ${{ inputs.validator-ref }}
+        run: |
+          set -euo pipefail
+          resolved="$(git -C institute-github rev-parse HEAD)"
+          echo "::notice title=Validator source::swift-institute/.github@${VALIDATOR_REF} resolved to ${resolved}"
+          echo "validator-ref=${VALIDATOR_REF} resolved=${resolved}"
 
       - name: Resolve target repo
         id: targets
