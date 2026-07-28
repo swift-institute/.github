@@ -556,6 +556,51 @@ habit, and *choosing* what to verify is the step where the habit fails silently.
 Nothing in the output distinguishes "I checked this" from "this never occurred to
 me."
 
+## 16. Measure the filter, not just the work it avoids
+
+Found 2026-07-28, building a lint capability over 441 repositories.
+
+The sweep had two scopes: everything, and `--changed` — lint only packages
+carrying local work, so routine runs would be cheap. The changed scope selected
+**10 packages out of 441** and took **61 seconds**.
+
+It linted **zero files** in those 61 seconds. Every one of them went to deciding
+*which* packages to lint: `git status`, then branch, then upstream, then a
+revision count, run one repository at a time — roughly two thousand subprocesses
+to avoid roughly four hundred lint invocations. The optimisation cost more than
+the work it removed, and it had been written precisely because the full sweep
+looked expensive.
+
+Running the classification through the same bounded concurrency as the
+measurement took it to **11.5 seconds** — and the machine was *busier* for the
+second run than the first, so the improvement is understated rather than
+flattered.
+
+> **A scope filter is work. Instrument it separately from the work it selects.**
+> A single end-to-end number cannot distinguish "the job is expensive" from "the
+> thing that decides what to do is expensive", and the second is invisible
+> because it produces no output — no files scanned, no findings, nothing in the
+> log that looks like effort.
+
+The general shape, which is not specific to linting:
+
+- **Per-item cost times population is the filter's real price.** Anything run
+  once per candidate — a status probe, a metadata lookup, a HEAD request — is a
+  full sweep of its own wearing the costume of an optimisation.
+- **The suspicious signature is a fast job with nothing to show for it.** If a
+  run reports a small selected population and a large elapsed time, the gap is
+  the filter. Report both numbers so the gap is visible without being looked
+  for.
+- **Selectivity does not imply cheapness.** These two properties get conflated
+  because both are stated as "only N of M" — one is about the output, the other
+  about the input, and the filter pays for the input every time.
+
+This is §13's decomposition rule applied before the fact rather than after: the
+sweep now records a per-package duration and prints its slowest packages, which
+is what made a *second* surprise legible — two packages accounted for 352 s of
+2747 s of engine time, both because of an upstream break, not because linting is
+slow.
+
 ## The shape underneath all of these
 
 Three failures here compounded, and none was visible alone:
