@@ -229,6 +229,32 @@ Nothing in a zero tells you which one you got.
 > path, in the same invocation shape**. A control run somewhere else proves the
 > tool works, not that this probe was pointed at anything.
 
+**Search APIs are the worst case of this, because they return empty *and*
+successful.** Two instances, same class, different causes, both on `gh` code
+search:
+
+- `gh api search/code` returned nothing for a file that **exists** in
+  `swift-institute/.github`. The tree API found it immediately. Cause: the index
+  is stale or the repository is unindexed. Anyone using code search to establish
+  that something does not exist gets a confident false absence.
+- `gh search code` returned empty for five consecutive queries — **`rc=0` on an
+  HTTP 403 rate-limit.** The quota was exhausted; the search never ran. Exit
+  status said success, output said nothing found, and the two together read
+  exactly like a clean corpus.
+
+> **An empty search result is evidence of absence only once you have proven the
+> search ran — and the exit status will not tell you.** Establish a positive
+> control in the same session and against the same endpoint: query something you
+> know is present. If the control comes back empty too, you have measured your
+> quota or your index, not the corpus.
+
+**Prefer an instrument that enumerates over one that searches** when the claim is
+an absence. A tree listing, a `git grep` over a real checkout, or an API that
+returns the whole population can be *counted*; a search index can only be
+believed. Where a search is the only option, report it as "not found by search"
+rather than "does not exist", because those are different claims and only one of
+them is yours to make.
+
 **Check the predicate before you check the timing.** When an enumerator misses
 something, the tempting explanation is that the snapshot fell in a gap. Usually it
 is the pattern: a predicate built from what you expected to find cannot match what
