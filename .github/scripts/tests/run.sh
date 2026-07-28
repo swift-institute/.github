@@ -14,10 +14,18 @@
 #
 # Each scenario is a self-contained repo-shape directory with Package.swift +
 # Sources/ tree.
+#
+# Usage: run.sh [rule-id-prefix]
+#
+# With no argument every fixture runs. An optional prefix restricts the run to
+# matching rule-ids (e.g. `run.sh skill-`), so a workflow can gate on the subset
+# it owns without taking responsibility for the whole corpus. Non-matching rule
+# dirs are not counted as skips -- they were never selected.
 
 set -eu
 
 cd "$(dirname "$0")"
+RULE_FILTER="${1:-}"
 SCRIPTS_DIR="$(cd .. && pwd)"
 FIXTURES_DIR="$(pwd)/fixtures"
 
@@ -81,6 +89,8 @@ validator_for() {
             echo "$SCRIPTS_DIR/validate-readme.py" ;;
         test-009)
             echo "$SCRIPTS_DIR/validate-file-naming.py" ;;
+        skill-frontmatter|skill-identity|skill-links|skill-machine-path|skill-internal-rule-id|skill-corpus-empty)
+            echo "$SCRIPTS_DIR/validate-skill-hygiene.py" ;;
         *)
             echo "" ;;
     esac
@@ -142,6 +152,15 @@ prefix_for() {
         readme-017)      echo "README-017" ;;
         readme-026)      echo "README-026" ;;
         test-009)        echo "TEST-009" ;;
+        # Skill hygiene findings are named for the behaviour rather than an
+        # internal rule ID, so the fixture dir and the TSV code are the same
+        # string.
+        skill-frontmatter)      echo "skill-frontmatter" ;;
+        skill-identity)         echo "skill-identity" ;;
+        skill-links)            echo "skill-links" ;;
+        skill-machine-path)     echo "skill-machine-path" ;;
+        skill-internal-rule-id) echo "skill-internal-rule-id" ;;
+        skill-corpus-empty)     echo "skill-corpus-empty" ;;
         *)               echo "" ;;
     esac
 }
@@ -207,6 +226,10 @@ echo
 
 for rule_dir in "$FIXTURES_DIR"/*/; do
     rule_id="$(basename "$rule_dir")"
+    case "$rule_id" in
+        "$RULE_FILTER"*) ;;
+        *) continue ;;
+    esac
     echo "[$rule_id]"
     for scenario_kind_dir in "$rule_dir"*/; do
         scenario_kind="$(basename "$scenario_kind_dir")"
