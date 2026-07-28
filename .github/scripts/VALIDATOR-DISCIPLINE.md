@@ -9,6 +9,15 @@ The one-line version:
 > **A gate without a positive control is not evidence, regardless of how it is
 > pinned.**
 
+What the 2026-07-28 sweep audit found, using this method, is recorded in two
+companion files rather than repeated here:
+
+- `SWEEP-FINDINGS-2026-07-28.md` — what the validators are reporting once their
+  counters were corrected, with the adoption measurement that establishes the
+  fleet is wrong rather than the checks.
+- `SWEEP-COVERAGE-GAPS-2026-07-28.md` — the two populations the sweep was
+  reporting on without having measured them.
+
 ---
 
 ## 1. The extractor postmortem
