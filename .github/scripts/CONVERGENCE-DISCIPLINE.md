@@ -336,6 +336,35 @@ is a distinction between two undocumented behaviours, not a rule to rely on — 
 lesson is to test **both directions** of any toggle, not to trust the one that
 happened to work.
 
+### A fourth instance, where the fixtures themselves were the broken instrument
+
+Found the same day by the validator-sweep session, and worth recording because the
+failing component was the *control apparatus*, not the thing under test.
+
+A new guard shipped with five fixture scenarios — one `pass/`, four `fail/`. Run
+locally, every one behaved: `pass/` exited 0, all four `fail/` exited 1. That is
+exactly the result a working positive control produces.
+
+The four `fail/` scenarios were exiting 1 because the guard **crashed on import**.
+It annotated a helper `-> list[str] | None`, which the runner's **Python 3.9**
+evaluates at function-definition time and rejects with `TypeError: unsupported
+operand type(s) for |`. The script died before reading a single fixture.
+
+So the four controls "passed" — a non-zero exit is a non-zero exit — while
+measuring nothing at all. The only reason it surfaced is that the harness printed
+each scenario's *output* alongside its exit code, and the `pass/` scenario, which
+must exit 0, was visibly red for the same reason.
+
+> **An exit status is not a verdict.** For a `fail/` fixture, "the checker
+> reported a violation" and "the checker could not start" are the same number.
+> Assert on the *finding*, or at minimum print what the check said, so a crash
+> cannot wear a control's clothes.
+
+The `pass/` fixture did all the work here. A suite of only `fail/` scenarios would
+have been uniformly, confidently green — every control firing, nothing measured.
+**A control set needs at least one member whose expected result is the one a
+crash cannot produce.**
+
 ## 13. Wall clocks are contaminated by load; sums of reported per-item timings are not
 
 A measurement on a shared machine returned **329 s**, then **148 s** for the same

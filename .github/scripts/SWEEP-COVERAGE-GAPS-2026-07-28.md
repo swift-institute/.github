@@ -128,8 +128,9 @@ silent in a different way:
 
 - The filter streams **one name per line**, and enumeration failure is fatal
   rather than falling back to an empty array. Verified against the live API:
-  **473** pairs across the 17 orgs, matching an independent enumeration of the
-  same population exactly.
+  **473** pairs across the 17 orgs at the time, matching an independent
+  enumeration of the same population exactly. The population is now 471; two
+  repositories were archived later the same day.
 - **Zero targets fails closed.** Zero here is a broken instrument, not a small
   number, and its entire signature is producing no jobs for anyone to notice.
 - **`skipped` is no longer clean**, and the validators that did not run are named
@@ -139,7 +140,7 @@ silent in a different way:
 
 ### What is left: a capacity design
 
-At **473** targets the pre-existing 256-cell GitHub Actions matrix guard now
+At **471** targets the pre-existing 256-cell GitHub Actions matrix guard now
 fires, so `resolve-targets` fails and the six validators **still do not run** —
 but loudly, and named, instead of silently reporting clean. That is the intended
 intermediate state, not a regression.
@@ -147,14 +148,30 @@ intermediate state, not a regression.
 The workflow's own header already anticipated this: *"Wave B needs to split scan
 jobs by layer or org-group."* It now has to happen.
 
-Know the scale before choosing an approach. 6 validators × 473 targets is
-**~2,800 jobs per weekly run** on a self-hosted macOS runner. Chunking into
-`-a`/`-b` halves clears the matrix limit and leaves that cost untouched. Giving
-these validators an org-sweep loop like the four that work — one job scanning
-many repositories — costs 6 × 17 = **102** jobs and matches a shape already
-proven in `validate-file-naming.yml` and its siblings. That looks like the
-better trade, but it changes `validate-base.yml`'s single-target contract and
-belongs to whoever owns that.
+### Ruled 2026-07-28: take the org-sweep loop, not the per-repo matrix
+
+Two shapes were available and the trade is not close.
+
+| Shape | Jobs per weekly run | Notes |
+|---|---:|---|
+| Per-repo matrix, chunked `-a`/`-b` | 6 × 471 ≈ **2,800** | clears the matrix limit, leaves the cost untouched |
+| **Org-sweep loop** (chosen) | 6 × 17 = **102** | one job scans many repositories |
+
+**Decision: the org-sweep loop.** It matches the shape already proven by the
+four validators that do work — `validate-file-naming.yml` and its siblings —
+rather than inventing a third pattern for the same job.
+
+This changes `validate-base.yml`'s single-target contract, and that is the
+point rather than a concession: **that contract is what makes these six
+unrunnable at fleet scale**, so changing it is the fix. The change is
+reversible, so it was not escalated further.
+
+**Not yet implemented.** Recorded here so the decision is durable rather than
+living in a session transcript. Whoever implements it should carry over the
+three properties the four working validators already have and that the sweep
+audit had to add to them: count every rule the validator emits, fail closed on
+targets that were never scanned, and echo counts to stdout rather than only to
+the step summary.
 
 The four org-sweep scanners depend on `config`, not `resolve-targets`, so they
 are unaffected either way — the job split that makes that true is worth keeping.

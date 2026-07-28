@@ -40,14 +40,16 @@ The local/CI disagreement is what surfaced it.
 
 | Rule | Findings | Repos |
 |---|---:|---:|
-| `API-IMPL-007` extension file lacking a `+` or ` where ` segment | 1265 | 125 |
-| `TEST-009` test file lacking the space before `Tests` | 753 | 181 |
-| `API-IMPL-006` compound basename matching no declaration | 713 | 44 |
-| `GH-REPO-074` `ci.yml` is not a thin caller | 43 | 12 |
+| `API-IMPL-007` extension file lacking a `+` or ` where ` segment | 1262 | 124 |
+| `TEST-009` test file lacking the space before `Tests` | 706 | 179 |
+| `API-IMPL-006` compound basename matching no declaration | 693 | 43 |
+| `GH-REPO-074` `ci.yml` is not a thin caller | 42 | 11 |
 | `CI-059` secrets-forwarding shape | 9 | 7 |
 | `PACKAGE-AGGREGATE-EXPORT` non-export content in an exports-only target | 1 | 1 |
 
-**2784 findings across 257 of the 473 repositories.**
+**2713 findings across 255 of 471 repositories**, re-measured 2026-07-28 after
+two repositories left the corpus (see *Corpus change* below). The first
+measurement, over 473 repositories, was 2784 across 257.
 
 The thirteen failing `scan-file-naming` legs are **three causes**, not thirteen
 and not one. That distinction was the point of the exercise: a leg count is not
@@ -59,8 +61,11 @@ a cause count.
 
 A check prescribing a shape nothing uses is a defect in the check, not in the
 fleet — the same defect as a skill asserting a convention nobody practises. So
-adoption was measured over the same 473 repositories **before** any conclusion
-was drawn about who was wrong:
+adoption was measured over the 473-repository population **before** any
+conclusion was drawn about who was wrong. It was not re-measured after the
+corpus moved to 471; the two repositories that left carried 71 findings between
+them and cannot move a ratio of this size, but the figures below are stated as
+of the earlier population rather than silently carried forward:
 
 | Convention | Adopted | Population |
 |---|---:|---|
@@ -88,13 +93,17 @@ Heavily concentrated, with a long mechanical tail:
 | `swift-foundations/swift-html-render` | 323 |
 | `swift-foundations/swift-structured-queries-postgres` | 112 |
 | `swift-standards/swift-postgresql-standard` | 100 |
-| `swift-institute/fork-swift-parsing` | 70 |
 | `swift-standards/swift-stripe-types` | 65 |
 | `swift-foundations/swift-authentication` | 65 |
 | `swift-primitives/swift-standard-library-extensions` | 60 |
+| `swift-iso/swift-iso-9945` | 38 |
 
-Two repositories carry 1262 of the 2784. The remaining 237 repositories carry
-785 between them.
+Two repositories carry **1262 of the 2713**. The remaining 247 repositories
+carry 1011 between them.
+
+`swift-structured-queries-postgres` is one of the three Institute-owned forks
+that stay public because they are load-bearing — so 112 of the findings above
+sit on code the Institute did not author. See the vendored-fork section.
 
 ### No cheap fix turns a leg green
 
@@ -121,34 +130,61 @@ built on finding counts will mis-size exactly those.
 
 ---
 
-## Settle this before renaming anything
+## The vendored-fork question: settled by removal, not by exemption
 
-Two repositories in scope are verbatim vendored upstream code:
+This section previously asked whether the naming validators should gain a
+`vendored-upstream` carve-out, on the grounds that `metadata-schema.json` had
+already accepted that argument for READMEs and never generalised it.
 
-- `swift-institute/fork-swift-parsing` — a fork of `pointfreeco/swift-parsing`,
-  carrying **70 findings**. Its README is upstream's, badges and all.
-- `swift-institute/pointfree-url-form-coding` — self-described as a fork of
-  Point-Free's `swift-web/UrlFormEncoding`.
+**It was resolved on 2026-07-28 by taking the two repositories out of the
+corpus instead.** On the principal's instruction,
+`swift-institute/fork-swift-parsing` and
+`swift-institute/pointfree-url-form-coding` are now **private and archived** —
+verified by reading the API, not by trusting the instruction. Both were
+vestigial: packages had been moved out of a personal org into
+`swift-foundations` and reworked to fit Institute code, and these two were left
+behind.
 
-Both declare `readme.family: E`, i.e. ordinary Institute sub-packages.
+Since enumeration filters to public and non-archived, they drop out
+automatically. No exemption axis was added and no fork was bent to Institute
+conventions.
 
-`metadata-schema.json` has **already reasoned this through** for READMEs. The
-`readme.exempt: vendored-upstream` value exists precisely because editing
-vendored files to satisfy Institute conventions "buys a cosmetic gain and pays
-permanent divergence and harder merges forever". But that exemption covers
-README routing only, and **nothing equivalent exists for the naming
-validators**. Its adoption across the fleet is **1 of 473** repositories
-(`swift-institute/cclsp`).
+**Three forks stay public because they are load-bearing**, and will appear in
+the corpus: `swift-tagged-primitives`, `swift-url-routing`,
+`swift-structured-queries-postgres`. `cclsp` was deliberately left alone — it
+looks like a development tool rather than a package dependency, so its zero
+dependent count does not carry the same meaning.
 
-So an argument the Institute has already accepted has not been generalised, and
-the naming validators currently hold third-party code to conventions written for
-Institute-authored code. Renaming 70 files in a fork is the thing that reasoning
-says not to do.
+**The general question is therefore deferred, not answered.** Nothing has been
+decided about whether an Institute-owned fork that *is* load-bearing should be
+held to Institute naming conventions. The three above are in scope today and
+`swift-structured-queries-postgres` already carries findings. Expect this to
+return; the removal resolved two instances, not the principle.
 
-This is a policy question, not a lint fix, and it changes what the target state
-*is* — so it belongs before the tail is worked, not after.
+### Corpus change, measured rather than subtracted
 
----
+The population moved from 473 to 471. The finding total was **re-measured** on
+refreshed clones rather than reduced on paper — two repositories leaving a
+corpus is exactly the sort of change that should be observed:
+
+| | Before (473) | Now (471) | Delta |
+|---|---:|---:|---:|
+| Findings | 2784 | 2713 | −71 |
+| Repositories with findings | 257 | 255 | −2 |
+
+The two repositories that left the finding list are exactly the two archived,
+and **no repository newly entered it**. The 71 findings are precisely those two
+repositories' own. The re-measurement happens to agree with the subtraction —
+which is a stronger statement than the subtraction would have been, because it
+also establishes that nothing else in the corpus moved.
+
+One caution on the enumeration used for that re-measure: the first attempt
+returned a delta of ~470 repositories, which is absurd on its face and was the
+only reason it got a second look. `for org in $ORGS` does not word-split in
+**zsh**, so the whole org list interpolated into one URL and the enumeration
+returned nothing; every repository then appeared to have left. Run enumeration
+under `bash` explicitly. An implausible number is a measurement to re-check
+before it is a finding to report.
 
 ## Provenance
 
