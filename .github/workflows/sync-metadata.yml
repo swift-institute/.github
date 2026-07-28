@@ -153,6 +153,10 @@ jobs:
           summary_lines=()
           unentitled=0
           unentitled_sample=""
+          # Set once the first repo in this run proves the sub-features are not
+          # entitled. The cause is org-wide, so probing every remaining repo
+          # would cost 2 API calls each per night to relearn the same fact.
+          sub_unsupported=0
 
           # Build target list — single-repo mode bypasses enumeration; org-mode
           # reads from the enumerate-org-public-repos composite output.
@@ -308,6 +312,12 @@ jobs:
               [[ "$desired_pp" != "$current_pp" ]] && sec_args+=(secret_scanning_push_protection)
               [[ "$desired_np" != "$current_np" ]] && sub_args+=(secret_scanning_non_provider_patterns)
               [[ "$desired_vc" != "$current_vc" ]] && sub_args+=(secret_scanning_validity_checks)
+              # Already proven unattainable in this run — count the repo and
+              # drop the attempt rather than re-probing the same org fact.
+              if [[ $sub_unsupported -eq 1 && ${#sub_args[@]} -gt 0 ]]; then
+                unentitled=$((unentitled+1))
+                sub_args=()
+              fi
               repo_diffs=$((repo_diffs + ${#sec_args[@]} + ${#sub_args[@]}))
             else
               echo "  ${target}: security settings skipped (not public — no security_and_analysis surface exists)"
@@ -367,10 +377,11 @@ jobs:
                 got_np=$(echo "$readback" | jq -r .np)
                 got_vc=$(echo "$readback" | jq -r .vc)
                 if [[ "$got_np" != "$np_status" || "$got_vc" != "$vc_status" ]]; then
-                  echo "    ${target}: sub-features did not take effect (want np=${np_status} vc=${vc_status}, got np=${got_np} vc=${got_vc})"
+                  echo "    ${target}: sub-features did not take effect (want np=${np_status} vc=${vc_status}, got np=${got_np} vc=${got_vc}) — not retrying the rest of this run"
                   repo_diffs=$((repo_diffs - ${#sub_args[@]}))
                   unentitled=$((unentitled+1))
                   [[ -z "$unentitled_sample" ]] && unentitled_sample="$target"
+                  sub_unsupported=1
                 fi
               fi
               edits_applied=$((edits_applied + repo_diffs))
@@ -384,7 +395,7 @@ jobs:
           # One warning for the whole run, not one per repo — the cause is
           # org-wide entitlement, so N identical warnings would be noise.
           if [[ $unentitled -gt 0 ]]; then
-            echo "::warning::${unentitled} repo(s) accepted the secret-scanning sub-feature PATCH (HTTP 2xx) without applying it, e.g. ${unentitled_sample}. secret_scanning_non_provider_patterns and secret_scanning_validity_checks require GitHub Secret Protection (Advanced Security); on a free plan the API no-ops silently. Authored intent in metadata.yaml is correct and will converge once the entitlement exists."
+            echo "::warning::${unentitled} repo(s) want secret_scanning_non_provider_patterns / secret_scanning_validity_checks but cannot have them. Probed on ${unentitled_sample}: the PATCH returns HTTP 2xx and silently no-ops. Both require GitHub Secret Protection (Advanced Security), which this plan does not include; the probe is not repeated per repo because the cause is org-wide. Authored intent in metadata.yaml is correct and converges if the entitlement ever exists."
           fi
 
           {
