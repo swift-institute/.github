@@ -295,6 +295,47 @@ have been.
 > a checkout cache inside it — and clearing two of the three produced a confident
 > green that meant nothing.
 
+### The cache list, because "clean" here means four things
+
+Found the same day, in the same session, by a separate experiment. Any claim in
+this programme about **clean**, **offline**, or **reverted** SwiftPM state has to
+clear all four:
+
+| Cache | Cleared by | Survives |
+|---|---|---|
+| Resolved pins | `rm Package.resolved` | everything else |
+| Build directory | `rm -rf .build` | `swift package clean` |
+| Checkout cache | `rm -rf .build/checkouts` | `unedit`, and removal of the remotes |
+| **Shared manifest cache** | `--manifest-cache none` | **all of the above, plus `resolve`** |
+
+The shared manifest cache lives outside the package entirely
+(`~/Library/Caches/org.swift.swiftpm/manifests`, 144 MB on the machine where this
+was found), so nothing done inside a checkout touches it.
+
+### And the trap that made it matter: content-keyed caches versus ambient-state inputs
+
+> **A manifest whose evaluation depends on ambient filesystem state is unreliable
+> under a content-keyed cache.** The cache key is the manifest's *bytes*. It cannot
+> see the input the manifest actually read, so changing that input changes nothing.
+
+Concretely: a package manifest was made to switch between two dependency sources
+depending on whether a marker file existed. Creating the marker switched it **on**.
+Deleting the marker did **not** switch it off — and neither did touching the
+manifest, nor an explicit `resolve`. It kept resolving the wrong way until the
+manifest cache was disabled, which is what turned a hypothesis into a diagnosis.
+
+The failure direction is the dangerous one: the operator believes they have
+**turned the special mode off** and has not. Anyone reaching for a
+conditionally-evaluating manifest — a build flag, a marker file, a hostname check —
+will hit this. An input the cache key does not include is an input the cache will
+ignore.
+
+Worth knowing for contrast: an *environment variable* read by the same manifest
+reverted correctly in both directions, because SwiftPM's key accounts for it. That
+is a distinction between two undocumented behaviours, not a rule to rely on — the
+lesson is to test **both directions** of any toggle, not to trust the one that
+happened to work.
+
 ## 13. Wall clocks are contaminated by load; sums of reported per-item timings are not
 
 A measurement on a shared machine returned **329 s**, then **148 s** for the same
