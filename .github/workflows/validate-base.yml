@@ -185,6 +185,8 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.mint-token.outputs.token || github.token }}
           VALIDATOR: ${{ github.workspace }}/institute-github/${{ inputs.validator-script }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           : > /tmp/findings.tsv
@@ -195,6 +197,30 @@ jobs:
             if ! gh repo clone "$repo" . -- --depth 1 --quiet 2>/dev/null; then
               echo "$repo	clone-failed	-" >> /tmp/findings.tsv
               exit 0
+            fi
+            # gh repo clone takes the DEFAULT BRANCH. On a pull request that
+            # means the validator inspected main and never saw the change under
+            # review: a pull request introducing a violation passed, and the
+            # push run went red only after the content had already landed. A
+            # gate that reports on what is already merged is a notification, not
+            # a gate.
+            #
+            # Only when the target IS the repository raising the pull request.
+            # Cross-repo sweeps legitimately scan their target's default branch,
+            # and their behaviour is unchanged. Fetched by PR number rather than
+            # head SHA so pull requests from forks resolve too.
+            if [ -n "${PR_NUMBER}" ] && [ "$repo" = "${PR_REPO}" ]; then
+              if git fetch --depth 1 origin "pull/${PR_NUMBER}/head" >/dev/null 2>&1 \
+                 && git checkout -q FETCH_HEAD; then
+                echo "::notice title=Scan target::${repo} at pull/${PR_NUMBER}/head ($(git rev-parse --short HEAD))"
+              else
+                # Failing closed: silently scanning main here would reproduce
+                # exactly the blind spot this block exists to remove.
+                echo "$repo	pr-checkout-failed	-" >> /tmp/findings.tsv
+                exit 0
+              fi
+            else
+              echo "::notice title=Scan target::${repo} at default branch ($(git rev-parse --short HEAD))"
             fi
             # Capture the validator's exit code without tripping `set -e`. The
             # validators are signal-via-TSV: `__main__` returns 0 even WITH
@@ -240,7 +266,7 @@ jobs:
           # of either sentinel matches no rule regex, exactly like clone-failed).
           # Detect both row kinds explicitly and fail closed.
           clone_failures=$(awk -F'\t' '$2 == "clone-failed"' /tmp/findings.tsv | wc -l | tr -d ' ')
-          validator_crashes=$(awk -F'\t' '$2 == "validator-crashed"' /tmp/findings.tsv | wc -l | tr -d ' ')
+          validator_crashes=$(awk -F'\t' '$2 == "validator-crashed" || $2 == "pr-checkout-failed"' /tmp/findings.tsv | wc -l | tr -d ' ')
           echo "total-violations=$violations" >> "$GITHUB_OUTPUT"
           {
             echo "## ${VALIDATOR_SCRIPT} findings"
@@ -260,9 +286,9 @@ jobs:
             fi
             if [ "$validator_crashes" -gt 0 ]; then
               echo "> [!CAUTION]"
-              echo "> ${validator_crashes} target(s) CRASHED THE VALIDATOR — it cloned but exited nonzero (uncaught exception or aborted setup), producing no usable findings. The violation count above is unreliable (false-green risk); treat this run as FAILED and fix the validator or its environment."
+              echo "> ${validator_crashes} target(s) PRODUCED NO USABLE FINDINGS — the validator exited nonzero, or the pull-request head could not be checked out so the change under review was never scanned. The violation count above is unreliable (false-green risk); treat this run as FAILED and fix the validator or its environment."
               echo
-              awk -F'\t' '$2 == "validator-crashed" { printf("- validator-crashed: `%s`\n", $1) }' /tmp/findings.tsv
+              awk -F'\t' '$2 == "validator-crashed" || $2 == "pr-checkout-failed" { printf("- %s: `%s`\n", $2, $1) }' /tmp/findings.tsv
               echo
             fi
             if [ "$violations" -gt 0 ]; then
