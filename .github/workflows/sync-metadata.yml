@@ -271,9 +271,17 @@ jobs:
             [[ "$desired_del" != "$current_del" ]] && merge_args+=(-F "delete_branch_on_merge=$desired_del")
             repo_diffs=$((repo_diffs + ${#merge_args[@]}))
 
-            # Secret scanning + push protection per [GH-REPO-057] (PUBLIC only;
-            # private repos need GHAS and the PATCH would error). gh repo view
-            # exposes no security surface, so current state is a dedicated call.
+            # Secret scanning + push protection per [GH-REPO-057]. PUBLIC ONLY,
+            # and the skip below is deliberate, not defensive: a private repo
+            # returns NO `security_and_analysis` object at all — not one with
+            # the features disabled — so there is no state to read and nothing
+            # to converge. Verified 2026-07-28 against rule-legal/rule and
+            # swift-institute/higher-order-app with `permissions.admin: true`,
+            # so it is not a token-scope artifact. Covering private repos needs
+            # GitHub Advanced Security, a purchase the Institute has declined,
+            # so this branch is permanently public-only by decision rather than
+            # by limitation. gh repo view exposes no security surface, so
+            # current state is a dedicated call.
             # The two sub-features (non-provider patterns, validity checks) are
             # rejected by GitHub unless secret scanning itself is enabled, so
             # they apply in a SECOND PATCH after the base pair, and are forced
@@ -301,6 +309,8 @@ jobs:
               [[ "$desired_np" != "$current_np" ]] && sub_args+=(secret_scanning_non_provider_patterns)
               [[ "$desired_vc" != "$current_vc" ]] && sub_args+=(secret_scanning_validity_checks)
               repo_diffs=$((repo_diffs + ${#sec_args[@]} + ${#sub_args[@]}))
+            else
+              echo "  ${target}: security settings skipped (not public — no security_and_analysis surface exists)"
             fi
 
             diffs_found=$((diffs_found + repo_diffs))
