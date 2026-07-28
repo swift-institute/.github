@@ -194,6 +194,59 @@ it ran and passed; on a consumer's call it checked out the consumer's tree, wher
 the fixtures do not exist, and died. **Green over a path nobody has run is the
 same failure as green over a check that cannot fire.**
 
+### Diff the rules a validator EMITS against the rules its workflow COUNTS
+
+Two lists, in two files, that must agree and have nothing holding them
+together. The validator grows a rule; the workflow's counting regex does not;
+the finding is computed, printed into a TSV, and then dropped on the floor.
+
+Measured 2026-07-28 across the 473 public non-archived repositories in the 17
+active orgs:
+
+| Workflow | Counted | Validator also emits | Findings discarded |
+|---|---|---|---|
+| `validate-file-naming.yml` | `API-IMPL-*` | `TEST-009` | 753, in 181 repos |
+| `validate-thin-callers.yml` | `GH-REPO-074` | `CI-030`, `CI-059` | 9 |
+
+The same regex filters the summary table, so the discarded findings were not
+merely uncounted — they were invisible. Worse, **three legs reported success
+while carrying real violations**, because in those orgs the dropped rule was the
+org's *only* finding. The sweep said 16 legs were failing; 19 had findings.
+
+This is harder to notice than an inert gate, because the check is working. It
+scans, it finds, it is right. Only the last step throws the answer away, and the
+green it produces is over a genuinely-scanned population.
+
+The check is mechanical and takes a minute: grep the validator for every rule
+string it can `emit()`, and confirm the workflow's regex admits each one. Do it
+whenever a validator gains a rule — which is exactly when nobody thinks to.
+
+### A report nobody is notified about is not a report
+
+The weekly sweep did file a tracking issue. It had been filing one since
+2026-05-19, updating it in place every week, and it had **zero comments and zero
+notifications** in ten weeks.
+
+`gh issue edit --body-file` rewrites a body and notifies nobody. So the
+mechanism that looked like reporting was, in delivery terms, a no-op — the same
+category as the gates above, one layer out: it produced an artifact rather than
+a signal.
+
+Two more defects sat behind it, each invisible while the first held:
+
+- The label the workflow passed **did not exist in the repository**. The upsert
+  action applies a label on CREATE and silently falls back to a label-less
+  create, so the issue never had one, and the edit path cannot repair that.
+- The close-when-clean step searched by that label while the upsert searched by
+  title-prefix. **The two never referred to the same issue**, so auto-close could
+  not fire even on a fully clean fleet — a mirror-condition defect (see above)
+  in which only the path that runs weekly was ever exercised.
+
+When you add a reporting path, ask what would actually reach a person, and then
+check that it did. An artifact that exists is not the same as a signal that
+arrives; and the count belongs where it can be seen without clicking — a title,
+not only a body.
+
 ### Check what the checker is actually looking at
 
 `gh repo clone` takes the **default branch**. Every validator on the shared base
@@ -337,3 +390,30 @@ confidence it has not earned.
 - It is green against the target before it is made blocking. A gate nobody can
   pass teaches contributors to read red as normal, which is worse than having no
   gate.
+- Every rule the validator can emit is admitted by the workflow's counting
+  regex. Two lists in two files that must agree, with nothing holding them
+  together, is the cheapest silent-drop in the repository.
+- Whatever reports its findings actually reaches a person, and that has been
+  observed rather than assumed. A weekly artifact that notifies nobody is the
+  same failure one layer out from the gate.
+
+## 7. On a detector that is correctly, permanently red
+
+Not every red is a defect to clear. The weekly sweep is a *detector* over a
+fleet the Institute is still converging; when the checks are right and the fleet
+is genuinely non-conforming at scale, red is the accurate reading and the fleet
+is what changes.
+
+What is not acceptable is red that carries no information. The failure here was
+never the colour — it was that three consecutive weeks of red were
+indistinguishable from each other, from a validator crash, and from a repo that
+failed to clone. Before treating a standing red as noise, establish which it is:
+
+- Can the run tell you *how many* legs failed, and *which*, without opening
+  cells one at a time?
+- Can it distinguish "found violations" from "never ran"?
+- Has the count moved? A number that has not changed in ten weeks and a number
+  nobody has ever read look identical.
+
+Fix the legibility first. A red you can read is a work queue; a red you cannot
+is just a broken light, and people correctly learn to ignore broken lights.
