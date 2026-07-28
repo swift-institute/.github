@@ -1,0 +1,96 @@
+# lint-validator-fixtures.yml — run the validator fixture suite.
+#
+# The suite in .github/scripts/tests/ asserts that every validator still fires
+# on the inputs it is supposed to reject: each fixture under fail/ MUST produce
+# a finding, each under pass/ and edge/ MUST produce none, and run.sh exits
+# nonzero if any of that stops being true. It also fails on a silent SKIP, so a
+# fixture directory that no longer resolves to a registered validator is an
+# error rather than quiet attrition.
+#
+# Until now nothing ran it. An untriggered test suite is the same category of
+# artifact as an unproven gate: it looks like coverage and provides none. The
+# repository learned this the expensive way from the retired skill-description
+# gate, which reported success over a population it was violating wholesale
+# because nothing ever proved it could fail.
+#
+# Triggers on any change to a validator, the shared helper library, the runner
+# or a fixture, plus a weekly run so bit-rot from an external dependency (a
+# Python or PyYAML bump on the runner image) surfaces on a schedule rather than
+# on whichever unlucky pull request touches a validator next.
+#
+# Standalone workflow with no workflow_call trigger, so it carries a deny-all
+# permissions floor and grants read on the job that needs it.
+
+name: lint-validator-fixtures
+
+permissions: {}
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/scripts/validate-*.py'
+      - '.github/scripts/validate_lib.py'
+      - '.github/scripts/tests/**'
+      - '.github/workflows/lint-validator-fixtures.yml'
+  pull_request:
+    paths:
+      - '.github/scripts/validate-*.py'
+      - '.github/scripts/validate_lib.py'
+      - '.github/scripts/tests/**'
+      - '.github/workflows/lint-validator-fixtures.yml'
+  schedule:
+    - cron: '0 7 * * 3'   # weekly Wednesday 07:00 UTC, clear of the Tuesday sweep
+  workflow_dispatch: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fixtures:
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Harden runner (audit-mode egress logging)
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 1
+
+      # The validators exit 2 when PyYAML is absent, which the suite would
+      # report as a fixture failure rather than as the environment defect it is.
+      # Assert it up front so that distinction stays legible.
+      - name: Assert PyYAML is available
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -c 'import yaml; print("PyYAML", yaml.__version__)'
+
+      - name: Run fixture suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash .github/scripts/tests/run.sh | tee /tmp/fixtures.txt
+
+      - name: Step summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Validator fixture suite"
+            echo
+            echo "Each \`fail/\` fixture is a positive control: it MUST produce a"
+            echo "finding. A validator that stops firing turns its own fixture red."
+            echo
+            echo '```'
+            tail -n 40 /tmp/fixtures.txt 2>/dev/null || echo "(suite produced no output)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
