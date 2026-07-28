@@ -172,6 +172,35 @@ env:
   # [CI-082] sha256sum -c pin for swiftlint_linux_amd64.zip at SWIFTLINT_VERSION.
   # Re-lock on every version bump per the rule body's bump protocol.
   SWIFTLINT_SHA256: "26db741d43f2f2dc26c0cf16911100a3e186c3d1dbb59e55ad3ac87b0de4538f"
+  # THE fleet-wide Xcode pin — the only one. Layer wrappers
+  # (swift-primitives / swift-foundations / swift-standards `.github`) MUST NOT
+  # declare their own: a caller's workflow-level `env:` does not cross into a
+  # called reusable workflow, so a wrapper-side pin is inert and merely
+  # contradicts this one. swift-primitives carried a stale inert "26.4" until
+  # 2026-07-28; removed there, rationale recorded in that file.
+  #
+  # 26.6 is the CEILING on `macos-26`, not a conservative choice. Determined
+  # 2026-07-28 against actions/runner-images@main:
+  #   - macos-26-arm64 (`macos-latest`, `macos-26`) installs 26.0.1 … 26.6
+  #     (26.6 = 17F113); 26.6 became the image default 2026.07.21. There is no
+  #     26.7+ and no Xcode 27 on this image.
+  #   - Xcode 26.6 ships Swift 6.3.3 (swiftlang-6.3.3.1.3), NOT 6.4 —
+  #     observed, not inferred: swift-foundations/swift-ascii job 86507198283
+  #     and swift-primitives/swift-array-primitives job 86475550287 both print
+  #     `Apple Swift version 6.3.3` under `/Applications/Xcode_26.6.app`.
+  #
+  # So the macOS gating leg CANNOT reach Swift 6.4 today, at any pin. The only
+  # hosted runner carrying 6.4 is the `xcode-27` / `xcode-27-xlarge` public
+  # PREVIEW label (actions/runner-images#14404), whose sole Xcode is 27.0 BETA
+  # (27A5218g). Moving a fleet-wide gate onto a beta toolchain is the failure
+  # mode already rejected for linux-6-4 — churn turns it red, and a red gate
+  # stops being read. Do not do it here either.
+  #
+  # Bump protocol: this pin tracks the highest Xcode on `macos-runner`'s image,
+  # and only that. It reaches 6.4 when Xcode 27 GAs onto a stable macOS image —
+  # the same event that graduates linux-6-4 to a gating `swift:6.4` leg and
+  # retires the `compiler(<6.4)` gates. Re-read the image Readme before bumping;
+  # a version absent from that table fails `xcode-select` at job start.
   XCODE_VERSION: "26.6"
 
 jobs:
