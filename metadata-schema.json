@@ -71,14 +71,22 @@
     },
     "readme": {
       "type": "object",
-      "description": "README routing metadata. Per Wave 2b finalization Decision 7, the `family` field drives validate-readme.yml's per-family rule subset selection.",
+      "description": "README routing metadata. Per Wave 2b finalization Decision 7, the `family` field drives validate-readme.yml's per-family rule subset selection. Exactly one of `family` or `exempt` must be present: a repo either routes to a rule subset or is declared out of scope for routing with a stated category. Silence is not a third option — an absent block yields README-family-unset, which reads as an oversight and invites someone to assign a family that does not fit.",
       "additionalProperties": false,
-      "required": ["family"],
+      "oneOf": [
+        { "required": ["family"], "not": { "required": ["exempt"] } },
+        { "required": ["exempt"], "not": { "required": ["family"] } }
+      ],
       "properties": {
+        "exempt": {
+          "type": "string",
+          "enum": ["vendored-upstream"],
+          "description": "Declares this repo OUT OF SCOPE for README family routing, with the reason as the value. Deliberately not expressed as a family whose rule subset is empty: a family selects a rule subset and therefore implies rules could later be added to it, which for these repos is precisely what must not happen. `vendored-upstream` — a vendored third-party dependency whose README belongs to its upstream. Editing it to satisfy Institute conventions buys a cosmetic gain and pays permanent divergence and harder merges forever, so the correct state is exemption with a stated reason rather than compliance. This is a closed enum on purpose: an exemption must be a category the schema recognises, not free text, or it becomes an escape hatch for 'we did not get to it'. Adding a category is a deliberate schema change. Read by validate-readme.py, which skips the repo and emits nothing — see the note there on why this key is NOT covered by the [GH-REPO-063] correspondence guard."
+        },
         "family": {
           "type": "string",
           "enum": ["A", "C", "E", "F", "G"],
-          "description": "README family per Skills/readme/SKILL.md `## Family Routing`. A=user profile, C=process/workflow repo, E=sub-package (Tier 1+ implemented Swift package), F=placeholder/reservation, G=org profile (3 sub-tiers: top-level / org-of-orgs / leaf). The taxonomy has only 5 families — B and D are NOT defined. validate-readme.yml selects the per-family rule subset based on this field."
+          "description": "README family per Skills/readme/SKILL.md `## Family Routing`. A=user profile, C=process/workflow repo, E=sub-package (Tier 1+ implemented Swift package), F=placeholder/reservation, G=org profile (3 sub-tiers: top-level / org-of-orgs / leaf). The taxonomy has only 5 families — B and D are NOT defined, and were never defined; they are deliberately absent rather than retired, so do not reuse either letter for a new category. A repo that fits no family is not a missing letter, it is an `exempt` case — see that field. validate-readme.yml selects the per-family rule subset based on this field."
         }
       }
     }

@@ -84,7 +84,23 @@ def strip_code_blocks(text: str) -> str:
     return re.sub(r"```.*?```", "", text, flags=re.DOTALL)
 
 
+# Declared exemptions from family routing, per metadata-schema.json
+# `readme.exempt`. An exempt repo is skipped and emits nothing: it is out of
+# scope by decision, not unclassified by omission, and the two must not look
+# alike to a reader.
+#
+# NOTE for whoever edits this list: `readme.exempt` is NOT covered by the
+# [GH-REPO-063] schema<->workflow correspondence guard. That guard compares
+# metadata-schema.json's `settings` block against `.settings.<key>` reads in
+# sync-metadata.yml only — it does not see the `readme` block, and it does not
+# read this file at all. So a value added to the schema enum but not added here
+# is a silent no-op with no machine check to catch it. Keep the two in step by
+# hand, and exercise the change (see test-validate-readme fixtures).
+EXEMPTIONS = ("vendored-upstream",)
+
+
 def detect_family(metadata_path: Path) -> str | None:
+    """Return the family letter, the string "exempt", or None if unset."""
     if not metadata_path.is_file():
         return None
     try:
@@ -96,6 +112,8 @@ def detect_family(metadata_path: Path) -> str | None:
     readme_block = data.get("readme")
     if not isinstance(readme_block, dict):
         return None
+    if readme_block.get("exempt") in EXEMPTIONS:
+        return "exempt"
     family = readme_block.get("family")
     if family in ("A", "C", "E", "F", "G"):
         return family
@@ -299,6 +317,10 @@ def validate_repo(repo: str, repo_root: Path) -> int:
         emit(repo, "README-family-unset",
              f".github/metadata.yaml lacks readme.family field; cannot apply per-family rules")
         return 1
+    if family == "exempt":
+        # Declared out of scope for routing. Emit nothing — a stated exemption
+        # is a clean result, not a suppressed finding.
+        return 0
     # Locate the README. Family G org profiles live in the org's special
     # `.github` repo at `profile/README.md`. When the repo under validation IS
     # that `.github` repo (repo label ends in `/.github`), the profile is at
