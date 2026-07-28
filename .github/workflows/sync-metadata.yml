@@ -289,17 +289,33 @@ jobs:
             # Secret scanning + push protection per [GH-REPO-057] (PUBLIC only;
             # private repos need GHAS and the PATCH would error). gh repo view
             # exposes no security surface, so current state is a dedicated call.
+            # The two sub-features (non-provider patterns, validity checks) are
+            # rejected by GitHub unless secret scanning itself is enabled, so
+            # they apply in a SECOND PATCH after the base pair, and are forced
+            # off whenever secretScanning is authored false.
             sec_args=()
-            desired_ss=false; desired_pp=false
+            sub_args=()
+            desired_ss=false; desired_pp=false; desired_np=false; desired_vc=false
             if [[ "$(echo "$current" | jq -r '.visibility')" == "PUBLIC" ]]; then
               desired_ss=$(echo "$desired" | jq -r '.settings.secretScanning // true')
               desired_pp=$(echo "$desired" | jq -r '.settings.secretScanningPushProtection // true')
-              sec=$(gh api "repos/$target" --jq '{ss:(.security_and_analysis.secret_scanning.status // "disabled"), pp:(.security_and_analysis.secret_scanning_push_protection.status // "disabled")}')
+              desired_np=$(echo "$desired" | jq -r '.settings.secretScanningNonProviderPatterns // true')
+              desired_vc=$(echo "$desired" | jq -r '.settings.secretScanningValidityChecks // true')
+              # Dependent features cannot outlive their parent.
+              if [[ "$desired_ss" != "true" ]]; then
+                desired_np=false
+                desired_vc=false
+              fi
+              sec=$(gh api "repos/$target" --jq '{ss:(.security_and_analysis.secret_scanning.status // "disabled"), pp:(.security_and_analysis.secret_scanning_push_protection.status // "disabled"), np:(.security_and_analysis.secret_scanning_non_provider_patterns.status // "disabled"), vc:(.security_and_analysis.secret_scanning_validity_checks.status // "disabled")}')
               current_ss=$([[ "$(echo "$sec" | jq -r .ss)" == "enabled" ]] && echo true || echo false)
               current_pp=$([[ "$(echo "$sec" | jq -r .pp)" == "enabled" ]] && echo true || echo false)
+              current_np=$([[ "$(echo "$sec" | jq -r .np)" == "enabled" ]] && echo true || echo false)
+              current_vc=$([[ "$(echo "$sec" | jq -r .vc)" == "enabled" ]] && echo true || echo false)
               [[ "$desired_ss" != "$current_ss" ]] && sec_args+=(secret_scanning)
               [[ "$desired_pp" != "$current_pp" ]] && sec_args+=(secret_scanning_push_protection)
-              repo_diffs=$((repo_diffs + ${#sec_args[@]}))
+              [[ "$desired_np" != "$current_np" ]] && sub_args+=(secret_scanning_non_provider_patterns)
+              [[ "$desired_vc" != "$current_vc" ]] && sub_args+=(secret_scanning_validity_checks)
+              repo_diffs=$((repo_diffs + ${#sec_args[@]} + ${#sub_args[@]}))
             fi
 
             diffs_found=$((diffs_found + repo_diffs))
@@ -325,6 +341,9 @@ jobs:
               if [[ ${#sec_args[@]} -gt 0 ]]; then
                 printf '    gh api -X PATCH %q  # security_and_analysis: secret_scanning=%s push_protection=%s\n' "repos/$target" "$desired_ss" "$desired_pp"
               fi
+              if [[ ${#sub_args[@]} -gt 0 ]]; then
+                printf '    gh api -X PATCH %q  # security_and_analysis: non_provider_patterns=%s validity_checks=%s\n' "repos/$target" "$desired_np" "$desired_vc"
+              fi
               summary_lines+=("- \`${target}\`: ${repo_diffs} field(s) — dry-run preview")
             else
               echo "  ${target}: ${repo_diffs} diff(s) — applying"
@@ -335,6 +354,14 @@ jobs:
                 pp_status=$([[ "$desired_pp" == true ]] && echo enabled || echo disabled)
                 jq -nc --arg ss "$ss_status" --arg pp "$pp_status" \
                   '{security_and_analysis:{secret_scanning:{status:$ss},secret_scanning_push_protection:{status:$pp}}}' \
+                  | gh api -X PATCH "repos/$target" --input - >/dev/null
+              fi
+              # Second PATCH: sub-features, after secret scanning is known on.
+              if [[ ${#sub_args[@]} -gt 0 ]]; then
+                np_status=$([[ "$desired_np" == true ]] && echo enabled || echo disabled)
+                vc_status=$([[ "$desired_vc" == true ]] && echo enabled || echo disabled)
+                jq -nc --arg np "$np_status" --arg vc "$vc_status" \
+                  '{security_and_analysis:{secret_scanning_non_provider_patterns:{status:$np},secret_scanning_validity_checks:{status:$vc}}}' \
                   | gh api -X PATCH "repos/$target" --input - >/dev/null
               fi
               edits_applied=$((edits_applied + repo_diffs))
