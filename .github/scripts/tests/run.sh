@@ -15,6 +15,9 @@
 # Each scenario is a self-contained repo-shape directory with Package.swift +
 # Sources/ tree.
 #
+# Why fail/ fixtures matter more than pass/ ones, and what four inert gates in
+# this repository taught: see VALIDATOR-DISCIPLINE.md beside this directory.
+#
 # Usage: run.sh [rule-id-prefix]
 #
 # With no argument every fixture runs. An optional prefix restricts the run to
