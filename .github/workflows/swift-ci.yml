@@ -394,6 +394,22 @@ jobs:
             esac
           fi
           # Manual consumer dispatch = someone asking for verification → full.
+          #
+          # READ THIS BEFORE CHANGING TIER LOGIC. This line creates an
+          # asymmetry that is easy to discover too late: because every
+          # workflow_dispatch forces `full`, there is NO way to exercise the
+          # `build` tier ahead of shipping. Not ci-dispatch (single-job, so
+          # ci-ok skips), not ci-sweep (passes tier: full), not a manual
+          # dispatch on a branch. A tier that can only be entered by an
+          # ordinary push cannot be tested before it ships.
+          #
+          # So the build tier's classifier and gating set are covered by
+          # .github/scripts/tests/test-ci-ok-aggregate.py, which extracts this
+          # script and runs it directly against every tier × platform-support
+          # combination. That suite is not belt-and-braces for this path — it
+          # is the ONLY pre-merge evidence the build tier has. Treat a change
+          # here as unverified until it has passed there, and expect the first
+          # real exercise to be the first consumer push after merge.
           if [ -z "$TIER" ] && [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             TIER="full"
           fi
