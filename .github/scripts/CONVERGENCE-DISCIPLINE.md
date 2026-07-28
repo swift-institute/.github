@@ -221,9 +221,36 @@ neither `find` nor `grep -r` descended it. What exposed it was a positive contro
 asking *can this probe find any known string here at all?* — which also came back
 empty.
 
+**The general form, and the sentence to remember: the probe that reports "not
+found" and the probe that reports "nothing to search" produce identical output.**
+Nothing in a zero tells you which one you got.
+
 > Before believing a zero, make the instrument return non-zero **on the same
 > path, in the same invocation shape**. A control run somewhere else proves the
 > tool works, not that this probe was pointed at anything.
+
+**Check the predicate before you check the timing.** When an enumerator misses
+something, the tempting explanation is that the snapshot fell in a gap. Usually it
+is the pattern: a predicate built from what you expected to find cannot match what
+you did not expect. `pgrep -f "workspace package build"` cannot match a bare
+`swift build` anywhere, at any moment, under any load.
+
+The reliable form takes no pattern from expectation — enumerate by exact process
+name, then resolve each one:
+
+```sh
+{ pgrep -x swift-build; pgrep -x swift-frontend; } | sort -u | while read p; do
+  lsof -a -p "$p" -d cwd -Fn | grep ^n | cut -c2-
+done
+```
+
+**And resolve *every* result before characterising any of them.** A related failure
+in the same session had a sound predicate: it captured four processes, then
+reported whose they were after resolving only two. The unresolved entries were
+described from their command lines alone, and one of them was misattributed. **A
+population you enumerated but did not resolve is not evidence about that
+population** — partial resolution reads exactly like full resolution in the
+write-up.
 
 **Make the fixture's own failure visible in the result.** A baseline measurement
 here reported its marker absent from compiled output three rounds running. Both
@@ -242,6 +269,61 @@ to measurement rather than to gates: **exit status attests that a process ran, n
 that it was configured.** Between "the thing under test failed" and "the harness
 failed to test it" the shell is silent, and it is silent in the direction that
 looks like success.
+
+## 12. A control that passes for the wrong reason is not a control
+
+Same session, and the sharper half of §11 because here the *negative* control was
+the thing that lied.
+
+A test asserted that a build could succeed offline only because a local-source
+overlay was active. Its negative control removed the overlay and expected failure.
+**It returned success** — and the reason was a second cache nobody had cleared:
+removing the overlay restored working copies from a build-directory checkout cache
+that survived both the removal and the deletion of the remotes, so the build
+succeeded from warm canonical source.
+
+What caught it was not the exit status. It was that the test also asserted *which
+source got compiled*, and the canonical marker appeared where the local one should
+have been.
+
+> **Assert the mechanism, not just the outcome.** A control that only checks
+> pass/fail cannot tell "the thing I removed was load-bearing" from "something else
+> supplied it." Check *what* was produced and *from where*.
+
+> **Enumerate every cache the claim depends on, not the one you were thinking
+> about.** Here there were three — the resolved-pins file, the build directory, and
+> a checkout cache inside it — and clearing two of the three produced a confident
+> green that meant nothing.
+
+## 13. Wall clocks are contaminated by load; sums of reported per-item timings are not
+
+A measurement on a shared machine returned **329 s**, then **148 s** for the same
+command in the same state — a 2.2× spread, reported to a reviewer as a single
+figure before the second run existed. The cause was concurrent work from other
+sessions that was neither controlled nor recorded, and the script that took the
+measurement carried a comment asserting the machine was "otherwise quiet" while it
+was not.
+
+Three rules, in order of how much they save:
+
+> **A comment asserting a condition is not a measurement of that condition.** If a
+> run's validity depends on the machine being quiet, sample the load and print it
+> beside the number.
+
+> **Distinguish measurements contention can corrupt from those it cannot.** An
+> end-to-end wall clock is corrupted by load. A *sum of per-item timings the tool
+> itself reports* is not — load inflates the parts and the whole together, so
+> ratios and decompositions survive a run whose total does not. This is the
+> difference between discarding a whole run and discarding part of one.
+
+> **For shape, hold conditions constant rather than quiet.** When the question is
+> "does cost grow linearly or worse", take every point back to back under whatever
+> load exists and record it. Shape survives contention that would destroy an
+> absolute figure — and shape is usually what gates the decision.
+
+And the disposal rule: **kill a single uncontrolled number before it hardens.** A
+figure quoted once becomes a citation, and a citation becomes a premise. Publish
+the range with its conditions, and say which end you trust and why.
 
 ---
 
