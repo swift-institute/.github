@@ -481,6 +481,55 @@ the fact: the checkout above was current again within the hour, which is the
 other half of the problem — a hazard that resolves on its own teaches nobody,
 and returns.*
 
+## 15. Verification goes where suspicion already is. The gap is everywhere else.
+
+The register above is a list of things that were checked and turned out wrong.
+This section is about the things that were never checked at all, and why the
+selection is not random.
+
+**Two instances from one day, one from an implementer and one from a
+coordinator.**
+
+An implementer writing against three unfamiliar libraries stopped to verify two
+APIs — `Kernel.File.Lock.available` and `Process.Sleep` — because both felt like
+the kind of thing that might not exist. **Neither did**, and finding that out led
+to a better implementation. The same file then failed to compile twice, on
+`Duration`'s visibility through an `internal import` and on a helper's access
+level: two facts that had felt too ordinary to check.
+
+A coordinator establishing that no `swift:6.4` Linux container exists ran a
+**positive control** first — querying a tag known to be present, confirming the
+instrument could return rows — because an absence claim felt like it needed one.
+The same coordinator then spent a day ruling from a shared `Skills/` checkout it
+never thought to date, which was twelve commits behind. Three of those rulings
+were wrong.
+
+**Neither failure was a failure to verify. Both verified carefully — exactly
+where they were already looking.**
+
+> **Suspicion is a terrible allocator of attention, because it is driven by
+> unfamiliarity rather than by consequence.** The unfamiliar thing gets checked
+> precisely because it announces itself. The load-bearing assumption does not
+> announce itself at all; that is what makes it load-bearing.
+
+What to do about it, in rough order of usefulness:
+
+- **Ask what the conclusion rests on, not what feels shaky.** List the facts the
+  result would be wrong without. Verify those, whether or not they feel
+  interesting. A ruling that depends on a file's contents needs the file's *date*
+  as much as its text.
+- **Prefer the check that cannot be skipped by feeling confident.** A compiler,
+  a positive control, a re-read from `origin` — none of these consult your
+  intuition about which half is risky.
+- **When you catch yourself verifying something, ask what you verified it
+  *instead of*.** The two are usually adjacent, and the one you skipped is the one
+  nobody will catch downstream either, because it looks ordinary to them too.
+
+This is §11's coda generalised past the shell: recording a rule does not form a
+habit, and *choosing* what to verify is the step where the habit fails silently.
+Nothing in the output distinguishes "I checked this" from "this never occurred to
+me."
+
 ## The shape underneath all of these
 
 Three failures here compounded, and none was visible alone:
