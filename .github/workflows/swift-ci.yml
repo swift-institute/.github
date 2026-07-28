@@ -426,7 +426,10 @@ jobs:
                   exit 1
                   ;;
               esac
-              LEGS="format,lint,swift-linter,$PRIMARY_BUILD"
+              # linux-6-4 rides the build tier as of 2026-07-28 so every
+              # ordinary push produces a Swift 6.4 result, instead of only the
+              # nightly full-tier sweep. It stays ADVISORY — see the job.
+              LEGS="format,lint,swift-linter,$PRIMARY_BUILD,linux-6-4"
               ;;
             full)  LEGS="format,lint,swift-linter,linux-release,macos-release,windows-release,linux-nightly,linux-6-4,apple-simulator-build,lint-yaml,lint-broken-symlink,lint-license-header,lint-test-support-spine,advisory-summary" ;;
             *) echo "::error::Unknown tier '$TIER' (expected build|full)"; exit 1 ;;
@@ -650,6 +653,30 @@ jobs:
   # here because this is a runs-on job, not a `uses:` job ([CI-105]). At 6.4 GA
   # (~Sept 2026) this graduates to a gating `swift:6.4` stable leg, retiring the
   # `compiler(<6.4)` §A9 gates (swift-xml / swift-w3c-xml / swift-graph / swift-plist).
+  #
+  # ON THE BUILD TIER SINCE 2026-07-28, AND DELIBERATELY STILL ADVISORY.
+  # It runs on every ordinary push so 6.4 breakage shows up continuously
+  # rather than once a week in the sweep — but it must not gate, because the
+  # container is a NIGHTLY: a repository can go green→red with no commit
+  # between the two. That is accepted, not broken. Do not go hunting for the
+  # change that caused such a red; there may not be one. Anyone tempted to
+  # drop `continue-on-error` here should read the cost first — see below.
+  #
+  # WHAT GATING WOULD COST, measured 2026-07-28 over the 454 repositories
+  # swept at full tier in the complete 7-night rotation 2026-07-22..28 (every
+  # bucket, so effectively the whole public fleet). The leg ran on all 454:
+  #   158 (35%) failed — but 96 of those already fail the 6.3 gating leg
+  #    62 would go NEWLY red — green today, broken on their next push
+  #   296 passed
+  # Of the 62, FORTY-TWO are one cause: swift-linux-standard's io_uring
+  # sources reference IORING_POLL_ADD_LEVEL / IORING_TIMEOUT_MULTISHOT, out
+  # of scope in this container, reached transitively. Fix that one package
+  # and two thirds of the fleet-wide red clears. The rest: 7 other compile
+  # errors, 5 the swift-institute/Issues#58 upstream compiler-abort class
+  # (unfixable here — nothing goes to swiftlang/swift by standing ruling),
+  # 8 mixed, including a Docker pull failure. That last one matters: gating
+  # on a nightly makes a registry hiccup a red.
+  # Re-measure before flipping; these numbers move with the nightly.
   linux-6-4:
     name: Ubuntu (Swift 6.4.x nightly, release)
     needs: plan

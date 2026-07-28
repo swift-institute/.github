@@ -355,5 +355,67 @@ class ClassifierTests(ShellHarness):
         self.assertIn("invalid platform-support family", log)
 
 
+class AdvisoryPostureTests(unittest.TestCase):
+    """linux-6-4 runs on every push and gates nothing. Both halves matter.
+
+    Settled ruling 2026-07-28, after the posture was flipped to gating and
+    withdrawn the same evening. The two halves fail in opposite directions and
+    neither is visible in the other's diff, so both are asserted here: drop it
+    from the build tier and 6.4 evidence silently reverts to weekly; add it to
+    the gating set and 62 repositories go red on their next push.
+    """
+
+    document = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    classifier = extract("plan", CLASSIFY_STEP)
+
+    def test_it_runs_on_every_ordinary_push(self):
+        harness = ShellHarness()
+        harness.script = self.classifier
+        code, log, outputs = harness.run_script(
+            FORCED_TIER="",
+            EVENT_NAME="push",
+            HEAD_MSG="chore: something",
+            PLATFORM_SUPPORT="",
+        )
+        self.assertEqual(code, 0, log)
+        self.assertEqual(outputs["tier"], "build")
+        self.assertIn("linux-6-4", outputs["legs"].split(","))
+
+    def test_it_does_not_gate(self):
+        harness = ShellHarness()
+        harness.script = self.classifier
+        for platforms in ("", "linux", "apple,linux"):
+            with self.subTest(platforms=platforms):
+                _, _, outputs = harness.run_script(
+                    FORCED_TIER="",
+                    EVENT_NAME="push",
+                    HEAD_MSG="chore",
+                    PLATFORM_SUPPORT=platforms,
+                )
+                self.assertNotIn("linux-6-4", outputs["gating"].split(","))
+
+    def test_the_job_stays_tolerant_and_out_of_ci_ok(self):
+        # Three structural sites, none of them reachable from the extracted
+        # script, all of which must agree for "advisory" to be true.
+        self.assertIs(
+            self.document["jobs"]["linux-6-4"].get("continue-on-error"), True
+        )
+        self.assertNotIn("linux-6-4", self.document["jobs"]["ci-ok"]["needs"])
+        self.assertIn(
+            "linux-6-4", self.document["jobs"]["advisory-summary"]["needs"]
+        )
+
+    def test_an_apple_only_package_does_not_run_a_linux_nightly(self):
+        harness = ShellHarness()
+        harness.script = self.classifier
+        _, _, outputs = harness.run_script(
+            FORCED_TIER="",
+            EVENT_NAME="push",
+            HEAD_MSG="chore",
+            PLATFORM_SUPPORT="apple",
+        )
+        self.assertNotIn("linux-6-4", outputs["legs"].split(","))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
