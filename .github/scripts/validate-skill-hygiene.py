@@ -30,6 +30,35 @@ requirement ID:
   skill-machine-path      A maintainer home-directory or machine-local absolute
                           path appears in a public file.
   skill-internal-rule-id  An internal rule ID is cited in published prose.
+  skill-unsanctioned-reference
+                          A cross-repository reference in a watched namespace
+                          is not on the repo's checked-in sanctioned list.
+
+Note on skill-unsanctioned-reference, because its predicate is narrower than
+its name suggests. It does NOT decide whether a mention leaks anything. That
+judgement is not mechanizable: a public README may legitimately name a private
+repository's existence, while disclosing its contents would be a leak, and no
+pattern separates those. What this asks is only "is this reference new?" A
+reference already on the list is silent; one that is not stops the build, so a
+person decides at authoring time, in the pull request that introduces it, with
+the intent in front of them.
+
+That distinction matters because the alternative disposition was "human
+review", and on a fleet where one account authors and merges there is no moment
+at which such a review can block. A control nobody can exercise is not a slower
+control; it is an absent one wearing the label. This gives the residue a moment
+where it can actually stop something.
+
+Watched namespaces are the Institute org names from the checked-in orgs
+manifest, plus any owner already appearing in the sanctioned list. Restricting
+the owner is what keeps the list meaningful: matching every `A/B`-shaped token
+would put `CI/CD`, `ISO/IEC` and `Tests/Package.swift` on it, and a list that is
+mostly noise gets appended to reflexively rather than read.
+
+Known gap, stated rather than papered over: a private repository in a namespace
+that has never been seen before is not watched, so its first mention is missed.
+Closing that would need a live list of private repositories, which cannot be
+checked into a public repo without being the disclosure it guards against.
 
 Scope:
   skill-frontmatter / skill-identity   every <dir>/SKILL.md
@@ -81,6 +110,58 @@ INTERNAL_RULE_ID = re.compile(
 MD_LINK = re.compile(r"\[[^\]]*\]\(\s*([^)\s]+)(?:\s+[\"'][^\"']*[\"'])?\s*\)")
 
 SKIP_LINK_PREFIXES = ("http://", "https://", "mailto:", "tel:", "#", "<")
+
+# Where a scanned repo declares the cross-repository references it has already
+# sanctioned. Lives in the SCANNED repo, not beside this script, so the entry
+# and the mention it covers land in the same pull request -- the whole point is
+# that the person adding the mention is the one who records it.
+SANCTIONED_REFERENCES = ".github/sanctioned-references"
+
+# owner/name, both GitHub-identifier shaped. The name may lead with a dot so
+# that `swift-institute/.github` is seen. Trailing punctuation is trimmed
+# afterwards rather than excluded here: prose ends references with a full stop
+# ("projected from Internal/Skills."), and a pattern that swallows it reports a
+# token that can never match a list entry -- a check that fires on correctly
+# sanctioned text is worse than one that misses, because it teaches people the
+# list does not work.
+REFERENCE = re.compile(
+    r"(?<![A-Za-z0-9._/-])([A-Za-z][A-Za-z0-9._-]*)/(\.?[A-Za-z][A-Za-z0-9._-]*)"
+)
+TRAILING_PUNCT = ".,;:!?-_"
+
+
+def institute_orgs() -> set[str]:
+    """Org names from the checked-in manifest beside this script's repo.
+
+    Missing or unparseable manifest yields an empty set: the watch list then
+    contains only owners named by the scanned repo's own sanctioned file, which
+    narrows the check rather than silently widening it.
+    """
+    manifest = Path(__file__).resolve().parents[1] / "actions" / "read-orgs" / "orgs.yaml"
+    try:
+        entries = yaml.safe_load(manifest.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 -- absence is handled, not diagnosed here
+        return set()
+    if not isinstance(entries, list):
+        return set()
+    return {e["name"] for e in entries if isinstance(e, dict) and e.get("name")}
+
+
+def load_sanctioned(repo_root: Path) -> set[str]:
+    """Read the scanned repo's sanctioned-reference list.
+
+    One `owner/name` per line; `#` introduces a comment. A missing file is an
+    empty list, so every watched reference is reported rather than skipped.
+    """
+    path = repo_root / SANCTIONED_REFERENCES
+    if not path.is_file():
+        return set()
+    out = set()
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.split("#", 1)[0].strip()
+        if line:
+            out.add(line)
+    return out
 
 
 def iter_markdown(repo_root: Path):
@@ -213,6 +294,37 @@ def check_prose(repo: str, path: Path, text: str, repo_root: Path) -> int:
     return findings
 
 
+def check_references(
+    repo: str, path: Path, text: str, repo_root: Path,
+    sanctioned: set[str], watched: set[str],
+) -> int:
+    """Every reference in a watched namespace must be on the sanctioned list."""
+    rel = path.relative_to(repo_root)
+    findings = 0
+    seen = set()
+    for lineno, line in enumerate(text.splitlines(), start=1):
+        for owner, name in REFERENCE.findall(line):
+            if owner not in watched:
+                continue
+            name = name.rstrip(TRAILING_PUNCT)
+            if not name or name == ".":
+                continue
+            token = f"{owner}/{name}"
+            if token in sanctioned or token in seen:
+                continue
+            seen.add(token)
+            findings += 1
+            emit(
+                repo,
+                "skill-unsanctioned-reference",
+                f"{rel}:{lineno}: '{token}' is not in {SANCTIONED_REFERENCES}. "
+                f"If publishing it is intended, add it there in this change; "
+                f"this check asks only whether the reference is new, not whether "
+                f"it discloses anything",
+            )
+    return findings
+
+
 def main(repo: str, repo_root_arg: str) -> int:
     repo_root = Path(repo_root_arg)
     findings = 0
@@ -233,6 +345,12 @@ def main(repo: str, repo_root_arg: str) -> int:
         )
         return 1
 
+    # An owner already named on the sanctioned list joins the watch set, so
+    # sanctioning `Internal/Skills` is what makes a later `Internal/<anything>`
+    # visible to this check.
+    sanctioned = load_sanctioned(repo_root)
+    watched = institute_orgs() | {t.split("/", 1)[0] for t in sanctioned if "/" in t}
+
     for skill_md in skill_files:
         findings += check_skill_file(repo, skill_md, repo_root)
 
@@ -247,6 +365,7 @@ def main(repo: str, repo_root_arg: str) -> int:
             continue
         findings += check_links(repo, md, text, repo_root)
         findings += check_prose(repo, md, text, repo_root)
+        findings += check_references(repo, md, text, repo_root, sanctioned, watched)
 
     return findings
 

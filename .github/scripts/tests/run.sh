@@ -89,7 +89,7 @@ validator_for() {
             echo "$SCRIPTS_DIR/validate-readme.py" ;;
         test-009)
             echo "$SCRIPTS_DIR/validate-file-naming.py" ;;
-        skill-frontmatter|skill-identity|skill-links|skill-machine-path|skill-internal-rule-id|skill-corpus-empty)
+        skill-frontmatter|skill-identity|skill-links|skill-machine-path|skill-internal-rule-id|skill-corpus-empty|skill-unsanctioned-reference)
             echo "$SCRIPTS_DIR/validate-skill-hygiene.py" ;;
         *)
             echo "" ;;
@@ -161,6 +161,7 @@ prefix_for() {
         skill-machine-path)     echo "skill-machine-path" ;;
         skill-internal-rule-id) echo "skill-internal-rule-id" ;;
         skill-corpus-empty)     echo "skill-corpus-empty" ;;
+        skill-unsanctioned-reference) echo "skill-unsanctioned-reference" ;;
         *)               echo "" ;;
     esac
 }
