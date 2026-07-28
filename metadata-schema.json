@@ -34,19 +34,58 @@
       "description": "GitHub repo settings overrides. Sync-metadata workflow propagates these via the GitHub API. Hub-repo override pattern documented at [GH-REPO-094].",
       "additionalProperties": true,
       "properties": {
-        "hasIssuesEnabled": { "type": "boolean" },
-        "hasDiscussionsEnabled": { "type": "boolean" },
-        "hasWikiEnabled": { "type": "boolean" },
-        "hasProjectsEnabled": { "type": "boolean" },
-        "defaultBranch": { "type": "string", "description": "Default branch name (string), consumed by sync-metadata.yml as .settings.defaultBranch and documented by [GH-REPO-060]. NOT GitHub's GraphQL 'defaultBranchRef' object. Default 'main' per [GH-REPO-053]." },
-        "allowMergeCommit": { "type": "boolean", "description": "Allow merge commits. Default false per [GH-REPO-056] (squash-only)." },
-        "allowSquashMerge": { "type": "boolean", "description": "Allow squash merging. Default true per [GH-REPO-056] (squash-only)." },
-        "allowRebaseMerge": { "type": "boolean", "description": "Allow rebase merging. Default false per [GH-REPO-056] (squash-only)." },
-        "deleteBranchOnMerge": { "type": "boolean", "description": "Auto-delete head branch on merge. Default true per [GH-REPO-056]." },
-        "secretScanning": { "type": "boolean", "description": "GitHub secret scanning (public repos only; private needs GHAS). Default true per [GH-REPO-057]." },
-        "secretScanningPushProtection": { "type": "boolean", "description": "Secret-scanning push protection (public repos only). Default true per [GH-REPO-057]." },
-        "secretScanningNonProviderPatterns": { "type": "boolean", "description": "Scan for generic high-entropy secrets beyond known provider token formats (public repos only). Consumed by sync-metadata.yml as .settings.secretScanningNonProviderPatterns and PATCHed to security_and_analysis.secret_scanning_non_provider_patterns. Requires secretScanning. NOT CURRENTLY ATTAINABLE: this is a GitHub Secret Protection (Advanced Security) feature and the Institute orgs are on the free plan, where the PATCH returns HTTP 2xx and silently no-ops — measured 0/474 public non-archived repos after a successful fleet sweep on 2026-07-28. sync-metadata.yml reads the state back and warns rather than reporting a phantom edit. Default stays true per [GH-REPO-057]: authored intent is correct and converges the day the entitlement is bought." },
-        "secretScanningValidityChecks": { "type": "boolean", "description": "Test whether a discovered token is still live (public repos only). Consumed by sync-metadata.yml as .settings.secretScanningValidityChecks and PATCHed to security_and_analysis.secret_scanning_validity_checks. Requires secretScanning. NOT CURRENTLY ATTAINABLE on the free plan — see secretScanningNonProviderPatterns for the measurement and the read-back guard. Default stays true per [GH-REPO-057]." }
+        "hasIssuesEnabled": {
+          "type": "boolean"
+        },
+        "hasDiscussionsEnabled": {
+          "type": "boolean"
+        },
+        "hasWikiEnabled": {
+          "type": "boolean"
+        },
+        "hasProjectsEnabled": {
+          "type": "boolean"
+        },
+        "defaultBranch": {
+          "type": "string",
+          "description": "Default branch name (string), consumed by sync-metadata.yml as .settings.defaultBranch and documented by [GH-REPO-060]. NOT GitHub's GraphQL 'defaultBranchRef' object. Default 'main' per [GH-REPO-053]."
+        },
+        "allowMergeCommit": {
+          "type": "boolean",
+          "description": "Allow merge commits. Default false per [GH-REPO-056] (squash-only)."
+        },
+        "allowSquashMerge": {
+          "type": "boolean",
+          "description": "Allow squash merging. Default true per [GH-REPO-056] (squash-only)."
+        },
+        "allowRebaseMerge": {
+          "type": "boolean",
+          "description": "Allow rebase merging. Default false per [GH-REPO-056] (squash-only)."
+        },
+        "deleteBranchOnMerge": {
+          "type": "boolean",
+          "description": "Auto-delete head branch on merge. Default true per [GH-REPO-056]."
+        },
+        "secretScanning": {
+          "type": "boolean",
+          "description": "GitHub secret scanning (public repos only; private needs GHAS). Default true per [GH-REPO-057]."
+        },
+        "secretScanningPushProtection": {
+          "type": "boolean",
+          "description": "Secret-scanning push protection (public repos only). Default true per [GH-REPO-057]."
+        },
+        "secretScanningNonProviderPatterns": {
+          "type": "boolean",
+          "description": "Scan for generic high-entropy secrets beyond known provider token formats (public repos only). Consumed by sync-metadata.yml as .settings.secretScanningNonProviderPatterns and PATCHed to security_and_analysis.secret_scanning_non_provider_patterns. Requires secretScanning. NOT CURRENTLY ATTAINABLE: this is a GitHub Secret Protection (Advanced Security) feature and the Institute orgs are on the free plan, where the PATCH returns HTTP 2xx and silently no-ops — measured 0/474 public non-archived repos after a successful fleet sweep on 2026-07-28. sync-metadata.yml reads the state back and warns rather than reporting a phantom edit. Default stays true per [GH-REPO-057]: authored intent is correct and converges the day the entitlement is bought."
+        },
+        "secretScanningValidityChecks": {
+          "type": "boolean",
+          "description": "Test whether a discovered token is still live (public repos only). Consumed by sync-metadata.yml as .settings.secretScanningValidityChecks and PATCHed to security_and_analysis.secret_scanning_validity_checks. Requires secretScanning. NOT CURRENTLY ATTAINABLE on the free plan — see secretScanningNonProviderPatterns for the measurement and the read-back guard. Default stays true per [GH-REPO-057]."
+        },
+        "allowAutoMerge": {
+          "type": "boolean",
+          "description": "DELIBERATE DRIFT for a control run — no reader in sync-metadata.yml."
+        }
       }
     },
     "sidebar": {
@@ -54,9 +93,18 @@
       "description": "Repo 'About' sidebar section visibility per [GH-REPO-054]. Declared but NOT consumed by any workflow, deliberately: GitHub exposes no REST or GraphQL surface for these toggles, so enforcement is a manual gear-icon click and this block is the audit-able record of intended state until an API exists. It is declared here because [GH-REPO-054] and [GH-REPO-060] instruct maintainers to author it, and the top-level additionalProperties:false would otherwise fail a repo that follows that instruction. Do not read this as a live setting: adding a consumer is a change to [GH-REPO-054], not to this schema.",
       "additionalProperties": false,
       "properties": {
-        "showReleases": { "type": "boolean", "description": "Show the Releases section. Default true per [GH-REPO-054] — every Swift package publishes tagged releases." },
-        "showPackages": { "type": "boolean", "description": "Show the Packages section. Default false per [GH-REPO-054] — Institute packages distribute via SwiftPM, not the GitHub Packages registry." },
-        "showDeployments": { "type": "boolean", "description": "Show the Deployments section. Default false per [GH-REPO-054] — Institute packages run no GitHub Actions deployments." }
+        "showReleases": {
+          "type": "boolean",
+          "description": "Show the Releases section. Default true per [GH-REPO-054] — every Swift package publishes tagged releases."
+        },
+        "showPackages": {
+          "type": "boolean",
+          "description": "Show the Packages section. Default false per [GH-REPO-054] — Institute packages distribute via SwiftPM, not the GitHub Packages registry."
+        },
+        "showDeployments": {
+          "type": "boolean",
+          "description": "Show the Deployments section. Default false per [GH-REPO-054] — Institute packages run no GitHub Actions deployments."
+        }
       }
     },
     "discussion": {
@@ -74,18 +122,45 @@
       "description": "README routing metadata. Per Wave 2b finalization Decision 7, the `family` field drives validate-readme.yml's per-family rule subset selection. Exactly one of `family` or `exempt` must be present: a repo either routes to a rule subset or is declared out of scope for routing with a stated category. Silence is not a third option — an absent block yields README-family-unset, which reads as an oversight and invites someone to assign a family that does not fit.",
       "additionalProperties": false,
       "oneOf": [
-        { "required": ["family"], "not": { "required": ["exempt"] } },
-        { "required": ["exempt"], "not": { "required": ["family"] } }
+        {
+          "required": [
+            "family"
+          ],
+          "not": {
+            "required": [
+              "exempt"
+            ]
+          }
+        },
+        {
+          "required": [
+            "exempt"
+          ],
+          "not": {
+            "required": [
+              "family"
+            ]
+          }
+        }
       ],
       "properties": {
         "exempt": {
           "type": "string",
-          "enum": ["vendored-upstream"],
+          "enum": [
+            "vendored-upstream",
+            "generated-artifact"
+          ],
           "description": "Declares this repo OUT OF SCOPE for README family routing, with the reason as the value. Deliberately not expressed as a family whose rule subset is empty: a family selects a rule subset and therefore implies rules could later be added to it, which for these repos is precisely what must not happen. `vendored-upstream` — a vendored third-party dependency whose README belongs to its upstream. Editing it to satisfy Institute conventions buys a cosmetic gain and pays permanent divergence and harder merges forever, so the correct state is exemption with a stated reason rather than compliance. This is a closed enum on purpose: an exemption must be a category the schema recognises, not free text, or it becomes an escape hatch for 'we did not get to it'. Adding a category is a deliberate schema change. Read by validate-readme.py, which skips the repo and emits nothing — see the note there on why this key is NOT covered by the [GH-REPO-063] correspondence guard."
         },
         "family": {
           "type": "string",
-          "enum": ["A", "C", "E", "F", "G"],
+          "enum": [
+            "A",
+            "C",
+            "E",
+            "F",
+            "G"
+          ],
           "description": "README family per Skills/readme/SKILL.md `## Family Routing`. A=user profile, C=process/workflow repo, E=sub-package (Tier 1+ implemented Swift package), F=placeholder/reservation, G=org profile (3 sub-tiers: top-level / org-of-orgs / leaf). The taxonomy has only 5 families — B and D are NOT defined, and were never defined; they are deliberately absent rather than retired, so do not reuse either letter for a new category. A repo that fits no family is not a missing letter, it is an `exempt` case — see that field. validate-readme.yml selects the per-family rule subset based on this field."
         }
       }
