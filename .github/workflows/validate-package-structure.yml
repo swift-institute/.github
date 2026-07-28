@@ -240,6 +240,16 @@ jobs:
           # Also to stdout — see the note in validate-thin-callers.yml.
           echo "validate-package-structure: ${violations} violation(s) in ${repos_with_violations}/${total_repos} repo(s), ${clone_failures} clone failure(s), ${not_scanned} not-scanned"
           if [ "$clone_failures" -gt 0 ] || [ "$not_scanned" -gt 0 ]; then
+            # The reason each target went unscanned belongs in the LOG, not only
+            # in the step summary. The first run with these gates live reported
+            # 44 of 54 targets never scanned across the small orgs, and
+            # diagnosing why meant it had to be readable somewhere reachable.
+            # This is the same string the step summary already publishes, so it
+            # adds no exposure the workflow did not already have.
+            echo "--- targets that were NOT scanned ---"
+            awk -F'\t' '$2 == "clone-failed" || $2 == "package-describe-failed" || $2 == "validator-crashed" {
+              printf("  %s\t%s\t%s\n", $2, $1, substr($3, 1, 200))
+            }' /tmp/findings/all.tsv
             echo "::error::${clone_failures} clone failure(s) and ${not_scanned} target(s) that could not be described or crashed the validator — those targets were never scanned, so a green result here would be false."
           fi
 
