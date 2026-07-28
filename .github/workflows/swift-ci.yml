@@ -191,16 +191,49 @@ env:
   #
   # So the macOS gating leg CANNOT reach Swift 6.4 today, at any pin. The only
   # hosted runner carrying 6.4 is the `xcode-27` / `xcode-27-xlarge` public
-  # PREVIEW label (actions/runner-images#14404), whose sole Xcode is 27.0 BETA
-  # (27A5218g). Moving a fleet-wide gate onto a beta toolchain is the failure
-  # mode already rejected for linux-6-4 — churn turns it red, and a red gate
-  # stops being read. Do not do it here either.
+  # PREVIEW label (actions/runner-images#14404), whose sole Xcode is 27.0 BETA.
+  # That label was probed on a throwaway branch 2026-07-28 rather than assumed;
+  # it IS schedulable for this org, and it does ship 6.4:
+  #
+  #     Runner image: macOS on xcode-27
+  #     Xcode:  /Applications/Xcode_27.0.app  (-> Xcode_27_beta_3.app)
+  #     Apple Swift version 6.4 (swiftlang-6.4.0.25.4 clang-2100.3.25.1)
+  #     Target: arm64-apple-macosx26.0
+  #
+  # Two things in that output that a local machine will mislead you about, and
+  # which are the reason this was measured instead of inferred:
+  #   - The runner's 6.4 is build 6.4.0.25.4. A dev machine on Xcode 27.0 may
+  #     carry a DIFFERENT 6.4 (this seat: 6.4.0.27.1). "Swift 6.4" is not one
+  #     toolchain during the beta; local-reproduces-CI is not a safe assumption.
+  #   - Target stays arm64-apple-macosx26.0, NOT macosx27.0 — the image is a
+  #     macOS 26 host with Xcode 27 on it. Xcode 27 does not imply a 27 SDK
+  #     deployment target here.
+  #
+  # Moving a fleet-wide gate onto a beta toolchain is the failure mode already
+  # rejected for linux-6-4 — churn turns it red, and a red gate stops being
+  # read. Do not do it here either. As of 2026-07-28 there is a second, harder
+  # reason: 6.4 is a CRASHING toolchain under release + CMO (`swift-frontend`
+  # signal 6), and 6.5-dev crashes identically, so the defect is not merely
+  # awaiting GA. That crash class needs `-O` + whole-module and so cannot
+  # reach these debug macOS legs — but it does block the release Linux legs
+  # independently of the missing `swift:6.4` stable container.
   #
   # Bump protocol: this pin tracks the highest Xcode on `macos-runner`'s image,
   # and only that. It reaches 6.4 when Xcode 27 GAs onto a stable macOS image —
   # the same event that graduates linux-6-4 to a gating `swift:6.4` leg and
   # retires the `compiler(<6.4)` gates. Re-read the image Readme before bumping;
   # a version absent from that table fails `xcode-select` at job start.
+  #
+  # TRAP when the fleet toolchain moves. The macOS legs (macos-release,
+  # apple-simulator-build) take their Swift version from THIS pin's Xcode.
+  # They ignore the `swift-version` input entirely — it reaches them only
+  # through their `name:`. So raising `swift-version`'s default (a Linux-
+  # container axis, and the eventual one-line fleet bump) relabels the macOS
+  # legs "macOS (Swift 6.4, debug)" while they keep compiling with whatever
+  # Xcode ships. The leg does not fail; it lies in the checks list, and its
+  # log is the only place the contradiction is visible. Move the two axes
+  # together, or accept that the macOS leg's name is aspirational until the
+  # Xcode pin catches up.
   XCODE_VERSION: "26.6"
 
 jobs:
