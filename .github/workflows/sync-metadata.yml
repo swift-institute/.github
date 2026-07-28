@@ -151,6 +151,8 @@ jobs:
           edits_applied=0
           diffs_found=0
           summary_lines=()
+          unentitled=0
+          unentitled_sample=""
 
           # Build target list — single-repo mode bypasses enumeration; org-mode
           # reads from the enumerate-org-public-repos composite output.
@@ -340,12 +342,26 @@ jobs:
                   | gh api -X PATCH "repos/$target" --input - >/dev/null
               fi
               # Second PATCH: sub-features, after secret scanning is known on.
+              # These two are Secret Protection (Advanced Security) features.
+              # Without that entitlement GitHub answers the PATCH 2xx and
+              # silently ignores it — no error, no effect — so the status code
+              # proves nothing. Read the state back and say so out loud rather
+              # than reporting a phantom edit and re-diffing forever.
               if [[ ${#sub_args[@]} -gt 0 ]]; then
                 np_status=$([[ "$desired_np" == true ]] && echo enabled || echo disabled)
                 vc_status=$([[ "$desired_vc" == true ]] && echo enabled || echo disabled)
                 jq -nc --arg np "$np_status" --arg vc "$vc_status" \
                   '{security_and_analysis:{secret_scanning_non_provider_patterns:{status:$np},secret_scanning_validity_checks:{status:$vc}}}' \
                   | gh api -X PATCH "repos/$target" --input - >/dev/null
+                readback=$(gh api "repos/$target" --jq '{np:(.security_and_analysis.secret_scanning_non_provider_patterns.status // "disabled"), vc:(.security_and_analysis.secret_scanning_validity_checks.status // "disabled")}')
+                got_np=$(echo "$readback" | jq -r .np)
+                got_vc=$(echo "$readback" | jq -r .vc)
+                if [[ "$got_np" != "$np_status" || "$got_vc" != "$vc_status" ]]; then
+                  echo "    ${target}: sub-features did not take effect (want np=${np_status} vc=${vc_status}, got np=${got_np} vc=${got_vc})"
+                  repo_diffs=$((repo_diffs - ${#sub_args[@]}))
+                  unentitled=$((unentitled+1))
+                  [[ -z "$unentitled_sample" ]] && unentitled_sample="$target"
+                fi
               fi
               edits_applied=$((edits_applied + repo_diffs))
               summary_lines+=("- \`${target}\`: ${repo_diffs} field(s) applied")
@@ -355,12 +371,21 @@ jobs:
           echo "edits-applied=${edits_applied}" >> "$GITHUB_OUTPUT"
           echo "diffs-found=${diffs_found}" >> "$GITHUB_OUTPUT"
 
+          # One warning for the whole run, not one per repo — the cause is
+          # org-wide entitlement, so N identical warnings would be noise.
+          if [[ $unentitled -gt 0 ]]; then
+            echo "::warning::${unentitled} repo(s) accepted the secret-scanning sub-feature PATCH (HTTP 2xx) without applying it, e.g. ${unentitled_sample}. secret_scanning_non_provider_patterns and secret_scanning_validity_checks require GitHub Secret Protection (Advanced Security); on a free plan the API no-ops silently. Authored intent in metadata.yaml is correct and will converge once the entitlement exists."
+          fi
+
           {
             echo "## sync-metadata summary"
             echo ""
             echo "- targets: ${#targets[@]}"
             echo "- diffs found: ${diffs_found}"
             echo "- edits applied: ${edits_applied} (dry-run: ${DRY_RUN})"
+            if [[ $unentitled -gt 0 ]]; then
+              echo "- secret-scanning sub-features not applied (no Secret Protection entitlement): ${unentitled}"
+            fi
             echo ""
             for line in "${summary_lines[@]}"; do echo "$line"; done
           } >> "$GITHUB_STEP_SUMMARY"
