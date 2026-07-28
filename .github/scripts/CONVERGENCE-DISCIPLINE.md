@@ -270,6 +270,37 @@ that it was configured.** Between "the thing under test failed" and "the harness
 failed to test it" the shell is silent, and it is silent in the direction that
 looks like success.
 
+### Coda: I wrote this section and then did it twice more
+
+Written by the session that authored §11, on the same day, after §11 was already
+pushed.
+
+The pipe cost me three things, in order. First a **false exit status** —
+`swift package unedit` read through `| tail -5` appeared to exit 0 while printing
+an error; unpiped it exits 1. That is the incident §11 is about. Then, hours later,
+a **false "not found"** from a probe that could not descend a symlink — a different
+trap, but caught by the same missing habit of proving the instrument first. Then,
+hours later still, a **run I could not see**: I launched a test through
+`| tail -35`, watched an empty output file for several minutes, and started
+diagnosing a stall. There was no stall. `tail` buffers everything until its input
+closes, so a healthy long-running process and a hung one produce byte-identical
+output: nothing.
+
+I only found out by enumerating the process tree, which showed a `git` child
+happily fetching.
+
+**The lesson is not "avoid `tail`."** I knew that; I had written it down that
+morning; the note was already in this file when I did it again. The lesson is that
+**a rule you have recorded is not a habit you have formed**, and the gap between
+them is where this whole register lives. A convention only holds once the
+convenient thing and the correct thing are the same keystroke — which for this one
+means never composing an evidence-producing command with a pager at all, rather
+than remembering not to.
+
+> If you are reading this section because you are about to write a lesson down:
+> good. Also assume you will violate it within the day, and prefer the change that
+> makes violating it harder over the change that makes it better documented.
+
 ## 12. A control that passes for the wrong reason is not a control
 
 Same session, and the sharper half of §11 because here the *negative* control was
