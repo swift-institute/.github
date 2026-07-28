@@ -36,7 +36,7 @@
 #   2  invocation error.
 #
 # This script lives in the PUBLIC `swift-institute/.github` repo (same
-# free-account constraint as check-skill-descriptions.sh).
+# free-account constraint the retired description gate carried).
 #
 # Invoked by:
 #   - swift-institute/Scripts/sync-skills.sh — local pre-flight gate at sync time.
