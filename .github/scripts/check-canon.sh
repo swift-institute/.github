@@ -34,7 +34,7 @@
 #   the flip has landed; the constraint is satisfied, not pending.
 #
 # Baseline (the ratchet): .check-canon-baseline (sibling) — prune-only, same
-# contract as .skill-size-baseline. Allowlist: .check-canon-allowlist
+# contract as the retired skill-size baseline. Allowlist: .check-canon-allowlist
 # (sanctioned duplicate mirrors per [SKILL-CREATE-016]).
 #
 # Exit codes:
@@ -43,7 +43,7 @@
 #   2  invocation error (no corpus found, missing python3).
 #
 # This script lives in the PUBLIC `swift-institute/.github` repo (same
-# free-account CI-reachability constraint as check-skill-sizes.sh).
+# free-account CI-reachability constraint the retired skill-size gate carried).
 #
 # Invoke before `workspace context install`; a non-baselined finding blocks
 # projecting a divergent skill corpus into the entry-point harness.
