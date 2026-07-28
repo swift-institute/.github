@@ -1,0 +1,12 @@
+# gh-repo-063 fixture — stands in for sync-metadata.yml.
+name: fixture-sync-metadata
+on:
+  workflow_dispatch:
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Read settings
+        run: |
+          echo "$(yq -r '.settings.hasIssuesEnabled' meta.yaml)"
+          echo "$(yq -r '.settings.defaultBranch' meta.yaml)"

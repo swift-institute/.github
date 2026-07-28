@@ -89,14 +89,26 @@ def strip_code_blocks(text: str) -> str:
 # scope by decision, not unclassified by omission, and the two must not look
 # alike to a reader.
 #
-# NOTE for whoever edits this list: `readme.exempt` is NOT covered by the
-# [GH-REPO-063] schema<->workflow correspondence guard. That guard compares
-# metadata-schema.json's `settings` block against `.settings.<key>` reads in
-# sync-metadata.yml only — it does not see the `readme` block, and it does not
-# read this file at all. So a value added to the schema enum but not added here
-# is a silent no-op with no machine check to catch it. Keep the two in step by
-# hand, and exercise the change (see test-validate-readme fixtures).
+# Both this tuple and FAMILIES below are read by
+# `validate-schema-workflow-keys.py`, which asserts each is identical to the
+# corresponding enum in metadata-schema.json's `readme` block. It parses this
+# file with `ast` and looks these constants up BY NAME, so:
+#
+#   - keep them module-level assignments of tuple-of-string literals;
+#   - if you rename or compute either one, the guard fails closed rather than
+#     passing vacuously — fix the guard, do not delete the constant.
+#
+# The guard previously covered only the `settings` block against
+# sync-metadata.yml, so a value added to a `readme` enum but not added here was
+# a silent no-op with no machine check at all. That gap is now closed; the
+# hand-maintenance note that used to live here is obsolete.
 EXEMPTIONS = ("vendored-upstream",)
+
+# Accepted `readme.family` letters, per metadata-schema.json `readme.family`'s
+# enum. Hoisted from an inline literal in `detect_family` so the correspondence
+# is machine-checkable by name — an unnamed literal cannot be diffed against
+# the schema without re-implementing a parser for this function.
+FAMILIES = ("A", "C", "E", "F", "G")
 
 
 def detect_family(metadata_path: Path) -> str | None:
@@ -115,7 +127,7 @@ def detect_family(metadata_path: Path) -> str | None:
     if readme_block.get("exempt") in EXEMPTIONS:
         return "exempt"
     family = readme_block.get("family")
-    if family in ("A", "C", "E", "F", "G"):
+    if family in FAMILIES:
         return family
     return None
 

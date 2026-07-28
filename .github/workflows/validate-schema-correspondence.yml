@@ -1,0 +1,179 @@
+# validate-schema-correspondence.yml — [GH-REPO-063] as a gate rather than a
+# detector.
+#
+# WHAT CHANGED AND WHY
+#
+# The guard existed before this workflow, but its only caller was
+# validate-github-metadata.yml, which has `workflow_call` and
+# `workflow_dispatch` triggers and NO push or pull_request — and which checks
+# swift-institute/.github out at `ref: main`. Two consequences, both bad:
+#
+#   1. A pull request adding a schema key with no reader MERGED GREEN. Nothing
+#      ran on the pull request, so nothing could stop it.
+#   2. The first look was the next weekly sweep, which reads `main` — by then
+#      the drift had already landed, and the sweep's own signal was unread for
+#      three consecutive weeks.
+#
+# The manifest recorded this as `self-firing: deferred`. A known gap in a file
+# nobody reads is functionally an unknown one.
+#
+# This workflow triggers on push and pull_request over exactly the files the
+# correspondence spans, and checks out the ref under review rather than main.
+# validate-github-metadata.yml keeps its embedded call: that one is the sweep's
+# view of `main`, this one is the gate on the change.
+#
+# THE POSITIVE CONTROL IS THE FIRST STEP, NOT AN AFTERTHOUGHT
+#
+# Per VALIDATOR-DISCIPLINE.md, a check is not wired until something has been
+# made to fail through the whole path it will actually run in. Before this
+# workflow, the guard's PASSING direction was confirmed through the real path
+# and its FAILING direction never had been.
+#
+# So the fixture step runs first and gates the live step: every scenario under
+# tests/schema-correspondence/fail/ must exit 1 and the pass/ scenario must exit 0,
+# checked here, on every run. If the guard ever stops being able to fail, this
+# job goes red before it has a chance to report a reassuring green on the live
+# files. A run in which the fixtures did not execute is a failure, not a pass.
+#
+# The fixtures live outside .github/scripts/tests/run.sh because that runner
+# assumes the `<repo> <repo-root>` TSV-emitting validator convention, and this
+# guard takes three file paths and emits prose. Registering it there would have
+# meant bending one of the two conventions out of shape.
+#
+# Standalone workflow with no workflow_call trigger, so per [CI-090] it carries
+# a deny-all permissions floor with an explicit per-job grant.
+
+name: validate-schema-correspondence
+
+permissions: {}
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'metadata-schema.json'
+      - '.github/workflows/sync-metadata.yml'
+      - '.github/scripts/validate-readme.py'
+      - '.github/scripts/validate-schema-workflow-keys.py'
+      - '.github/scripts/tests/schema-correspondence/**'
+      - '.github/workflows/validate-schema-correspondence.yml'
+  pull_request:
+    paths:
+      - 'metadata-schema.json'
+      - '.github/workflows/sync-metadata.yml'
+      - '.github/scripts/validate-readme.py'
+      - '.github/scripts/validate-schema-workflow-keys.py'
+      - '.github/scripts/tests/schema-correspondence/**'
+      - '.github/workflows/validate-schema-correspondence.yml'
+  workflow_dispatch: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  correspondence:
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Harden runner (audit-mode egress logging)
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
+        with:
+          egress-policy: audit
+
+      # Deliberately NOT `ref: main`. The whole point of this workflow is to
+      # inspect the change under review; on pull_request the default checkout
+      # is the merge ref, which is what the branch will become.
+      - name: Checkout the ref under review
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 1
+
+      - name: Positive control — the guard must still be able to fail
+        id: control
+        shell: bash
+        env:
+          GUARD: .github/scripts/validate-schema-workflow-keys.py
+          FIXTURES: .github/scripts/tests/schema-correspondence
+        run: |
+          set -euo pipefail
+          : > /tmp/control.txt
+          scenarios=0
+          bad=0
+          for kind in pass fail; do
+            want=0; [ "$kind" = fail ] && want=1
+            for dir in "${FIXTURES}/${kind}"/*/; do
+              [ -d "$dir" ] || continue
+              scenarios=$((scenarios + 1))
+              rc=0
+              python3 "$GUARD" \
+                "${dir}metadata-schema.json" \
+                "${dir}sync-metadata.yml" \
+                "${dir}validate-readme.py" > /tmp/scenario.txt 2>&1 || rc=$?
+              if [ "$rc" -eq "$want" ]; then
+                echo "ok   ${kind}/$(basename "$dir") rc=${rc}" >> /tmp/control.txt
+              else
+                bad=$((bad + 1))
+                {
+                  echo "BAD  ${kind}/$(basename "$dir") rc=${rc} want=${want}"
+                  sed 's/^/       /' /tmp/scenario.txt
+                } >> /tmp/control.txt
+              fi
+            done
+          done
+          cat /tmp/control.txt
+          echo "scenarios=${scenarios}" >> "$GITHUB_OUTPUT"
+          # "Ran nothing" must never read as "nothing was wrong". The count is
+          # derived from the directories actually walked, so a fixture tree that
+          # got moved or emptied fails here rather than reporting a clean run
+          # over an empty population.
+          if [ "$scenarios" -eq 0 ]; then
+            echo "::error::No GH-REPO-063 fixture scenarios were found under ${FIXTURES}. The positive control did not run, so a green result below would be meaningless."
+            exit 1
+          fi
+          if [ "$bad" -ne 0 ]; then
+            echo "::error::${bad} of ${scenarios} GH-REPO-063 fixture scenarios did not behave as declared. The guard's ability to fail is no longer established; fix that before trusting any result it reports."
+            exit 1
+          fi
+          echo "::notice title=Positive control::${scenarios} GH-REPO-063 fixture scenarios behaved as declared (every fail/ scenario produced a finding)."
+
+      - name: Check the live schema against its consumers
+        id: live
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/validate-schema-workflow-keys.py \
+            metadata-schema.json \
+            .github/workflows/sync-metadata.yml \
+            .github/scripts/validate-readme.py | tee /tmp/live.txt
+
+      - name: Step summary
+        if: always()
+        shell: bash
+        env:
+          CONTROL_RESULT: ${{ steps.control.outcome }}
+          SCENARIOS: ${{ steps.control.outputs.scenarios }}
+          LIVE_RESULT: ${{ steps.live.outcome }}
+        run: |
+          {
+            echo "## [GH-REPO-063] schema ↔ consumer correspondence"
+            echo
+            echo "| Stage | Result |"
+            echo "|---|---|"
+            echo "| Positive control (${SCENARIOS:-0} fixture scenarios) | \`${CONTROL_RESULT:-did-not-run}\` |"
+            echo "| Live schema vs consumers | \`${LIVE_RESULT:-did-not-run}\` |"
+            echo
+            echo "The control runs first and gates the live check: a guard that"
+            echo "cannot be made to fail cannot make a green result mean anything."
+            echo
+            echo '```'
+            cat /tmp/control.txt 2>/dev/null || echo "(control did not run)"
+            echo '```'
+            echo
+            echo '```'
+            cat /tmp/live.txt 2>/dev/null || echo "(live check did not run)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

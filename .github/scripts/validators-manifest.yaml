@@ -364,12 +364,25 @@ validators:
 
   - rule-id: GH-REPO-063
     validator-script: .github/scripts/validate-schema-workflow-keys.py
-    workflow-file: .github/workflows/validate-github-metadata.yml
+    workflow-file: .github/workflows/validate-schema-correspondence.yml
     status: active
-    self-firing: deferred
+    self-firing: 'yes'
     discovery-mode: single-target
     rule-id-regex: '^GH-REPO-063'
-    migrate-to-base: 'no (single-target schema<->workflow key guard, embedded in validate-github-metadata.yml)'
+    migrate-to-base: 'no (takes three file paths and emits prose, not the <repo> <repo-root> TSV convention validate-base.yml and tests/run.sh assume)'
+    # Was `self-firing: deferred` until 2026-07-28. The guard ran only inside
+    # validate-github-metadata.yml, which has no push/pull_request trigger and
+    # checks out `ref: main`, so a pull request introducing the exact drift it
+    # detects merged green. validate-schema-correspondence.yml now runs it on
+    # push and pull_request against the ref under review, gated by a fixture
+    # suite under tests/schema-correspondence/ whose fail/ scenarios were each
+    # watched to fire. The embedded call in validate-github-metadata.yml stays:
+    # that is the sweep's view of main, this is the gate on the change.
+    #
+    # Scope also widened the same day, from schema<->workflow to
+    # schema<->consumer: the guard now covers metadata-schema.json's `readme`
+    # block against the EXEMPTIONS and FAMILIES constants in validate-readme.py,
+    # a correspondence that previously had no machine check of any kind.
 
   - rule-id: PRIM-NAME-001
     validator-script: .github/scripts/validate-package-naming.py

@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "gh-repo-063 fixture schema (not the live metadata schema)",
+  "type": "object",
+  "properties": {
+    "settings": {
+      "type": "object",
+      "properties": {
+        "hasIssuesEnabled": {
+          "type": "boolean"
+        },
+        "defaultBranch": {
+          "type": "boolean"
+        }
+      }
+    },
+    "readme": {
+      "type": "object",
+      "properties": {
+        "exempt": {
+          "type": "string",
+          "enum": [
+            "vendored-upstream"
+          ]
+        },
+        "family": {
+          "type": "string",
+          "enum": [
+            "A",
+            "E"
+          ]
+        }
+      }
+    }
+  }
+}
