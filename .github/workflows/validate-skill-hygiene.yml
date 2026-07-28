@@ -93,8 +93,13 @@ jobs:
   # produce a finding and every pass/ and edge/ fixture must produce none;
   # run.sh exits nonzero otherwise. Scoped to the `skill-` prefix so this job
   # gates only the rules it owns.
+  #
+  # Runs only when no target repo is named, which is exactly the in-repo case.
+  # The fixtures live beside the validator here, so on a consumer's call the
+  # checkout would be the CONSUMER's tree and run.sh would not exist. The guard
+  # is the mirror of the scan job's: exactly one of the two runs per invocation.
   self-test:
-    if: ${{ !github.event.repository.private }}
+    if: ${{ !github.event.repository.private && inputs.repo == '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
