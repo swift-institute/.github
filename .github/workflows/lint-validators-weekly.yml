@@ -165,20 +165,47 @@ jobs:
             # Public API endpoint: GITHUB_TOKEN can list public repos of
             # any org without per-org App-installation tokens. Visibility
             # filter defaults to public per [CI-094] / [CI-095].
-            repos=$(gh api "/orgs/${org}/repos?type=${VISIBILITY}&per_page=100" \
-              --paginate --jq '[.[] | select(.archived | not) | .full_name]' 2>/dev/null || echo '[]')
-            count=$(echo "$repos" | jq 'length')
-            if [[ "$count" -gt 0 ]]; then
-              targets=$(jq -c -n --argjson a "$targets" --argjson b "$repos" --arg org "$org" \
-                '$a + ($b | map({"org": $org, "repo": .}))')
+            #
+            # The --jq filter emits ONE NAME PER LINE, not an array. It used
+            # to build an array, and `gh --paginate` runs the filter once per
+            # PAGE, so an org with more than 100 repos produced several
+            # concatenated JSON arrays. `jq 'length'` then returned several
+            # numbers, `$((total + count))` died on the multi-line value with
+            # "syntax error in expression", and `targets` stayed empty.
+            #
+            # Total targets: 0. Every Wave-B scan job got an empty matrix, so
+            # it produced NO JOBS AT ALL and reported `skipped`, which the
+            # report job counted as clean. Six validators — docc-structure,
+            # package-shape, platform-architecture, readme, diagnostic-format
+            # and layer-deps — were inert in this sweep for as long as any run
+            # in the retained history, while it reported on ten.
+            org_names=$(gh api "/orgs/${org}/repos?type=${VISIBILITY}&per_page=100" \
+              --paginate --jq '.[] | select(.archived | not) | .full_name' 2>/tmp/enum.err) || {
+                echo "::error::Enumerating ${org} failed: $(head -c 200 /tmp/enum.err). Refusing to continue on a partial population."
+                exit 1
+              }
+            count=$(printf '%s' "$org_names" | grep -c . || true)
+            if [ "$count" -gt 0 ]; then
+              targets=$(printf '%s\n' "$org_names" | jq -R -s -c \
+                --argjson a "$targets" --arg org "$org" \
+                '$a + (split("\n") | map(select(length > 0) | {"org": $org, "repo": .}))')
             fi
             total=$((total + count))
             echo "${org}: ${count} repos"
           done
           echo "Total (org, repo) pairs: $total"
+          # Zero is not a small number here, it is a broken instrument. An
+          # empty matrix produces no jobs, and a job that never ran reports
+          # `skipped` — which is indistinguishable from a clean pass unless
+          # something refuses to accept it. Before believing a zero, prove the
+          # instrument can return non-zero.
+          if [ "$total" -eq 0 ]; then
+            echo "::error::Enumerated 0 (org, repo) pairs across all orgs. That is an enumeration failure, not an empty fleet: the six Wave-B scan jobs would receive an empty matrix, run nothing, and report `skipped`. Failing closed."
+            exit 1
+          fi
           # Matrix limit per strategy is 256. Sanity check before
           # downstream scan-* jobs explode at runtime.
-          if [[ "$total" -gt 256 ]]; then
+          if [ "$total" -gt 256 ]; then
             echo "::error::Total targets ($total) exceeds GitHub Actions matrix limit (256). Wave B needs to split scan jobs by layer or org-group."
             exit 1
           fi
@@ -436,18 +463,32 @@ jobs:
           set -euo pipefail
           today=$(date -u '+%Y-%m-%d')
 
-          # Aggregate per-validator scan job results. "Clean" = every scan
-          # job result is 'success' or 'skipped'. Anything else (failure,
-          # cancelled) ⇒ findings or validator error ⇒ file/update tracking issue.
+          # Aggregate per-validator scan job results. Only 'success' is clean.
+          #
+          # `skipped` used to count as clean. It does not mean "nothing to
+          # check" — for a matrix job it means the matrix was EMPTY and the job
+          # never existed. That is exactly what happened to the six Wave-B
+          # validators when resolve-targets enumerated 0 pairs: they produced
+          # no jobs, reported `skipped`, and this loop called the run clean over
+          # them. A validator that did not run must never be reportable as a
+          # validator that found nothing.
           ALL_CLEAN=true
-          for r in "$RESULT_THIN_CALLERS" "$RESULT_FILE_NAMING" "$RESULT_GITHUB_METADATA" "$RESULT_PACKAGE_STRUCTURE" \
-                   "$RESULT_DOCC_STRUCTURE" "$RESULT_PACKAGE_SHAPE" "$RESULT_PLATFORM_ARCHITECTURE" \
-                   "$RESULT_README" "$RESULT_DIAGNOSTIC_FORMAT" "$RESULT_LAYER_DEPS"; do
+          SKIPPED=""
+          for pair in "thin-callers:$RESULT_THIN_CALLERS" "file-naming:$RESULT_FILE_NAMING" \
+                      "github-metadata:$RESULT_GITHUB_METADATA" "package-structure:$RESULT_PACKAGE_STRUCTURE" \
+                      "docc-structure:$RESULT_DOCC_STRUCTURE" "package-shape:$RESULT_PACKAGE_SHAPE" \
+                      "platform-architecture:$RESULT_PLATFORM_ARCHITECTURE" "readme:$RESULT_README" \
+                      "diagnostic-format:$RESULT_DIAGNOSTIC_FORMAT" "layer-deps:$RESULT_LAYER_DEPS"; do
+            name="${pair%%:*}"; r="${pair#*:}"
             case "$r" in
-              success|skipped) ;;
+              success) ;;
+              skipped) ALL_CLEAN=false; SKIPPED="${SKIPPED} ${name}" ;;
               *) ALL_CLEAN=false ;;
             esac
           done
+          if [ -n "$SKIPPED" ]; then
+            echo "::error::These validators did NOT RUN (empty matrix or skipped job):${SKIPPED}. A validator that did not run is not a validator that found nothing."
+          fi
 
           if [[ "$ALL_CLEAN" == "true" ]]; then
             echo "All 10 scan jobs converged cleanly (success/skipped) — no tracking issue needed."
@@ -501,10 +542,14 @@ jobs:
 
           ## What this means
 
-          One or more of the ~788 matrix cells (4 cross-org validators × 17 orgs
-          + 6 single-target validators × ~120 (org, repo) pairs) reported
-          violations or a validator error. Drill into the failed cells via the
-          run summary linked above.
+          One or more scan legs reported violations, a validator error, or did
+          not run at all. Drill into the failed legs listed above.
+
+          A validator whose status reads \`skipped\` DID NOT RUN — for a matrix
+          job that means the matrix was empty and no job was ever created. It is
+          not a clean result. Until 2026-07-28 this workflow counted \`skipped\`
+          as clean, and the six single-target validators had been reporting it
+          for as long as the retained run history goes back.
 
           ## What to do
 
