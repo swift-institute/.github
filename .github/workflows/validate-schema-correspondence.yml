@@ -24,8 +24,9 @@
 #
 # THE POSITIVE CONTROL IS THE FIRST STEP, NOT AN AFTERTHOUGHT
 #
-# Per VALIDATOR-DISCIPLINE.md, a check is not wired until something has been
-# made to fail through the whole path it will actually run in. Before this
+# Per VALIDATOR-DISCIPLINE.md in swift-institute/Internal, a check is not wired
+# until something has been made to fail through the whole path it will
+# actually run in. Before this
 # workflow, the guard's PASSING direction was confirmed through the real path
 # and its FAILING direction never had been.
 #

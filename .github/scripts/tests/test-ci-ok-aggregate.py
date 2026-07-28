@@ -6,8 +6,8 @@ went wrong: `ci-ok` spent eight days reporting success over runs that compiled
 nothing, because `all(.result == "success" or .result == "skipped")` cannot
 tell a plan-sanctioned skip from a leg that stopped running. Reasoning about
 whether an aggregator would fire is not the same act as watching it fire
-(VALIDATOR-DISCIPLINE.md §3), so this suite feeds it the shapes it must reject
-and asserts the exit status AND the diagnostic.
+(swift-institute/Internal's VALIDATOR-DISCIPLINE.md §3), so this suite feeds it
+the shapes it must reject and asserts the exit status AND the diagnostic.
 
 The scripts are EXTRACTED FROM swift-ci.yml rather than copied here, so the
 bytes under test are the bytes that ship. If either step is renamed or

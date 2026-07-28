@@ -25,8 +25,8 @@ The `readme` half was added 2026-07-28. Before that this guard saw only the
 `settings` block and never opened validate-readme.py at all, so a `readme`
 enum value with no reader had NO machine check whatsoever -- the correspondence
 was maintained by a comment asking the next editor to remember. That is the
-same shape as the inert gates in VALIDATOR-DISCIPLINE.md: a control that looks
-like coverage and provides none.
+same shape as the inert gates in swift-institute/Internal's
+VALIDATOR-DISCIPLINE.md: a control that looks like coverage and provides none.
 
 FAILING CLOSED. Every way of not-knowing is a finding, not a pass:
 

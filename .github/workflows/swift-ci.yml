@@ -270,8 +270,9 @@ jobs:
   # there is exactly ONE list of what is expected to run and ci-ok can compare
   # against it. (Two lists in two places that must agree, with nothing holding
   # them together, is this repository's cheapest silent-drop — see
-  # VALIDATOR-DISCIPLINE.md §3.) Each leg keeps its own platform clause as a
-  # redundant belt: it can only remove a leg this filter already removed.
+  # swift-institute/Internal's VALIDATOR-DISCIPLINE.md §3.) Each leg keeps its
+  # own platform clause as a redundant belt: it can only remove a leg this
+  # filter already removed.
   #
   # ci-ok includes plan in its needs:, so a plan failure (e.g. an identity
   # conflict) fails the run even though every leg skips. Single-job dispatch
@@ -1349,8 +1350,9 @@ jobs:
   #   (c) no build leg was selected at all           — a green over nothing
   # (a) is now proved against `needs.plan.outputs.gating` rather than assumed;
   # (b) fails; (c) is refused in the plan AND again here. This is the
-  # "fail closed on did-not-run" rule from VALIDATOR-DISCIPLINE.md §3: scanned
-  # nothing must never be reportable as found nothing.
+  # "fail closed on did-not-run" rule from §3 of VALIDATOR-DISCIPLINE.md in
+  # swift-institute/Internal: scanned nothing must never be reportable as
+  # found nothing.
   #
   # Rationale: branch protection on consumer repos requires only `ci-ok`
   # rather than every individual job name. Adding/removing jobs in this

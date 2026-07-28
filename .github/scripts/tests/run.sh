@@ -16,7 +16,7 @@
 # Sources/ tree.
 #
 # Why fail/ fixtures matter more than pass/ ones, and what four inert gates in
-# this repository taught: see VALIDATOR-DISCIPLINE.md beside this directory.
+# this repository taught: see VALIDATOR-DISCIPLINE.md in swift-institute/Internal.
 #
 # Usage: run.sh [rule-id-prefix]
 #
