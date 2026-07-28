@@ -194,3 +194,11 @@ sweep's own defects — counters narrower than their validators, unread sentinel
 rows, an unread tracking issue, and six validators producing no jobs at all —
 are recorded in `VALIDATOR-DISCIPLINE.md` and
 `SWEEP-COVERAGE-GAPS-2026-07-28.md`.
+
+---
+
+## Tracked as
+
+[swift-institute/.github#60](https://github.com/swift-institute/.github/issues/60) — Task, board *Institute Work*, Blocked/P2. Blocked on #61: no org can be made green while its `scan-package-structure` leg is red for the unscanned-target cause.
+
+The issue is the work item; this file is the durable record. Measurements live here and are linked from there rather than duplicated, so there is one copy to keep true.

@@ -572,13 +572,36 @@ jobs:
             echo "CLEAN_RUN=false"
           } >> "$GITHUB_ENV"
 
-      # upsert-tracking-issue applies the label on CREATE only, and falls back
-      # to a label-less create when the label does not exist on the target
-      # repo. `lint-validators` did not exist when issue #34 was created on
-      # 2026-05-19, so it never got one — and the edit path cannot repair that.
-      # Ensuring the label exists BEFORE the upsert is what makes the label
-      # contract hold for the next created issue; the reconcile step below
-      # repairs the issue that already exists.
+      # ON THE LABEL, because Skills/github forbids minting a taxonomy:
+      #
+      #   "Labels are stock GitHub defaults and carry no Institute meaning —
+      #    never encode routing, priority, or ownership in one, and do not mint
+      #    a taxonomy without changing this rule."
+      #
+      # `lint-validators` encodes none of routing, priority or ownership. It
+      # identifies WHICH SWEEP FILED a bot-authored divergence report — the
+      # category the same skill sets apart with "issues opened by
+      # swift-institute-bot report machine-detected divergence — do not board
+      # them and do not hand-close them". Eleven sibling workflows in this repo
+      # already pass exactly such a label to this same composite (`link-check`,
+      # `license-audit`, `spine-audit`, `dep-graph`, `metadata-sync`, …), so
+      # this is the twelfth instance of an established convention rather than a
+      # new taxonomy.
+      #
+      # Critically, it is NOT load-bearing. The close-when-clean step below
+      # mirrors the upsert's own title-prefix search, so auto-close works with
+      # or without a label. That was the actual defect: the close step searched
+      # `--label lint-validators` while the upsert searched by title, the label
+      # did not exist, and the two never referred to the same issue — so
+      # auto-close could not fire even on a fully clean fleet.
+      #
+      # If the rule is meant to bind bot-filed sweep issues too, the fix is
+      # fleet-wide across those twelve callers, not a local deviation here.
+      #
+      # Mechanics: upsert-tracking-issue applies the label on CREATE only, and
+      # silently falls back to a label-less create when the label does not
+      # exist. `lint-validators` did not exist when issue #34 was created on
+      # 2026-05-19, so it never got one, and the edit path cannot repair that.
       - name: Ensure the tracking label exists
         if: ${{ inputs.dry-run != true }}
         env:

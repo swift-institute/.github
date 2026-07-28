@@ -177,3 +177,12 @@ The four org-sweep scanners depend on `config`, not `resolve-targets`, so they
 are unaffected either way — the job split that makes that true is worth keeping.
 
 [run 30376757233]: https://github.com/swift-institute/.github/actions/runs/30376757233
+
+---
+
+## Tracked as
+
+- §1 → [swift-institute/.github#61](https://github.com/swift-institute/.github/issues/61) — Task, Ready/P1.
+- §2 → [swift-institute/.github#62](https://github.com/swift-institute/.github/issues/62) — Task, Ready/P1.
+
+Both on the org board *Institute Work*. The issues are work items; this file is the durable record.
