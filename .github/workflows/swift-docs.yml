@@ -35,6 +35,17 @@ name: Swift DocC (reusable)
 # time from 151 to 100 minutes (-34%). Every other candidate change
 # measured under -5%.
 #
+# DO NOT EXPECT -34% IN PRACTICE, and do not conclude this change failed
+# when you do not see it. `linux-6-4` went to every-push in b0aa2c2 on
+# 2026-07-28 — one day AFTER the data above, so it is absent from it. It
+# is a release-mode Linux test leg costing 0.71x the 6.3 release leg
+# (paired sample, n=9, 2026-07-29; ratio ranges 0.57-1.22 and tracks
+# package size). Against the same storm that is ~+11.6 slot-hours versus
+# the 17.3 this change removes, so the two together land near -11%, not
+# -34%. The DocC removal is still the right call — without it the fleet
+# would now be strictly worse off than the measured baseline — but the
+# headline number belongs to a fleet that no longer exists.
+#
 # What this trades away: docs regressions (broken cross-refs, unresolved
 # symbols, tutorial syntax) are now caught at the tag boundary and by the
 # weekly rotation, not within minutes of the push that caused them. That
