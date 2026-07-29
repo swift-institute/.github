@@ -16,11 +16,13 @@
 #        ${TAG}_${bundle-suffix-final}.artifactbundle.tar.gz
 #      under https://download.swift.org/swift-${SWIFT}-release/${platform}/${TAG}/.
 #   6. Runs `swift sdk install <url> --checksum <checksum>`.
-#   7. Resolves the sdk-id input by replacing the literal token `${TAG}`
+#   7. For the Android SDK, installs the official r27d LTS Android NDK and
+#      runs the SDK bundle's setup script to populate its `ndk-sysroot`.
+#   8. Resolves the sdk-id input by replacing the literal token `${TAG}`
 #      with the resolved tag (a string-substitution, NOT GitHub Actions
 #      expression syntax). Inputs lacking `${TAG}` pass through unchanged
 #      (e.g. static-sdk's `x86_64-swift-linux-musl` triple).
-#   8. When `output-env-var` is non-empty, writes `<NAME>=<resolved-id>`
+#   9. When `output-env-var` is non-empty, writes `<NAME>=<resolved-id>`
 #      to $GITHUB_ENV so the caller's downstream `swift build` step can
 #      reference env.<NAME>.
 #
@@ -45,8 +47,9 @@ description: >
   container's running Swift version. Fetches releases.json, extracts
   the matching release record, optionally appends the platform's version
   field to the bundle suffix, constructs the bundle URL, and runs
-  `swift sdk install` with the published checksum. Optionally writes
-  the resolved SDK ID to GITHUB_ENV.
+  `swift sdk install` with the published checksum. Android SDK installs
+  also configure the required Android NDK. Optionally writes the resolved
+  SDK ID to GITHUB_ENV.
 
 inputs:
   platform:
@@ -103,6 +106,9 @@ runs:
       run: |
         set -euo pipefail
         apt-get update -qq && apt-get install -qq -y curl jq
+        if [[ "${INPUT_PLATFORM}" == "android-sdk" ]]; then
+          apt-get install -qq -y unzip
+        fi
         SWIFT_VERSION="$(swift --version | head -n1 | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -n1)"
         echo "Container Swift version: ${SWIFT_VERSION}"
         REC=$(curl -sf "https://www.swift.org/api/v1/install/releases.json" \
@@ -133,6 +139,35 @@ runs:
         echo "Resolved URL:      ${SDK_URL}"
         echo "Resolved SDK ID:   ${RESOLVED_SDK_ID}"
         swift sdk install "${SDK_URL}" --checksum "${CHECKSUM}"
+        if [[ "${INPUT_PLATFORM}" == "android-sdk" ]]; then
+          # Swift 6.3's official Android setup requires NDK r27d or later:
+          # https://www.swift.org/documentation/articles/swift-sdk-for-android-getting-started.html
+          # Google identifies r27d as LTS revision 27.3.13750724 and publishes
+          # SHA-1 22105e410cf29afcf163760cc95522b9fb981121 for this Linux archive.
+          # CI-082 requires the corresponding SHA-256 pin used below.
+          NDK_VERSION="r27d"
+          NDK_SHA256="601246087a682d1944e1e16dd85bc6e49560fe8b6d61255be2829178c8ed15d9"
+          NDK_WORK_DIR="$(mktemp -d)"
+          NDK_ARCHIVE="${NDK_WORK_DIR}/android-ndk-${NDK_VERSION}-linux.zip"
+          curl -fsSL --retry 3 \
+            -o "${NDK_ARCHIVE}" \
+            "https://dl.google.com/android/repository/android-ndk-${NDK_VERSION}-linux.zip"
+          printf '%s  %s\n' "${NDK_SHA256}" "${NDK_ARCHIVE}" | sha256sum -c -
+          unzip -q "${NDK_ARCHIVE}" -d "${NDK_WORK_DIR}"
+
+          CURRENT_USER_HOME="$(getent passwd "$(id -u)" | cut -d: -f6)"
+          ANDROID_SDK_DIR="${CURRENT_USER_HOME}/.swiftpm/swift-sdks/${TAG}_${BUNDLE_SUFFIX}.artifactbundle/swift-android"
+          if [[ ! -f "${ANDROID_SDK_DIR}/scripts/setup-android-sdk.sh" ]]; then
+            echo "Android SDK setup script not found at ${ANDROID_SDK_DIR}" >&2
+            exit 1
+          fi
+          ANDROID_NDK_HOME="${NDK_WORK_DIR}/android-ndk-${NDK_VERSION}" \
+            bash "${ANDROID_SDK_DIR}/scripts/setup-android-sdk.sh"
+          if [[ ! -f "${ANDROID_SDK_DIR}/ndk-sysroot/usr/include/semaphore.h" ]]; then
+            echo "Android SDK setup did not produce a valid NDK sysroot" >&2
+            exit 1
+          fi
+        fi
         if [[ -n "${INPUT_OUTPUT_ENV_VAR}" ]]; then
           echo "${INPUT_OUTPUT_ENV_VAR}=${RESOLVED_SDK_ID}" >> "${GITHUB_ENV}"
         fi
