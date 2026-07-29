@@ -94,13 +94,34 @@ jobs:
         with:
           egress-policy: audit
 
+      - name: Resolve token owner
+        id: owner
+        env:
+          INPUT_REPO: ${{ inputs.repo }}
+          INPUT_ORG: ${{ inputs.org }}
+        run: |
+          set -euo pipefail
+          # An installation token is scoped to ONE owner. Defaulting to
+          # github.repository_owner while `repo` names a package in another org
+          # mints a swift-institute token and every push 403s — which is what
+          # the swift-foundations/swift-kernel single-repo run did.
+          if [ -n "$INPUT_ORG" ]; then
+            owner="$INPUT_ORG"
+          elif [ -n "$INPUT_REPO" ]; then
+            owner="${INPUT_REPO%%/*}"
+          else
+            owner="${{ github.repository_owner }}"
+          fi
+          echo "name=$owner" >> "$GITHUB_OUTPUT"
+          echo "token owner: $owner"
+
       - name: Mint installation token (swift-institute-bot)
         id: mint-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
         with:
           client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
           private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
-          owner: ${{ inputs.org || github.repository_owner }}
+          owner: ${{ steps.owner.outputs.name }}
 
       - name: Checkout swift-institute/.github (canon + renderer)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
