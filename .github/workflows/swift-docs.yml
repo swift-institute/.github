@@ -20,6 +20,37 @@ name: Swift DocC (reusable)
 # name. Keep alphabetically sorted; space-separated; uppercase. The list
 # itself lives in the `Derive umbrella metadata` step below.
 
+# ─── SCHEDULING: NOT ON EVERY PUSH (Team Lead ruling 2026-07-29) ────────
+# This job runs on TAG REFS, workflow_dispatch, schedule, the '[ci docs]'
+# commit token, and the nightly ci-sweep rotation (which passes
+# `target-repo`). An ordinary push does NOT build docs.
+#
+# Measured basis (swift-institute/Workspace#47, data from 2026-07-27):
+# every organization is capped at 20 concurrent runner-backed jobs, and
+# that cap is pinned for 94.7% of contended time. On the measured day this
+# job took 244 runner acquisitions and 21.7 slot-hours in swift-foundations
+# alone — 34.2% of the entire org's daily CI compute, the single largest
+# consumer, ahead of the release build leg. Recomputing that day's burst
+# against the 20-slot ceiling: taking DocC off per-push drops the drain
+# time from 151 to 100 minutes (-34%). Every other candidate change
+# measured under -5%.
+#
+# What this trades away: docs regressions (broken cross-refs, unresolved
+# symbols, tutorial syntax) are now caught at the tag boundary and by the
+# weekly rotation, not within minutes of the push that caused them. That
+# was ruled acceptable pre-release — nothing consumes the published
+# archives yet, so staleness between tags costs nothing today. REVISIT
+# THIS RULING when the docs become visitor-facing: the argument for it is
+# entirely "no consumer", not "the check is low value".
+#
+# NOT a cost knob for anything else. The tier machinery in swift-ci.yml
+# deliberately keeps a build leg on every push because a docs-only diff
+# CAN change the build outcome on this fleet (deps float on `main` with no
+# Package.resolved). That reasoning does not transfer to this job: DocC
+# validates a documentation catalog against a symbol graph, and a
+# floating-dependency change that breaks the docs breaks the build first,
+# where the per-push build leg still catches it.
+#
 # Reusable DocC validation workflow for Swift Institute packages using
 # the umbrella-module single-catalog pattern ([DOC-019a]). Acts as a
 # build-time gate — if `docc convert` fails (broken cross-refs,
@@ -115,6 +146,14 @@ on:
         type: string
         default: "6.3"
         description: "Swift toolchain version for the DocC build container (swift:<version>). Mirrors the universal swift-ci.yml's input so callers bumping the floor flip both in lockstep."
+      target-repo:
+        type: string
+        default: ""
+        description: "Sweep-only target selector (set by ci-sweep.yml's docs-sweep job). When non-empty, the package checkout takes this `owner/name` instead of the caller's own repo, umbrella metadata derives from ITS name, and the job's scheduling guard is satisfied by this input alone. Empty default — every push/PR/tag/wrapper call passes nothing — so the checkout falls back to github.repository, bit-identical to the pre-sweep implicit-default checkout. Mirrors the sanctioned dispatch-input exception in swift-ci.yml; the scripts checkout is NOT retargeted."
+      ref:
+        type: string
+        default: ""
+        description: "Sweep-only target ref (set by ci-sweep.yml). Selects the branch/tag/SHA of `target-repo` to document. Threaded into the PACKAGE checkout only. Empty default resolves the triggering ref, bit-identical to before."
     secrets:
       PRIVATE_REPO_TOKEN:
         required: false
@@ -145,7 +184,29 @@ on:
 jobs:
   docs:
     name: DocC archive
-    if: ${{ !github.event.repository.private }}
+    # Scheduling guard — see the SCHEDULING block in this file's header for
+    # the measurement and the ruling. The disjuncts, in order:
+    #   target-repo != ''            the ci-sweep docs rotation
+    #   refs/tags/*                  the release boundary
+    #   workflow_dispatch            someone explicitly asking for it
+    #   schedule                     any scheduled caller
+    #   '[ci docs]' in the message   per-push opt-in escape hatch
+    # An ordinary push matches none of them and skips.
+    #
+    # This guard SKIPS the job rather than short-circuiting inside it. That
+    # is the point: a skipped job acquires no runner, and a runner slot is
+    # the scarce resource (Workspace#47). A `if:` on the steps would still
+    # queue for and hold a slot to do nothing.
+    #
+    # `github.event.head_commit` is null on pull_request events; `contains`
+    # coerces null to '' and returns false, so PRs take the skip path.
+    if: >-
+      ${{ !github.event.repository.private
+          && ( inputs.target-repo != ''
+            || startsWith(github.ref, 'refs/tags/')
+            || github.event_name == 'workflow_dispatch'
+            || github.event_name == 'schedule'
+            || contains(github.event.head_commit.message, '[ci docs]') ) }}
     runs-on: ubuntu-latest
     container: swift:${{ inputs.swift-version }}
     timeout-minutes: 60
@@ -167,7 +228,14 @@ jobs:
           apt-get update -qq
           apt-get install -qq -y python3
 
+      # Package checkout. `|| github.repository` keeps the non-sweep path
+      # bit-identical to the previous bare checkout. The scripts checkout
+      # further down stays pinned to swift-institute/.github and is NOT
+      # retargeted.
       - uses: actions/checkout@v7
+        with:
+          repository: ${{ inputs.target-repo || github.repository }}
+          ref: ${{ inputs.ref }}
 
       - uses: swift-institute/.github/.github/actions/configure-private-repos@main
         with:
@@ -186,9 +254,15 @@ jobs:
           INPUT_UMBRELLA_BUNDLE_ID: ${{ inputs.umbrella-bundle-id }}
           INPUT_UMBRELLA_DOCC_PATH: ${{ inputs.umbrella-docc-path }}
           INPUT_EXCLUDE_MODULES: ${{ inputs.exclude-modules }}
-          REPO_NAME: ${{ github.event.repository.name }}
+          # Must name the repo being DOCUMENTED, not the one that triggered
+          # the run — REPO_NAME feeds BUNDLE_ID and the multi-catalog
+          # heuristic. Under the ci-sweep docs rotation the triggering repo is
+          # swift-institute/.github, so `github.event.repository.name` would
+          # silently stamp every swept package with the sweeper's identity.
+          REPO_SLUG: ${{ inputs.target-repo || github.repository }}
         run: |
           set -euo pipefail
+          REPO_NAME="${REPO_SLUG##*/}"
 
           # ─── Discover umbrella metadata from source truth ───────────────
           # The repo convention is exactly ONE DocC catalog living inside its

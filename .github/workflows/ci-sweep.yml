@@ -140,8 +140,45 @@ jobs:
       target-repo: ${{ matrix.repo }}
       tier: full
 
+  # ─── DocC rotation (Team Lead ruling 2026-07-29) ─────────────────────────
+  # DocC came off per-push in swift-docs.yml — it was 34.2% of a layer org's
+  # entire daily CI compute for 244 runner acquisitions a day
+  # (swift-institute/Workspace#47). This is where the coverage it used to
+  # provide comes back: the same nightly slice, so every public repo gets a
+  # DocC validation at least once per rotation period (weekly at slices=7).
+  #
+  # It rides `select` rather than carrying its own fleet enumeration on
+  # purpose. Two copies of "which repos are in the fleet", with nothing
+  # holding them together, is this repository's cheapest silent drop
+  # (Internal/VALIDATOR-DISCIPLINE.md §3) — the CI rotation and the docs
+  # rotation must cover the same repos by construction, not by agreement.
+  #
+  # Budget: like `sweep`, these jobs run under swift-institute/.github's own
+  # 20-slot org quota, so the rotation never competes with consumer-push
+  # queues in the layer orgs. max-parallel is higher than `sweep`'s 3 because
+  # a docs call schedules ONE Linux job, not five macOS ones; 6 keeps both
+  # legs of this workflow inside the shared 20 with room to spare.
+  docs-sweep:
+    name: docs (${{ matrix.repo }})
+    needs: select
+    if: ${{ needs.select.outputs.repos != '[]' && needs.select.outputs.repos != '' }}
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        repo: ${{ fromJSON(needs.select.outputs.repos) }}
+    # Pure `uses:` routing job ([CI-080] carve-out; [CI-105] no
+    # continue-on-error on a `uses:` job). [CI-106]: grant >= the called
+    # reusable's per-job needs.
+    permissions:
+      contents: read
+    uses: ./.github/workflows/swift-docs.yml
+    secrets: inherit
+    with:
+      target-repo: ${{ matrix.repo }}
+
   report:
-    needs: [select, sweep]
+    needs: [select, sweep, docs-sweep]
     if: ${{ always() && needs.select.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -170,9 +207,15 @@ jobs:
             echo "| --- | --- |"
           } > "$RUNNER_TEMP/body.md"
           fail_count=0
-          # Job names look like: "sweep (owner/name) / <job> ...".
+          # Job names look like "sweep (owner/name) / <job> ..." for the
+          # full-matrix leg and "docs (owner/name) / DocC archive" for the
+          # DocC rotation. BOTH prefixes must be matched: docs-sweep was added
+          # 2026-07-29 and a report that only knew about `sweep (` would have
+          # aggregated every swept repo as green while docs failed silently —
+          # the failure mode this report exists to prevent.
           while IFS= read -r repo; do
-            fails=$(awk -F'\t' -v r="sweep ($repo) /" 'index($1, r)==1 && $2=="failure" {sub(/^[^\/]*\/ /,"",$1); printf "%s; ", $1}' /tmp/jobs.tsv)
+            fails=$(awk -F'\t' -v ci="sweep ($repo) /" -v dc="docs ($repo) /" \
+              '$2=="failure" && (index($1, ci)==1 || index($1, dc)==1) {printf "%s; ", $1}' /tmp/jobs.tsv)
             if [ -n "$fails" ]; then
               echo "| $repo | $fails |" >> "$RUNNER_TEMP/body.md"
               fail_count=$((fail_count+1))
