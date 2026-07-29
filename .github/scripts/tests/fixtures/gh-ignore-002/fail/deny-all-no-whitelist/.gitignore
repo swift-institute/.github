@@ -1,0 +1,7 @@
+# Deny-by-default with no re-includes for work directories. The manifest is
+# whitelisted only so this fixture can carry one — git applies nested
+# .gitignore files inside this repository, so a fixture that denies its own
+# Package.swift cannot be committed, and the validator would skip it.
+/*
+!/.gitignore
+!/Package.swift

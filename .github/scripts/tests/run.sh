@@ -92,6 +92,8 @@ validator_for() {
             echo "$SCRIPTS_DIR/validate-readme.py" ;;
         test-009)
             echo "$SCRIPTS_DIR/validate-file-naming.py" ;;
+        gh-ignore-001|gh-ignore-002)
+            echo "$SCRIPTS_DIR/validate-gitignore.py" ;;
         skill-frontmatter|skill-identity|skill-links|skill-machine-path|skill-internal-rule-id|skill-corpus-empty|skill-unsanctioned-reference)
             echo "$SCRIPTS_DIR/validate-skill-hygiene.py" ;;
         *)
@@ -155,6 +157,8 @@ prefix_for() {
         readme-017)      echo "README-017" ;;
         readme-026)      echo "README-026" ;;
         test-009)        echo "TEST-009" ;;
+        gh-ignore-001)   echo "GH-IGNORE-001" ;;
+        gh-ignore-002)   echo "GH-IGNORE-002" ;;
         # Skill hygiene findings are named for the behaviour rather than an
         # internal rule ID, so the fixture dir and the TSV code are the same
         # string.
