@@ -174,6 +174,12 @@ jobs:
               cd "$workdir"
               git config user.name  "swift-institute-bot[bot]"
               git config user.email "swift-institute-bot[bot]@users.noreply.github.com"
+              # `gh repo clone` leaves an unauthenticated https remote, so a raw
+              # `git push` gets "could not read Username for https://github.com"
+              # — which is what the first fleet run did, 137 times, pushing
+              # nothing. Carry the App token on the remote explicitly.
+              git remote set-url origin \
+                "https://x-access-token:${GH_TOKEN}@github.com/${repo}.git"
               # Explicit pathspec. This workflow has write access to hundreds of
               # repositories and must never stage anything it did not render.
               git add -- .gitignore
