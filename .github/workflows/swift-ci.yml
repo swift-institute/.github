@@ -1052,7 +1052,7 @@ jobs:
     # (swift-foundations/swift-certificate-verification, 71 findings, and
     # swift-institute/Issues, 1 — all of one rule, PATTERN-052) were ALREADY
     # red on every recent run for unrelated reasons. Zero repositories went
-    # green → red. See swift-institute/Workspace#52 for the full census.
+    # green → red. See swift-institute/Workspace#54 for the full census.
     #
     # Re-enabled 2026-06-24 after swift-foundations/swift-linter went public
     # (was DISABLED 2026-05-08 while the linter repo was private). Builds the
