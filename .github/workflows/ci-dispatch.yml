@@ -90,6 +90,15 @@ on:
           - lint-broken-symlink
           - lint-license-header
           - lint-test-support-spine
+      lint-bundle:
+        description: "Rule bundle the `swift-linter` job uses when the target carries NO root `Lint.swift`. Ignored for a target that carries one. Pick the target's LAYER (swift-primitives → primitives, swift-standards → standards, swift-foundations and above → institute) — a dispatch that leaves this at the default while pointing at a primitives package measures it against the weaker `institute` set and will under-report, so the debug surface has to be able to ask the real question."
+        type: choice
+        required: false
+        default: institute
+        options:
+          - primitives
+          - standards
+          - institute
       ref:
         description: "Git ref (branch/tag/SHA) of `target-repo` to build. Forwarded to swift-ci.yml's `ref` input and threaded into the 9 target checkouts, so it selects WHAT CODE is built. Different axis from `gh workflow run --ref <branch>`, which selects the CI-DEFINITION version (which swift-ci.yml / ci-dispatch.yml runs). Default `main`."
         type: string
@@ -111,3 +120,4 @@ jobs:
       target-repo: ${{ inputs.target-repo }}
       job: ${{ inputs.job }}
       ref: ${{ inputs.ref }}
+      lint-bundle: ${{ inputs.lint-bundle }}

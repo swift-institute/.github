@@ -133,6 +133,10 @@ on:
         type: string
         default: ""
         description: "Per-package CI platform-support declaration. Empty default preserves pre-input behavior: the build tier selects Linux and the full tier keeps every platform leg eligible. Non-empty = comma-separated subset of `apple,linux,windows` (lowercase, no spaces); unknown, duplicate, or empty family tokens fail the plan. Each platform leg runs only when its family token is present (apple → macos-release + apple-simulator-build; linux → linux-release + linux-nightly + linux-6-4; windows → windows-release). On the ordinary build tier, the same declaration selects exactly one supported release leg in deterministic priority order: Linux, then Windows, then macOS. Quality gates (format, lint, swift-linter, advisory linters) are platform-neutral and never consult this input. The plan applies this filter to `legs` itself, so `legs` is the single expected-execution list and ci-ok can require every gating leg named there to have SUCCEEDED (a gating leg that is skipped without the plan having excluded it now fails the run). Declare ONLY platform-identity exclusions — a package whose specification or identity excludes a platform (POSIX/ISO-9945 spec packages, per-platform roots like swift-linux / swift-windows). This is NOT a cost knob ([CI-096]) and is NOT derived from Package.swift `platforms:` ([CI-091] — that block is a SwiftPM deployment-target declaration, not a CI-coverage signal). Rationale: a platform-blind matrix forces platform emulation into L2 spec packages to green an illegitimate leg; the platform seam is L3 per [PLAT-ARCH-001]. ci-dispatch.yml passes nothing, so single-job dispatch can still force any leg on any package (debug surface preserved)."
+      lint-bundle:
+        type: string
+        default: "institute"
+        description: "Rule bundle the `swift-linter` job lints a consumer that carries NO root `Lint.swift` with. Consumers that DO carry one are unaffected — their file selects their rules and this input is never read. One of `primitives` | `standards` | `institute`; anything else fails the job in seconds, before any binary is provisioned. Set by the LAYER WRAPPER, not by the package: the wrapper is the layer, so the value is a literal there (swift-primitives → `primitives`, swift-standards → `standards`, swift-foundations → `institute`) and a package cannot elect a weaker rule set for itself. The default `institute` is the organization-wide bundle a direct caller (one that skips its layer wrapper, e.g. swift-institute/Issues) gets. The three bundles are a lattice — `universal ⊂ institute ⊂ primitives`, `standards = institute` minus two naming rules — so a single global default would measure primitives-layer packages against a LOOSER set than their configured peers, which is why the choice is per-layer. Mirrors Workspace's `Workspace.Lint.Bundle`, byte-for-byte the same tokens on the same `SWIFT_LINTER_BUNDLE` channel; keep the two in step. Non-empty default because the prebuilt runner falls back to `primitives` when the channel is UNSET (measured 2026-07-29) — an empty default would silently mismeasure every foundations package."
       tier:
         type: string
         default: ""
@@ -1008,11 +1012,47 @@ jobs:
 
   swift-linter:
     name: swift-linter
-    # FILE-GATED: lints only consumers
-    # that ship a `Lint.swift` at the repo root (the consumer config shape per
-    # swift-linter [LINT-SETUP-001]); consumers without one short-circuit at the
-    # detect step (cheap no-op). No opt-in input — the file IS the activation
-    # signal, so coverage grows as packages add one.
+    # EVERY PACKAGE IS LINTED (principal ruling: "swift-linter should run even
+    # if no Lint.swift is present"; shipped in the Workspace CLI at
+    # swift-institute/Workspace@5145f24, shipped HERE 2026-07-29).
+    #
+    # This job was FILE-GATED until 2026-07-29: a consumer without a root
+    # `Lint.swift` short-circuited at the detect step, every lint step skipped,
+    # and the JOB still reported `success` — so it counted as a pass in ci-ok's
+    # aggregate. That is a vacuous green, and it was measurable: on
+    # swift-foundations/swift-splat run 30384695291 the job is `success` with
+    # all eleven lint steps `skipped`. Lint coverage was therefore a property of
+    # the Workspace CLI and not of the fleet.
+    #
+    # The two paths differ in ONE thing — where the rule set comes from — and
+    # they must not be collapsed:
+    #
+    #   configured (root `Lint.swift`)  → the DISPATCHER, `swift-linter <root>
+    #                                     --exit-policy strict`. Unchanged.
+    #   unconfigured (no `Lint.swift`)  → the prebuilt STANDARD RUNNER, which
+    #                                     bakes the published bundles and picks
+    #                                     one from SWIFT_LINTER_BUNDLE.
+    #
+    # Pointing the DISPATCHER at an unconfigured package does not lint it: with
+    # no consumer manifest to classify it falls through to a zero-rules
+    # configuration and exits 0 in total silence (measured 2026-07-29 against
+    # swift-splat with the ci-binaries dispatcher: no output, rc=0). Simply
+    # deleting the file gate would therefore have replaced a job that admits it
+    # skipped with one that looks like it linted and did not — strictly worse.
+    # Hence the runner, and hence the summary-line adjudication in the
+    # unconfigured step: the runner reports `93 active rules · 0 files linted ·
+    # 0 violations`, rc=0, when handed an empty directory, so "ran clean" and
+    # "measured nothing" are indistinguishable from the exit status alone.
+    # A run that loaded no rules or linted no files fails here, loudly.
+    #
+    # Blast radius when this shipped (2026-07-29, public repos with a root
+    # Package.swift across the layer orgs and materialized sub-orgs): 16 of 460
+    # carried no `Lint.swift`; 6 archived, 1 with no `ci.yml`, leaving 9 live.
+    # Of those 9, 7 exit 0 under `--exit-policy strict`; the 2 that do not
+    # (swift-foundations/swift-certificate-verification, 71 findings, and
+    # swift-institute/Issues, 1 — all of one rule, PATTERN-052) were ALREADY
+    # red on every recent run for unrelated reasons. Zero repositories went
+    # green → red. See swift-institute/Workspace#52 for the full census.
     #
     # Re-enabled 2026-06-24 after swift-foundations/swift-linter went public
     # (was DISABLED 2026-05-08 while the linter repo was private). Builds the
@@ -1037,18 +1077,35 @@ jobs:
           ref: ${{ inputs.ref }}
           path: consumer
 
-      - name: Detect Lint.swift
+      # Classifies WHICH lint path runs. It no longer decides WHETHER one does
+      # — both branches lint. `lint-bundle` is validated here, before the
+      # binary provisioning below, so a bad wrapper value costs seconds rather
+      # than a full provision. The runner itself also rejects an unknown token
+      # (measured: `bogus`, `''` and `INSTITUTE` all exit 1 with `bundle
+      # channel: invalid`), so this is the fast half of a fail-closed pair, not
+      # the only guard.
+      - name: Classify consumer configuration
         id: detect
         shell: bash
         working-directory: consumer
         run: |
+          set -euo pipefail
+          case "$LINT_BUNDLE" in
+            primitives|standards|institute) ;;
+            *)
+              echo "::error::lint-bundle '$LINT_BUNDLE' is not one of primitives|standards|institute. This selects the rule set an unconfigured package is measured against; refusing to guess one."
+              exit 1
+              ;;
+          esac
           if [ -f Lint.swift ]; then
             echo "present=true" >> "$GITHUB_OUTPUT"
-            echo "Found Lint.swift — running swift-linter."
+            echo "Found Lint.swift — linting through the dispatcher against the consumer's own rule closure."
           else
             echo "present=false" >> "$GITHUB_OUTPUT"
-            echo "No Lint.swift at repo root — skipping swift-linter (no-op)."
+            echo "No Lint.swift at repo root — linting through the standard runner against the '$LINT_BUNDLE' bundle, the one this package's configured peers in the same layer activate."
           fi
+        env:
+          LINT_BUNDLE: ${{ inputs.lint-bundle }}
 
       # ── Prebuilt-binary fast path (approved 2026-07-20) ──
       # Downloads the dispatcher + standard runner published by
@@ -1065,7 +1122,6 @@ jobs:
       # the legacy source-build fallback below runs instead — never red on
       # a missing/misshapen release.
       - name: Download prebuilt linter binaries
-        if: ${{ steps.detect.outputs.present == 'true' }}
         id: binaries
         shell: bash
         run: |
@@ -1091,7 +1147,6 @@ jobs:
           echo "ok=$ok" >> "$GITHUB_OUTPUT"
 
       - name: Configure private-dep access
-        if: ${{ steps.detect.outputs.present == 'true' }}
         uses: swift-institute/.github/.github/actions/configure-private-repos@main
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
@@ -1105,7 +1160,6 @@ jobs:
       # swift:N image ([CI-092]). Install libuuid headers before building
       # (covers both the dispatcher build and the Lint.swift eval-project build).
       - name: Install system libraries (libuuid)
-        if: ${{ steps.detect.outputs.present == 'true' }}
         run: apt-get update -qq && apt-get install -qq -y uuid-dev
 
       # ── Tag-free engine-binary cache (Phase 1 of
@@ -1120,12 +1174,12 @@ jobs:
       # ── Legacy source-build FALLBACK (runs only when the prebuilt-binary
       # download above failed; see steps.binaries) ──
       - name: Resolve swift-linter main HEAD
-        if: ${{ steps.detect.outputs.present == 'true' && steps.binaries.outputs.ok != 'true' }}
+        if: ${{ steps.binaries.outputs.ok != 'true' }}
         id: linter-sha
         run: echo "sha=$(git ls-remote https://github.com/swift-foundations/swift-linter.git main | cut -f1)" >> "$GITHUB_OUTPUT"
 
       - name: Cache swift-linter dispatcher binary
-        if: ${{ steps.detect.outputs.present == 'true' && steps.binaries.outputs.ok != 'true' }}
+        if: ${{ steps.binaries.outputs.ok != 'true' }}
         id: cache-swift-linter
         uses: actions/cache@v6
         with:
@@ -1152,7 +1206,7 @@ jobs:
       # one shared rebuild → instant warm thereafter, so the baked rule set
       # always tracks latest-committed main. No tag / no version pin.
       - name: Resolve standard rule-pack HEADs (composite runner key)
-        if: ${{ steps.detect.outputs.present == 'true' && steps.binaries.outputs.ok != 'true' }}
+        if: ${{ steps.binaries.outputs.ok != 'true' }}
         id: runner-key
         shell: bash
         run: |
@@ -1172,7 +1226,7 @@ jobs:
           echo "Runner composite digest=$digest (engine=$engine primrules=$primrules instrules=$instrules unirules=$unirules linterprim=$linterprim)"
 
       - name: Cache swift-linter standard runner
-        if: ${{ steps.detect.outputs.present == 'true' && steps.binaries.outputs.ok != 'true' }}
+        if: ${{ steps.binaries.outputs.ok != 'true' }}
         id: cache-runner
         uses: actions/cache@v6
         with:
@@ -1182,7 +1236,7 @@ jobs:
       # Checkout the engine source when EITHER the dispatcher or the runner
       # cache missed — both build from this checkout (Runner/ ships inside it).
       - name: Checkout swift-linter (cache miss)
-        if: ${{ steps.detect.outputs.present == 'true' && steps.binaries.outputs.ok != 'true' && (steps.cache-swift-linter.outputs.cache-hit != 'true' || steps.cache-runner.outputs.cache-hit != 'true') }}
+        if: ${{ steps.binaries.outputs.ok != 'true' && (steps.cache-swift-linter.outputs.cache-hit != 'true' || steps.cache-runner.outputs.cache-hit != 'true') }}
         uses: actions/checkout@v7
         with:
           repository: swift-foundations/swift-linter
@@ -1190,7 +1244,7 @@ jobs:
           path: swift-linter
 
       - name: Build swift-linter dispatcher (cache miss)
-        if: ${{ steps.detect.outputs.present == 'true' && steps.binaries.outputs.ok != 'true' && steps.cache-swift-linter.outputs.cache-hit != 'true' }}
+        if: ${{ steps.binaries.outputs.ok != 'true' && steps.cache-swift-linter.outputs.cache-hit != 'true' }}
         shell: bash   # the swift:N container's default run-shell is dash; need bash for `set -o pipefail`
         run: |
           set -euo pipefail
@@ -1198,7 +1252,7 @@ jobs:
           install -m 0755 swift-linter/.build/debug/swift-linter /usr/local/bin/swift-linter
 
       - name: Build swift-linter standard runner (cache miss)
-        if: ${{ steps.detect.outputs.present == 'true' && steps.binaries.outputs.ok != 'true' && steps.cache-runner.outputs.cache-hit != 'true' }}
+        if: ${{ steps.binaries.outputs.ok != 'true' && steps.cache-runner.outputs.cache-hit != 'true' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -1208,7 +1262,7 @@ jobs:
           swift build --package-path swift-linter/Runner --product runner
           install -m 0755 swift-linter/Runner/.build/debug/runner /usr/local/bin/swift-linter-runner
 
-      - name: Run swift-linter
+      - name: Run swift-linter (consumer Lint.swift)
         if: ${{ steps.detect.outputs.present == 'true' }}
         # The dispatcher binary references the engine by branch:"main" (Phase 0)
         # — NO SWIFT_LINTER_PATH — so it dispatches without an engine source tree.
@@ -1220,6 +1274,71 @@ jobs:
         env:
           SWIFT_LINTER_RUNNER: /usr/local/bin/swift-linter-runner
         run: swift-linter "$GITHUB_WORKSPACE/consumer" --exit-policy strict
+
+      # The unconfigured path. Straight to the prebuilt standard runner — the
+      # dispatcher cannot lint this package (see the job header: no consumer
+      # manifest → zero rules → silent rc=0).
+      #
+      # The runner's argument vector is lint targets and NOTHING else, so a
+      # `--exit-policy` flag there would be read as a path. Both the bundle and
+      # the policy therefore ride environment channels. This is the same pair
+      # Workspace drives, so a package's CI verdict and its `workspace lint`
+      # verdict come from one mechanism rather than two that can drift.
+      #
+      # SWIFT_LINTER_BUNDLE must be set explicitly on every invocation: the
+      # runner falls back to `primitives` when the channel is UNSET (measured
+      # 2026-07-29 — an unset channel lints a foundations package against 96
+      # rules instead of 93, silently). `inputs.lint-bundle` has a non-empty
+      # default and is validated in the classify step, so the channel is never
+      # empty here; the runner rejects an invalid value even if it were.
+      #
+      # ADJUDICATION. The exit status alone cannot distinguish "ran clean" from
+      # "measured nothing": handed an empty directory the runner prints
+      # `93 active rules · 0 files linted · 0 violations` and exits 0. So the
+      # summary line is parsed and three conditions fail the job — no summary
+      # at all (never configured), zero active rules (nothing could have been
+      # found), zero files linted (a clean verdict over an empty population).
+      # These are the three UNMEASURED conditions Workspace's adjudicator
+      # applies; a ruleless run must be loud here exactly as it is there.
+      - name: Run swift-linter (layer default bundle)
+        if: ${{ steps.detect.outputs.present != 'true' }}
+        shell: bash   # PIPESTATUS + the swift:N container's default shell is dash
+        env:
+          SWIFT_LINTER_BUNDLE: ${{ inputs.lint-bundle }}
+          SWIFT_LINTER_EXIT_POLICY: strict
+        run: |
+          set -uo pipefail
+          OUT="$(mktemp)"
+          swift-linter-runner "$GITHUB_WORKSPACE/consumer" 2>&1 | tee "$OUT"
+          RC=${PIPESTATUS[0]}
+
+          SUMMARY="$(grep -E '[0-9]+ active rules' "$OUT" | tail -1)"
+          if [ -z "$SUMMARY" ]; then
+            echo "::error::swift-linter emitted no run summary. Nothing was measured, so this run establishes nothing — it is not a pass. (bundle: $SWIFT_LINTER_BUNDLE, exit status: $RC)"
+            exit 1
+          fi
+          RULES="$(sed -n 's/.*[^0-9]\([0-9][0-9]*\) active rules.*/\1/p' <<< "$SUMMARY")"
+          FILES="$(sed -n 's/.*[^0-9]\([0-9][0-9]*\) files linted.*/\1/p' <<< "$SUMMARY")"
+          if [ "${RULES:-0}" -eq 0 ]; then
+            echo "::error::swift-linter loaded 0 rules from bundle '$SWIFT_LINTER_BUNDLE'. Nothing could have been found, so a clean result here would be a lie."
+            exit 1
+          fi
+          if [ "${FILES:-0}" -eq 0 ]; then
+            echo "::error::swift-linter linted 0 files. The rule set loaded but matched no source — a clean verdict would be reporting on an empty population."
+            exit 1
+          fi
+          {
+            echo "### swift-linter (no \`Lint.swift\`)"
+            echo ""
+            echo "Linted against the \`$SWIFT_LINTER_BUNDLE\` bundle — the one this package's configured peers in the same layer activate."
+            echo ""
+            echo "\`\`\`"
+            echo "$SUMMARY"
+            echo "\`\`\`"
+            echo ""
+            echo "Findings of \`error\` severity fail this job under \`--exit-policy strict\`, exactly as they do for a package carrying a \`Lint.swift\`. Warning-severity findings are reported and do not."
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$RC"
 
   # ════════════════════════════════════════════════════════════════════════
   # Advisory CI gates — grouped by category for UI clarity.
