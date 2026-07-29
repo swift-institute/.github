@@ -20,6 +20,7 @@
 #   - validate-file-naming       [API-IMPL-006]
 #   - validate-github-metadata   [GH-REPO-METADATA]
 #   - validate-package-structure [PACKAGE-STRUCTURE]
+#   - validate-gitignore         [GH-IGNORE-001], [GH-IGNORE-002]
 #
 # Out of scope: validate-sub-org-wrappers (already self-firing with its
 # own hardcoded sub-org matrix; structurally different axis from the
@@ -277,6 +278,21 @@ jobs:
     permissions:
       contents: read
     uses: ./.github/workflows/validate-package-structure.yml
+    with:
+      org: ${{ matrix.org }}
+      dry-run: ${{ inputs.dry-run || false }}
+      visibility: ${{ inputs.visibility || 'public' }}
+    secrets: inherit
+
+  scan-gitignore:
+    needs: config
+    strategy:
+      fail-fast: false
+      matrix:
+        org: ${{ fromJSON(needs.config.outputs.orgs) }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/validate-gitignore.yml
     with:
       org: ${{ matrix.org }}
       dry-run: ${{ inputs.dry-run || false }}
