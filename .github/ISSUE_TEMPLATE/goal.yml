@@ -1,0 +1,50 @@
+name: Institute Goal
+description: Activate one durable Institute-wide observable outcome.
+type: goal
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form only for an active Institute-wide outcome owned by `swift-institute/.github`. Exact-owner technical work remains in its owning repository Issue. Do not add target dates, Milestones, Project Status, or copied technical acceptance criteria.
+  - type: textarea
+    id: objective
+    attributes:
+      label: Objective
+      description: State one durable, observable Institute outcome.
+    validations:
+      required: true
+  - type: textarea
+    id: owner_scope
+    attributes:
+      label: Owner and scope
+      description: State what this Goal owns and what remains with exact-owner technical Issues.
+    validations:
+      required: true
+  - type: textarea
+    id: activation
+    attributes:
+      label: Activation
+      description: State the activation condition. Opening this Issue normally activates the Goal.
+    validations:
+      required: true
+  - type: textarea
+    id: gates_constraints
+    attributes:
+      label: Gates and derived constraints
+      description: State each decidable gate, its evidence rule, and the constraint that applies while it is unmet. Use a separate exact-owner Issue for a gate that requires verification work.
+    validations:
+      required: true
+  - type: textarea
+    id: completion
+    attributes:
+      label: Completion
+      description: State observable completion evidence and not-planned/supersession semantics.
+    validations:
+      required: true
+  - type: textarea
+    id: native_relationships
+    attributes:
+      label: Native relationships
+      description: Name only genuine native subissues and blocking dependencies; do not copy their acceptance criteria.
+    validations:
+      required: true
