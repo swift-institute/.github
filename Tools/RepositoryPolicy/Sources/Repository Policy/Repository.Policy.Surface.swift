@@ -48,20 +48,39 @@ extension RepositoryPolicy {
         public let repository: String
         public let path: String
         public let reason: String
-        public let reviewAfter: String?
 
         public init(
             surface: Surface,
             repository: String,
             path: String,
-            reason: String,
-            reviewAfter: String? = nil
+            reason: String
         ) {
             self.surface = surface
             self.repository = repository
             self.path = path
             self.reason = reason
-            self.reviewAfter = reviewAfter
+        }
+
+        enum CodingKeys: String, CodingKey, CaseIterable {
+            case surface
+            case repository
+            case path
+            case reason
+        }
+
+        public init(from decoder: Decoder) throws {
+            let dynamicKeys = try decoder.container(keyedBy: DynamicCodingKey.self)
+            let known = Set(CodingKeys.allCases.map(\.stringValue))
+            for key in dynamicKeys.allKeys where !known.contains(key.stringValue) {
+                throw RepositoryPolicy.ConfigurationError(
+                    "surface exemption has unknown key: \(key.stringValue)"
+                )
+            }
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            self.surface = try container.decode(Surface.self, forKey: .surface)
+            self.repository = try container.decode(String.self, forKey: .repository)
+            self.path = try container.decode(String.self, forKey: .path)
+            self.reason = try container.decode(String.self, forKey: .reason)
         }
     }
 
@@ -328,6 +347,21 @@ private extension RepositoryPolicy.SurfacePolicy {
 private extension Array {
     var only: Element? {
         count == 1 ? self[0] : nil
+    }
+}
+
+private struct DynamicCodingKey: CodingKey {
+    let stringValue: String
+    let intValue: Int?
+
+    init?(stringValue: String) {
+        self.stringValue = stringValue
+        self.intValue = nil
+    }
+
+    init?(intValue: Int) {
+        self.stringValue = String(intValue)
+        self.intValue = intValue
     }
 }
 

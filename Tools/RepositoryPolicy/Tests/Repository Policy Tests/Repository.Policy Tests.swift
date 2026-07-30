@@ -418,6 +418,38 @@ struct RepositoryPolicyTests {
         #expect(rulePack.passed)
     }
 
+    // The `reviewAfter` key was removed from the exemption schema
+    // ([swift-institute/.github#110]) because it was decoded but read
+    // nowhere. Load-time validation must reject any stray occurrence of it
+    // (or any other unrecognized key) so the schema and the decoder stay in
+    // exact correspondence going forward.
+    @Test
+    func surfacePolicyRejectsUnknownExemptionKeys() throws {
+        let json = """
+            {
+              "schemaVersion": 1,
+              "actionGrants": [],
+              "exemptions": [
+                {
+                  "surface": "actions",
+                  "repository": "swift-primitives/swift-example",
+                  "path": ".github/workflows/legacy.yml",
+                  "reason": "fixture",
+                  "reviewAfter": "2026-01-01"
+                }
+              ]
+            }
+            """
+        let url = FileManager.default.temporaryDirectory
+            .appending(path: "repository-surfaces-\(UUID().uuidString).json")
+        try Data(json.utf8).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        #expect(throws: RepositoryPolicy.ConfigurationError.self) {
+            try RepositoryPolicy.SurfacePolicy.load(from: url)
+        }
+    }
+
     private func repositoryFixture(files: [String: String]) throws -> URL {
         let root =
             FileManager.default.temporaryDirectory
