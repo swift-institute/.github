@@ -77,8 +77,13 @@ name: ecosystem-coherence
 permissions: {}
 
 on:
-  schedule:
-    - cron: '40 2 * * 0'   # weekly Sunday 02:40 UTC — off GitHub's global peaks and off the 04:00/05:15/06:xx cron cluster
+  # schedule: DISABLED until calibration (coordinator, 2026-07-30): #125's own
+  # sequencing requires 2-3 workflow_dispatch calibration runs (wall-clock and
+  # 6-hour-limit fit) BEFORE the cron is trusted; calibration is blocked on the
+  # Workspace front door (swift-foundations/swift-posix#4). Re-enable by
+  # restoring the block below once calibration is recorded on #125.
+  # schedule:
+  #   - cron: '40 2 * * 0'   # weekly Sunday 02:40 UTC — off GitHub's global peaks and off the 04:00/05:15/06:xx cron cluster
   workflow_dispatch:
     inputs:
       narrowing:
