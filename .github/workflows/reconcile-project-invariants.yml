@@ -33,6 +33,14 @@ name: reconcile-project-invariants
 # `dry-run` (validation dispatches) skips both mutations as well as the
 # issue lifecycle, so a validation run never writes to the live Project.
 #
+# One report section is informational rather than an invariant: assigned
+# open rows. Per the assignee-on-dispatch ruling (#68, ratified
+# 2026-07-30, comment 5130968260; reconciler change #119), an open
+# Issue's assignee asserts "in flight now", so the report lists every
+# assigned open row with its assignees and updatedAt. A nonzero set is
+# normal and never counts as divergence; a row lingering across runs is
+# drift for the coordinator to judge. Report-only — no third mutation.
+#
 # Invariants checked each run:
 #   - every Project item has a Priority; every on-Project issue has an
 #     issue type
@@ -207,8 +215,10 @@ jobs:
                           url
                           state
                           stateReason
+                          updatedAt
                           author { login }
                           issueType { name }
+                          assignees(first: 10) { nodes { login } }
                         }
                         ... on PullRequest { url }
                         ... on DraftIssue { title }
@@ -261,6 +271,14 @@ jobs:
             "$workdir/items.json" > "$workdir/unreadable-rows.txt"
           jq -r '[.[] | select(.content.__typename == "Issue") | .content.url] | .[]' \
             "$workdir/items.json" | sort -u > "$workdir/admitted-urls.txt"
+          # Assigned open rows: the in-flight claim set per the
+          # assignee-on-dispatch ruling (#68). Informational — never a
+          # divergence, never mutated.
+          jq -r '[.[] | select(.content.__typename == "Issue"
+                   and .content.state == "OPEN"
+                   and ((.content.assignees.nodes // []) | length > 0))
+                 | "\(.content.url) — \([.content.assignees.nodes[].login] | join(", ")); issue updatedAt \(.content.updatedAt)"] | .[]' \
+            "$workdir/items.json" > "$workdir/assigned-open.txt"
 
           # ── Ratified mutations (#114/#116) ──────────────────────────
           # Exactly two idempotent writes to the Project itself: set
@@ -472,10 +490,10 @@ jobs:
               echo ""
             } >> "$body"
           }
-          # Same shape as section(), but does not add to gap_count: a row
-          # this run just mutated to the ratified value is not a lingering
-          # divergence requiring anyone's attention.
-          section_applied() {
+          # Same shape as section(), but does not add to gap_count: applied
+          # mutations and informational listings (the assigned-open set) are
+          # not lingering divergences requiring anyone's attention.
+          section_uncounted() {
             local title="$1" file="$2" note="${3:-}"
             local count
             count=$(wc -l < "$file" | tr -d ' ')
@@ -496,10 +514,10 @@ jobs:
             section "Items without a Priority (dry-run: not mutated)" "$workdir/missing-priority.txt"
             section "Items with the built-in Status field set (dry-run: not mutated)" "$workdir/status-set.txt"
           else
-            section_applied "Priority set to Normal (mutation applied this run, #114/#116)" \
+            section_uncounted "Priority set to Normal (mutation applied this run, #114/#116)" \
               "$workdir/applied-priority.txt" \
               "Idempotent: rows missing Priority are set to the ratified admission default. Not a lingering divergence."
-            section_applied "Status cleared (mutation applied this run, #114/#116)" \
+            section_uncounted "Status cleared (mutation applied this run, #114/#116)" \
               "$workdir/applied-status.txt" \
               "Idempotent: the built-in Status field is cleared wherever set, enforcing the keep-Status-unset invariant. Not a lingering divergence."
           fi
@@ -518,6 +536,9 @@ jobs:
           section "Open issues awaiting an admission decision" \
             "$workdir/awaiting-admission.txt" \
             "Surfaced only; admission is a judgment no filter expresses, so nothing is auto-admitted."
+          section_uncounted "Assigned open rows (claimed in-flight)" \
+            "$workdir/assigned-open.txt" \
+            "Informational, per the assignee-on-dispatch ruling (#68): an open Issue's assignee asserts in-flight-now. A nonzero set is normal; a row lingering across runs without activity is drift for the coordinator to judge. Nothing is mutated."
 
           echo "gap-count=${gap_count}" >> "$GITHUB_OUTPUT"
           echo "body-file=${body}" >> "$GITHUB_OUTPUT"
