@@ -31,15 +31,25 @@ name: reconcile-project-invariants
 # composite is identification only; no step's control flow reads it.
 # The issue is closed when a run finds the fleet clean.
 #
+# Failure shape: `gh api graphql` can exit 0 while reporting a GraphQL
+# error on stderr and null data on stdout (observed on run 30526232415:
+# "Resource not accessible by integration" followed by a jq
+# iterate-over-null crash). Every response is therefore validated with
+# `jq -e` before use, and a failed or null response fails the run with
+# the raw API error surfaced — never a downstream jq stack trace.
+#
 # Quota discipline: the REST/GraphQL budget is shared. One paginated
 # Project read, one paginated issue search per org, one issue-type read
 # per org; no polling, no per-item requests; runs are idempotent.
 #
-# Known scope limit: the minted App token is the swift-institute org
-# installation, so open issues in OTHER orgs' private repositories are
-# not visible to the search leg. Private repositories do not run CI and
-# their issues are not expected on the Project; the limit is recorded
-# here rather than silently assumed away.
+# Known scope limits, recorded rather than silently assumed away:
+#   - the minted App token is the swift-institute org installation, so
+#     open issues in OTHER orgs' private repositories are not visible to
+#     the search leg (private repositories do not run CI and their
+#     issues are not expected on the Project);
+#   - Project rows whose content lives in a repository the token cannot
+#     read resolve with null/REDACTED content; they are reported in
+#     their own section instead of crashing or being misclassified.
 
 on:
   schedule:
@@ -76,6 +86,10 @@ jobs:
         id: orgs
         uses: swift-institute/.github/.github/actions/read-orgs@main
 
+      # organization-projects: the ProjectV2 read. issues: divergence-issue
+      # lifecycle plus issue content on items. pull-requests: item content
+      # casts (a PR row is itself a reported divergence, but reading it must
+      # not be denied). metadata is implied by any grant; named for clarity.
       - name: Mint installation token (project read, issue write)
         id: token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
@@ -85,6 +99,8 @@ jobs:
           owner: swift-institute
           permission-organization-projects: read
           permission-issues: write
+          permission-pull-requests: read
+          permission-metadata: read
 
       - name: Observe Project and issue invariants
         id: scan
@@ -96,8 +112,38 @@ jobs:
           workdir="${RUNNER_TEMP}/project-reconciler"
           mkdir -p "$workdir"
 
+          # Run a GraphQL query into <out>; keep stderr beside it. gh can
+          # exit 0 while reporting a GraphQL error on stderr with null
+          # data on stdout, so success here means only "a response was
+          # written" — require_data does the semantic validation.
+          gql() {
+            local out="$1"; shift
+            if ! gh api graphql "$@" > "$out" 2> "${out}.stderr"; then
+              echo "::error::GraphQL call failed (${out##*/}); API error follows"
+              cat "${out}.stderr" >&2
+              [ -s "$out" ] && cat "$out" >&2
+              return 1
+            fi
+            if [ -s "${out}.stderr" ]; then
+              echo "GraphQL reported errors alongside ${out##*/}:" >&2
+              cat "${out}.stderr" >&2
+            fi
+          }
+
+          # Fail the run with the raw response and API error surfaced when
+          # a response does not satisfy the expected-shape predicate.
+          require_data() {
+            local file="$1" predicate="$2" label="$3"
+            if ! jq -e "$predicate" "$file" > /dev/null; then
+              echo "::error::${label}: response missing expected data; raw response and API error follow"
+              cat "$file" >&2
+              [ -s "${file}.stderr" ] && cat "${file}.stderr" >&2
+              return 1
+            fi
+          }
+
           # ── One paginated read of every Project item ────────────────
-          gh api graphql --paginate --slurp -f query='
+          gql "$workdir/items-raw.json" --paginate --slurp -f query='
             query($endCursor: String) {
               organization(login: "swift-institute") {
                 projectV2(number: 2) {
@@ -128,8 +174,11 @@ jobs:
                   }
                 }
               }
-            }' > "$workdir/items-raw.json"
-          jq '[.[].data.organization.projectV2.items.nodes[]]' \
+            }'
+          require_data "$workdir/items-raw.json" \
+            'type == "array" and length > 0 and all(.[]; .data.organization.projectV2.items.nodes != null)' \
+            "Project items query (org swift-institute, ProjectV2 2)"
+          jq '[.[].data.organization.projectV2.items.nodes[] | select(. != null)]' \
             "$workdir/items-raw.json" > "$workdir/items.json"
 
           item_name='(.content.url // .content.title // "unidentified item")'
@@ -139,9 +188,11 @@ jobs:
             "$workdir/items.json" > "$workdir/missing-type.txt"
           jq -r "[.[] | select(.status != null) | $item_name] | .[]" \
             "$workdir/items.json" > "$workdir/status-set.txt"
-          jq -r "[.[] | select(.content.__typename == \"DraftIssue\") | $item_name] | .[]" \
+          # Item `type` (not content __typename): it stays readable even
+          # when the token cannot read the content itself.
+          jq -r "[.[] | select(.type == \"DRAFT_ISSUE\") | $item_name] | .[]" \
             "$workdir/items.json" > "$workdir/draft-rows.txt"
-          jq -r "[.[] | select(.content.__typename == \"PullRequest\") | $item_name] | .[]" \
+          jq -r "[.[] | select(.type == \"PULL_REQUEST\") | $item_name] | .[]" \
             "$workdir/items.json" > "$workdir/pull-request-rows.txt"
           jq -r "[.[] | select(.isArchived) | $item_name] | .[]" \
             "$workdir/items.json" > "$workdir/archived-rows.txt"
@@ -154,14 +205,22 @@ jobs:
                    and (.content.author.login // \"\" | startswith(\"swift-institute-bot\")))
                  | $item_name] | .[]" \
             "$workdir/items.json" > "$workdir/bot-rows.txt"
+          # Rows whose content the token cannot read (REDACTED type, or an
+          # issue/PR row with null content): private or foreign-org content.
+          jq -r '[.[] | select(.type == "REDACTED" or (.type != "DRAFT_ISSUE" and .content == null))
+                 | "row of type \(.type) whose content is not readable by the bot token"] | .[]' \
+            "$workdir/items.json" > "$workdir/unreadable-rows.txt"
           jq -r '[.[] | select(.content.__typename == "Issue") | .content.url] | .[]' \
             "$workdir/items.json" | sort -u > "$workdir/admitted-urls.txt"
 
           # ── Per-org sweeps: open human issues + issue-type parity ───
+          # Collect every org failure before failing, so one red run
+          # defines the complete blocker set instead of the first one.
           : > "$workdir/open-issues.txt"
           : > "$workdir/type-parity.txt"
+          org_failures=0
           for org in $(jq -r '.[]' <<< "$ORGS"); do
-            gh api graphql --paginate --slurp \
+            if ! gql "$workdir/search-${org}.json" --paginate --slurp \
               -f query="
                 query(\$endCursor: String) {
                   search(type: ISSUE, first: 100, after: \$endCursor,
@@ -169,19 +228,36 @@ jobs:
                     pageInfo { hasNextPage endCursor }
                     nodes { ... on Issue { url author { login } } }
                   }
-                }" \
-            | jq -r '[.[].data.search.nodes[]
-                      | select(.author.login // "" | startswith("swift-institute-bot") | not)
-                      | .url] | .[]' >> "$workdir/open-issues.txt"
+                }"; then
+              org_failures=$((org_failures + 1)); continue
+            fi
+            if ! require_data "$workdir/search-${org}.json" \
+              'type == "array" and all(.[]; .data.search.nodes != null)' \
+              "Open-issue search (org ${org})"; then
+              org_failures=$((org_failures + 1)); continue
+            fi
+            jq -r '[.[].data.search.nodes[]
+                    | select(. != null and .url != null)
+                    | select(.author.login // "" | startswith("swift-institute-bot") | not)
+                    | .url] | .[]' \
+              "$workdir/search-${org}.json" >> "$workdir/open-issues.txt"
 
-            types=$(gh api graphql \
+            if ! gql "$workdir/types-${org}.json" \
               -f query='
                 query($org: String!) {
                   organization(login: $org) {
                     issueTypes(first: 25) { nodes { name isEnabled } }
                   }
-                }' -f org="$org" \
-              | jq -r '[.data.organization.issueTypes.nodes[] | select(.isEnabled) | .name] | sort | join(",")')
+                }' -f org="$org"; then
+              org_failures=$((org_failures + 1)); continue
+            fi
+            if ! require_data "$workdir/types-${org}.json" \
+              '.data.organization.issueTypes.nodes != null' \
+              "Issue-type read (org ${org})"; then
+              org_failures=$((org_failures + 1)); continue
+            fi
+            types=$(jq -r '[.data.organization.issueTypes.nodes[] | select(.isEnabled) | .name] | sort | join(",")' \
+              "$workdir/types-${org}.json")
             for required in Task Bug Feature; do
               case ",${types}," in
                 *",${required},"*) ;;
@@ -201,6 +277,10 @@ jobs:
                 ;;
             esac
           done
+          if [[ "$org_failures" -gt 0 ]]; then
+            echo "::error::${org_failures} org sweep(s) failed; see the surfaced API errors above. Observation data is incomplete, so no report is filed."
+            exit 1
+          fi
           sort -u "$workdir/open-issues.txt" > "$workdir/open-issues-sorted.txt"
           comm -23 "$workdir/open-issues-sorted.txt" "$workdir/admitted-urls.txt" \
             > "$workdir/awaiting-admission.txt"
@@ -241,6 +321,9 @@ jobs:
             "$workdir/not-planned-rows.txt" \
             "Flagged for removal; the removal itself remains a judgment and is never automated."
           section "Bot-authored issues on the Project" "$workdir/bot-rows.txt"
+          section "Rows whose content the bot token cannot read" \
+            "$workdir/unreadable-rows.txt" \
+            "Private or foreign-org content; verify these rows by hand or widen the App installation."
           section "Issue-type parity" "$workdir/type-parity.txt"
           section "Open issues awaiting an admission decision" \
             "$workdir/awaiting-admission.txt" \
