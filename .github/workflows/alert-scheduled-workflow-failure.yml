@@ -1,0 +1,246 @@
+name: alert-scheduled-workflow-failure
+
+# Makes a failed scheduled control-plane workflow run observable within one
+# day, per #123.
+#
+# Motivation: the org is on the free plan, so cron runs get no GitHub
+# failure notification. reconcile-project-invariants.yml failed at token
+# mint on every scheduled run after 747eeaa5 (#116's change) and was
+# discovered only by accident, when a validation dispatch for #119
+# happened to exercise it (root cause tracked on #120). During that
+# window the two ratified Project mutations and the entire divergence
+# report simply did not run, undetected.
+#
+# Mechanism (coordinator-adjudicated over #123's own alternatives list):
+# a workflow_run trigger naming every scheduled workflow in this
+# repository explicitly. workflow_run requires an exact name list — no
+# wildcard, no "every workflow with a schedule: trigger" query — which is
+# itself a drift surface: a scheduled workflow added or renamed without a
+# matching entry here would silently fall back outside observability, the
+# same failure class this file exists to close. That risk is what
+# check-scheduled-workflow-alert-parity.py guards: it discovers every
+# schedule:-triggered workflow from the repository's own workflow files
+# and fails closed the moment this list diverges from that set, in either
+# direction. Run via lint-validator-fixtures.yml's fixture suite
+# (test-scheduled-workflow-alert-drift.py), the same wiring #117 uses for
+# lint-validators-weekly.yml's report-surface drift.
+#
+# The rejected alternative — a scheduled API sweep over recent
+# `event=schedule` failures across the repository — has no name list to
+# drift, but cannot observe its own failure (a monitor that never runs
+# reports nothing, and nothing here would catch that). This workflow_run
+# design is more directly self-observing: GitHub delivers the trigger
+# unconditionally once the subject run completes.
+#
+# Residual gap (recorded per the #123 decision boundary): workflow_run
+# only fires once a run object exists. A scheduled trigger that GitHub
+# never fires at all — most notably, GitHub's automatic disabling of
+# `schedule:` triggers after 60 days with no repository activity — leaves
+# no run to observe and therefore produces no alert. That failure mode is
+# outside what any workflow_run-based design can see from inside the
+# repository it protects; closing it would need an external prober (e.g.,
+# a separate schedule elsewhere, or an org-level Actions usage query),
+# which is exactly the "meta-sweep" alternative #123 rejected for this
+# repository's part of the problem. Left as an explicit residual, not
+# silently narrowed.
+#
+# Lifecycle: one open tracking issue per failed workflow, upserted via
+# the existing upsert-tracking-issue composite, found by TITLE match
+# (never label-keyed — the label is identification only, same doctrine as
+# reconcile-project-invariants.yml). Auto-closed on that workflow's next
+# schedule-triggered green run. Bot-authored (the App token used for the
+# issue write), therefore never admitted to the Project per standing
+# doctrine.
+#
+# Scoped to schedule-triggered completions only (github.event.workflow_run
+# .event == 'schedule'): the same workflows also run on push/pull_request/
+# workflow_dispatch, and a red PR run is already visible on the PR itself
+# — this file exists to cover the failure class with no other visibility,
+# not to duplicate PR status checks.
+#
+# alert fires on failure or timed_out (a hang is a failure signal for
+# this observability goal, even though its GitHub API `conclusion` name
+# differs); close fires on success. Other conclusions (cancelled, skipped,
+# neutral, stale, action_required) are left unhandled — none of them is
+# the silent-failure class #123 exists to close, and treating a
+# deliberate cancellation as an alert-worthy failure would create noise
+# the lifecycle doctrine (one issue per real gap) does not want.
+
+on:
+  workflow_run:
+    types: [completed]
+    workflows:
+      - ci-sweep
+      - clean-room-resolve
+      - link-check-weekly
+      - lint-license-header-weekly
+      - lint-mechanical-hygiene-weekly
+      - lint-org-bot-coverage-weekly
+      - lint-readme-presence-weekly
+      - lint-test-support-spine-weekly
+      - lint-validator-fixtures
+      - lint-validators-weekly
+      - pin-advance
+      - reconcile-project-invariants
+      - startup-failure-probe-weekly
+      - submit-dep-graph-weekly
+      - sync-discussion-threads-nightly
+      - sync-metadata-nightly
+      - validate-sub-org-wrappers
+      - watch-sdk-floor
+
+permissions:
+  contents: read
+
+concurrency:
+  # One in-flight alert-or-close cycle per subject workflow at a time;
+  # queue rather than cancel so a rapid-fire pair of completions (e.g. a
+  # failure immediately followed by a manual re-run) still upserts and
+  # then closes in order instead of dropping one of the two.
+  group: alert-scheduled-workflow-failure-${{ github.event.workflow_run.name }}
+  cancel-in-progress: false
+
+jobs:
+  alert:
+    if: >
+      github.event.workflow_run.event == 'schedule' &&
+      (github.event.workflow_run.conclusion == 'failure' ||
+       github.event.workflow_run.conclusion == 'timed_out')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Harden runner (audit-mode egress logging)
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      # Read-only: the ambient GITHUB_TOKEN already has actions:read on
+      # this repository via the job's own permissions: block above. The
+      # App token below is reserved for the issue write, kept to the
+      # narrowest scope it needs.
+      - name: Fetch failing job/step detail
+        id: detail
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          out="${RUNNER_TEMP}/failing-steps.txt"
+          gh api "repos/${{ github.repository }}/actions/runs/${RUN_ID}/jobs" --paginate \
+            --jq '.jobs[]
+                  | select(.conclusion == "failure" or .conclusion == "timed_out")
+                  | "- job `" + .name + "` concluded `" + .conclusion + "`"
+                    + ( [ .steps[]?
+                          | select(.conclusion == "failure" or .conclusion == "timed_out")
+                          | "\n  - step `" + .name + "` concluded `" + .conclusion + "`" ]
+                        | join("") )' \
+            > "$out" || true
+          if [[ ! -s "$out" ]]; then
+            echo "(the Actions API returned no per-job/step failure detail for this run;" > "$out"
+            echo " see the run itself for the failing step.)" >> "$out"
+          fi
+          echo "detail-file=${out}" >> "$GITHUB_OUTPUT"
+
+      - name: Mint installation token (issue write)
+        id: token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
+        with:
+          client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: swift-institute
+          repositories: .github
+          permission-issues: write
+
+      - name: Build issue body
+        id: body
+        env:
+          WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_NUMBER: ${{ github.event.workflow_run.run_number }}
+          RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          CREATED_AT: ${{ github.event.workflow_run.created_at }}
+          UPDATED_AT: ${{ github.event.workflow_run.updated_at }}
+          DETAIL_FILE: ${{ steps.detail.outputs.detail-file }}
+        run: |
+          set -euo pipefail
+          body="${RUNNER_TEMP}/scheduled-workflow-failure-body.md"
+          {
+            echo "Scheduled run of \`${WORKFLOW_NAME}\` concluded \`${CONCLUSION}\`."
+            echo
+            echo "- Run: ${RUN_URL} (id ${RUN_ID}, attempt ${RUN_ATTEMPT}, run #${RUN_NUMBER})"
+            echo "- Head: \`${HEAD_BRANCH}\` @ \`${HEAD_SHA}\`"
+            echo "- Window: ${CREATED_AT} -> ${UPDATED_AT}"
+            echo
+            echo "### Failing job/step detail"
+            echo
+            cat "${DETAIL_FILE}"
+            echo
+            echo "---"
+            echo "Filed by \`alert-scheduled-workflow-failure.yml\` (#123). Upserted by title"
+            echo "match, never label-keyed; auto-closes on this workflow's next"
+            echo "schedule-triggered green run."
+          } > "$body"
+          echo "body-file=${body}" >> "$GITHUB_OUTPUT"
+
+      - name: Upsert tracking issue
+        uses: swift-institute/.github/.github/actions/upsert-tracking-issue@main
+        with:
+          repo: swift-institute/.github
+          title: 'Scheduled workflow failing: ${{ github.event.workflow_run.name }}'
+          title-prefix: 'Scheduled workflow failing: ${{ github.event.workflow_run.name }}'
+          body-file: ${{ steps.body.outputs.body-file }}
+          label: 'scheduled-workflow-failure'
+          gh-token: ${{ steps.token.outputs.token }}
+
+  close:
+    if: >
+      github.event.workflow_run.event == 'schedule' &&
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Harden runner (audit-mode egress logging)
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Mint installation token (issue write)
+        id: token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
+        with:
+          client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: swift-institute
+          repositories: .github
+          permission-issues: write
+
+      - name: Close tracking issue when green
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          set -euo pipefail
+          # Title-matched, never label-keyed — same doctrine as
+          # reconcile-project-invariants.yml: a minted label that was
+          # never created would otherwise silently disable this path.
+          existing=$(gh issue list \
+            --repo swift-institute/.github \
+            --state open \
+            --search "\"Scheduled workflow failing: ${WORKFLOW_NAME}\" in:title" \
+            --json number,title \
+            --jq ".[] | select(.title == \"Scheduled workflow failing: ${WORKFLOW_NAME}\") | .number")
+          for n in $existing; do
+            gh issue close "$n" \
+              --repo swift-institute/.github \
+              --comment "\`${WORKFLOW_NAME}\`'s most recent scheduled run succeeded (${RUN_URL}); auto-closing."
+          done
