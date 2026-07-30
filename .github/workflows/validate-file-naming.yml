@@ -83,7 +83,7 @@ jobs:
         with:
           repository: swift-institute/.github
           path: institute-github
-          ref: main
+          ref: ${{ job.workflow_sha }}
 
       - name: Resolve target repos
         id: targets

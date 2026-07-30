@@ -112,7 +112,7 @@ jobs:
         with:
           repository: swift-institute/.github
           path: institute-github
-          ref: main
+          ref: ${{ job.workflow_sha }}
 
       - name: Prove the validator's own controls fire
         # The fixture suite runs BEFORE the sweep, not in a separate workflow.

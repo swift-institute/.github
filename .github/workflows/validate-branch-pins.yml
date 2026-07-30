@@ -112,7 +112,7 @@ jobs:
         with:
           repository: swift-institute/.github
           path: .github-shared
-          ref: main
+          ref: ${{ job.workflow_sha }}
 
       # Whole-fleet enumeration (dispatch with no repo and no org) reads
       # the canonical read-orgs manifest rather than a second inline copy.

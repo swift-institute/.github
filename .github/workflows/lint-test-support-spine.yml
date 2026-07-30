@@ -75,7 +75,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install dependencies (python3, git for sparse-checkout)
         shell: bash
@@ -85,10 +85,10 @@ jobs:
           apt-get install -qq -y python3 git
 
       - name: Fetch audit script (sparse-checkout from swift-institute/.github)
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: swift-institute/.github
-          ref: main
+          ref: ${{ job.workflow_sha }}
           path: .swift-institute-github
           sparse-checkout: .github/scripts/audit-test-support-spine.py
           sparse-checkout-cone-mode: false

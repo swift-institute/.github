@@ -303,7 +303,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ inputs.target-repo || github.repository }}
           ref: ${{ inputs.ref }}
@@ -317,10 +317,15 @@ jobs:
       # Vendored via checkout (not curl from raw.githubusercontent) so the
       # executed script rides the same trust anchor as every other `uses:`
       # reference into this repo — no unpinned run-time code fetch.
+      # `ref: job.workflow_sha` anchors the vendored scripts to the exact
+      # commit of THIS workflow file (the called reusable, not the caller),
+      # so the executed script cannot differ from the workflow revision
+      # that invoked it (#43 item 3).
       - name: Checkout CI scripts
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: swift-institute/.github
+          ref: ${{ job.workflow_sha }}
           path: .ci-scripts
       - name: Identity-conflict fast-check
         shell: bash
@@ -538,12 +543,12 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ inputs.target-repo || github.repository }}
           ref: ${{ inputs.ref }}
 
-      - uses: swift-institute/.github/.github/actions/configure-private-repos@main
+      - uses: swift-institute/.github/.github/actions/configure-private-repos@2d8dcb700888fdc60be0ff1a9af6d7058d122833  # main 2026-07-30, advanced by pin-advance (#43)
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
           app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
@@ -586,12 +591,12 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ inputs.target-repo || github.repository }}
           ref: ${{ inputs.ref }}
 
-      - uses: swift-institute/.github/.github/actions/configure-private-repos@main
+      - uses: swift-institute/.github/.github/actions/configure-private-repos@2d8dcb700888fdc60be0ff1a9af6d7058d122833  # main 2026-07-30, advanced by pin-advance (#43)
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
           app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
@@ -599,7 +604,7 @@ jobs:
           app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
           enabled: ${{ inputs.enable-private-repos }}
 
-      - uses: swift-institute/.github/.github/actions/install-system-deps@main
+      - uses: swift-institute/.github/.github/actions/install-system-deps@2d8dcb700888fdc60be0ff1a9af6d7058d122833  # main 2026-07-30, advanced by pin-advance (#43); pin does not cover apt-fetched packages
 
       - name: Print toolchain info
         run: |
@@ -636,12 +641,12 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ inputs.target-repo || github.repository }}
           ref: ${{ inputs.ref }}
 
-      - uses: swift-institute/.github/.github/actions/configure-private-repos@main
+      - uses: swift-institute/.github/.github/actions/configure-private-repos@2d8dcb700888fdc60be0ff1a9af6d7058d122833  # main 2026-07-30, advanced by pin-advance (#43)
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
           app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
@@ -649,7 +654,7 @@ jobs:
           app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
           enabled: ${{ inputs.enable-private-repos }}
 
-      - uses: swift-institute/.github/.github/actions/install-system-deps@main
+      - uses: swift-institute/.github/.github/actions/install-system-deps@2d8dcb700888fdc60be0ff1a9af6d7058d122833  # main 2026-07-30, advanced by pin-advance (#43); pin does not cover apt-fetched packages
 
       - name: Print toolchain info
         run: |
@@ -721,12 +726,12 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ inputs.target-repo || github.repository }}
           ref: ${{ inputs.ref }}
 
-      - uses: swift-institute/.github/.github/actions/configure-private-repos@main
+      - uses: swift-institute/.github/.github/actions/configure-private-repos@2d8dcb700888fdc60be0ff1a9af6d7058d122833  # main 2026-07-30, advanced by pin-advance (#43)
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
           app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
@@ -734,7 +739,7 @@ jobs:
           app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
           enabled: ${{ inputs.enable-private-repos }}
 
-      - uses: swift-institute/.github/.github/actions/install-system-deps@main
+      - uses: swift-institute/.github/.github/actions/install-system-deps@2d8dcb700888fdc60be0ff1a9af6d7058d122833  # main 2026-07-30, advanced by pin-advance (#43); pin does not cover apt-fetched packages
 
       - name: Print toolchain info
         run: |
@@ -769,12 +774,12 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ inputs.target-repo || github.repository }}
           ref: ${{ inputs.ref }}
 
-      - uses: swift-institute/.github/.github/actions/configure-private-repos@main
+      - uses: swift-institute/.github/.github/actions/configure-private-repos@2d8dcb700888fdc60be0ff1a9af6d7058d122833  # main 2026-07-30, advanced by pin-advance (#43)
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
           app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
@@ -844,12 +849,12 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ inputs.target-repo || github.repository }}
           ref: ${{ inputs.ref }}
 
-      - uses: swift-institute/.github/.github/actions/configure-private-repos@main
+      - uses: swift-institute/.github/.github/actions/configure-private-repos@2d8dcb700888fdc60be0ff1a9af6d7058d122833  # main 2026-07-30, advanced by pin-advance (#43)
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
           app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
@@ -928,7 +933,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ inputs.target-repo || github.repository }}
           ref: ${{ inputs.ref }}
@@ -974,14 +979,14 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ inputs.target-repo || github.repository }}
           ref: ${{ inputs.ref }}
 
       - name: Cache SwiftLint binary
         id: cache-swiftlint
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /usr/local/bin/swiftlint
           key: ${{ runner.os }}-swiftlint-${{ env.SWIFTLINT_VERSION }}
@@ -1095,7 +1100,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ inputs.target-repo || github.repository }}
           ref: ${{ inputs.ref }}
@@ -1171,7 +1176,7 @@ jobs:
           echo "ok=$ok" >> "$GITHUB_OUTPUT"
 
       - name: Configure private-dep access
-        uses: swift-institute/.github/.github/actions/configure-private-repos@main
+        uses: swift-institute/.github/.github/actions/configure-private-repos@2d8dcb700888fdc60be0ff1a9af6d7058d122833  # main 2026-07-30, advanced by pin-advance (#43)
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
           app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
@@ -1205,7 +1210,7 @@ jobs:
       - name: Cache swift-linter dispatcher binary
         if: ${{ steps.binaries.outputs.ok != 'true' }}
         id: cache-swift-linter
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /usr/local/bin/swift-linter
           key: ${{ runner.os }}-swift${{ inputs.swift-version }}-linterbin-${{ steps.linter-sha.outputs.sha }}
@@ -1253,7 +1258,7 @@ jobs:
       - name: Cache swift-linter standard runner
         if: ${{ steps.binaries.outputs.ok != 'true' }}
         id: cache-runner
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /usr/local/bin/swift-linter-runner
           key: ${{ runner.os }}-swift${{ inputs.swift-version }}-linterrunner-${{ steps.runner-key.outputs.digest }}
@@ -1262,7 +1267,7 @@ jobs:
       # cache missed — both build from this checkout (Runner/ ships inside it).
       - name: Checkout swift-linter (cache miss)
         if: ${{ steps.binaries.outputs.ok != 'true' && (steps.cache-swift-linter.outputs.cache-hit != 'true' || steps.cache-runner.outputs.cache-hit != 'true') }}
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: swift-foundations/swift-linter
           ref: ${{ steps.linter-sha.outputs.sha }}

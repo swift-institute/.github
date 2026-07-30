@@ -128,7 +128,7 @@ jobs:
         with:
           repository: swift-institute/.github
           path: institute-github
-          ref: main
+          ref: ${{ job.workflow_sha }}
 
       - name: Prove the renderer and the gate agree before writing anything
         # The fixture suite covers the gate; this covers the pair. A renderer

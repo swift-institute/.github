@@ -119,7 +119,7 @@ jobs:
         with:
           repository: swift-institute/.github
           path: institute-github
-          ref: main
+          ref: ${{ job.workflow_sha }}
 
       - name: Validate schema<->workflow settings-key consistency [GH-REPO-063]
         run: |

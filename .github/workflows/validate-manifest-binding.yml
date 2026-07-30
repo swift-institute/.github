@@ -101,7 +101,7 @@ jobs:
           repository: swift-institute/.github
           path: institute-github
           token: ${{ steps.mint-token.outputs.token }}
-          ref: main
+          ref: ${{ job.workflow_sha }}
 
       - name: Checkout swift-institute/Skills (SKILL.md source for checks 1 + 3)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

@@ -80,7 +80,7 @@ jobs:
         with:
           repository: swift-institute/.github
           path: institute-github
-          ref: main
+          ref: ${{ job.workflow_sha }}
 
       - name: Run validation against ${{ matrix.sub-org }}/.github
         env:

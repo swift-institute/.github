@@ -243,7 +243,7 @@ jobs:
       # bit-identical to the previous bare checkout. The scripts checkout
       # further down stays pinned to swift-institute/.github and is NOT
       # retargeted.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ inputs.target-repo || github.repository }}
           ref: ${{ inputs.ref }}
@@ -410,10 +410,10 @@ jobs:
 
       - name: Fetch patch-umbrella-symbol-graph.py
         if: ${{ success() && env.SKIP_DOCS != 'true' }}
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: swift-institute/.github
-          ref: main
+          ref: ${{ job.workflow_sha }}
           path: .swift-institute-github
           sparse-checkout: .github/scripts/patch-umbrella-symbol-graph.py
           sparse-checkout-cone-mode: false
