@@ -53,6 +53,12 @@ name: reconcile-project-invariants
 #     are surfaced for an admission decision — never auto-admitted
 #   - issue-type parity per org: Task/Bug/Feature everywhere; Goal only
 #     in swift-institute
+#   - every open Goal issue (swift-institute/.github, the only repository
+#     where the Goal issue type is enabled) carries the record-grammar
+#     core fields the goal.yml form renders (#126 §5/§6, filed as #129/
+#     #130): Kind, Owner coordinate, Grammar version. Report-only and
+#     decidable-core-only by design — the Status field predicate and the
+#     rest of §6's predicate catalogue are deferred, not covered here.
 #
 # Reporting mechanics: one divergence issue in this repository, found by
 # TITLE match — never by label (a prior sweep keyed control flow off a
@@ -464,6 +470,65 @@ jobs:
           comm -23 "$workdir/open-issues-sorted.txt" "$workdir/admitted-urls.txt" \
             > "$workdir/awaiting-admission.txt"
 
+          # ── Record-grammar core presence on Goal issues (#126 §5/§6, filed as #130) ──
+          # Report-only, per the enforcement-host ruling: new predicates land
+          # report-only first. Decidable slice only — the three record-grammar
+          # core fields the goal.yml form (#129) renders as headers (Kind,
+          # Owner coordinate, Grammar version). Status is deferred (#130):
+          # its value space is not yet fixed anywhere machine-readable. The
+          # Goal issue type is swift-institute-only (enforced by the
+          # issue-type parity check above), so this reads one repository,
+          # not every org.
+          : > "$workdir/goal-grammar-gaps.txt"
+          gql "$workdir/goal-issues.json" --paginate --slurp -f query='
+            query($endCursor: String) {
+              repository(owner: "swift-institute", name: ".github") {
+                issues(states: OPEN, first: 50, after: $endCursor) {
+                  pageInfo { hasNextPage endCursor }
+                  nodes { url body issueType { name } }
+                }
+              }
+            }'
+          require_data "$workdir/goal-issues.json" \
+            'type == "array" and length > 0 and all(.[]; .data.repository.issues.nodes != null)' \
+            "Goal-issue body read (swift-institute/.github)"
+          jq '[.[].data.repository.issues.nodes[] | select(.issueType.name == "Goal")]' \
+            "$workdir/goal-issues.json" > "$workdir/goal-issues-only.json"
+
+          # A rendered Issue Forms field is a "### <Label>" header followed
+          # by its answer (or the literal "_No response_" placeholder when
+          # left blank). Missing the header entirely (a Goal filed before
+          # #129, or filed blank) and an explicit "_No response_" both count
+          # as absent — this predicate reports absence, not just blankness.
+          field_present() {
+            local body="$1" label="$2"
+            awk -v label="### ${label}" '
+              BEGIN { found = 0; in_field = 0; answered = 0 }
+              $0 == label { in_field = 1; found = 1; next }
+              in_field && /^### / { in_field = 0 }
+              in_field {
+                line = $0; gsub(/^[ \t]+|[ \t]+$/, "", line)
+                if (line != "" && line != "_No response_") answered = 1
+              }
+              END { print (found && answered) ? "1" : "0" }
+            ' <<< "$body"
+          }
+          goal_count=$(jq 'length' "$workdir/goal-issues-only.json")
+          for i in $(seq 0 $((goal_count - 1))); do
+            [ "$goal_count" -eq 0 ] && break
+            url=$(jq -r ".[$i].url" "$workdir/goal-issues-only.json")
+            gbody=$(jq -r ".[$i].body" "$workdir/goal-issues-only.json")
+            missing=""
+            for label in "Kind" "Owner coordinate" "Grammar version"; do
+              if [ "$(field_present "$gbody" "$label")" != "1" ]; then
+                missing="${missing}${missing:+, }${label}"
+              fi
+            done
+            if [ -n "$missing" ]; then
+              echo "${url} — missing: ${missing}" >> "$workdir/goal-grammar-gaps.txt"
+            fi
+          done
+
           # ── Assemble the report ─────────────────────────────────────
           body="$workdir/body.md"
           gap_count=0
@@ -536,6 +601,9 @@ jobs:
           section "Open issues awaiting an admission decision" \
             "$workdir/awaiting-admission.txt" \
             "Surfaced only; admission is a judgment no filter expresses, so nothing is auto-admitted."
+          section "Goal issues missing record-grammar core fields" \
+            "$workdir/goal-grammar-gaps.txt" \
+            "Report-only per #126 §6 (enforcement-host ruling: new predicates land report-only first); decidable core only, filed as #130 — Kind / Owner coordinate / Grammar version presence, per the goal.yml form (#129). The Status field predicate and the remainder of §6's catalogue are deferred, not silently covered here."
           section_uncounted "Assigned open rows (claimed in-flight)" \
             "$workdir/assigned-open.txt" \
             "Informational, per the assignee-on-dispatch ruling (#68): an open Issue's assignee asserts in-flight-now. A nonzero set is normal; a row lingering across runs without activity is drift for the coordinator to judge. Nothing is mutated."
