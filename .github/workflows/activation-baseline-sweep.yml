@@ -53,35 +53,6 @@ jobs:
           cp "$work/MANIFEST.txt" "$RUNNER_TEMP/activation-runner-manifest.txt"
           echo "ACTIVATION_MANIFEST=$RUNNER_TEMP/activation-runner-manifest.txt" >> "$GITHUB_ENV"
 
-      - name: Prove the measurement guard fires
-        shell: bash
-        run: |
-          set -euo pipefail
-          control="$(mktemp -d)"
-          output="$RUNNER_TEMP/positive-control.txt"
-          set +e
-          SWIFT_LINTER_BUNDLE=institute SWIFT_LINTER_EXIT_POLICY=strict \
-            swift-linter-runner "$control" >"$output" 2>&1
-          status=$?
-          set -e
-          summary="$(grep -E '[0-9]+ active rules' "$output" | tail -1 || true)"
-          rules="$(sed -n 's/.*[^0-9]\([0-9][0-9]*\) active rules.*/\1/p' <<< "$summary")"
-          files="$(sed -n 's/.*[^0-9]\([0-9][0-9]*\) files linted.*/\1/p' <<< "$summary")"
-          if [ -z "$summary" ] || [ "${rules:-0}" -eq 0 ] || [ "${files:-1}" -ne 0 ]; then
-            echo "::error::Positive control did not produce the known non-measurement shape (summary with nonzero rules and zero files)."
-            cat "$output"
-            exit 1
-          fi
-          # The runner itself may exit zero for this empty population. The
-          # receipt adjudicator must turn that into a failure; prove that the
-          # branch is live before accepting any clean root.
-          if [ "$status" -ne 0 ]; then
-            echo "::error::Positive-control runner failed before adjudication (exit $status)."
-            cat "$output"
-            exit 1
-          fi
-          echo "Positive control fired: $summary"
-
       - name: Measure every Workspace package root
         shell: bash
         env:
@@ -113,6 +84,58 @@ jobs:
             if [ "$first" = true ]; then first=false; else printf ',' >> "$receipt"; fi
             printf '%s' "$result" >> "$receipt"
           }
+
+          # One adjudicator for the positive control and every production
+          # root. The control below deliberately supplies a nonzero-rule,
+          # zero-file result and requires this exact path to classify it as
+          # blocked; a copied assertion would not prove the production guard.
+          adjudicate() {
+            local repo="$1" bundle="$2" output="$3" status="$4" control="${5:-false}"
+            local summary rules files violations
+            summary="$(grep -E '[0-9]+ active rules' "$output" | tail -1 || true)"
+            rules="$(sed -n 's/.*[^0-9]\([0-9][0-9]*\) active rules.*/\1/p' <<< "$summary")"
+            files="$(sed -n 's/.*[^0-9]\([0-9][0-9]*\) files linted.*/\1/p' <<< "$summary")"
+            violations="$(sed -n 's/.*[^0-9]\([0-9][0-9]*\) violations.*/\1/p' <<< "$summary")"
+            if [ -z "$summary" ] || [ "${rules:-0}" -eq 0 ] || [ "${files:-0}" -eq 0 ]; then
+              if [ "$control" != true ]; then blocked=$((blocked + 1)); fi
+              LAST_CLASSIFICATION=genuinely-blocked
+              emit "$(jq -cn --arg repo "$repo" --arg bundle "$bundle" --arg summary "$summary" --argjson status "$status" '{repository:$repo,bundle:$bundle,classification:"genuinely-blocked",predicate:"missing-or-empty-measurement",owner:"swift-institute/.github",exitStatus:$status,summary:$summary}')"
+            elif [ "${violations:-0}" -gt 0 ]; then
+              noncompliant=$((noncompliant + 1))
+              LAST_CLASSIFICATION=noncompliant
+              emit "$(jq -cn --arg repo "$repo" --arg bundle "$bundle" --arg summary "$summary" --argjson status "$status" '{repository:$repo,bundle:$bundle,classification:"noncompliant",owner:$repo,exitStatus:$status,summary:$summary}')"
+            elif [ "$status" -eq 0 ]; then
+              clean=$((clean + 1))
+              LAST_CLASSIFICATION=clean
+              emit "$(jq -cn --arg repo "$repo" --arg bundle "$bundle" --arg summary "$summary" '{repository:$repo,bundle:$bundle,classification:"clean",summary:$summary}')"
+            else
+              blocked=$((blocked + 1))
+              LAST_CLASSIFICATION=genuinely-blocked
+              emit "$(jq -cn --arg repo "$repo" --arg bundle "$bundle" --arg summary "$summary" --argjson status "$status" '{repository:$repo,bundle:$bundle,classification:"genuinely-blocked",predicate:"linter-failed-without-findings",owner:"swift-foundations/swift-linter",exitStatus:$status,summary:$summary}')"
+            fi
+            if [ "$control" = true ] && [ "$LAST_CLASSIFICATION" != genuinely-blocked ]; then
+              echo "::error::The production adjudicator accepted the positive control as '$LAST_CLASSIFICATION'."
+              return 1
+            fi
+          }
+
+          control="$(mktemp -d)"
+          control_output="$RUNNER_TEMP/positive-control.txt"
+          set +e
+          SWIFT_LINTER_BUNDLE=institute SWIFT_LINTER_EXIT_POLICY=strict \
+            swift-linter-runner "$control" >"$control_output" 2>&1
+          control_status=$?
+          set -e
+          control_summary="$(grep -E '[0-9]+ active rules' "$control_output" | tail -1 || true)"
+          control_rules="$(sed -n 's/.*[^0-9]\([0-9][0-9]*\) active rules.*/\1/p' <<< "$control_summary")"
+          control_files="$(sed -n 's/.*[^0-9]\([0-9][0-9]*\) files linted.*/\1/p' <<< "$control_summary")"
+          if [ -z "$control_summary" ] || [ "${control_rules:-0}" -eq 0 ] || [ "${control_files:-1}" -ne 0 ] || [ "$control_status" -ne 0 ]; then
+            echo "::error::Positive control did not produce the known non-measurement shape (nonzero rules, zero files, runner success)."
+            cat "$control_output"
+            exit 1
+          fi
+          adjudicate '__positive_control__' institute "$control_output" "$control_status" true
+          echo "Positive control rejected by production adjudicator: $control_summary"
 
           while IFS=$'\t' read -r layer organization name; do
             repo="$organization/$name"
@@ -170,23 +193,7 @@ jobs:
             fi
             status=$?
             set -e
-            summary="$(grep -E '[0-9]+ active rules' "$output" | tail -1 || true)"
-            rules="$(sed -n 's/.*[^0-9]\([0-9][0-9]*\) active rules.*/\1/p' <<< "$summary")"
-            files="$(sed -n 's/.*[^0-9]\([0-9][0-9]*\) files linted.*/\1/p' <<< "$summary")"
-            violations="$(sed -n 's/.*[^0-9]\([0-9][0-9]*\) violations.*/\1/p' <<< "$summary")"
-            if [ -z "$summary" ] || [ "${rules:-0}" -eq 0 ] || [ "${files:-0}" -eq 0 ]; then
-              blocked=$((blocked + 1))
-              emit "$(jq -cn --arg repo "$repo" --arg bundle "$bundle" --arg summary "$summary" --argjson status "$status" '{repository:$repo,bundle:$bundle,classification:"genuinely-blocked",predicate:"missing-or-empty-measurement",owner:"swift-institute/.github",exitStatus:$status,summary:$summary}')"
-            elif [ "${violations:-0}" -gt 0 ]; then
-              noncompliant=$((noncompliant + 1))
-              emit "$(jq -cn --arg repo "$repo" --arg bundle "$bundle" --arg summary "$summary" --argjson status "$status" '{repository:$repo,bundle:$bundle,classification:"noncompliant",owner:$repo,exitStatus:$status,summary:$summary}')"
-            elif [ "$status" -eq 0 ]; then
-              clean=$((clean + 1))
-              emit "$(jq -cn --arg repo "$repo" --arg bundle "$bundle" --arg summary "$summary" '{repository:$repo,bundle:$bundle,classification:"clean",summary:$summary}')"
-            else
-              blocked=$((blocked + 1))
-              emit "$(jq -cn --arg repo "$repo" --arg bundle "$bundle" --arg summary "$summary" --argjson status "$status" '{repository:$repo,bundle:$bundle,classification:"genuinely-blocked",predicate:"linter-failed-without-findings",owner:"swift-foundations/swift-linter",exitStatus:$status,summary:$summary}')"
-            fi
+            adjudicate "$repo" "$bundle" "$output" "$status"
           done < <(jq -r '.repositories[] | [.layer, .organization, .name] | @tsv' "$inventory")
 
           printf ']}' >> "$receipt"
