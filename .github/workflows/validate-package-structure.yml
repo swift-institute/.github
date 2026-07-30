@@ -83,6 +83,15 @@ on:
         required: false
         default: 'public'
 
+# The fleet's manifests declare `// swift-tools-version: 6.3.3`, and
+# `swift package describe` refuses any manifest whose tools-version exceeds
+# the installed toolchain. The runner image's default toolchain sat below
+# that floor (6.3.2), which left 81% of targets unscanned (#61). Pin the
+# toolchain to the fleet manifest floor; when the ecosystem moves to 6.4,
+# bump this deliberately and re-measure rather than letting it drift.
+env:
+  SWIFT_TOOLCHAIN_VERSION: '6.3.3'
+
 jobs:
   scan:
     if: ${{ !github.event.repository.private }}
@@ -148,6 +157,11 @@ jobs:
           echo "count=$n" >> "$GITHUB_OUTPUT"
 
       - name: Set up Swift toolchain
+        uses: SwiftyLab/setup-swift@38f54a76b70d989321de9dc7c840618c08cf56e9  # v1.14.0
+        with:
+          swift-version: ${{ env.SWIFT_TOOLCHAIN_VERSION }}
+
+      - name: Record toolchain identity
         run: swift --version
 
       - name: Run package-structure checks
