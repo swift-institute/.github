@@ -7,7 +7,7 @@ let package = Package(
         .package(
             url: "https://github.com/swift-foundations/swift-example.git",
             // interleaved comment inside the declaration window
-            branch: "main"
+            branch: "develop"
         ),
     ],
     targets: [

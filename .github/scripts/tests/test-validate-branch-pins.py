@@ -35,6 +35,17 @@ import PackageDescription
 let package = Package(
     name: "fixture",
     dependencies: [
+        .package(url: "https://github.com/swift-primitives/swift-pinned.git", branch: "develop"),
+    ],
+    targets: [.target(name: "Fixture")]
+)
+"""
+
+MAIN_PIN_MANIFEST = """// swift-tools-version: 6.3
+import PackageDescription
+let package = Package(
+    name: "fixture",
+    dependencies: [
         .package(url: "https://github.com/swift-primitives/swift-pinned.git", branch: "main"),
     ],
     targets: [.target(name: "Fixture")]
@@ -99,6 +110,45 @@ class BaselineContractTests(unittest.TestCase):
         result = run("swift-primitives/consumer", self.root,
                      "--baseline", str(self.root / "does-not-exist.tsv"))
         self.assertEqual(result.returncode, 1)
+        self.assertIn("\tBRANCH-PIN-001\t", result.stdout)
+
+
+class MainBranchExceptionTests(unittest.TestCase):
+    """Ruled exception (principal, 2026-07-30; swift-mailgun-standard#13):
+
+    branch: "main" (or legacy .branch("main")) on an Institute-owned
+    dependency passes validation with no baseline required. Any other
+    branch name on an Institute-owned dependency still fires
+    BRANCH-PIN-001 — the exception is exact-match on "main", not a general
+    branch-pin amnesty.
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def test_main_branch_pin_on_institute_dep_passes_with_no_findings(self) -> None:
+        (self.root / "Package.swift").write_text(MAIN_PIN_MANIFEST, encoding="utf-8")
+        result = run("swift-primitives/consumer", self.root)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout, "")
+
+    def test_legacy_main_branch_pin_on_institute_dep_passes(self) -> None:
+        manifest = MAIN_PIN_MANIFEST.replace(
+            'branch: "main"', '.branch("main")'
+        )
+        (self.root / "Package.swift").write_text(manifest, encoding="utf-8")
+        result = run("swift-primitives/consumer", self.root)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout, "")
+
+    def test_non_main_branch_pin_on_institute_dep_still_fires(self) -> None:
+        (self.root / "Package.swift").write_text(MANIFEST, encoding="utf-8")
+        result = run("swift-primitives/consumer", self.root)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("\tBRANCH-PIN-001\t", result.stdout)
 
 

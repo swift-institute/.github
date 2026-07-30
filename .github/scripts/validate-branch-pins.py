@@ -13,6 +13,16 @@ URL whose requirement is `branch:` (or the legacy `.branch(`) is a moving
 target: a green over it proves nothing about any tagged state. Institute
 manifests pin Institute dependencies to versions.
 
+Exception (principal ruling, 2026-07-30, recorded at
+swift-standards/swift-mailgun-standard#13): the Institute develops solely on
+`main`, tags are heritage/vestigial and will not be cut, and untagged
+Institute dependencies are tracked with `branch: "main"` per ecosystem
+convention. A `branch: "main"` (or `.branch("main")`) pin on an
+Institute-owned dependency therefore passes validation. Any other branch
+name on an Institute-owned dependency still fires BRANCH-PIN-001; a branch
+pin on a non-Institute dependency stays outside this rule's scope
+regardless of branch name.
+
 The Institute org list comes from the canonical read-orgs manifest
 (.github/actions/read-orgs/orgs.yaml), not a second inline copy. Override
 with --orgs-file when the script runs outside a full checkout (the swift-ci
@@ -213,6 +223,10 @@ def main() -> int:
             if branch_m is None:
                 continue
             branch = branch_m.group("name")
+            if branch == "main":
+                # Ruled convention: an untagged Institute dependency pinned
+                # to "main" is not a moving-target violation.
+                continue
             if (args.repo, url) in baseline:
                 emit(args.repo, RULE_BASELINE,
                      f"{manifest.name}: `{url}` pinned to branch \"{branch}\" — baselined; burn-down owned by the package/release record")
