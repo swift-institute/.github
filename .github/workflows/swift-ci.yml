@@ -1189,7 +1189,7 @@ jobs:
       # ── Standard-runner full-bake cache (Phase 3 of
       # near-instant-lint-with-external-rule-loading.md) ──
       # A prebuilt "standard runner" (engine + SwiftSyntax + the standard
-      # primitives rule packs — `Runner/` in the swift-linter repo) lints
+      # rule packs — `Runner/` in the swift-linter repo) lints
       # pure-bundle consumers WARM in ~0.65s, skipping the per-run eval
       # materialize-compile (the ~155s SwiftSyntax-from-source floor that
       # dominates a cold eval). The dispatcher's CLI fast path
@@ -1219,11 +1219,12 @@ jobs:
           # research doc Phase-3 §, composite-key scope).
           primrules=$(git ls-remote https://github.com/swift-primitives/swift-primitives-linter-rules.git main | cut -f1)
           instrules=$(git ls-remote https://github.com/swift-foundations/swift-institute-linter-rules.git main | cut -f1)
+          standrules=$(git ls-remote https://github.com/swift-standards/swift-standards-linter-rules.git main | cut -f1)
           unirules=$(git ls-remote https://github.com/swift-foundations/swift-linter-rules.git main | cut -f1)
           linterprim=$(git ls-remote https://github.com/swift-primitives/swift-linter-primitives.git main | cut -f1)
-          digest=$(printf '%s\n' "$engine" "$primrules" "$instrules" "$unirules" "$linterprim" | sort | sha256sum | cut -d' ' -f1)
+          digest=$(printf '%s\n' "$engine" "$primrules" "$instrules" "$standrules" "$unirules" "$linterprim" | sort | sha256sum | cut -d' ' -f1)
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
-          echo "Runner composite digest=$digest (engine=$engine primrules=$primrules instrules=$instrules unirules=$unirules linterprim=$linterprim)"
+          echo "Runner composite digest=$digest (engine=$engine primrules=$primrules instrules=$instrules standrules=$standrules unirules=$unirules linterprim=$linterprim)"
 
       - name: Cache swift-linter standard runner
         if: ${{ steps.binaries.outputs.ok != 'true' }}
@@ -1271,9 +1272,45 @@ jobs:
         # custom-rule consumer falls through to the eval path, which compiles the
         # consumer's declared rule packs + the engine `Linter` library exactly as
         # before (private-dep auth configured above; libuuid present).
+        #
+        # ADJUDICATION. A strict exit status only reports findings; it does not
+        # prove the configured rule set loaded or matched source. Apply the same
+        # no-summary / zero-rules / zero-files rejection as the layer-default
+        # runner, so a configured `Lint.swift` cannot green over no measurement.
+        shell: bash   # PIPESTATUS + the swift:N container's default shell is dash
         env:
           SWIFT_LINTER_RUNNER: /usr/local/bin/swift-linter-runner
-        run: swift-linter "$GITHUB_WORKSPACE/consumer" --exit-policy strict
+        run: |
+          set -uo pipefail
+          OUT="$(mktemp)"
+          swift-linter "$GITHUB_WORKSPACE/consumer" --exit-policy strict 2>&1 | tee "$OUT"
+          RC=${PIPESTATUS[0]}
+
+          SUMMARY="$(grep -E '[0-9]+ active rules' "$OUT" | tail -1)"
+          if [ -z "$SUMMARY" ]; then
+            echo "::error::swift-linter emitted no run summary. Nothing was measured, so this run establishes nothing — it is not a pass. (Lint.swift, exit status: $RC)"
+            exit 1
+          fi
+          RULES="$(sed -n 's/.*[^0-9]\([0-9][0-9]*\) active rules.*/\1/p' <<< "$SUMMARY")"
+          FILES="$(sed -n 's/.*[^0-9]\([0-9][0-9]*\) files linted.*/\1/p' <<< "$SUMMARY")"
+          if [ "${RULES:-0}" -eq 0 ]; then
+            echo "::error::swift-linter loaded 0 rules from Lint.swift. Nothing could have been found, so a clean result here would be a lie."
+            exit 1
+          fi
+          if [ "${FILES:-0}" -eq 0 ]; then
+            echo "::error::swift-linter linted 0 files. The rule set loaded but matched no source — a clean verdict would be reporting on an empty population."
+            exit 1
+          fi
+          {
+            echo "### swift-linter (Lint.swift)"
+            echo ""
+            echo "Linted using this package's configured rule set."
+            echo ""
+            echo "\`\`\`"
+            echo "$SUMMARY"
+            echo "\`\`\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$RC"
 
       # The unconfigured path. Straight to the prebuilt standard runner — the
       # dispatcher cannot lint this package (see the job header: no consumer

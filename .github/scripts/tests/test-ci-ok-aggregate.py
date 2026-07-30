@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Positive controls for swift-ci.yml's tier classifier and ci-ok aggregator.
+"""Positive controls for swift-ci.yml's embedded control-plane shell steps.
 
 Both are shell scripts embedded in a workflow, which is exactly the shape that
 went wrong: `ci-ok` spent eight days reporting success over runs that compiled
@@ -10,7 +10,7 @@ whether an aggregator would fire is not the same act as watching it fire
 the shapes it must reject and asserts the exit status AND the diagnostic.
 
 The scripts are EXTRACTED FROM swift-ci.yml rather than copied here, so the
-bytes under test are the bytes that ship. If either step is renamed or
+bytes under test are the bytes that ship. If an extracted step is renamed or
 removed, extraction fails loudly rather than the suite quietly testing
 nothing — the empty-corpus rule from the same file.
 
@@ -70,7 +70,7 @@ class ShellHarness(unittest.TestCase):
 
     script = ""
 
-    def run_script(self, **env):
+    def run_script(self, setup=None, **env):
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
             script = root / "step.sh"
@@ -89,6 +89,8 @@ class ShellHarness(unittest.TestCase):
                 }
             )
             environment.update({k: v for k, v in env.items()})
+            if setup is not None:
+                setup(root, environment)
             completed = subprocess.run(
                 ["bash", str(script)],
                 capture_output=True,
@@ -268,6 +270,105 @@ class AggregatorTests(ShellHarness):
             },
         )
         self.assertNotEqual(code, 0, log)
+
+
+class ConfiguredLinterAdjudicationTests(ShellHarness):
+    """The configured-rule path must not report a clean run over no measure."""
+
+    script = extract("swift-linter", "Run swift-linter (consumer Lint.swift)")
+
+    def run_linter(self, output, exit_code=0):
+        def configure(root, environment):
+            bash_env = root / "mock-swift-linter.bash"
+            bash_env.write_text(
+                """swift-linter() {
+  if [ "$2" != "--exit-policy" ] || [ "$3" != "strict" ]; then
+    echo "unexpected swift-linter arguments: $*"
+    return 97
+  fi
+  printf '%s\\n' "$LINTER_OUTPUT"
+  return "$LINTER_EXIT"
+}
+""",
+                encoding="utf-8",
+            )
+            environment["BASH_ENV"] = str(bash_env)
+            environment["GITHUB_WORKSPACE"] = str(root)
+
+        return self.run_script(
+            setup=configure,
+            LINTER_OUTPUT=output,
+            LINTER_EXIT=str(exit_code),
+        )
+
+    def test_real_configured_run_passes(self):
+        code, log, _ = self.run_linter("93 active rules · 4 files linted · 0 violations")
+        self.assertEqual(code, 0, log)
+        self.assertIn("swift-linter (Lint.swift)", self.summary)
+
+    def test_missing_summary_fails(self):
+        code, log, _ = self.run_linter("no summary was emitted")
+        self.assertNotEqual(code, 0, log)
+        self.assertIn("emitted no run summary", log)
+
+    def test_zero_active_rules_fails(self):
+        code, log, _ = self.run_linter("0 active rules · 4 files linted · 0 violations")
+        self.assertNotEqual(code, 0, log)
+        self.assertIn("loaded 0 rules from Lint.swift", log)
+
+    def test_zero_linted_files_fails(self):
+        code, log, _ = self.run_linter("93 active rules · 0 files linted · 0 violations")
+        self.assertNotEqual(code, 0, log)
+        self.assertIn("linted 0 files", log)
+
+    def test_existing_strict_failure_is_preserved(self):
+        code, log, _ = self.run_linter(
+            "93 active rules · 4 files linted · 1 violation", exit_code=42
+        )
+        self.assertEqual(code, 42, log)
+
+
+class RunnerDigestTests(ShellHarness):
+    """Every baked standard bundle revision must affect the fallback key."""
+
+    script = extract("swift-linter", "Resolve standard rule-pack HEADs (composite runner key)")
+
+    def resolve(self, standards_rules_sha):
+        def configure(root, environment):
+            bash_env = root / "mock-git.bash"
+            bash_env.write_text(
+                """git() {
+  if [ "$1" != "ls-remote" ]; then
+    command git "$@"
+    return
+  fi
+  case "$2" in
+    *swift-primitives-linter-rules.git) SHA=1111111111111111111111111111111111111111 ;;
+    *swift-institute-linter-rules.git) SHA=2222222222222222222222222222222222222222 ;;
+    *swift-standards-linter-rules.git) SHA="$STANDARDS_RULES_SHA" ;;
+    *swift-linter-rules.git) SHA=3333333333333333333333333333333333333333 ;;
+    *swift-linter-primitives.git) SHA=4444444444444444444444444444444444444444 ;;
+    *) echo "unexpected ls-remote source: $2" >&2; return 98 ;;
+  esac
+  printf '%s\\trefs/heads/main\\n' "$SHA"
+}
+""",
+                encoding="utf-8",
+            )
+            environment["BASH_ENV"] = str(bash_env)
+
+        return self.run_script(
+            setup=configure,
+            STANDARDS_RULES_SHA=standards_rules_sha,
+        )
+
+    def test_standards_bundle_revision_changes_fallback_digest(self):
+        code, first_log, first = self.resolve("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+        self.assertEqual(code, 0, first_log)
+        code, second_log, second = self.resolve("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+        self.assertEqual(code, 0, second_log)
+        self.assertNotEqual(first["digest"], second["digest"])
+        self.assertIn("standrules=", second_log)
 
 
 class ClassifierTests(ShellHarness):
