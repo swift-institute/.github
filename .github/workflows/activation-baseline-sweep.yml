@@ -1,0 +1,256 @@
+name: activation-baseline-sweep
+
+# The phase-one receipt for swift-institute/.github#90. This is deliberately
+# dispatch-only: a receipt is an explicit evidence event, not a background
+# maintenance sweep. The digest is the activation coordinate admitted by #90,
+# not a floating "latest" runner choice.
+permissions: {}
+
+on:
+  workflow_dispatch:
+    inputs:
+      cohort:
+        description: "Bounded evidence cohort"
+        type: choice
+        required: true
+        default: all
+        options:
+          - smoke
+          - all
+
+env:
+  ACTIVATION_RECEIPT_DIGEST: 89924760b9b292ea2d18118c4c9d99af20e218a59b8538ef420bd6e0712f1483
+  LINTER_RELEASE: https://github.com/swift-foundations/swift-linter/releases/download/ci-binaries
+  WORKSPACE_REPOSITORY: swift-institute/Workspace
+
+jobs:
+  measure:
+    name: Measure activation baseline
+    if: ${{ !github.event.repository.private }}
+    outputs:
+      receipt-sha: ${{ steps.measure.outputs.receipt-sha }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    permissions:
+      contents: read
+    steps:
+      - name: Harden runner (audit-mode egress logging)
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Install and seal the activation runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          work="$(mktemp -d)"
+          for asset in SHA256SUMS MANIFEST.txt swift-linter swift-linter-runner; do
+            curl --fail --location --retry 2 --output "$work/$asset" "$LINTER_RELEASE/$asset"
+          done
+          (cd "$work" && sha256sum --check SHA256SUMS)
+          manifest_digest="$(sed -n 's/^digest=//p' "$work/MANIFEST.txt")"
+          if [ "$manifest_digest" != "$ACTIVATION_RECEIPT_DIGEST" ]; then
+            echo "::error::The published runner manifest is '$manifest_digest', not the activation receipt '$ACTIVATION_RECEIPT_DIGEST'. Refusing a mixed-coordinate sweep."
+            exit 1
+          fi
+          for authority in engine swift-primitives-linter-rules swift-standards-linter-rules swift-institute-linter-rules swift-linter-rules swift-linter-primitives; do
+            grep --quiet "^${authority}=[0-9a-f]\{40\}$" "$work/MANIFEST.txt" || {
+              echo "::error::Activation runner manifest omits '$authority'."
+              exit 1
+            }
+          done
+          install -m 0755 "$work/swift-linter" /usr/local/bin/swift-linter
+          install -m 0755 "$work/swift-linter-runner" /usr/local/bin/swift-linter-runner
+          cp "$work/MANIFEST.txt" "$RUNNER_TEMP/activation-runner-manifest.txt"
+          echo "ACTIVATION_MANIFEST=$RUNNER_TEMP/activation-runner-manifest.txt" >> "$GITHUB_ENV"
+
+      - name: Measure Workspace package roots
+        id: measure
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COHORT: ${{ inputs.cohort }}
+        run: |
+          set -euo pipefail
+          workspace="$RUNNER_TEMP/workspace"
+          git clone --depth 1 "https://github.com/${WORKSPACE_REPOSITORY}.git" "$workspace"
+          workspace_sha="$(git -C "$workspace" rev-parse HEAD)"
+          inventory="$workspace/Workspace.json"
+          jq --exit-status 'type == "object" and (.repositories | type == "array" and length > 0)' "$inventory" >/dev/null
+          case "$COHORT" in
+            smoke|all) ;;
+            *) echo "::error::Unsupported cohort '$COHORT'; expected smoke or all."; exit 1 ;;
+          esac
+          if [ "$COHORT" = smoke ]; then
+            selected_roots=3
+          else
+            selected_roots="$(jq '.repositories | length' "$inventory")"
+          fi
+
+          receipt="$RUNNER_TEMP/activation-receipt.json"
+          ledger="$RUNNER_TEMP/activation-ledger.jsonl"
+          : > "$ledger"
+          manifest_json="$(jq -Rs . "$ACTIVATION_MANIFEST")"
+          printf '{"activationReceipt":"%s","cohort":"%s","workspace":"%s","workspaceCommit":"%s","runnerManifest":%s,"results":[' \
+            "$ACTIVATION_RECEIPT_DIGEST" "$COHORT" "$WORKSPACE_REPOSITORY" "$workspace_sha" "$manifest_json" > "$receipt"
+
+          first=true
+          eligible=0
+          clean=0
+          noncompliant=0
+          blocked=0
+          excluded=0
+          emit() {
+            local result="$1"
+            printf '%s\n' "$result" >> "$ledger"
+            if [ "$first" = true ]; then first=false; else printf ',' >> "$receipt"; fi
+            printf '%s' "$result" >> "$receipt"
+          }
+
+          # One adjudicator for the positive control and every production
+          # root. The control below deliberately supplies a nonzero-rule,
+          # zero-file result and requires this exact path to classify it as
+          # blocked; a copied assertion would not prove the production guard.
+          adjudicate() {
+            local repo="$1" bundle="$2" output="$3" status="$4" control="${5:-false}"
+            local summary rules files violations
+            summary="$(grep -E '[0-9]+ active rules' "$output" | tail -1 || true)"
+            rules="$(sed -n 's/.*[^0-9]\([0-9][0-9]*\) active rules.*/\1/p' <<< "$summary")"
+            files="$(sed -n 's/.*[^0-9]\([0-9][0-9]*\) files linted.*/\1/p' <<< "$summary")"
+            violations="$(sed -n 's/.*[^0-9]\([0-9][0-9]*\) violations.*/\1/p' <<< "$summary")"
+            if [ -z "$summary" ] || [ "${rules:-0}" -eq 0 ] || [ "${files:-0}" -eq 0 ]; then
+              if [ "$control" != true ]; then blocked=$((blocked + 1)); fi
+              LAST_CLASSIFICATION=genuinely-blocked
+              emit "$(jq -cn --arg repo "$repo" --arg bundle "$bundle" --arg summary "$summary" --argjson status "$status" '{repository:$repo,bundle:$bundle,classification:"genuinely-blocked",predicate:"missing-or-empty-measurement",owner:"swift-institute/.github",exitStatus:$status,summary:$summary}')"
+            elif [ "${violations:-0}" -gt 0 ]; then
+              noncompliant=$((noncompliant + 1))
+              LAST_CLASSIFICATION=noncompliant
+              emit "$(jq -cn --arg repo "$repo" --arg bundle "$bundle" --arg summary "$summary" --argjson status "$status" '{repository:$repo,bundle:$bundle,classification:"noncompliant",owner:$repo,exitStatus:$status,summary:$summary}')"
+            elif [ "$status" -eq 0 ]; then
+              clean=$((clean + 1))
+              LAST_CLASSIFICATION=clean
+              emit "$(jq -cn --arg repo "$repo" --arg bundle "$bundle" --arg summary "$summary" '{repository:$repo,bundle:$bundle,classification:"clean",summary:$summary}')"
+            else
+              blocked=$((blocked + 1))
+              LAST_CLASSIFICATION=genuinely-blocked
+              emit "$(jq -cn --arg repo "$repo" --arg bundle "$bundle" --arg summary "$summary" --argjson status "$status" '{repository:$repo,bundle:$bundle,classification:"genuinely-blocked",predicate:"linter-failed-without-findings",owner:"swift-foundations/swift-linter",exitStatus:$status,summary:$summary}')"
+            fi
+            if [ "$control" = true ] && [ "$LAST_CLASSIFICATION" != genuinely-blocked ]; then
+              echo "::error::The production adjudicator accepted the positive control as '$LAST_CLASSIFICATION'."
+              return 1
+            fi
+          }
+
+          control="$(mktemp -d)"
+          control_output="$RUNNER_TEMP/positive-control.txt"
+          set +e
+          SWIFT_LINTER_BUNDLE=institute SWIFT_LINTER_EXIT_POLICY=strict \
+            swift-linter-runner "$control" >"$control_output" 2>&1
+          control_status=$?
+          set -e
+          control_summary="$(grep -E '[0-9]+ active rules' "$control_output" | tail -1 || true)"
+          control_rules="$(sed -n 's/.*[^0-9]\([0-9][0-9]*\) active rules.*/\1/p' <<< "$control_summary")"
+          control_files="$(sed -n 's/.*[^0-9]\([0-9][0-9]*\) files linted.*/\1/p' <<< "$control_summary")"
+          if [ -z "$control_summary" ] || [ "${control_rules:-0}" -eq 0 ] || [ "${control_files:-1}" -ne 0 ] || [ "$control_status" -ne 0 ]; then
+            echo "::error::Positive control did not produce the known non-measurement shape (nonzero rules, zero files, runner success)."
+            cat "$control_output"
+            exit 1
+          fi
+          adjudicate '__positive_control__' institute "$control_output" "$control_status" true
+          echo "Positive control rejected by production adjudicator: $control_summary"
+
+          while IFS=$'\t' read -r layer organization name; do
+            repo="$organization/$name"
+            bundle=''
+            case "$layer" in
+              primitives) bundle=primitives ;;
+              standards) bundle=standards ;;
+              foundations) bundle=institute ;;
+              *)
+                blocked=$((blocked + 1))
+                emit "$(jq -cn --arg repo "$repo" --arg layer "$layer" '{repository:$repo,classification:"genuinely-blocked",predicate:"unknown-semantic-layer",owner:"swift-institute/Workspace",layer:$layer}')"
+                continue
+                ;;
+            esac
+
+            metadata="$(gh api "repos/$repo" 2>&1)" || {
+              blocked=$((blocked + 1))
+              emit "$(jq -cn --arg repo "$repo" --arg detail "${metadata:0:400}" '{repository:$repo,classification:"genuinely-blocked",predicate:"repository-metadata-unavailable",owner:"swift-institute/.github",detail:$detail}')"
+              continue
+            }
+            if [ "$(jq -r '.archived' <<< "$metadata")" = true ]; then
+              excluded=$((excluded + 1))
+              emit "$(jq -cn --arg repo "$repo" '{repository:$repo,classification:"excluded",predicate:"archived-repository"}')"
+              continue
+            fi
+
+            root="$RUNNER_TEMP/roots/${organization}-${name}"
+            if ! git clone --depth 1 "https://github.com/$repo.git" "$root" >"$RUNNER_TEMP/${organization}-${name}.clone.log" 2>&1; then
+              blocked=$((blocked + 1))
+              emit "$(jq -cn --arg repo "$repo" '{repository:$repo,classification:"genuinely-blocked",predicate:"repository-checkout-failed",owner:"swift-institute/.github"}')"
+              continue
+            fi
+            if [ ! -f "$root/Package.swift" ]; then
+              excluded=$((excluded + 1))
+              emit "$(jq -cn --arg repo "$repo" '{repository:$repo,classification:"excluded",predicate:"no-swift-package-root"}')"
+              continue
+            fi
+            eligible=$((eligible + 1))
+
+            targets=()
+            [ -d "$root/Sources" ] && targets+=("$root/Sources")
+            [ -d "$root/Tests" ] && targets+=("$root/Tests")
+            if [ "${#targets[@]}" -eq 0 ]; then
+              blocked=$((blocked + 1))
+              emit "$(jq -cn --arg repo "$repo" --arg bundle "$bundle" '{repository:$repo,bundle:$bundle,classification:"genuinely-blocked",predicate:"no-sources-or-tests",owner:"swift-institute/.github"}')"
+              continue
+            fi
+
+            output="$RUNNER_TEMP/${organization}-${name}.lint.log"
+            set +e
+            if [ -f "$root/Lint.swift" ]; then
+              SWIFT_LINTER_RUNNER=/usr/local/bin/swift-linter-runner swift-linter "$root" --exit-policy strict >"$output" 2>&1
+            else
+              SWIFT_LINTER_BUNDLE="$bundle" SWIFT_LINTER_EXIT_POLICY=strict swift-linter-runner "${targets[@]}" >"$output" 2>&1
+            fi
+            status=$?
+            set -e
+            adjudicate "$repo" "$bundle" "$output" "$status"
+          done < <(jq -r --arg cohort "$COHORT" '
+            .repositories
+            | sort_by(.organization, .name)
+            | if $cohort == "smoke" then .[0:3] else . end
+            | .[] | [.layer, .organization, .name] | @tsv
+          ' "$inventory")
+
+          printf ']}' >> "$receipt"
+          total=$((clean + noncompliant + blocked))
+          if [ "$total" -ne "$eligible" ]; then
+            echo "::error::Ledger invariant failed: eligible=$eligible but classifications=$total."
+            exit 1
+          fi
+          canonical_receipt="$RUNNER_TEMP/activation-receipt.canonical.json"
+          jq -S -c . "$receipt" > "$canonical_receipt"
+          receipt_sha="$(sha256sum "$canonical_receipt" | cut -d' ' -f1)"
+          echo "receipt-sha=$receipt_sha" >> "$GITHUB_OUTPUT"
+          jq --slurp --arg receipt "$ACTIVATION_RECEIPT_DIGEST" --arg cohort "$COHORT" --arg workspace "$workspace_sha" --arg receipt_sha "$receipt_sha" \
+            --argjson manifest "$manifest_json" \
+            '{activationReceipt:$receipt,cohort:$cohort,workspaceCommit:$workspace,runnerManifest:$manifest,receiptSha256:$receipt_sha,results:.}' \
+            "$ledger" > "$RUNNER_TEMP/activation-ledger.json"
+          {
+            echo '## Activation baseline receipt'
+            echo
+            echo "- Runner receipt: \`$ACTIVATION_RECEIPT_DIGEST\`"
+            echo "- Cohort: \`$COHORT\` ($selected_roots deterministic roots selected)"
+            echo "- Workspace inventory commit: \`$workspace_sha\`"
+            echo "- Generated receipt SHA-256: \`$receipt_sha\`"
+            echo "- Eligible: $eligible; clean: $clean; noncompliant: $noncompliant; genuinely blocked: $blocked; excluded: $excluded"
+            echo
+            echo '```json'
+            cat "$RUNNER_TEMP/activation-ledger.json"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$noncompliant" -ne 0 ] || [ "$blocked" -ne 0 ]; then
+            echo "::error::Activation baseline is not compliant; see the exhaustive ledger."
+            exit 1
+          fi
