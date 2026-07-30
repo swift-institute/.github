@@ -152,7 +152,7 @@ on:
       ref:
         type: string
         default: ""
-        description: "Dispatch-only target ref (set by ci-dispatch.yml). Selects the branch/tag/SHA of `target-repo` to build. Threaded into the `ref:` field of the 9 target checkouts only — NOT the swift-linter engine checkout, which pins its own tool SHA via steps.linter-sha.outputs.sha. Empty default — every push/PR/wrapper call passes nothing — so `actions/checkout` resolves the TRIGGERING ref (github.ref/SHA, i.e. the pushed branch), bit-identical to the pre-dispatch implicit-default checkout. See ci-dispatch.yml."
+        description: "Dispatch-only target ref (set by ci-dispatch.yml). Selects the branch/tag/SHA of `target-repo` to build. Threaded into the `ref:` field of the target checkouts only. It never reaches the swift-linter engine, which is no longer checked out or built here at all: the `swift-linter` job installs the published, checksum-verified `ci-binaries` release (#137). Empty default — every push/PR/wrapper call passes nothing — so `actions/checkout` resolves the TRIGGERING ref (github.ref/SHA, i.e. the pushed branch), bit-identical to the pre-dispatch implicit-default checkout. See ci-dispatch.yml."
     secrets:
       PRIVATE_REPO_TOKEN:
         required: false
@@ -1029,15 +1029,18 @@ jobs:
   # GATING (principal ruling 2026-07-19; the Phase-1 "advisory" label is
   # retired): the job is in ci-ok's needs, and `--exit-policy strict` exits
   # non-zero exactly when any finding has severity `.error` — warning-severity
-  # findings are emitted but never fail the run. The linter is run-from-source
-  # via `swift run --package-path` against a checkout of swift-linter. Once
-  # the package is published with a binary release, this step swaps to a
-  # cached-binary install (mirroring the SwiftLint job above).
+  # findings are emitted but never fail the run.
   #
-  # Phase 3 (2026-06-25): adds a composite-keyed prebuilt "standard runner"
-  # cache so pure-bundle consumers lint warm in ~0.65s instead of paying the
-  # per-run eval recompile. See the runner-cache steps below and the research
-  # doc's Phase-3 § (A-dynamic composite key).
+  # PROVISIONING (#137, 2026-07-30): the linter is INSTALLED, never compiled
+  # here. The job downloads the checksum-sealed `ci-binaries` release of
+  # swift-foundations/swift-linter and verifies it; there is no source-build
+  # path and no per-repo tool cache. The retired from-source build is what
+  # let a single break in the tool's own dependency graph redden this leg
+  # across the fleet. See the install step for the verify-and-seal shape and
+  # the recorded track-don't-pin currency decision. The prebuilt standard
+  # runner still lints pure-bundle consumers warm in ~0.65s (Phase 3 of
+  # near-instant-lint-with-external-rule-loading.md) — it now arrives from
+  # the release instead of a composite-keyed per-repo cache.
 
   swift-linter:
     name: swift-linter
@@ -1084,9 +1087,11 @@ jobs:
     # green → red. See swift-institute/Workspace#54 for the full census.
     #
     # Re-enabled 2026-06-24 after swift-foundations/swift-linter went public
-    # (was DISABLED 2026-05-08 while the linter repo was private). Builds the
-    # linter from source via `swift run`; private-dep auth comes from the same
-    # configure-private-repos step the build/test matrix jobs use.
+    # (was DISABLED 2026-05-08 while the linter repo was private). The tool
+    # itself is installed from the published release; private-dep auth comes
+    # from the same configure-private-repos step the build/test matrix jobs
+    # use, and is still required because a consumer `Lint.swift` that declares
+    # inline or custom rules compiles its own rule closure on the eval path.
     needs: plan
     if: ${{ !cancelled() && !github.event.repository.private && (inputs.job == 'swift-linter' || (inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',swift-linter,'))) }}
     runs-on: ubuntu-latest
@@ -1136,67 +1141,93 @@ jobs:
         env:
           LINT_BUNDLE: ${{ inputs.lint-bundle }}
 
-      # ── Prebuilt-binary fast path (approved 2026-07-20) ──
-      # Downloads the dispatcher + standard runner published by
+      # ── Install the published linter binaries (#137, 2026-07-30) ──
+      # The dispatcher + standard runner published by
       # swift-foundations/swift-linter's publish-ci-binaries.yml (rolling
       # non-semver `ci-binaries` release; built inside swift:6.3, the same
-      # image this job runs in). Replaces the per-repo cache bake: Actions
-      # caches are REPOSITORY-scoped, so the old composite-key cache made
-      # every consumer repo rebuild after any engine/rule-pack commit
-      # (measured 2026-07-20: 18 of 28 runs cold, 393-1450s; median job
-      # 502s). Verification: sha256sum -c against the release's SHA256SUMS
-      # ([CI-082]-class; trust anchor is GitHub TLS + release write-control,
-      # the same anchor the previous ls-remote + main-ref checkout relied
-      # on). On ANY download/verify failure this step reports ok=false and
-      # the legacy source-build fallback below runs instead — never red on
-      # a missing/misshapen release.
-      - name: Download prebuilt linter binaries
-        id: binaries
+      # image this job runs in). This is the ONLY provisioning path: the tool
+      # is not compiled in consumer repositories at all. Verify-and-seal is
+      # the same shape as activation-baseline-sweep.yml (06844bd, #131) —
+      # download SHA256SUMS + MANIFEST.txt + both binaries, `sha256sum
+      # --check`, require every authority entry in the manifest — and the
+      # trust anchor is GitHub TLS + release write-control ([CI-082]-class).
+      #
+      # WHY THE PER-REPO SOURCE BUILD IS GONE (#137). Two independent
+      # failures, both measured 2026-07-30:
+      #   1. Correctness. The fallback made every consumer repo compile the
+      #      linter's own dependency graph, so ONE upstream compile break in
+      #      that graph (swift-foundations/swift-kernel#4, `Kernel Thread`
+      #      missing-`try`) reddened this leg across ~559 repositories inside
+      #      an hour. A consumer's lint verdict must depend on the consumer's
+      #      source and the linter's published rules — never on whether an
+      #      unrelated transitive dependency happens to compile today.
+      #   2. Cost. The build multiplied Actions minutes fleet-wide and
+      #      lengthened every run (measured 2026-07-20: 18 of 28 runs cold,
+      #      393–1450s; median job 502s). Actions caches are REPOSITORY-
+      #      scoped, so no cache key could amortize it across consumers.
+      # Building the tool is the linter repository's own CI concern.
+      #
+      # TRACK, DO NOT PIN — and this is a deliberate split from the sweep.
+      # activation-baseline-sweep.yml pins `digest=` to a sealed activation
+      # receipt because its output is an evidence-grade measurement whose
+      # coordinate has to be stated and reproducible; a moved release there
+      # silently changes what the receipt means, so it must refuse.
+      # THIS leg is fast-lane development feedback: its job is to tell a
+      # contributor whether their diff violates the rules that are in force
+      # NOW. Pinning a digest here would make every rule-pack republish
+      # require a workflow commit in swift-institute/.github before ~559
+      # repositories could see it, and — worse — a pin is exactly the failure
+      # this issue is fixing in a different costume: the retired identity
+      # check below demanded `manifest engine == engine main HEAD`, which is
+      # a pin to a moving coordinate, and it is what converted a stale
+      # release into a fleet-wide fallback-to-source outage (measured
+      # 2026-07-30: manifest engine 59f51c3 vs main HEAD 11ff4a7).
+      # So: install whatever the release currently publishes, and refuse only
+      # a release that is CORRUPT (checksum mismatch) or INCOMPLETE (missing
+      # asset, or a manifest that does not name all six rule authorities).
+      # A moved digest is not a defect here, it is the point. The manifest is
+      # echoed into the step summary on every run, so each verdict still
+      # states the exact coordinate it was measured against — currency
+      # without anonymity.
+      #
+      # FAIL-CLOSED. There is no fallback, so this step exits non-zero on any
+      # download or verification failure. That is the correct posture: an
+      # unverifiable linter cannot produce a lint verdict, and a leg that
+      # quietly proceeded without one would be a vacuous green.
+      - name: Install published linter binaries
         shell: bash
+        env:
+          LINTER_RELEASE: https://github.com/swift-foundations/swift-linter/releases/download/ci-binaries
         run: |
-          set -uo pipefail
+          set -euo pipefail
           command -v curl >/dev/null 2>&1 || { apt-get update -qq && apt-get install -qq -y curl ca-certificates; }
-          base="https://github.com/swift-foundations/swift-linter/releases/download/ci-binaries"
-          dir=$(mktemp -d)
-          ok=true
-          for f in SHA256SUMS MANIFEST.txt swift-linter swift-linter-runner; do
-            curl -fsSL --retry 2 -o "$dir/$f" "$base/$f" || { ok=false; break; }
+          work="$(mktemp -d)"
+          for asset in SHA256SUMS MANIFEST.txt swift-linter swift-linter-runner; do
+            curl --fail --silent --show-error --location --retry 2 --output "$work/$asset" "$LINTER_RELEASE/$asset"
           done
-          if [ "$ok" = "true" ]; then
-            (cd "$dir" && sha256sum -c SHA256SUMS) || ok=false
-          fi
-          if [ "$ok" = "true" ]; then
-            # Immutable-identity check (#43 item 4). The `ci-binaries` tag is
-            # mutable and SHA256SUMS travels with the binaries it attests, so
-            # self-consistency alone names no identity: the whole set can move
-            # together. Require the manifest to record the engine commit the
-            # binaries were built from and require it to match the engine's
-            # current main HEAD — the same coordinate the source-build
-            # fallback pins — so the executed linter is a known commit either
-            # way. Absence or mismatch falls back closed to the pinned
-            # source build; it never installs unidentified binaries.
-            manifest_engine=$(sed -n 's/^engine=//p' "$dir/MANIFEST.txt" | head -1)
-            engine_head=$(git ls-remote https://github.com/swift-foundations/swift-linter.git main | cut -f1)
-            if [ -z "$manifest_engine" ]; then
-              echo "::warning::ci-binaries MANIFEST.txt names no engine commit; falling back to per-repo source build."
-              ok=false
-            elif [ -z "$engine_head" ]; then
-              echo "::warning::could not resolve the engine main HEAD to compare identities; falling back to per-repo source build."
-              ok=false
-            elif [ "$manifest_engine" != "$engine_head" ]; then
-              echo "::warning::ci-binaries manifest engine ${manifest_engine} does not match engine main HEAD ${engine_head} (stale or moved release); falling back to per-repo source build."
-              ok=false
-            fi
-          fi
-          if [ "$ok" = "true" ]; then
-            install -m 0755 "$dir/swift-linter" /usr/local/bin/swift-linter
-            install -m 0755 "$dir/swift-linter-runner" /usr/local/bin/swift-linter-runner
-            echo "Prebuilt binaries installed. Build manifest:"
-            cat "$dir/MANIFEST.txt"
-          else
-            echo "::warning::ci-binaries download/verify failed; falling back to per-repo source build."
-          fi
-          echo "ok=$ok" >> "$GITHUB_OUTPUT"
+          (cd "$work" && sha256sum --check SHA256SUMS)
+          # Completeness, not currency. A release whose manifest omits an
+          # authority is one whose rule provenance cannot be stated, and an
+          # unstateable coordinate is refused even though it might lint fine.
+          for authority in engine swift-primitives-linter-rules swift-standards-linter-rules swift-institute-linter-rules swift-linter-rules swift-linter-primitives; do
+            grep --quiet "^${authority}=[0-9a-f]\{40\}$" "$work/MANIFEST.txt" || {
+              echo "::error::The ci-binaries manifest omits '$authority'. Refusing to lint with a linter whose rule provenance cannot be stated."
+              exit 1
+            }
+          done
+          install -m 0755 "$work/swift-linter" /usr/local/bin/swift-linter
+          install -m 0755 "$work/swift-linter-runner" /usr/local/bin/swift-linter-runner
+          {
+            echo "### swift-linter provisioning"
+            echo ""
+            echo "Installed the verified \`ci-binaries\` release (checksum-checked; no source build)."
+            echo ""
+            echo '```'
+            cat "$work/MANIFEST.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "Published binaries installed. Build manifest:"
+          cat "$work/MANIFEST.txt"
 
       - name: Configure private-dep access
         uses: swift-institute/.github/.github/actions/configure-private-repos@2d8dcb700888fdc60be0ff1a9af6d7058d122833  # main 2026-07-30, advanced by pin-advance (#43)
@@ -1209,111 +1240,11 @@ jobs:
 
       # swift-linter's dependency graph pulls swift-linux-standard, whose
       # CLinuxKernelShim #includes <uuid/uuid.h> — absent from the minimal
-      # swift:N image ([CI-092]). Install libuuid headers before building
-      # (covers both the dispatcher build and the Lint.swift eval-project build).
+      # swift:N image ([CI-092]). Still required after #137 retired the
+      # per-repo tool build: the Lint.swift eval-project build compiles that
+      # graph whenever a consumer declares inline or custom rules.
       - name: Install system libraries (libuuid)
         run: apt-get update -qq && apt-get install -qq -y uuid-dev
-
-      # ── Tag-free engine-binary cache (Phase 1 of
-      # near-instant-lint-with-external-rule-loading.md) ──
-      # Build the swift-linter dispatcher CLI once per engine `main` HEAD and
-      # reuse it, removing the ~270s engine build from every run where main is
-      # unchanged. The cache key is the immutable engine commit sha (+ Swift
-      # version): a [CI-044] versioned-tool-binary cache (single binary, NOT a
-      # `.build/` cache — [CI-040] honored), exact-match with no restore-keys
-      # ([CI-042]). No tag / no release: tracks `main` per the ecosystem
-      # branch:"main" convention.
-      # ── Legacy source-build FALLBACK (runs only when the prebuilt-binary
-      # download above failed; see steps.binaries) ──
-      - name: Resolve swift-linter main HEAD
-        if: ${{ steps.binaries.outputs.ok != 'true' }}
-        id: linter-sha
-        run: echo "sha=$(git ls-remote https://github.com/swift-foundations/swift-linter.git main | cut -f1)" >> "$GITHUB_OUTPUT"
-
-      - name: Cache swift-linter dispatcher binary
-        if: ${{ steps.binaries.outputs.ok != 'true' }}
-        id: cache-swift-linter
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: /usr/local/bin/swift-linter
-          key: ${{ runner.os }}-swift${{ inputs.swift-version }}-linterbin-${{ steps.linter-sha.outputs.sha }}
-
-      # ── Standard-runner full-bake cache (Phase 3 of
-      # near-instant-lint-with-external-rule-loading.md) ──
-      # A prebuilt "standard runner" (engine + SwiftSyntax + the standard
-      # rule packs — `Runner/` in the swift-linter repo) lints
-      # pure-bundle consumers WARM in ~0.65s, skipping the per-run eval
-      # materialize-compile (the ~155s SwiftSyntax-from-source floor that
-      # dominates a cold eval). The dispatcher's CLI fast path
-      # (Lint.File.Single.Classifier) routes a bare-`Bundle.primitives` consumer
-      # to this runner via SWIFT_LINTER_RUNNER; inline/custom-rule consumers fall
-      # back to the eval path, so external/consumer-declared rule loading stays
-      # intact on both paths.
-      #
-      # The cache key ([CI-044] tool-binary carve-out — single binary, NOT a
-      # `.build` cache so [CI-040] is honored; exact-match with NO restore-keys
-      # per [CI-042]) is a COMPOSITE over the engine HEAD AND the standard
-      # rule-pack HEADs on branch:"main" ("A-dynamic"): a commit to the engine
-      # (which carries Runner/ too) or to ANY standard rule pack busts the key →
-      # one shared rebuild → instant warm thereafter, so the baked rule set
-      # always tracks latest-committed main. No tag / no version pin.
-      - name: Resolve standard rule-pack HEADs (composite runner key)
-        if: ${{ steps.binaries.outputs.ok != 'true' }}
-        id: runner-key
-        shell: bash
-        run: |
-          set -euo pipefail
-          engine='${{ steps.linter-sha.outputs.sha }}'
-          # The rule-source repos baked into the runner. Their `main` HEADs +
-          # the engine HEAD are the freshness coordinate; primitive support
-          # libs (cardinal/byte/tagged/…) are deliberately NOT keyed (they do
-          # not define rules and would tank the warm-hit rate — see the
-          # research doc Phase-3 §, composite-key scope).
-          primrules=$(git ls-remote https://github.com/swift-primitives/swift-primitives-linter-rules.git main | cut -f1)
-          instrules=$(git ls-remote https://github.com/swift-foundations/swift-institute-linter-rules.git main | cut -f1)
-          standrules=$(git ls-remote https://github.com/swift-standards/swift-standards-linter-rules.git main | cut -f1)
-          unirules=$(git ls-remote https://github.com/swift-foundations/swift-linter-rules.git main | cut -f1)
-          linterprim=$(git ls-remote https://github.com/swift-primitives/swift-linter-primitives.git main | cut -f1)
-          digest=$(printf '%s\n' "$engine" "$primrules" "$instrules" "$standrules" "$unirules" "$linterprim" | sort | sha256sum | cut -d' ' -f1)
-          echo "digest=$digest" >> "$GITHUB_OUTPUT"
-          echo "Runner composite digest=$digest (engine=$engine primrules=$primrules instrules=$instrules standrules=$standrules unirules=$unirules linterprim=$linterprim)"
-
-      - name: Cache swift-linter standard runner
-        if: ${{ steps.binaries.outputs.ok != 'true' }}
-        id: cache-runner
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: /usr/local/bin/swift-linter-runner
-          key: ${{ runner.os }}-swift${{ inputs.swift-version }}-linterrunner-${{ steps.runner-key.outputs.digest }}
-
-      # Checkout the engine source when EITHER the dispatcher or the runner
-      # cache missed — both build from this checkout (Runner/ ships inside it).
-      - name: Checkout swift-linter (cache miss)
-        if: ${{ steps.binaries.outputs.ok != 'true' && (steps.cache-swift-linter.outputs.cache-hit != 'true' || steps.cache-runner.outputs.cache-hit != 'true') }}
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: swift-foundations/swift-linter
-          ref: ${{ steps.linter-sha.outputs.sha }}
-          path: swift-linter
-
-      - name: Build swift-linter dispatcher (cache miss)
-        if: ${{ steps.binaries.outputs.ok != 'true' && steps.cache-swift-linter.outputs.cache-hit != 'true' }}
-        shell: bash   # the swift:N container's default run-shell is dash; need bash for `set -o pipefail`
-        run: |
-          set -euo pipefail
-          swift build --package-path swift-linter --product swift-linter
-          install -m 0755 swift-linter/.build/debug/swift-linter /usr/local/bin/swift-linter
-
-      - name: Build swift-linter standard runner (cache miss)
-        if: ${{ steps.binaries.outputs.ok != 'true' && steps.cache-runner.outputs.cache-hit != 'true' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          # One-time full bake (~310–560s): engine + SwiftSyntax + standard rule
-          # packs, debug. Shared across all consumers via the composite-keyed
-          # cache until a keyed HEAD moves.
-          swift build --package-path swift-linter/Runner --product runner
-          install -m 0755 swift-linter/Runner/.build/debug/runner /usr/local/bin/swift-linter-runner
 
       - name: Run swift-linter (consumer Lint.swift)
         if: ${{ steps.detect.outputs.present == 'true' }}
