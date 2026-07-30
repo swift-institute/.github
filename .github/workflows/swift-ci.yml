@@ -1291,7 +1291,7 @@ jobs:
             echo "::error::swift-linter emitted no run summary. Nothing was measured, so this run establishes nothing — it is not a pass. (Lint.swift, exit status: $RC)"
             exit 1
           fi
-          RULES="$(sed -n 's/.*[^0-9]\([0-9][0-9]*\) active rules.*/\1/p' <<< "$SUMMARY")"
+          RULES="$(sed -n 's/^[^0-9]*\([0-9][0-9]*\) active rules.*/\1/p' <<< "$SUMMARY")"
           FILES="$(sed -n 's/.*[^0-9]\([0-9][0-9]*\) files linted.*/\1/p' <<< "$SUMMARY")"
           if [ "${RULES:-0}" -eq 0 ]; then
             echo "::error::swift-linter loaded 0 rules from Lint.swift. Nothing could have been found, so a clean result here would be a lie."
@@ -1354,7 +1354,7 @@ jobs:
             echo "::error::swift-linter emitted no run summary. Nothing was measured, so this run establishes nothing — it is not a pass. (bundle: $SWIFT_LINTER_BUNDLE, exit status: $RC)"
             exit 1
           fi
-          RULES="$(sed -n 's/.*[^0-9]\([0-9][0-9]*\) active rules.*/\1/p' <<< "$SUMMARY")"
+          RULES="$(sed -n 's/^[^0-9]*\([0-9][0-9]*\) active rules.*/\1/p' <<< "$SUMMARY")"
           FILES="$(sed -n 's/.*[^0-9]\([0-9][0-9]*\) files linted.*/\1/p' <<< "$SUMMARY")"
           if [ "${RULES:-0}" -eq 0 ]; then
             echo "::error::swift-linter loaded 0 rules from bundle '$SWIFT_LINTER_BUNDLE'. Nothing could have been found, so a clean result here would be a lie."
