@@ -72,6 +72,7 @@ on:
     workflows:
       - ci-sweep
       - clean-room-resolve
+      - ecosystem-coherence
       - link-check-weekly
       - lint-license-header-weekly
       - lint-mechanical-hygiene-weekly
