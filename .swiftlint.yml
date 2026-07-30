@@ -25,7 +25,6 @@
 
 disabled_rules:
   - line_length
-  - trailing_comma
   - redundant_discardable_let
   - identifier_name              # Allow short variable names (i, x, y, etc.)
   - large_tuple                  # Allow tuples with more than 2 members
@@ -105,6 +104,19 @@ excluded:
 function_parameter_count:
   warning: 6
   error: 8
+
+# trailing_comma (2026-07-30): SwiftLint's default trailing_comma rule
+# forbids trailing commas, which directly contradicts the Institute's
+# checked-in .swift-format configuration (which REQUIRES trailing commas).
+# Concretely verified 2026-07-30 on swift-foundations/swift-products#1 and
+# swift-foundations/swift-sockets-ip-address#1, where fixing one tool's
+# finding creates the other's. Rather than disabling trailing_comma
+# outright (the prior state), configure it to agree with swift-format:
+# mandatory_comma requires a trailing comma on multi-line collection
+# literals/argument lists, matching swift-format's requirement instead of
+# fighting it.
+trailing_comma:
+  mandatory_comma: true
 
 # ── Custom rules ─────────────────────────────────────────────────────────────
 #
