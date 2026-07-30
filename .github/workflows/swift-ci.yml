@@ -326,11 +326,35 @@ jobs:
         shell: bash
         run: |
           command -v python3 >/dev/null 2>&1 || { sudo apt-get update -qq && sudo apt-get install -qq -y python3; }
-          # Move the script out and drop the checkout BEFORE scanning, so the
+          # Move the scripts out and drop the checkout BEFORE scanning, so the
           # scripts repo's own files (incl. test fixtures) are never scanned.
+          # The branch-pin guard's assets ride the same trust anchor.
           cp "${GITHUB_WORKSPACE}/.ci-scripts/.github/scripts/ci-identity-conflict-fastcheck.py" "${RUNNER_TEMP}/fastcheck.py"
+          cp "${GITHUB_WORKSPACE}/.ci-scripts/.github/scripts/validate-branch-pins.py" "${RUNNER_TEMP}/branch-pins.py"
+          cp "${GITHUB_WORKSPACE}/.ci-scripts/.github/scripts/.branch-pin-baseline" "${RUNNER_TEMP}/branch-pin-baseline"
+          cp "${GITHUB_WORKSPACE}/.ci-scripts/.github/actions/read-orgs/orgs.yaml" "${RUNNER_TEMP}/orgs.yaml"
           rm -rf "${GITHUB_WORKSPACE}/.ci-scripts"
           python3 "${RUNNER_TEMP}/fastcheck.py" "${GITHUB_WORKSPACE}"
+
+      # Branch-pin guard ([BRANCH-PIN-001], #75): rejects NEWLY introduced
+      # branch-pinned Institute dependencies fleet-wide with zero caller
+      # edits. Existing pins live in the shrink-only baseline vendored above
+      # and are burned down by their package/release records; a declaration
+      # absent from the baseline fails the run in <1s, before any toolchain
+      # is installed. Same vendored-script trust anchor as the identity
+      # fast-check — no new checkout, no run-time code fetch. The guard's
+      # own failing controls live in lint-validator-fixtures.yml
+      # (test-validate-branch-pins.py + the branch-pin-001 fixture ladder).
+      - name: Branch-pin guard
+        shell: bash
+        env:
+          TARGET_REPO: ${{ inputs.target-repo || github.repository }}
+        run: |
+          python3 -c 'import yaml' 2>/dev/null \
+            || { sudo apt-get update -qq && sudo apt-get install -qq -y python3-yaml; }
+          python3 "${RUNNER_TEMP}/branch-pins.py" "$TARGET_REPO" "${GITHUB_WORKSPACE}" \
+            --orgs-file "${RUNNER_TEMP}/orgs.yaml" \
+            --baseline "${RUNNER_TEMP}/branch-pin-baseline"
 
       - name: Classify tier
         id: classify
