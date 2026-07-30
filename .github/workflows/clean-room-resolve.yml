@@ -61,6 +61,15 @@ on:
 # Top-level `permissions:` OMITTED per [CI-090] — combined reusable workflow;
 # per-job `permissions:` provides the floor.
 
+# The fleet's manifests declare `// swift-tools-version: 6.3.3`, and
+# `swift package resolve` refuses any manifest whose tools-version exceeds
+# the installed toolchain. The runner image's default toolchain sat below
+# that floor (6.3.2) — the same trap that left validate-package-structure's
+# targets unscanned (#61). Pin the toolchain to the fleet manifest floor;
+# when the ecosystem moves to 6.4, bump this deliberately and re-measure.
+env:
+  SWIFT_TOOLCHAIN_VERSION: '6.3.3'
+
 jobs:
   resolve:
     if: ${{ !github.event.repository.private }}     # [CI-032]
@@ -122,6 +131,14 @@ jobs:
           git config --global url."https://x-access-token:${TOK_STANDARDS}@github.com/swift-standards/".insteadOf "https://github.com/swift-standards/"
           git config --global url."https://x-access-token:${TOK_FOUNDATIONS}@github.com/swift-foundations/".insteadOf "https://github.com/swift-foundations/"
           git config --global url."https://x-access-token:${TOK_MICROSOFT}@github.com/swift-microsoft/".insteadOf "https://github.com/swift-microsoft/"
+
+      - name: Set up Swift toolchain
+        uses: SwiftyLab/setup-swift@38f54a76b70d989321de9dc7c840618c08cf56e9  # v1.14.0
+        with:
+          swift-version: ${{ env.SWIFT_TOOLCHAIN_VERSION }}
+
+      - name: Record toolchain identity
+        run: swift --version
 
       - name: Clean-room resolve ${{ matrix.root }}
         env:
