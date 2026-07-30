@@ -229,8 +229,33 @@ custom_rules:
     #     via the `(?<!\.)` lookbehind).
     # Validated: the 35 unshielded FP sites across swift-linux/witnesses/
     # paths/io stop firing with NO shields added; genuine violations fire.
+    # §NOTES fix (2026-07-30, #136): a bare-`Error` REFERENCE (not
+    # `throws(...)`, not dot-qualified) still fires when it resolves to a
+    # local NESTED error type rather than the `Swift.Error` existential —
+    # e.g. `private static func f() -> Error { ... }` inside
+    # `extension Foo.Bar { ... }` where `Foo.Bar.Error` is declared in a
+    # SIBLING file. This is a genuine reference-position false positive
+    # the regex cannot resolve: SwiftLint custom rules match per-file text
+    # with no cross-file or cross-extension symbol table, so there is no
+    # regex-expressible way to tell "`Error` here means the local nested
+    # `Foo.Bar.Error` declared elsewhere" apart from "`Error` here means
+    # `Swift.Error`" — both are the identical token in the identical
+    # syntactic position (return-type, parameter type, etc.), and a
+    # positive-control case (`func f() -> Error` where `Error` genuinely
+    # is the stdlib existential) must keep firing. Confirmed empirically
+    # against swift-rfc-2822 RFC_2822.AddrSpec.swift:430 (fix: swift-ietf/
+    # swift-rfc-2822#136-fix, qualifying with the actual local type
+    # `RFC_2822.AddrSpec.Error` rather than `Swift.Error`). The prescribed
+    # fix for THIS class is: qualify with the reference's actual local
+    # type path (`Outer.Inner.Error`), not `Swift.Error` — qualifying as
+    # `Swift.Error` would silently change the type to the protocol
+    # existential and break typed-throws call sites and error-producing
+    # call sites alike. `Swift.Error` remains correct only when the bare
+    # `Error` genuinely denotes the stdlib protocol. End-state (SwiftSyntax
+    # symbol resolution) is the only way to distinguish the two cases
+    # automatically; until then this stays a manual per-site judgment call.
     regex: '\b(?<!Swift\.)(?<!\.)(?<!struct )(?<!enum )(?<!class )(?<!actor )(?<!typealias )(?<!associatedtype )(?<!throws\()Error\b(?!\.)(?![ \t]*==)'
-    message: "Always qualify as 'Swift.Error', not bare 'Error' ([PLAT-ARCH-011]; user-confirmed 2026-05-05). Applies to generic constraints (`<E: Swift.Error>`), conformances (`: Swift.Error`), and any other reference. Avoids ambiguity with namespace-scoped Error types and is the institute's convention everywhere. Declaration sites (`struct/enum/class/actor/typealias/associatedtype Error: Swift.Error`) are exempt — that's [API-ERR-002]'s Nest.Name pattern. Backtick-quoted test function names and associated-type `Error ==` constraint positions are also exempt (§NOTES 2026-07-07)."
+    message: "Qualify bare 'Error' ([PLAT-ARCH-011]; user-confirmed 2026-05-05). Applies to generic constraints (`<E: Swift.Error>`), conformances (`: Swift.Error`), and any other reference. Avoids ambiguity with namespace-scoped Error types and is the institute's convention everywhere. If the bare 'Error' genuinely denotes the stdlib protocol, qualify as 'Swift.Error'. If it resolves to a local NESTED error type (e.g. a sibling-file `Outer.Inner.Error`), qualify with that type's actual path instead — qualifying those as 'Swift.Error' is semantically wrong and breaks typed-throws/error-producing call sites (see #136). Declaration sites (`struct/enum/class/actor/typealias/associatedtype Error: Swift.Error`) are exempt — that's [API-ERR-002]'s Nest.Name pattern. Backtick-quoted test function names and associated-type `Error ==` constraint positions are also exempt (§NOTES 2026-07-07)."
     severity: warning
     match_kinds:
       - typeidentifier
