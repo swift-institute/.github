@@ -287,14 +287,135 @@ struct RepositoryPolicyTests {
     }
 
     @Test
-    func instituteDefaultSurfacePolicyIsLoadableAndDenyByDefault() throws {
+    func instituteDefaultSurfacePolicyMatchesTheDesignedFleet() throws {
         let policy = try RepositoryPolicy.SurfacePolicy.load(
             from: RepositoryPolicy.SurfacePolicy.instituteDefaultURL
         )
 
         #expect(policy.schemaVersion == 1)
-        #expect(!policy.actionGrants.isEmpty)
-        #expect(policy.exemptions.isEmpty)
+
+        // The generic package thin-caller grant admits exactly the designed
+        // `uses:` targets: the three layer swift-ci and swift-docs wrappers,
+        // plus the notify-linter-republish reusable the rule-pack repositories
+        // call on push to main.
+        let generic = try #require(
+            policy.actionGrants.first {
+                $0.repository == nil && $0.path == ".github/workflows/ci.yml"
+            }
+        )
+        #expect(generic.repositoryClass == .package)
+        #expect(generic.kind == .thinCaller)
+        #expect(generic.triggers == ["pull_request", "push", "workflow_dispatch"])
+        #expect(
+            generic.uses == [
+                "swift-foundations/.github/.github/workflows/swift-ci.yml@main",
+                "swift-foundations/.github/.github/workflows/swift-docs.yml@main",
+                "swift-institute/.github/.github/workflows/notify-linter-republish.yml@main",
+                "swift-primitives/.github/.github/workflows/swift-ci.yml@main",
+                "swift-primitives/.github/.github/workflows/swift-docs.yml@main",
+                "swift-standards/.github/.github/workflows/swift-ci.yml@main",
+                "swift-standards/.github/.github/workflows/swift-docs.yml@main",
+            ]
+        )
+
+        // swift-linter is the tool-host: repository-scoped grants for its own
+        // thin caller and its workflow_call reusable, nothing broader.
+        let linterGrants = policy.actionGrants.filter {
+            $0.repository == "swift-foundations/swift-linter"
+        }
+        #expect(linterGrants.count == 2)
+        #expect(linterGrants.allSatisfy { $0.repositoryClass == .tool })
+        #expect(
+            linterGrants.first { $0.path == ".github/workflows/lint.yml" }?.kind
+                == .toolWorkflow
+        )
+
+        #expect(policy.actionGrants.count == 3)
+
+        // Typed exemptions carry exact repository and path scope.
+        #expect(
+            policy.exemptions.map { "\($0.repository):\($0.path)" }.sorted() == [
+                "swift-foundations/swift-linter:.github/workflows/publish-ci-binaries.yml",
+                "swift-foundations/swift-pdf:.github/workflows/windows-6.4-proof.yml",
+                "swift-foundations/swift-pdf:.github/workflows/windows-existential-repro.yml",
+                "swift-iso/swift-iso-32000:.github/workflows/no-verbatim-spec-text.yml",
+            ]
+        )
+        #expect(policy.exemptions.allSatisfy { $0.surface == .actions })
+    }
+
+    // Positive control: the shipped policy must still DENY. A whitelist whose
+    // gate has never been observed to fire is evidence of nothing, so these
+    // fixtures are deliberately non-conformant and the check must flag them.
+    @Test
+    func instituteDefaultSurfacePolicyStillFiresOnNonConformantFixtures() throws {
+        let policy = try RepositoryPolicy.SurfacePolicy.load(
+            from: RepositoryPolicy.SurfacePolicy.instituteDefaultURL
+        )
+
+        // A sha-pinned wrapper ref cannot match the granted `@main` string.
+        let shaPinned = try RepositoryPolicy.validateSurface(
+            repository: "swift-primitives/swift-example",
+            repositoryClass: .package,
+            files: [
+                ".github/workflows/ci.yml": """
+                    name: CI
+                    on: [push, pull_request, workflow_dispatch]
+                    jobs:
+                      ci:
+                        uses: swift-primitives/.github/.github/workflows/swift-ci.yml@0123456789abcdef0123456789abcdef01234567
+                    """
+            ],
+            policy: policy
+        )
+        #expect(shaPinned.violations.map(\.identifier) == ["REPO-ACTIONS-004"])
+
+        // The swift-pdf Windows-ICE exemption is repository-exact: the same
+        // path in any other repository stays denied.
+        let windowsFile = """
+            name: Windows 6.4 proof
+            on: [push, workflow_dispatch]
+            jobs:
+              proof:
+                runs-on: windows-2022
+                steps:
+                  - uses: actions/checkout@v7
+            """
+        let wrongRepository = try RepositoryPolicy.validateSurface(
+            repository: "swift-foundations/swift-example",
+            repositoryClass: .package,
+            files: [".github/workflows/windows-6.4-proof.yml": windowsFile],
+            policy: policy
+        )
+        #expect(wrongRepository.violations.map(\.identifier) == ["REPO-ACTIONS-001"])
+        let exemptedRepository = try RepositoryPolicy.validateSurface(
+            repository: "swift-foundations/swift-pdf",
+            repositoryClass: .package,
+            files: [".github/workflows/windows-6.4-proof.yml": windowsFile],
+            policy: policy
+        )
+        #expect(exemptedRepository.passed)
+        #expect(exemptedRepository.exemptionsApplied == 1)
+
+        // The admitted rule-pack shape passes: layer wrapper plus the
+        // notify-linter-republish target in one thin caller.
+        let rulePack = try RepositoryPolicy.validateSurface(
+            repository: "swift-primitives/swift-linter-primitives",
+            repositoryClass: .package,
+            files: [
+                ".github/workflows/ci.yml": """
+                    name: CI
+                    on: [push, pull_request, workflow_dispatch]
+                    jobs:
+                      ci:
+                        uses: swift-primitives/.github/.github/workflows/swift-ci.yml@main
+                      notify:
+                        uses: swift-institute/.github/.github/workflows/notify-linter-republish.yml@main
+                    """
+            ],
+            policy: policy
+        )
+        #expect(rulePack.passed)
     }
 
     private func repositoryFixture(files: [String: String]) throws -> URL {

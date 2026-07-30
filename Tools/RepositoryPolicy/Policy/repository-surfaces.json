@@ -12,11 +12,69 @@
       ],
       "uses": [
         "swift-foundations/.github/.github/workflows/swift-ci.yml@main",
-        "swift-institute/.github/.github/workflows/swift-docs.yml@main",
+        "swift-foundations/.github/.github/workflows/swift-docs.yml@main",
+        "swift-institute/.github/.github/workflows/notify-linter-republish.yml@main",
         "swift-primitives/.github/.github/workflows/swift-ci.yml@main",
-        "swift-standards/.github/.github/workflows/swift-ci.yml@main"
+        "swift-primitives/.github/.github/workflows/swift-docs.yml@main",
+        "swift-standards/.github/.github/workflows/swift-ci.yml@main",
+        "swift-standards/.github/.github/workflows/swift-docs.yml@main"
+      ]
+    },
+    {
+      "repositoryClass": "tool",
+      "repository": "swift-foundations/swift-linter",
+      "path": ".github/workflows/ci.yml",
+      "kind": "thin-caller",
+      "triggers": [
+        "pull_request",
+        "push",
+        "workflow_dispatch"
+      ],
+      "uses": [
+        "swift-foundations/.github/.github/workflows/swift-ci.yml@main",
+        "swift-foundations/.github/.github/workflows/swift-docs.yml@main"
+      ]
+    },
+    {
+      "repositoryClass": "tool",
+      "repository": "swift-foundations/swift-linter",
+      "path": ".github/workflows/lint.yml",
+      "kind": "tool-workflow",
+      "triggers": [
+        "workflow_call"
+      ],
+      "uses": [
+        "actions/checkout@v7",
+        "github/codeql-action/upload-sarif@v3",
+        "step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920",
+        "swift-institute/.github/.github/actions/configure-private-repos@main"
       ]
     }
   ],
-  "exemptions": []
+  "exemptions": [
+    {
+      "surface": "actions",
+      "repository": "swift-foundations/swift-linter",
+      "path": ".github/workflows/publish-ci-binaries.yml",
+      "reason": "Ruling-approved 2026-07-20 binary publisher for the prebuilt linter binaries the universal swift-ci.yml downloads; standalone push/schedule/workflow_dispatch workflow (not a workflow_call reusable), so it is admissible only as a typed exemption under the current grant kinds."
+    },
+    {
+      "surface": "actions",
+      "repository": "swift-foundations/swift-pdf",
+      "path": ".github/workflows/windows-6.4-proof.yml",
+      "reason": "Principal-directed, repo-owned Windows ICE-evidence job proving the Swift 6.3.3 Windows (+Asserts) debug-info-mangler crash is resolved on 6.4 for the full swift-pdf graph; deliberately non-centralized. Retire once the Swift 6.4 GA proof lands and is recorded (tracked as a separate swift-pdf-owned item)."
+    },
+    {
+      "surface": "actions",
+      "repository": "swift-foundations/swift-pdf",
+      "path": ".github/workflows/windows-existential-repro.yml",
+      "reason": "Principal-directed, repo-owned Windows ICE-evidence job compiling isolated reproducers for the 6.3.3 Windows (+Asserts) existential debug-info ICE; deliberately non-centralized. Retire once the Swift 6.4 GA proof lands and is recorded (tracked as a separate swift-pdf-owned item)."
+    },
+    {
+      "surface": "actions",
+      "repository": "swift-iso/swift-iso-32000",
+      "path": ".github/workflows/no-verbatim-spec-text.yml",
+      "reason": "Repo-owned legal guard rejecting verbatim paid ISO 32000-2 specification text from source; today only this repository carries it, so a typed exemption is the correct scope until a second authority-org repository needs the same guard."
+    }
+  ]
 }
