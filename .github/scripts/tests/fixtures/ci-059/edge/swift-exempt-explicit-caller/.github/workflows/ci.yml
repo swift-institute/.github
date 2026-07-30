@@ -1,0 +1,20 @@
+name: CI
+
+# Exemption-mechanism control: this fixture's harness identity
+# (swift-institute-test/swift-exempt-explicit-caller, ci.yml) carries a
+# typed CI-059 exemption admitting exactly the same-org-explicit class.
+# The shape below would otherwise fire; the validator must emit it as
+# CI-059-EXEMPT (informational, not counted) and nothing else. The
+# identical shape under a different repository name is the near-miss
+# fixture fail/swift-exempt-near-miss, which must still fire.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  ci:
+    uses: swift-primitives/.github/.github/workflows/swift-ci.yml@main
+    secrets:
+      PRIVATE_REPO_TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }}

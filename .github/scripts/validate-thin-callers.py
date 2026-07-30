@@ -56,7 +56,21 @@ Rules checked:
                 `NAME: ${{ secrets.NAME }}` lines — values resolve in the
                 consumer's own org context and survive the cross-org hop.
                 `secrets: inherit` and omission both fire; a block missing
-                any of the four names fires naming the missing ones.
+                any of the four names fires naming the missing ones; a
+                block forwarding ANY name beyond the four fires as wider
+                than the closed set.
+
+                Principal-ruled contract (#92, 2026-07-30; enforced per
+                #108): same-org caller -> layer wrapper uses
+                `secrets: inherit` with explicit per-secret sets
+                forbidden; cross-org callers use exactly the closed
+                four-secret set; no other shapes. Exceptions exist only
+                as typed whitelist entries with exact repository + path
+                scope (CI_059_EXEMPTIONS below): an entry admits exactly
+                one finding class in exactly one file, emitted as
+                CI-059-EXEMPT (informational), and suppresses nothing
+                else. Findings carry a [finding-class] tag so a reader
+                knows which predicate fired.
 
                 Owner detection: the org component of the repo argument.
                 Fixture override: a `.fixture-sub-org-owner` marker file at
@@ -155,12 +169,40 @@ SUB_ORGS = frozenset({
 })
 
 # The named private-dep credential set sub-org callers MUST forward.
+# Principal-ruled CLOSED on #92 (2026-07-30): cross-org callers forward
+# exactly this set — a block missing a name fires, and a block carrying
+# any name beyond it fires ("wider than the closed set"). Widening the
+# set is a ruling, not an edit.
 REQUIRED_SUBORG_SECRETS = (
     "PRIVATE_REPO_TOKEN",
     "SWIFT_INSTITUTE_BOT_APP_CLIENT_ID",
     "SWIFT_INSTITUTE_BOT_APP_ID",
     "SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY",
 )
+
+# ── Typed [CI-059] exemptions (#92 ruling: "exceptions exist only as
+# typed whitelist entries with exact repository + path scope") ──
+# Key: (owner/name, workflow path). Value: the ONE finding class the
+# entry admits, plus the ruling that admitted it. An exemption suppresses
+# exactly that class in exactly that file — every other class in the same
+# file still fires — and the suppressed finding is emitted as
+# CI-059-EXEMPT (informational; the aggregation layer counts only exact
+# CI-059 rows). Adding a production entry requires a principal ruling.
+#
+# Finding classes: same-org-explicit, same-org-omitted, cross-org-inherit,
+# cross-org-missing-names, cross-org-extra-names, cross-org-omitted.
+#
+# The swift-institute-test entry is fixture-scoped: the fixture harness
+# runs every fixture as `swift-institute-test/<name>`, an owner no
+# production sweep ever passes, so the entry can admit nothing outside
+# the fixture suite. It exists so the exemption path has a failing
+# control (an admitted shape, plus a near-miss that must still fire).
+CI_059_EXEMPTIONS: dict[tuple[str, str], tuple[str, str]] = {
+    ("swift-institute-test/swift-exempt-explicit-caller", ".github/workflows/ci.yml"): (
+        "same-org-explicit",
+        "fixture-scoped mechanism control; not a production ruling",
+    ),
+}
 
 
 def _suborg_secret_line(name: str) -> re.Pattern[str]:
@@ -180,6 +222,52 @@ SUBORG_SECRET_LINES = {
 def emit(repo: str, rule: str, message: str) -> None:
     safe = message.replace("\t", " ").replace("\n", " ")
     print(f"{repo}\t{rule}\t{safe}")
+
+
+def _emit_ci_059(repo: str, finding_class: str, message: str) -> int:
+    """Emit a classified [CI-059] finding through the typed-exemption gate.
+
+    Returns the finding count (0 when a typed exemption admits exactly
+    this class for exactly this repo + path; the row is then emitted as
+    CI-059-EXEMPT, which the aggregation layer does not count). An
+    exemption never suppresses a different class in the same file.
+    """
+    entry = CI_059_EXEMPTIONS.get((repo, ".github/workflows/ci.yml"))
+    if entry is not None and entry[0] == finding_class:
+        emit(
+            repo,
+            "CI-059-EXEMPT",
+            f"[{finding_class}] admitted by typed exemption ({entry[1]}): {message}",
+        )
+        return 0
+    emit(repo, "CI-059", f"[{finding_class}] {message}")
+    return 1
+
+
+def _forwarded_secret_names(job_body: str) -> list[str]:
+    """Keys of the job's block-form `secrets:` mapping, in order.
+
+    Indentation-tracked: children are the contiguous run of more-indented
+    `NAME:` lines after a bare `secrets:` opener; the first line at or
+    below the opener's indent closes the block.
+    """
+    names: list[str] = []
+    block_indent: int | None = None
+    for line in job_body.split("\n"):
+        stripped = line.strip()
+        if block_indent is not None:
+            if not stripped or stripped.startswith("#"):
+                continue
+            indent = len(line) - len(line.lstrip())
+            if indent > block_indent:
+                key = re.match(r"([A-Za-z0-9_-]+):", stripped)
+                if key:
+                    names.append(key.group(1))
+                continue
+            block_indent = None
+        if re.match(r"^\s+secrets:\s*(#.*)?$", line):
+            block_indent = len(line) - len(line.lstrip())
+    return names
 
 
 def is_workflow_call(text: str) -> bool:
@@ -388,28 +476,28 @@ def check_ci_059(repo: str, text: str, owner: str) -> int:
         # Job invokes intra-Institute reusable AND lacks `secrets: inherit`.
         # Distinguish explicit-forwarding from omission for a clearer message.
         if HAS_SECRETS_BLOCK.search(job_body) or HAS_SECRETS_INLINE_MAP.search(job_body):
-            emit(
+            findings += _emit_ci_059(
                 repo,
-                "CI-059",
+                "same-org-explicit",
                 f".github/workflows/ci.yml job `{job_name}` invokes an "
                 f"intra-Institute reusable with explicit `secrets:` "
-                f"forwarding — per [CI-059] this MUST use `secrets: inherit` "
-                f"instead. Org-level secrets per [CI-060] obviate explicit "
-                f"per-secret forwarding; explicit forwarding is dead "
-                f"boilerplate that drifts at every new secret addition.",
+                f"forwarding — per the #92 ruling same-org callers MUST use "
+                f"`secrets: inherit`; explicit per-secret sets are forbidden. "
+                f"Org-level secrets per [CI-060] obviate explicit forwarding, "
+                f"which drifts at every new secret addition.",
             )
         else:
-            emit(
+            findings += _emit_ci_059(
                 repo,
-                "CI-059",
+                "same-org-omitted",
                 f".github/workflows/ci.yml job `{job_name}` invokes an "
                 f"intra-Institute reusable without `secrets: inherit` — per "
-                f"[CI-059] every per-repo `uses:` invocation of an "
-                f"intra-Institute reusable MUST include `secrets: inherit` "
-                f"(single canonical shape per [CI-031], universal across "
-                f"consumers regardless of dependency-graph visibility).",
+                f"[CI-059] and the #92 ruling every same-org `uses:` "
+                f"invocation of an intra-Institute reusable MUST include "
+                f"`secrets: inherit` (single canonical shape per [CI-031], "
+                f"universal across consumers regardless of dependency-graph "
+                f"visibility).",
             )
-        findings += 1
     return findings
 
 
@@ -421,18 +509,16 @@ def _check_ci_059_suborg(repo: str, text: str) -> int:
         if not USES_INTRA_INSTITUTE.search(job_body):
             continue
         if HAS_SECRETS_INHERIT.search(job_body):
-            emit(
+            findings += _emit_ci_059(
                 repo,
-                "CI-059",
+                "cross-org-inherit",
                 f".github/workflows/ci.yml job `{job_name}` is sub-org-hosted "
-                f"and uses `secrets: inherit` — per the [CI-059] sub-org "
-                f"caveat this hop is cross-org and inherit silently delivers "
-                f"no org secrets ([CI-109]). Replace with the explicit "
-                f"`secrets:` block forwarding "
-                f"{', '.join(REQUIRED_SUBORG_SECRETS)} as "
+                f"and uses `secrets: inherit` — per the #92 ruling this hop "
+                f"is cross-org and inherit silently delivers no org secrets "
+                f"([CI-109]). Replace with the explicit `secrets:` block "
+                f"forwarding {', '.join(REQUIRED_SUBORG_SECRETS)} as "
                 f"`NAME: ${{{{ secrets.NAME }}}}` lines.",
             )
-            findings += 1
             continue
         if HAS_SECRETS_BLOCK.search(job_body) or HAS_SECRETS_INLINE_MAP.search(job_body):
             missing = [
@@ -441,27 +527,41 @@ def _check_ci_059_suborg(repo: str, text: str) -> int:
                 if not SUBORG_SECRET_LINES[name].search(job_body)
             ]
             if missing:
-                emit(
+                findings += _emit_ci_059(
                     repo,
-                    "CI-059",
+                    "cross-org-missing-names",
                     f".github/workflows/ci.yml job `{job_name}` is "
                     f"sub-org-hosted and explicit-forwards secrets but is "
-                    f"missing {', '.join(missing)} — per the [CI-059] sub-org "
-                    f"caveat the full named credential set MUST be forwarded "
+                    f"missing {', '.join(missing)} — per the #92 ruling the "
+                    f"closed credential set MUST be forwarded in full "
                     f"(`NAME: ${{{{ secrets.NAME }}}}` per name; [CI-109]).",
                 )
-                findings += 1
+            extra = [
+                name
+                for name in _forwarded_secret_names(job_body)
+                if name not in REQUIRED_SUBORG_SECRETS
+            ]
+            if extra:
+                findings += _emit_ci_059(
+                    repo,
+                    "cross-org-extra-names",
+                    f".github/workflows/ci.yml job `{job_name}` is "
+                    f"sub-org-hosted and forwards {', '.join(extra)} beyond "
+                    f"the closed set — per the #92 ruling the cross-org "
+                    f"transport is exactly "
+                    f"{', '.join(REQUIRED_SUBORG_SECRETS)}; widening it is a "
+                    f"ruling, not a caller edit.",
+                )
             continue
-        emit(
+        findings += _emit_ci_059(
             repo,
-            "CI-059",
+            "cross-org-omitted",
             f".github/workflows/ci.yml job `{job_name}` is sub-org-hosted "
             f"and invokes an intra-Institute reusable without any `secrets:` "
-            f"— per the [CI-059] sub-org caveat it MUST explicit-forward "
+            f"— per the #92 ruling it MUST explicit-forward "
             f"{', '.join(REQUIRED_SUBORG_SECRETS)} ([CI-109]; inherit is "
             f"same-org-only and omission leaves resolve uncredentialed).",
         )
-        findings += 1
     return findings
 
 

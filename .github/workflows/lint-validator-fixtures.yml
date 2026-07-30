@@ -108,6 +108,17 @@ jobs:
           set -euo pipefail
           python3 .github/scripts/tests/test-ci-binaries-identity.py 2>&1 | tee /tmp/ci-binaries-controls.txt
 
+      # The secret-transport contract (#92 ruling, enforced per #108)
+      # includes class-exactness of typed exemptions, which cannot be a
+      # second repo-shaped fixture because an exemption keys the exact
+      # repository name. These unit controls cover that surface; until
+      # 2026-07-30 this suite existed but nothing ran it.
+      - name: Run secret-transport contract controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/tests/test-validate-thin-callers.py 2>&1 | tee /tmp/thin-caller-controls.txt
+
       # The branch-pin guard's contract surface (baseline suppression, the
       # exit code the swift-ci fast-check keys on, --orgs-file resolution)
       # is not reachable through run.sh's repo-shaped fixtures.

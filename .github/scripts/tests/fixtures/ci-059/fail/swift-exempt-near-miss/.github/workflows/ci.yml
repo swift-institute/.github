@@ -1,0 +1,17 @@
+name: CI
+
+# Near-miss control for the typed exemption: byte-identical shape to
+# edge/swift-exempt-explicit-caller, but this repository name carries no
+# exemption entry — the same-org-explicit finding MUST still fire. An
+# exemption admits its exact repository + path and nothing else.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  ci:
+    uses: swift-primitives/.github/.github/workflows/swift-ci.yml@main
+    secrets:
+      PRIVATE_REPO_TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }}

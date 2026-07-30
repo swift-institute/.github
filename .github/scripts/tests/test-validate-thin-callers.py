@@ -174,5 +174,103 @@ jobs:
         self.assertEqual(self.validate(workflow), [])
 
 
+class SecretTransportContractTests(unittest.TestCase):
+    """#92-ruling surfaces the repo-shaped ci-059 fixtures cannot reach:
+    class-exactness of the typed exemption (the exempt repository with a
+    DIFFERENT violation class must still fire — impossible to express as
+    a second fixture because the exemption keys the exact repository
+    name) and the finding-class tags themselves."""
+
+    def run_validator(
+        self, workflow: str, repo: str, sub_org_owner: str | None = None
+    ) -> list[str]:
+        import tempfile
+        from pathlib import Path as _Path
+
+        with tempfile.TemporaryDirectory() as raw:
+            root = _Path(raw)
+            (root / "Package.swift").write_text(
+                "// swift-tools-version: 6.3\n", encoding="utf-8"
+            )
+            workflows = root / ".github" / "workflows"
+            workflows.mkdir(parents=True)
+            (workflows / "ci.yml").write_text(workflow, encoding="utf-8")
+            if sub_org_owner is not None:
+                (root / ".fixture-sub-org-owner").write_text(
+                    sub_org_owner, encoding="utf-8"
+                )
+            output = StringIO()
+            with redirect_stdout(output):
+                module.main(repo, str(root))
+        return output.getvalue().splitlines()
+
+    EXEMPT_REPO = "swift-institute-test/swift-exempt-explicit-caller"
+
+    def test_exempt_repo_admits_only_its_ruled_class(self) -> None:
+        # Same repository + path as the typed exemption, but the violation
+        # is same-org-omitted, not the admitted same-org-explicit — the
+        # exemption must NOT suppress it.
+        workflow = """name: CI
+on: [push]
+jobs:
+  ci:
+    uses: swift-primitives/.github/.github/workflows/swift-ci.yml@main
+"""
+        lines = self.run_validator(workflow, self.EXEMPT_REPO)
+        self.assertTrue(any("\tCI-059\t[same-org-omitted]" in l for l in lines), lines)
+        self.assertFalse(any("CI-059-EXEMPT" in l for l in lines), lines)
+
+    def test_exempt_repo_admitted_class_reports_exempt_row(self) -> None:
+        workflow = """name: CI
+on: [push]
+jobs:
+  ci:
+    uses: swift-primitives/.github/.github/workflows/swift-ci.yml@main
+    secrets:
+      PRIVATE_REPO_TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }}
+"""
+        lines = self.run_validator(workflow, self.EXEMPT_REPO)
+        self.assertTrue(any("\tCI-059-EXEMPT\t[same-org-explicit]" in l for l in lines), lines)
+        self.assertFalse(any("\tCI-059\t" in l for l in lines), lines)
+
+    def test_cross_org_extra_name_is_classified(self) -> None:
+        workflow = """name: CI
+on: [push]
+jobs:
+  ci:
+    uses: swift-standards/.github/.github/workflows/swift-ci.yml@main
+    secrets:
+      PRIVATE_REPO_TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }}
+      SWIFT_INSTITUTE_BOT_APP_CLIENT_ID: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+      SWIFT_INSTITUTE_BOT_APP_ID: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
+      SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+      EXTRA_DEPLOY_TOKEN: ${{ secrets.EXTRA_DEPLOY_TOKEN }}
+"""
+        lines = self.run_validator(
+            workflow, "swift-institute-test/fixture", sub_org_owner="swift-ietf"
+        )
+        self.assertTrue(
+            any("[cross-org-extra-names]" in l and "EXTRA_DEPLOY_TOKEN" in l for l in lines),
+            lines,
+        )
+        self.assertFalse(any("[cross-org-missing-names]" in l for l in lines), lines)
+
+    def test_cross_org_narrow_and_wide_both_fire(self) -> None:
+        workflow = """name: CI
+on: [push]
+jobs:
+  ci:
+    uses: swift-standards/.github/.github/workflows/swift-ci.yml@main
+    secrets:
+      PRIVATE_REPO_TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }}
+      EXTRA_DEPLOY_TOKEN: ${{ secrets.EXTRA_DEPLOY_TOKEN }}
+"""
+        lines = self.run_validator(
+            workflow, "swift-institute-test/fixture", sub_org_owner="swift-ietf"
+        )
+        self.assertTrue(any("[cross-org-missing-names]" in l for l in lines), lines)
+        self.assertTrue(any("[cross-org-extra-names]" in l for l in lines), lines)
+
+
 if __name__ == "__main__":
     unittest.main()
