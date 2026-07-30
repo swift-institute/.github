@@ -1,0 +1,286 @@
+name: reconcile-project-invariants
+
+# Scheduled REPORT-ONLY reconciler for the Institute Work Project
+# (org swift-institute, ProjectV2 number 2) partitioned-authority
+# invariants (#68, ratified 2026-07-30; filed as #103).
+#
+# The org is on the free plan: the Project has no auto-add/auto-archive
+# workflows and Actions has no ProjectV2 trigger, so the coordination
+# invariants of the partitioned-authority model are observable only if
+# something observes them on a schedule. This workflow observes and
+# reports; it never mutates the Project and never mutates any issue
+# beyond the lifecycle of its single divergence issue in this repository.
+#
+# Invariants checked each run:
+#   - every Project item has a Priority; every on-Project issue has an
+#     issue type
+#   - the built-in Status field is unset on all items
+#   - no draft items, no pull-request rows, no archived rows
+#   - no rows for issues closed as not planned or as duplicates
+#     (flagged for removal; the removal itself remains a judgment)
+#   - no bot-authored issues on the Project
+#   - open human-filed issues in Institute orgs absent from the Project
+#     are surfaced for an admission decision — never auto-admitted
+#   - issue-type parity per org: Task/Bug/Feature everywhere; Goal only
+#     in swift-institute
+#
+# Reporting mechanics: one divergence issue in this repository, found by
+# TITLE match — never by label (a prior sweep keyed control flow off a
+# label that had never been created, so its close-when-clean path could
+# not fire even on a clean fleet). The label passed to the upsert
+# composite is identification only; no step's control flow reads it.
+# The issue is closed when a run finds the fleet clean.
+#
+# Quota discipline: the REST/GraphQL budget is shared. One paginated
+# Project read, one paginated issue search per org, one issue-type read
+# per org; no polling, no per-item requests; runs are idempotent.
+#
+# Known scope limit: the minted App token is the swift-institute org
+# installation, so open issues in OTHER orgs' private repositories are
+# not visible to the search leg. Private repositories do not run CI and
+# their issues are not expected on the Project; the limit is recorded
+# here rather than silently assumed away.
+
+on:
+  schedule:
+    - cron: '15 5 * * *'   # daily, offset from the 04:00 UTC metadata cron
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: >
+          Report to the run summary only; do not create, update, or
+          close the divergence issue. Validation dispatches use this.
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: reconcile-project-invariants
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Harden runner (audit-mode egress logging)
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Read Institute orgs
+        id: orgs
+        uses: swift-institute/.github/.github/actions/read-orgs@main
+
+      - name: Mint installation token (project read, issue write)
+        id: token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
+        with:
+          client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: swift-institute
+          permission-organization-projects: read
+          permission-issues: write
+
+      - name: Observe Project and issue invariants
+        id: scan
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          ORGS: ${{ steps.orgs.outputs.orgs }}
+        run: |
+          set -euo pipefail
+          workdir="${RUNNER_TEMP}/project-reconciler"
+          mkdir -p "$workdir"
+
+          # ── One paginated read of every Project item ────────────────
+          gh api graphql --paginate --slurp -f query='
+            query($endCursor: String) {
+              organization(login: "swift-institute") {
+                projectV2(number: 2) {
+                  items(first: 50, after: $endCursor) {
+                    pageInfo { hasNextPage endCursor }
+                    nodes {
+                      type
+                      isArchived
+                      priority: fieldValueByName(name: "Priority") {
+                        ... on ProjectV2ItemFieldSingleSelectValue { name }
+                      }
+                      status: fieldValueByName(name: "Status") {
+                        ... on ProjectV2ItemFieldSingleSelectValue { name }
+                      }
+                      content {
+                        __typename
+                        ... on Issue {
+                          url
+                          state
+                          stateReason
+                          author { login }
+                          issueType { name }
+                        }
+                        ... on PullRequest { url }
+                        ... on DraftIssue { title }
+                      }
+                    }
+                  }
+                }
+              }
+            }' > "$workdir/items-raw.json"
+          jq '[.[].data.organization.projectV2.items.nodes[]]' \
+            "$workdir/items-raw.json" > "$workdir/items.json"
+
+          item_name='(.content.url // .content.title // "unidentified item")'
+          jq -r "[.[] | select(.priority == null) | $item_name] | .[]" \
+            "$workdir/items.json" > "$workdir/missing-priority.txt"
+          jq -r "[.[] | select(.content.__typename == \"Issue\" and .content.issueType == null) | $item_name] | .[]" \
+            "$workdir/items.json" > "$workdir/missing-type.txt"
+          jq -r "[.[] | select(.status != null) | $item_name] | .[]" \
+            "$workdir/items.json" > "$workdir/status-set.txt"
+          jq -r "[.[] | select(.content.__typename == \"DraftIssue\") | $item_name] | .[]" \
+            "$workdir/items.json" > "$workdir/draft-rows.txt"
+          jq -r "[.[] | select(.content.__typename == \"PullRequest\") | $item_name] | .[]" \
+            "$workdir/items.json" > "$workdir/pull-request-rows.txt"
+          jq -r "[.[] | select(.isArchived) | $item_name] | .[]" \
+            "$workdir/items.json" > "$workdir/archived-rows.txt"
+          jq -r "[.[] | select(.content.__typename == \"Issue\"
+                   and .content.state == \"CLOSED\"
+                   and (.content.stateReason == \"NOT_PLANNED\" or .content.stateReason == \"DUPLICATE\"))
+                 | $item_name] | .[]" \
+            "$workdir/items.json" > "$workdir/not-planned-rows.txt"
+          jq -r "[.[] | select(.content.__typename == \"Issue\"
+                   and (.content.author.login // \"\" | startswith(\"swift-institute-bot\")))
+                 | $item_name] | .[]" \
+            "$workdir/items.json" > "$workdir/bot-rows.txt"
+          jq -r '[.[] | select(.content.__typename == "Issue") | .content.url] | .[]' \
+            "$workdir/items.json" | sort -u > "$workdir/admitted-urls.txt"
+
+          # ── Per-org sweeps: open human issues + issue-type parity ───
+          : > "$workdir/open-issues.txt"
+          : > "$workdir/type-parity.txt"
+          for org in $(jq -r '.[]' <<< "$ORGS"); do
+            gh api graphql --paginate --slurp \
+              -f query="
+                query(\$endCursor: String) {
+                  search(type: ISSUE, first: 100, after: \$endCursor,
+                         query: \"org:${org} is:issue is:open archived:false\") {
+                    pageInfo { hasNextPage endCursor }
+                    nodes { ... on Issue { url author { login } } }
+                  }
+                }" \
+            | jq -r '[.[].data.search.nodes[]
+                      | select(.author.login // "" | startswith("swift-institute-bot") | not)
+                      | .url] | .[]' >> "$workdir/open-issues.txt"
+
+            types=$(gh api graphql \
+              -f query='
+                query($org: String!) {
+                  organization(login: $org) {
+                    issueTypes(first: 25) { nodes { name isEnabled } }
+                  }
+                }' -f org="$org" \
+              | jq -r '[.data.organization.issueTypes.nodes[] | select(.isEnabled) | .name] | sort | join(",")')
+            for required in Task Bug Feature; do
+              case ",${types}," in
+                *",${required},"*) ;;
+                *) echo "${org}: missing enabled issue type ${required}" >> "$workdir/type-parity.txt" ;;
+              esac
+            done
+            case ",${types}," in
+              *",Goal,"*)
+                if [[ "$org" != "swift-institute" ]]; then
+                  echo "${org}: Goal issue type enabled outside swift-institute" >> "$workdir/type-parity.txt"
+                fi
+                ;;
+              *)
+                if [[ "$org" == "swift-institute" ]]; then
+                  echo "${org}: Goal issue type missing" >> "$workdir/type-parity.txt"
+                fi
+                ;;
+            esac
+          done
+          sort -u "$workdir/open-issues.txt" > "$workdir/open-issues-sorted.txt"
+          comm -23 "$workdir/open-issues-sorted.txt" "$workdir/admitted-urls.txt" \
+            > "$workdir/awaiting-admission.txt"
+
+          # ── Assemble the report ─────────────────────────────────────
+          body="$workdir/body.md"
+          gap_count=0
+          {
+            echo "Report-only reconciliation of the Institute Work Project"
+            echo "invariants (#68 partitioned-authority model; reconciler per #103)."
+            echo ""
+            echo "Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo ""
+          } > "$body"
+          section() {
+            local title="$1" file="$2" note="${3:-}"
+            local count
+            count=$(wc -l < "$file" | tr -d ' ')
+            gap_count=$((gap_count + count))
+            {
+              echo "### ${title} (${count})"
+              if [[ -n "$note" ]]; then echo "${note}"; echo ""; fi
+              if [[ "$count" -gt 0 ]]; then
+                sed 's/^/- /' "$file"
+              else
+                echo "None."
+              fi
+              echo ""
+            } >> "$body"
+          }
+          section "Items without a Priority" "$workdir/missing-priority.txt"
+          section "On-Project issues without an issue type" "$workdir/missing-type.txt"
+          section "Items with the built-in Status field set" "$workdir/status-set.txt"
+          section "Draft items" "$workdir/draft-rows.txt"
+          section "Pull-request rows" "$workdir/pull-request-rows.txt"
+          section "Archived rows" "$workdir/archived-rows.txt"
+          section "Rows for issues closed as not planned or duplicate" \
+            "$workdir/not-planned-rows.txt" \
+            "Flagged for removal; the removal itself remains a judgment and is never automated."
+          section "Bot-authored issues on the Project" "$workdir/bot-rows.txt"
+          section "Issue-type parity" "$workdir/type-parity.txt"
+          section "Open issues awaiting an admission decision" \
+            "$workdir/awaiting-admission.txt" \
+            "Surfaced only; admission is a judgment no filter expresses, so nothing is auto-admitted."
+
+          echo "gap-count=${gap_count}" >> "$GITHUB_OUTPUT"
+          echo "body-file=${body}" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Project reconciler — ${gap_count} divergence(s)"
+            echo ""
+            cat "$body"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upsert divergence issue
+        if: ${{ steps.scan.outputs.gap-count != '0' && inputs.dry-run != true }}
+        uses: swift-institute/.github/.github/actions/upsert-tracking-issue@main
+        with:
+          repo: swift-institute/.github
+          title: '[Project reconciler] Institute Work Project invariant divergence'
+          title-prefix: '[Project reconciler]'
+          body-file: ${{ steps.scan.outputs.body-file }}
+          label: project-reconciler
+          gh-token: ${{ steps.token.outputs.token }}
+
+      - name: Close divergence issue when clean
+        if: ${{ steps.scan.outputs.gap-count == '0' && inputs.dry-run != true }}
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          set -euo pipefail
+          # Title-matched, never label-keyed: a minted label that was never
+          # created would silently disable this close path.
+          existing=$(gh issue list \
+            --repo swift-institute/.github \
+            --state open \
+            --search '"[Project reconciler]" in:title' \
+            --json number \
+            --jq '.[].number')
+          for n in $existing; do
+            gh issue close "$n" \
+              --repo swift-institute/.github \
+              --comment "All Institute Work Project invariants clean as of run ${GITHUB_RUN_ID}; auto-closing."
+          done
