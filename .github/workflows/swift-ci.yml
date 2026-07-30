@@ -1166,6 +1166,29 @@ jobs:
             (cd "$dir" && sha256sum -c SHA256SUMS) || ok=false
           fi
           if [ "$ok" = "true" ]; then
+            # Immutable-identity check (#43 item 4). The `ci-binaries` tag is
+            # mutable and SHA256SUMS travels with the binaries it attests, so
+            # self-consistency alone names no identity: the whole set can move
+            # together. Require the manifest to record the engine commit the
+            # binaries were built from and require it to match the engine's
+            # current main HEAD — the same coordinate the source-build
+            # fallback pins — so the executed linter is a known commit either
+            # way. Absence or mismatch falls back closed to the pinned
+            # source build; it never installs unidentified binaries.
+            manifest_engine=$(sed -n 's/^engine=//p' "$dir/MANIFEST.txt" | head -1)
+            engine_head=$(git ls-remote https://github.com/swift-foundations/swift-linter.git main | cut -f1)
+            if [ -z "$manifest_engine" ]; then
+              echo "::warning::ci-binaries MANIFEST.txt names no engine commit; falling back to per-repo source build."
+              ok=false
+            elif [ -z "$engine_head" ]; then
+              echo "::warning::could not resolve the engine main HEAD to compare identities; falling back to per-repo source build."
+              ok=false
+            elif [ "$manifest_engine" != "$engine_head" ]; then
+              echo "::warning::ci-binaries manifest engine ${manifest_engine} does not match engine main HEAD ${engine_head} (stale or moved release); falling back to per-repo source build."
+              ok=false
+            fi
+          fi
+          if [ "$ok" = "true" ]; then
             install -m 0755 "$dir/swift-linter" /usr/local/bin/swift-linter
             install -m 0755 "$dir/swift-linter-runner" /usr/local/bin/swift-linter-runner
             echo "Prebuilt binaries installed. Build manifest:"

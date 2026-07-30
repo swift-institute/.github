@@ -98,6 +98,16 @@ jobs:
           set -euo pipefail
           python3 .github/scripts/tests/test-ci-ok-aggregate.py 2>&1 | tee /tmp/ci-ok-controls.txt
 
+      # The prebuilt-linter identity gate (#43 item 4) is likewise embedded
+      # shell: these controls extract the shipped download step and prove it
+      # falls back closed when the fetched manifest omits or mismatches the
+      # engine identity.
+      - name: Run ci-binaries identity controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/tests/test-ci-binaries-identity.py 2>&1 | tee /tmp/ci-binaries-controls.txt
+
       # The branch-pin guard's contract surface (baseline suppression, the
       # exit code the swift-ci fast-check keys on, --orgs-file resolution)
       # is not reachable through run.sh's repo-shaped fixtures.
