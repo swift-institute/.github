@@ -78,6 +78,8 @@ validator_for() {
             echo "$SCRIPTS_DIR/validate-manifest-binding.py" ;;
         pkg-dep-008)
             echo "$SCRIPTS_DIR/validate-package-identity.py" ;;
+        branch-pin-001)
+            echo "$SCRIPTS_DIR/validate-branch-pins.py" ;;
         arch-layer-012)
             echo "$SCRIPTS_DIR/validate-test-target-layers.py" ;;
         prim-name-001|pkg-name-014|mod-023|pkg-name-017)
@@ -144,6 +146,7 @@ prefix_for() {
         ci-105)          echo "CI-105" ;;
         ci-manifest-binding) echo "CI-MANIFEST-BINDING" ;;
         pkg-dep-008)     echo "PKG-DEP-008" ;;
+        branch-pin-001)  echo "BRANCH-PIN-001" ;;
         arch-layer-012)  echo "ARCH-LAYER-012" ;;
         prim-name-001)   echo "PRIM-NAME-001" ;;
         pkg-name-014)    echo "PKG-NAME-014" ;;

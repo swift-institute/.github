@@ -1,0 +1,266 @@
+# validate-branch-pins.yml — sweep Institute manifests for branch-pinned
+# Institute dependencies ([BRANCH-PIN-001], #75).
+#
+# Reusable workflow. For the given `org` (or single `repo`, or the whole
+# fleet when neither is set on a dispatch), enumerates non-archived repos,
+# clones each (shallow), and runs
+# `.github/scripts/validate-branch-pins.py` over the root manifests.
+#
+# The detector is a comment-stripped TEXT scan of Package.swift /
+# Package@swift-*.swift — deliberately not `swift package dump-package`,
+# whose toolchain floor is the trap that produced #61's 81% not-scanned.
+# No Swift toolchain is installed here; the leg runs on ubuntu-latest.
+#
+# Findings classes:
+#   BRANCH-PIN-001      — branch-pinned Institute dependency outside the
+#                         baseline; fails the leg.
+#   BRANCH-PIN-BASELINE — baselined declaration (burn-down ledger
+#                         .github/scripts/.branch-pin-baseline); reported
+#                         for enumeration, never fails.
+# Sentinel gates from day one (the 962ce46/3e04abb lessons applied at
+# birth): clone-failed and validator-crashed rows fail the leg, counts
+# echo to stdout, and per-target reasons print to the job log — a target
+# the validator never saw must not be reportable as clean.
+#
+# Pattern mirrors validate-package-structure.yml. Authentication uses the
+# swift-institute-bot GitHub App.
+
+name: validate-branch-pins
+
+on:
+  workflow_call:
+    inputs:
+      repo:
+        description: 'Owner/name of a single repo to scan.'
+        type: string
+        required: false
+        default: ''
+      org:
+        description: 'Org to sweep (ignored if repo is set).'
+        type: string
+        required: false
+        default: ''
+      dry-run:
+        description: 'Run checks but always exit green (report only).'
+        type: boolean
+        required: false
+        default: false
+      visibility:
+        description: 'Filter targets by visibility (public | private | internal | all).'
+        type: string
+        required: false
+        default: 'public'
+    outputs:
+      repos-scanned:
+        description: 'Number of repos scanned.'
+        value: ${{ jobs.scan.outputs.repos-scanned }}
+      repos-with-violations:
+        description: 'Number of repos with at least one non-baselined violation.'
+        value: ${{ jobs.scan.outputs.repos-with-violations }}
+      total-violations:
+        description: 'Total non-baselined violations across all repos.'
+        value: ${{ jobs.scan.outputs.total-violations }}
+
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: 'Owner/name of a single repo (optional).'
+        type: string
+        required: false
+      org:
+        description: 'Org to sweep (optional; ignored if repo is set; both empty sweeps every active org).'
+        type: string
+        required: false
+      dry-run:
+        description: 'Run checks but always exit green (report only).'
+        type: boolean
+        required: false
+        default: false
+      visibility:
+        description: 'Filter targets by visibility (public | private | internal | all).'
+        type: string
+        required: false
+        default: 'public'
+
+jobs:
+  scan:
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      repos-scanned: ${{ steps.aggregate.outputs.repos-scanned }}
+      repos-with-violations: ${{ steps.aggregate.outputs.repos-with-violations }}
+      total-violations: ${{ steps.aggregate.outputs.total-violations }}
+    steps:
+      - name: Harden runner (audit-mode egress logging)
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Mint installation token (swift-institute-bot)
+        id: mint-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
+        with:
+          client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: ${{ inputs.org || github.repository_owner }}
+
+      - name: Checkout swift-institute/.github (validator script, orgs manifest, baseline)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: swift-institute/.github
+          path: .github-shared
+          ref: main
+
+      # Whole-fleet enumeration (dispatch with no repo and no org) reads
+      # the canonical read-orgs manifest rather than a second inline copy.
+      - name: Read Institute orgs
+        id: orgs
+        uses: swift-institute/.github/.github/actions/read-orgs@main
+
+      - name: Resolve target repos
+        id: targets
+        env:
+          GH_TOKEN: ${{ steps.mint-token.outputs.token }}
+          INPUT_REPO: ${{ inputs.repo }}
+          INPUT_ORG: ${{ inputs.org }}
+          INPUT_VISIBILITY: ${{ inputs.visibility }}
+          ALL_ORGS: ${{ steps.orgs.outputs.orgs }}
+        run: |
+          set -euo pipefail
+          : > /tmp/targets.txt
+          list_org() {
+            local org="$1"
+            if [ "$INPUT_VISIBILITY" = "all" ]; then
+              gh api graphql -f org="$org" -f query='
+                query($org: String!, $cursor: String) {
+                  organization(login: $org) {
+                    repositories(first: 100, after: $cursor, isArchived: false) {
+                      nodes { nameWithOwner }
+                      pageInfo { hasNextPage endCursor }
+                    }
+                  }
+                }' --paginate --jq '.data.organization.repositories.nodes[].nameWithOwner' \
+                >> /tmp/targets.txt
+            else
+              gh repo list "$org" --no-archived --limit 1000 --visibility "$INPUT_VISIBILITY" \
+                --json nameWithOwner --jq '.[].nameWithOwner' >> /tmp/targets.txt
+            fi
+          }
+          if [ -n "$INPUT_REPO" ]; then
+            echo "$INPUT_REPO" > /tmp/targets.txt
+          elif [ -n "$INPUT_ORG" ]; then
+            list_org "$INPUT_ORG"
+          else
+            for org in $(jq -r '.[]' <<< "$ALL_ORGS"); do
+              list_org "$org"
+            done
+          fi
+          n=$(wc -l < /tmp/targets.txt | tr -d ' ')
+          echo "Resolved $n target repo(s)."
+          if [ "$n" -eq 0 ]; then
+            echo "::error::Resolved 0 target repos. That is an enumeration failure, not an empty fleet."
+            exit 1
+          fi
+          echo "count=$n" >> "$GITHUB_OUTPUT"
+
+      - name: Run branch-pin checks
+        id: check
+        env:
+          GH_TOKEN: ${{ steps.mint-token.outputs.token }}
+          VALIDATOR_SCRIPT: ${{ github.workspace }}/.github-shared/.github/scripts/validate-branch-pins.py
+          ORGS_FILE: ${{ github.workspace }}/.github-shared/.github/actions/read-orgs/orgs.yaml
+          BASELINE_FILE: ${{ github.workspace }}/.github-shared/.github/scripts/.branch-pin-baseline
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/findings
+          : > /tmp/findings/all.tsv
+
+          while IFS= read -r repo; do
+            [ -z "$repo" ] && continue
+
+            workdir=$(mktemp -d)
+            (
+              cd "$workdir"
+              if ! gh repo clone "$repo" . -- --depth 1 --quiet 2>/dev/null; then
+                echo "$repo	clone-failed	-" >> /tmp/findings/all.tsv
+                exit 0
+              fi
+
+              if [ ! -f Package.swift ]; then
+                exit 0
+              fi
+
+              # The validator exits 1 to mean "non-baselined findings", so
+              # only rc >= 2 is a crash worth a sentinel.
+              rc=0
+              python3 "$VALIDATOR_SCRIPT" "$repo" . \
+                --orgs-file "$ORGS_FILE" --baseline "$BASELINE_FILE" \
+                >> /tmp/findings/all.tsv || rc=$?
+              if [ "$rc" -gt 1 ]; then
+                echo "$repo	validator-crashed	-" >> /tmp/findings/all.tsv
+              fi
+            )
+            rm -rf "$workdir"
+          done < /tmp/targets.txt
+
+      - name: Aggregate findings
+        id: aggregate
+        run: |
+          set -euo pipefail
+          total_repos=$(wc -l < /tmp/targets.txt | tr -d ' ')
+          violations=$(awk -F'\t' '$2 == "BRANCH-PIN-001"' /tmp/findings/all.tsv | wc -l | tr -d ' ')
+          repos_with_violations=$(awk -F'\t' '$2 == "BRANCH-PIN-001"{print $1}' /tmp/findings/all.tsv | sort -u | wc -l | tr -d ' ')
+          baselined=$(awk -F'\t' '$2 == "BRANCH-PIN-BASELINE"' /tmp/findings/all.tsv | wc -l | tr -d ' ')
+          clone_failures=$(awk -F'\t' '$2 == "clone-failed"' /tmp/findings/all.tsv | wc -l | tr -d ' ')
+          not_scanned=$(awk -F'\t' '$2 == "validator-crashed"' /tmp/findings/all.tsv | wc -l | tr -d ' ')
+
+          echo "repos-scanned=$total_repos" >> "$GITHUB_OUTPUT"
+          echo "repos-with-violations=$repos_with_violations" >> "$GITHUB_OUTPUT"
+          echo "total-violations=$violations" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## validate-branch-pins findings"
+            echo
+            echo "Repos scanned: $total_repos"
+            echo "Non-baselined violations: $violations (in $repos_with_violations repo(s))"
+            echo "Baselined declarations (burn-down ledger): $baselined"
+            echo
+            if [ "$clone_failures" -gt 0 ] || [ "$not_scanned" -gt 0 ]; then
+              echo "> [!CAUTION]"
+              echo "> ${clone_failures} target(s) failed to clone and ${not_scanned} crashed the validator — those repos were NOT scanned, so the counts above are a floor, not a total. Treat this run as failed."
+              echo
+              awk -F'\t' '$2 == "clone-failed" || $2 == "validator-crashed" { printf("- %s: `%s` %s\n", $2, $1, $3) }' /tmp/findings/all.tsv
+              echo
+            fi
+            if [ "$violations" -gt 0 ] || [ "$baselined" -gt 0 ]; then
+              echo "### Declarations"
+              echo
+              echo "| Repo | Class | Declaration |"
+              echo "|---|---|---|"
+              awk -F'\t' '$2 ~ /^BRANCH-PIN-/{
+                gsub(/\|/, "\\|", $3);
+                printf("| `%s` | `%s` | %s |\n", $1, $2, $3)
+              }' /tmp/findings/all.tsv
+            fi
+          } > "$GITHUB_STEP_SUMMARY"
+          # Also to stdout — the step summary is unreachable from the run
+          # list and the API; the log is where a reader diagnoses a red leg.
+          echo "validate-branch-pins: ${violations} violation(s) in ${repos_with_violations}/${total_repos} repo(s)," \
+            "${baselined} baselined, ${clone_failures} clone failure(s), ${not_scanned} not-scanned"
+          awk -F'\t' '$2 ~ /^BRANCH-PIN-/ { printf("  %s\t%s\t%s\n", $2, $1, $3) }' /tmp/findings/all.tsv
+          if [ "$clone_failures" -gt 0 ] || [ "$not_scanned" -gt 0 ]; then
+            echo "--- targets that were NOT scanned ---"
+            awk -F'\t' '$2 == "clone-failed" || $2 == "validator-crashed" {
+              printf("  %s\t%s\t%s\n", $2, $1, substr($3, 1, 200))
+            }' /tmp/findings/all.tsv
+            echo "::error::${clone_failures} clone failure(s) and ${not_scanned} validator crash(es) —" \
+              "those targets were never scanned, so a green result here would be false."
+          fi
+
+          if { [ "$violations" -gt 0 ] || [ "$clone_failures" -gt 0 ] || [ "$not_scanned" -gt 0 ]; } \
+             && [ "${{ inputs.dry-run }}" != "true" ]; then
+            exit 1
+          fi

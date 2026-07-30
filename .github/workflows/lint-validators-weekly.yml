@@ -299,6 +299,21 @@ jobs:
       visibility: ${{ inputs.visibility || 'public' }}
     secrets: inherit
 
+  scan-branch-pins:
+    needs: config
+    strategy:
+      fail-fast: false
+      matrix:
+        org: ${{ fromJSON(needs.config.outputs.orgs) }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/validate-branch-pins.yml
+    with:
+      org: ${{ matrix.org }}
+      dry-run: ${{ inputs.dry-run || false }}
+      visibility: ${{ inputs.visibility || 'public' }}
+    secrets: inherit
+
   # Phase D Wave B (2026-05-15): 6 single-target validators dispatched
   # per (org, repo) pair. Each takes `repo:` input (vs. existing 4 which
   # take `org:`). matrix.target is {org, repo} object from
@@ -400,7 +415,8 @@ jobs:
       - scan-readme
       - scan-diagnostic-format
       - scan-layer-deps
-    if: always() && (needs.scan-thin-callers.result != 'skipped' || needs.scan-file-naming.result != 'skipped' || needs.scan-github-metadata.result != 'skipped' || needs.scan-package-structure.result != 'skipped' || needs.scan-docc-structure.result != 'skipped' || needs.scan-package-shape.result != 'skipped' || needs.scan-platform-architecture.result != 'skipped' || needs.scan-readme.result != 'skipped' || needs.scan-diagnostic-format.result != 'skipped' || needs.scan-layer-deps.result != 'skipped')
+      - scan-branch-pins
+    if: always() && (needs.scan-thin-callers.result != 'skipped' || needs.scan-file-naming.result != 'skipped' || needs.scan-github-metadata.result != 'skipped' || needs.scan-package-structure.result != 'skipped' || needs.scan-docc-structure.result != 'skipped' || needs.scan-package-shape.result != 'skipped' || needs.scan-platform-architecture.result != 'skipped' || needs.scan-readme.result != 'skipped' || needs.scan-diagnostic-format.result != 'skipped' || needs.scan-layer-deps.result != 'skipped' || needs.scan-branch-pins.result != 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -473,6 +489,7 @@ jobs:
           RESULT_README: ${{ needs.scan-readme.result }}
           RESULT_DIAGNOSTIC_FORMAT: ${{ needs.scan-diagnostic-format.result }}
           RESULT_LAYER_DEPS: ${{ needs.scan-layer-deps.result }}
+          RESULT_BRANCH_PINS: ${{ needs.scan-branch-pins.result }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         shell: bash
         run: |
@@ -494,7 +511,8 @@ jobs:
                       "github-metadata:$RESULT_GITHUB_METADATA" "package-structure:$RESULT_PACKAGE_STRUCTURE" \
                       "docc-structure:$RESULT_DOCC_STRUCTURE" "package-shape:$RESULT_PACKAGE_SHAPE" \
                       "platform-architecture:$RESULT_PLATFORM_ARCHITECTURE" "readme:$RESULT_README" \
-                      "diagnostic-format:$RESULT_DIAGNOSTIC_FORMAT" "layer-deps:$RESULT_LAYER_DEPS"; do
+                      "diagnostic-format:$RESULT_DIAGNOSTIC_FORMAT" "layer-deps:$RESULT_LAYER_DEPS" \
+                      "branch-pins:$RESULT_BRANCH_PINS"; do
             name="${pair%%:*}"; r="${pair#*:}"
             case "$r" in
               success) ;;
@@ -507,7 +525,7 @@ jobs:
           fi
 
           if [[ "$ALL_CLEAN" == "true" ]]; then
-            echo "All 10 scan jobs converged cleanly (success/skipped) — no tracking issue needed."
+            echo "All 11 scan jobs converged cleanly (success/skipped) — no tracking issue needed."
             echo "FILE_ISSUE=false" >> "$GITHUB_ENV"
             echo "CLEAN_RUN=true" >> "$GITHUB_ENV"
             exit 0
@@ -535,6 +553,10 @@ jobs:
 
           ### validate-package-structure ([PACKAGE-STRUCTURE])
           Job status: \`${RESULT_PACKAGE_STRUCTURE}\`. Per-org breakdown in run summary.
+
+          ### validate-branch-pins ([BRANCH-PIN-001], #75)
+          Job status: \`${RESULT_BRANCH_PINS}\`. Per-org breakdown in run summary;
+          baselined declarations are the burn-down ledger, not violations.
 
           ## Per-validator coverage (cross-org single-target, Phase D Wave B)
 
@@ -573,7 +595,7 @@ jobs:
           - For each finding, either fix the consumer repo to conform or amend
             the rule via /promote-rule.
           - This issue is updated in place by the next weekly run; auto-closed
-            when all 10 validators report 0 violations across their respective coverage.
+            when all 11 validators report 0 violations across their respective coverage.
 
           *Idempotent: this issue is updated in place.*
           EOF
@@ -732,6 +754,6 @@ jobs:
           for n in $existing; do
             gh issue close "$n" \
               --repo swift-institute/.github \
-              --comment "All 10 validators clean as of run ${{ github.run_id }}; auto-closing."
+              --comment "All 11 validators clean as of run ${{ github.run_id }}; auto-closing."
             echo "closed #${n}"
           done

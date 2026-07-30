@@ -31,6 +31,7 @@ on:
     paths:
       - '.github/scripts/validate-*.py'
       - '.github/scripts/validate_lib.py'
+      - '.github/scripts/.branch-pin-baseline'
       - '.github/scripts/tests/**'
       - '.github/workflows/lint-validator-fixtures.yml'
       # test-ci-ok-aggregate.py extracts its control-plane shell subjects from
@@ -40,6 +41,7 @@ on:
     paths:
       - '.github/scripts/validate-*.py'
       - '.github/scripts/validate_lib.py'
+      - '.github/scripts/.branch-pin-baseline'
       - '.github/scripts/tests/**'
       - '.github/workflows/lint-validator-fixtures.yml'
       # test-ci-ok-aggregate.py extracts its control-plane shell subjects from
@@ -96,6 +98,55 @@ jobs:
           set -euo pipefail
           python3 .github/scripts/tests/test-ci-ok-aggregate.py 2>&1 | tee /tmp/ci-ok-controls.txt
 
+      # The branch-pin guard's contract surface (baseline suppression, the
+      # exit code the swift-ci fast-check keys on, --orgs-file resolution)
+      # is not reachable through run.sh's repo-shaped fixtures.
+      - name: Run branch-pin baseline controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/tests/test-validate-branch-pins.py 2>&1 | tee /tmp/branch-pin-controls.txt
+
+      # The branch-pin baseline is a shrink-only ratchet: entries may be
+      # pruned as repointings land, never added — a new branch pin is a
+      # regression the guard exists to reject, not baseline material. An
+      # absent prior version (initial seeding) and an unresolvable base
+      # (schedule/dispatch on a shallow clone) are allowed through with a
+      # notice; growth against a resolvable base fails.
+      - name: Branch-pin baseline is shrink-only
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          file=.github/scripts/.branch-pin-baseline
+          count() { { grep -v '^[[:space:]]*#' | grep -c -v '^[[:space:]]*$'; } || true; }
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            git fetch --quiet --depth 1 origin "$BASE_REF"
+            base="origin/${BASE_REF}"
+          else
+            git fetch --quiet --deepen 1 origin || true
+            base="HEAD^"
+          fi
+          if ! git rev-parse --verify --quiet "$base" > /dev/null; then
+            echo "::notice::No resolvable base revision for the shrink-only check on event ${EVENT_NAME}; skipping."
+            exit 0
+          fi
+          new=0
+          if [ -f "$file" ]; then new=$(count < "$file"); fi
+          if old_content=$(git show "${base}:${file}" 2>/dev/null); then
+            old=$(printf '%s\n' "$old_content" | count)
+          else
+            echo "::notice::${file} absent at ${base} (initial seeding); shrink-only enforcement starts at the next change."
+            exit 0
+          fi
+          echo "branch-pin baseline entries: ${old} at base, ${new} now"
+          if [ "$new" -gt "$old" ]; then
+            echo "::error::${file} grew from ${old} to ${new} entries. The baseline is shrink-only: a new branch-pinned Institute dependency is a regression the guard must reject, not a baseline addition."
+            exit 1
+          fi
+
       - name: Step summary
         if: always()
         shell: bash
@@ -114,5 +165,11 @@ jobs:
             echo
             echo '```'
             tail -n 30 /tmp/ci-ok-controls.txt 2>/dev/null || echo "(controls produced no output)"
+            echo '```'
+            echo
+            echo "### Branch-pin baseline controls"
+            echo
+            echo '```'
+            tail -n 15 /tmp/branch-pin-controls.txt 2>/dev/null || echo "(controls produced no output)"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
