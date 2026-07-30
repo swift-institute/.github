@@ -1,0 +1,188 @@
+# pin-advance.yml — deliberate advancement watcher for pinned action refs
+# (#43 item 6).
+#
+# Items 1-2 of the deterministic-runtime plan pinned every third-party
+# and intra-Institute action ref to a commit sha. A pin with no
+# advancement process rots into a different failure mode, so this
+# watcher resolves, weekly, the current target behind every pinned ref
+# in this repository's workflows and composite actions:
+#
+#   - third-party pins: the repository's latest release tag, dereferenced
+#     to its commit — trailing when it differs from the pinned sha;
+#   - intra-Institute pins (swift-institute/.github/.github/actions/*):
+#     trailing only when the pinned ACTION DIRECTORY's content differs at
+#     main — a hub commit that does not touch the action is not drift.
+#
+# Reporting: one tracking issue via upsert-tracking-issue, found by
+# TITLE match (never by label), closed when a run finds every pin
+# current. Advancement itself is a reviewed human edit of the pin lines
+# — no auto-merge, per the plan.
+#
+# Why an issue and not the PR the plan sketched: modifying
+# .github/workflows/* requires the `workflows` App permission, which the
+# swift-institute-bot installation has not been granted (and GITHUB_TOKEN
+# can never carry it), so a bot-pushed pin-bump branch is rejected at
+# push. The issue carries the exact replacement lines instead; flip this
+# to a PR if that permission is ever granted.
+#
+# Positive control: a run that discovers zero pinned refs is an
+# enumeration failure and fails, so a broken scanner cannot report a
+# fleet of current pins.
+
+name: pin-advance
+
+permissions: {}
+
+on:
+  schedule:
+    - cron: '30 6 * * 1'   # weekly Monday 06:30 UTC, clear of the metadata cron
+  workflow_dispatch: {}
+
+concurrency:
+  group: pin-advance
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Harden runner (audit-mode egress logging)
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout (full history — intra-Institute drift diffs old shas)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Mint installation token (issues:write at swift-institute/.github)
+        id: token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
+        with:
+          client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: swift-institute
+          repositories: .github
+          permission-issues: write
+
+      - name: Resolve every pinned ref against its current target
+        id: scan
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          set -euo pipefail
+          workdir="${RUNNER_TEMP}/pin-advance"
+          mkdir -p "$workdir"
+
+          { grep -rhoE 'uses:[[:space:]]*[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(/[^@[:space:]]+)?@[0-9a-f]{40}' \
+              .github/workflows .github/actions || true; } \
+            | sed 's/uses:[[:space:]]*//' | sort -u > "$workdir/pins.txt"
+          pin_count=$(wc -l < "$workdir/pins.txt" | tr -d ' ')
+          echo "Discovered ${pin_count} distinct pinned ref(s)."
+          if [ "$pin_count" -eq 0 ]; then
+            echo "::error::Discovered 0 pinned refs. That is a scanner failure, not a pin-free corpus."
+            exit 1
+          fi
+
+          : > "$workdir/trailing.md"
+          : > "$workdir/current.md"
+          resolve_failures=0
+          while IFS= read -r pin; do
+            ref="${pin%@*}"
+            sha="${pin##*@}"
+            owner_repo=$(echo "$ref" | cut -d/ -f1-2)
+            if [ "$owner_repo" = "swift-institute/.github" ]; then
+              action_dir=${ref#swift-institute/.github/}
+              if git diff --quiet "$sha" HEAD -- "$action_dir"; then
+                echo "- \`${ref}@${sha:0:7}\` — action content unchanged at main" >> "$workdir/current.md"
+              else
+                head_sha=$(git rev-parse HEAD)
+                echo "- \`${ref}\`: pinned \`${sha:0:7}\`, but the action directory changed on main — advance to \`${head_sha}\`" >> "$workdir/trailing.md"
+              fi
+              continue
+            fi
+            latest_tag=$(gh api "repos/${owner_repo}/releases/latest" --jq .tag_name 2>/dev/null) \
+              || latest_tag=$(gh api "repos/${owner_repo}/tags?per_page=1" --jq '.[0].name' 2>/dev/null) \
+              || latest_tag=""
+            if [ -z "$latest_tag" ]; then
+              echo "- \`${ref}\`: could not resolve a latest release or tag" >> "$workdir/trailing.md"
+              resolve_failures=$((resolve_failures + 1))
+              continue
+            fi
+            tag_sha=$(gh api "repos/${owner_repo}/git/ref/tags/${latest_tag}" --jq .object.sha 2>/dev/null || echo "")
+            tag_type=$(gh api "repos/${owner_repo}/git/ref/tags/${latest_tag}" --jq .object.type 2>/dev/null || echo "")
+            if [ "$tag_type" = "tag" ] && [ -n "$tag_sha" ]; then
+              tag_sha=$(gh api "repos/${owner_repo}/git/tags/${tag_sha}" --jq .object.sha 2>/dev/null || echo "")
+            fi
+            if [ -z "$tag_sha" ]; then
+              echo "- \`${ref}\`: could not dereference tag \`${latest_tag}\`" >> "$workdir/trailing.md"
+              resolve_failures=$((resolve_failures + 1))
+              continue
+            fi
+            if [ "$tag_sha" = "$sha" ]; then
+              echo "- \`${ref}@${sha:0:7}\` — current (${latest_tag})" >> "$workdir/current.md"
+            else
+              echo "- \`${ref}\`: pinned \`${sha:0:7}\`, latest is \`${latest_tag}\` — replacement: \`${ref}@${tag_sha} # ${latest_tag}\`" >> "$workdir/trailing.md"
+            fi
+          done < "$workdir/pins.txt"
+
+          trailing=$(wc -l < "$workdir/trailing.md" | tr -d ' ')
+          echo "trailing=${trailing}" >> "$GITHUB_OUTPUT"
+          echo "workdir=${workdir}" >> "$GITHUB_OUTPUT"
+
+          body="$workdir/body.md"
+          {
+            echo "Weekly resolution of every pinned action ref against its current"
+            echo "target (#43 item 6). Advancement is a reviewed edit of the pin"
+            echo "lines below — this watcher never rewrites workflows (the App has"
+            echo "no \`workflows\` permission, so a bot-pushed pin bump is"
+            echo "structurally unavailable; see the workflow header)."
+            echo ""
+            echo "Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo ""
+            echo "### Trailing pins (${trailing})"
+            echo ""
+            if [ "$trailing" -gt 0 ]; then cat "$workdir/trailing.md"; else echo "None."; fi
+            echo ""
+            echo "<details><summary>Current pins</summary>"
+            echo ""
+            cat "$workdir/current.md"
+            echo ""
+            echo "</details>"
+          } > "$body"
+          {
+            echo "## pin-advance — ${trailing} trailing pin(s) of ${pin_count}"
+            echo ""
+            cat "$body"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upsert tracking issue (trailing pins)
+        if: ${{ steps.scan.outputs.trailing != '0' }}
+        uses: swift-institute/.github/.github/actions/upsert-tracking-issue@main
+        with:
+          repo: swift-institute/.github
+          title: 'Action pins trail their targets — deliberate advancement wanted'
+          title-prefix: 'Action pins trail their targets'
+          body-file: ${{ steps.scan.outputs.workdir }}/body.md
+          gh-token: ${{ steps.token.outputs.token }}
+
+      - name: Close tracking issue when every pin is current
+        if: ${{ steps.scan.outputs.trailing == '0' }}
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          set -euo pipefail
+          number=$(gh issue list -R swift-institute/.github --state open \
+            --search '"Action pins trail their targets" in:title' \
+            --json number --jq '.[0].number // empty')
+          if [ -n "$number" ]; then
+            gh issue close "$number" -R swift-institute/.github \
+              --comment "Every pinned ref matches its current target as of run ${GITHUB_RUN_ID}; auto-closing."
+          else
+            echo "No open tracking issue; nothing to close."
+          fi
