@@ -1,15 +1,37 @@
 name: reconcile-project-invariants
 
-# Scheduled REPORT-ONLY reconciler for the Institute Work Project
-# (org swift-institute, ProjectV2 number 2) partitioned-authority
-# invariants (#68, ratified 2026-07-30; filed as #103).
+# Scheduled reconciler for the Institute Work Project (org swift-institute,
+# ProjectV2 number 2) partitioned-authority invariants (#68, ratified
+# 2026-07-30; filed as #103).
 #
 # The org is on the free plan: the Project has no auto-add/auto-archive
 # workflows and Actions has no ProjectV2 trigger, so the coordination
 # invariants of the partitioned-authority model are observable only if
 # something observes them on a schedule. This workflow observes and
-# reports; it never mutates the Project and never mutates any issue
-# beyond the lifecycle of its single divergence issue in this repository.
+# reports; per the #114 ruling (ratified 2026-07-30, comment
+# 5129159993) it also applies exactly two idempotent mutations to the
+# Project itself — everything else it finds remains report-only, and it
+# never mutates any issue beyond the lifecycle of its single divergence
+# issue in this repository.
+#
+# The two ratified mutations (#116):
+#   (a) set Priority = Normal on any Project row whose Priority is unset
+#       — the ratified admission default applied mechanically, not a
+#       judgment. Closes the known residue of the one adopted built-in
+#       workflow (auto-add sub-issues), whose rows always arrive with
+#       Priority unset.
+#   (b) clear the built-in Status field on any row where it is set —
+#       mechanical enforcement of the keep-Status-unset invariant.
+# Not-planned row detection and removal stay report-only per the same
+# ruling: a mistaken not-planned closure would silently lose programme
+# history, so removal remains a coordinator judgment.
+#
+# Both mutations are idempotent (setting Normal on an already-Normal row,
+# or clearing an already-unset Status, is a no-op) and are listed in the
+# divergence report under their own section rather than folded into the
+# gap count — a row this run just fixed is not a lingering divergence.
+# `dry-run` (validation dispatches) skips both mutations as well as the
+# issue lifecycle, so a validation run never writes to the live Project.
 #
 # Invariants checked each run:
 #   - every Project item has a Priority; every on-Project issue has an
@@ -40,7 +62,10 @@ name: reconcile-project-invariants
 #
 # Quota discipline: the REST/GraphQL budget is shared. One paginated
 # Project read, one paginated issue search per org, one issue-type read
-# per org; no polling, no per-item requests; runs are idempotent.
+# per org, one field-metadata read; no polling. The two ratified
+# mutations are necessarily per-item (a Project field-value write has no
+# batch form), bounded to the rows actually missing Priority or carrying
+# a set Status, and idempotent.
 #
 # Known scope limits, recorded rather than silently assumed away:
 #   - the minted App token is the swift-institute org installation, so
@@ -65,7 +90,9 @@ on:
       dry-run:
         description: >
           Report to the run summary only; do not create, update, or
-          close the divergence issue. Validation dispatches use this.
+          close the divergence issue, and do not apply the Priority or
+          Status mutations to the Project. Validation dispatches use
+          this.
         type: boolean
         default: false
 
@@ -92,22 +119,25 @@ jobs:
         id: orgs
         uses: swift-institute/.github/.github/actions/read-orgs@main
 
-      # organization-projects: the ProjectV2 read. issues: divergence-issue
-      # lifecycle plus issue content on items. pull-requests: item content
-      # casts (a PR row is itself a reported divergence, but reading it must
-      # not be denied). organization-administration read: a probe of whether
-      # the org-settings read covers the home org's issueTypes list — the
+      # organization-projects: write, per #116 — the ratified Priority and
+      # Status mutations write Project-owned fields (field-value writes are
+      # gated on the Projects permission; there is no separate item-mutate
+      # scope). issues: divergence-issue lifecycle plus issue content on
+      # items. pull-requests: item content casts (a PR row is itself a
+      # reported divergence, but reading it must not be denied).
+      # organization-administration read: a probe of whether the
+      # org-settings read covers the home org's issueTypes list — the
       # dedicated Issue Types org permission is not in the App's granted
       # set, so it cannot be requested here. metadata is implied by any
       # grant; named for clarity.
-      - name: Mint installation token (project read, issue write)
+      - name: Mint installation token (project read/write, issue write)
         id: token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
         with:
           client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
           private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
           owner: swift-institute
-          permission-organization-projects: read
+          permission-organization-projects: write
           permission-organization-administration: read
           permission-issues: write
           permission-pull-requests: read
@@ -118,6 +148,7 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
           ORGS: ${{ steps.orgs.outputs.orgs }}
+          DRY_RUN: ${{ inputs.dry-run == true }}
         run: |
           set -euo pipefail
           workdir="${RUNNER_TEMP}/project-reconciler"
@@ -161,6 +192,7 @@ jobs:
                   items(first: 50, after: $endCursor) {
                     pageInfo { hasNextPage endCursor }
                     nodes {
+                      id
                       type
                       isArchived
                       priority: fieldValueByName(name: "Priority") {
@@ -195,10 +227,16 @@ jobs:
           item_name='(.content.url // .content.title // "unidentified item")'
           jq -r "[.[] | select(.priority == null) | $item_name] | .[]" \
             "$workdir/items.json" > "$workdir/missing-priority.txt"
+          # id-carrying form of the same selection: the mutation loop below
+          # needs the Project item id, not just the display name.
+          jq -c "[.[] | select(.priority == null) | {id, name: $item_name}] | .[]" \
+            "$workdir/items.json" > "$workdir/missing-priority.json"
           jq -r "[.[] | select(.content.__typename == \"Issue\" and .content.issueType == null) | $item_name] | .[]" \
             "$workdir/items.json" > "$workdir/missing-type.txt"
           jq -r "[.[] | select(.status != null) | $item_name] | .[]" \
             "$workdir/items.json" > "$workdir/status-set.txt"
+          jq -c "[.[] | select(.status != null) | {id, name: $item_name}] | .[]" \
+            "$workdir/items.json" > "$workdir/status-set.json"
           # Item `type` (not content __typename): it stays readable even
           # when the token cannot read the content itself.
           jq -r "[.[] | select(.type == \"DRAFT_ISSUE\") | $item_name] | .[]" \
@@ -223,6 +261,106 @@ jobs:
             "$workdir/items.json" > "$workdir/unreadable-rows.txt"
           jq -r '[.[] | select(.content.__typename == "Issue") | .content.url] | .[]' \
             "$workdir/items.json" | sort -u > "$workdir/admitted-urls.txt"
+
+          # ── Ratified mutations (#114/#116) ──────────────────────────
+          # Exactly two idempotent writes to the Project itself: set
+          # Priority = Normal on rows missing it, clear Status on rows
+          # where it is set. Everything else observed above stays
+          # report-only. dry-run (validation dispatches) skips both, so
+          # a validation run never writes to the live Project.
+          : > "$workdir/applied-priority.txt"
+          : > "$workdir/applied-status.txt"
+          if [[ "$DRY_RUN" == "true" ]]; then
+            echo "dry-run: skipping the Priority/Status mutations." >&2
+          else
+            # One field-metadata read to resolve the Project id, the
+            # Priority field id + its "Normal" option id, and the Status
+            # field id. Not paginated: a Project has a small, fixed field
+            # set, unrelated to the paginated item count above.
+            gql "$workdir/project-fields.json" -f query='
+              query {
+                organization(login: "swift-institute") {
+                  projectV2(number: 2) {
+                    id
+                    priorityField: field(name: "Priority") {
+                      ... on ProjectV2SingleSelectField { id options { id name } }
+                    }
+                    statusField: field(name: "Status") {
+                      ... on ProjectV2SingleSelectField { id }
+                    }
+                  }
+                }
+              }'
+            require_data "$workdir/project-fields.json" \
+              '.data.organization.projectV2.id != null
+               and .data.organization.projectV2.priorityField.id != null
+               and .data.organization.projectV2.statusField.id != null' \
+              "Project field metadata (Priority/Status field ids)"
+
+            project_id=$(jq -r '.data.organization.projectV2.id' "$workdir/project-fields.json")
+            priority_field_id=$(jq -r '.data.organization.projectV2.priorityField.id' "$workdir/project-fields.json")
+            status_field_id=$(jq -r '.data.organization.projectV2.statusField.id' "$workdir/project-fields.json")
+            normal_option_id=$(jq -r '.data.organization.projectV2.priorityField.options[]
+              | select(.name == "Normal") | .id' "$workdir/project-fields.json")
+            if [[ -z "$normal_option_id" || "$normal_option_id" == "null" ]]; then
+              echo "::error::Priority field has no 'Normal' option; cannot apply the ratified default. Refusing to mutate."
+              exit 1
+            fi
+
+            mutation_failures=0
+
+            # (a) Priority = Normal on every row missing it.
+            while IFS= read -r row; do
+              [ -z "$row" ] && continue
+              item_id=$(jq -r '.id' <<< "$row")
+              item_label=$(jq -r '.name' <<< "$row")
+              out="$workdir/mutate-priority-${item_id//[!A-Za-z0-9]/_}.json"
+              if gh api graphql -f query='
+                  mutation($project: ID!, $item: ID!, $field: ID!, $option: String!) {
+                    updateProjectV2ItemFieldValue(input: {
+                      projectId: $project, itemId: $item, fieldId: $field,
+                      value: { singleSelectOptionId: $option }
+                    }) { projectV2Item { id } }
+                  }' -f project="$project_id" -f item="$item_id" -f field="$priority_field_id" \
+                  -f option="$normal_option_id" > "$out" 2> "${out}.stderr" \
+                && jq -e '.data.updateProjectV2ItemFieldValue.projectV2Item.id != null' "$out" > /dev/null; then
+                echo "$item_label" >> "$workdir/applied-priority.txt"
+              else
+                echo "::error::Setting Priority=Normal failed for ${item_label}; API response/error follows"
+                cat "${out}.stderr" >&2 2>/dev/null || true
+                [ -s "$out" ] && cat "$out" >&2
+                mutation_failures=$((mutation_failures + 1))
+              fi
+            done < "$workdir/missing-priority.json"
+
+            # (b) clear Status on every row where it is set.
+            while IFS= read -r row; do
+              [ -z "$row" ] && continue
+              item_id=$(jq -r '.id' <<< "$row")
+              item_label=$(jq -r '.name' <<< "$row")
+              out="$workdir/mutate-status-${item_id//[!A-Za-z0-9]/_}.json"
+              if gh api graphql -f query='
+                  mutation($project: ID!, $item: ID!, $field: ID!) {
+                    clearProjectV2ItemFieldValue(input: {
+                      projectId: $project, itemId: $item, fieldId: $field
+                    }) { projectV2Item { id } }
+                  }' -f project="$project_id" -f item="$item_id" -f field="$status_field_id" \
+                  > "$out" 2> "${out}.stderr" \
+                && jq -e '.data.clearProjectV2ItemFieldValue.projectV2Item.id != null' "$out" > /dev/null; then
+                echo "$item_label" >> "$workdir/applied-status.txt"
+              else
+                echo "::error::Clearing Status failed for ${item_label}; API response/error follows"
+                cat "${out}.stderr" >&2 2>/dev/null || true
+                [ -s "$out" ] && cat "$out" >&2
+                mutation_failures=$((mutation_failures + 1))
+              fi
+            done < "$workdir/status-set.json"
+
+            if [[ "$mutation_failures" -gt 0 ]]; then
+              echo "::error::${mutation_failures} Project mutation(s) failed; see surfaced API errors above. Refusing to file a report against an incompletely-applied mutation set."
+              exit 1
+            fi
+          fi
 
           # ── Per-org sweeps: open human issues + issue-type parity ───
           # Collect every org failure before failing, so one red run
@@ -334,9 +472,38 @@ jobs:
               echo ""
             } >> "$body"
           }
-          section "Items without a Priority" "$workdir/missing-priority.txt"
+          # Same shape as section(), but does not add to gap_count: a row
+          # this run just mutated to the ratified value is not a lingering
+          # divergence requiring anyone's attention.
+          section_applied() {
+            local title="$1" file="$2" note="${3:-}"
+            local count
+            count=$(wc -l < "$file" | tr -d ' ')
+            {
+              echo "### ${title} (${count})"
+              if [[ -n "$note" ]]; then echo "${note}"; echo ""; fi
+              if [[ "$count" -gt 0 ]]; then
+                sed 's/^/- /' "$file"
+              else
+                echo "None."
+              fi
+              echo ""
+            } >> "$body"
+          }
+          if [[ "$DRY_RUN" == "true" ]]; then
+            # No mutation ran; report the two categories as plain
+            # divergences, same as every other report-only invariant.
+            section "Items without a Priority (dry-run: not mutated)" "$workdir/missing-priority.txt"
+            section "Items with the built-in Status field set (dry-run: not mutated)" "$workdir/status-set.txt"
+          else
+            section_applied "Priority set to Normal (mutation applied this run, #114/#116)" \
+              "$workdir/applied-priority.txt" \
+              "Idempotent: rows missing Priority are set to the ratified admission default. Not a lingering divergence."
+            section_applied "Status cleared (mutation applied this run, #114/#116)" \
+              "$workdir/applied-status.txt" \
+              "Idempotent: the built-in Status field is cleared wherever set, enforcing the keep-Status-unset invariant. Not a lingering divergence."
+          fi
           section "On-Project issues without an issue type" "$workdir/missing-type.txt"
-          section "Items with the built-in Status field set" "$workdir/status-set.txt"
           section "Draft items" "$workdir/draft-rows.txt"
           section "Pull-request rows" "$workdir/pull-request-rows.txt"
           section "Archived rows" "$workdir/archived-rows.txt"
