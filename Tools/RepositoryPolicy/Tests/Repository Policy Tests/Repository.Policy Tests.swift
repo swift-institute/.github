@@ -450,6 +450,91 @@ struct RepositoryPolicyTests {
         }
     }
 
+    // MARK: - REPO-DOCS-001 (SPI publish gate over placeholder DocC catalogues)
+
+    // Positive: `.spi.yml` at the root plus a `.docc` markdown file that still
+    // carries the umbrella placeholder marker produces exactly one
+    // REPO-DOCS-001 advisory, and the advisory channel does not fail `passed`.
+    @Test
+    func docsPlaceholderAdvisoryFiresWhenSPIYMLPublishesAMarkedCatalogue() throws {
+        let root = try repositoryFixture(
+            files: [
+                ".spi.yml": "version: 1\n",
+                "Sources/Example/Example.docc/Example.md": """
+                    # ``Example``
+
+                    This is the umbrella catalog placeholder. Replace this line with a one-sentence \
+                    summary of the module.
+                    """,
+            ]
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let report = try RepositoryPolicy.validateSurface(
+            repository: "swift-foundations/swift-example",
+            repositoryClass: .package,
+            root: root,
+            policy: .init(schemaVersion: 1, actionGrants: [], exemptions: [])
+        )
+
+        #expect(report.advisories.map(\.identifier) == ["REPO-DOCS-001"])
+        #expect(report.advisories.first?.path == "Sources/Example/Example.docc/Example.md")
+        #expect(report.passed)
+    }
+
+    // Negative: `.spi.yml` present, but the catalogue has been completed (the
+    // marker is gone) — no advisory.
+    @Test
+    func docsPlaceholderAdvisoryIsSilentOnACompletedCatalogue() throws {
+        let root = try repositoryFixture(
+            files: [
+                ".spi.yml": "version: 1\n",
+                "Sources/Example/Example.docc/Example.md": """
+                    # ``Example``
+
+                    Example provides a typed configuration surface for the repository policy tool.
+                    """,
+            ]
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let report = try RepositoryPolicy.validateSurface(
+            repository: "swift-foundations/swift-example",
+            repositoryClass: .package,
+            root: root,
+            policy: .init(schemaVersion: 1, actionGrants: [], exemptions: [])
+        )
+
+        #expect(report.advisories.isEmpty)
+    }
+
+    // Edge/fail-closed: a marked catalogue with no `.spi.yml` at the root is
+    // not publication-gated — no advisory. The gate is about publication,
+    // not about placeholders in general.
+    @Test
+    func docsPlaceholderAdvisoryIsSilentWithoutSPIYML() throws {
+        let root = try repositoryFixture(
+            files: [
+                "Sources/Example/Example.docc/Example.md": """
+                    # ``Example``
+
+                    This is the umbrella catalog placeholder. Replace this line with a one-sentence \
+                    summary of the module.
+                    """
+            ]
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let report = try RepositoryPolicy.validateSurface(
+            repository: "swift-foundations/swift-example",
+            repositoryClass: .package,
+            root: root,
+            policy: .init(schemaVersion: 1, actionGrants: [], exemptions: [])
+        )
+
+        #expect(report.advisories.isEmpty)
+    }
+
     private func repositoryFixture(files: [String: String]) throws -> URL {
         let root =
             FileManager.default.temporaryDirectory

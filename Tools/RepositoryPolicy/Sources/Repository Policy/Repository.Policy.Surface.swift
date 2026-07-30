@@ -169,6 +169,7 @@ extension RepositoryPolicy {
         public let issueFormFiles: Int
         public let exemptionsApplied: Int
         public let violations: [SurfaceViolation]
+        public let advisories: [SurfaceViolation]
 
         public var passed: Bool { violations.isEmpty }
     }
@@ -317,6 +318,22 @@ extension RepositoryPolicy {
             }
         }
 
+        var advisories = [SurfaceViolation]()
+
+        if snapshot.hasSPIYML {
+            for file in snapshot.doccMarkdownFiles
+            where file.contents.contains(doccPlaceholderMarker) {
+                advisories.append(
+                    .init(
+                        identifier: "REPO-DOCS-001",
+                        path: file.path,
+                        message:
+                            "DocC catalogue still carries the umbrella placeholder marker while .spi.yml publishes it to the Swift Package Index"
+                    )
+                )
+            }
+        }
+
         return .init(
             repository: repository,
             repositoryClass: repositoryClass,
@@ -327,10 +344,18 @@ extension RepositoryPolicy {
                 if $0.path != $1.path { return $0.path < $1.path }
                 if $0.identifier != $1.identifier { return $0.identifier < $1.identifier }
                 return $0.message < $1.message
+            },
+            advisories: advisories.sorted {
+                if $0.path != $1.path { return $0.path < $1.path }
+                if $0.identifier != $1.identifier { return $0.identifier < $1.identifier }
+                return $0.message < $1.message
             }
         )
     }
 }
+
+private let doccPlaceholderMarker =
+    "umbrella catalog placeholder. Replace this line with a one-sentence"
 
 private extension RepositoryPolicy.SurfacePolicy {
     func exempts(
@@ -369,9 +394,25 @@ private func normalized(path: String) -> String {
     path.split(separator: "/", omittingEmptySubsequences: true).joined(separator: "/")
 }
 
+private struct DoccMarkdownFile {
+    let path: String
+    let contents: String
+}
+
+/// `**/*.docc/**/*.md`: an `.md` file with some path component before it
+/// (anywhere, zero or more directories deep) that ends in `.docc`.
+private func isDoccMarkdownPath(_ path: String) -> Bool {
+    guard path.hasSuffix(".md") else { return false }
+    let components = path.split(separator: "/", omittingEmptySubsequences: true)
+    guard components.count >= 2 else { return false }
+    return components.dropLast().contains { $0.hasSuffix(".docc") }
+}
+
 private struct SurfaceSnapshot {
     let actions: [ActionFile]
     let issueForms: [String]
+    let hasSPIYML: Bool
+    let doccMarkdownFiles: [DoccMarkdownFile]
 
     init(root: URL) throws {
         let manager = FileManager.default
@@ -387,6 +428,8 @@ private struct SurfaceSnapshot {
 
         var actions = [ActionFile]()
         var issueForms = [String]()
+        var hasSPIYML = false
+        var doccMarkdownFiles = [DoccMarkdownFile]()
         let rootPath = root.standardizedFileURL.path
         while let url = enumerator.nextObject() as? URL {
             let values = try url.resourceValues(forKeys: [.isRegularFileKey])
@@ -395,6 +438,14 @@ private struct SurfaceSnapshot {
 
             if path.hasPrefix(".github/ISSUE_TEMPLATE/") {
                 issueForms.append(path)
+            }
+
+            if path == ".spi.yml" {
+                hasSPIYML = true
+            }
+            if isDoccMarkdownPath(path) {
+                let contents = try String(contentsOf: url, encoding: .utf8)
+                doccMarkdownFiles.append(DoccMarkdownFile(path: path, contents: contents))
             }
 
             let isWorkflow =
@@ -416,14 +467,24 @@ private struct SurfaceSnapshot {
         }
         self.actions = actions.sorted { $0.path < $1.path }
         self.issueForms = issueForms.sorted()
+        self.hasSPIYML = hasSPIYML
+        self.doccMarkdownFiles = doccMarkdownFiles.sorted { $0.path < $1.path }
     }
 
     init(files: [String: String]) throws {
         var actions = [ActionFile]()
         var issueForms = [String]()
+        var hasSPIYML = false
+        var doccMarkdownFiles = [DoccMarkdownFile]()
         for (path, source) in files {
             if path.hasPrefix(".github/ISSUE_TEMPLATE/") {
                 issueForms.append(path)
+            }
+            if path == ".spi.yml" {
+                hasSPIYML = true
+            }
+            if isDoccMarkdownPath(path) {
+                doccMarkdownFiles.append(DoccMarkdownFile(path: path, contents: source))
             }
             let isWorkflow =
                 path.hasPrefix(".github/workflows/")
@@ -443,6 +504,8 @@ private struct SurfaceSnapshot {
         }
         self.actions = actions.sorted { $0.path < $1.path }
         self.issueForms = issueForms.sorted()
+        self.hasSPIYML = hasSPIYML
+        self.doccMarkdownFiles = doccMarkdownFiles.sorted { $0.path < $1.path }
     }
 }
 
