@@ -31,6 +31,7 @@ on:
     paths:
       - '.github/scripts/validate-*.py'
       - '.github/scripts/validate_lib.py'
+      - '.github/scripts/detect-startup-failures.py'
       - '.github/scripts/.branch-pin-baseline'
       - '.github/scripts/tests/**'
       - '.github/workflows/lint-validator-fixtures.yml'
@@ -41,6 +42,7 @@ on:
     paths:
       - '.github/scripts/validate-*.py'
       - '.github/scripts/validate_lib.py'
+      - '.github/scripts/detect-startup-failures.py'
       - '.github/scripts/.branch-pin-baseline'
       - '.github/scripts/tests/**'
       - '.github/workflows/lint-validator-fixtures.yml'
@@ -119,6 +121,26 @@ jobs:
           set -euo pipefail
           python3 .github/scripts/tests/test-validate-thin-callers.py 2>&1 | tee /tmp/thin-caller-controls.txt
 
+      # The file-naming validator's diagnostic-precedence rules operate on
+      # synthetic module trees the unit suite builds itself, a surface run.sh's
+      # repo-shaped fixtures do not exercise; until 2026-07-30 this suite
+      # existed but nothing ran it.
+      - name: Run file-naming validator controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/tests/test-validate-file-naming.py 2>&1 | tee /tmp/file-naming-controls.txt
+
+      # The startup-failure probe's prove-it-can-fail controls: the detector
+      # must flag a synthetic startup_failure (function and exit code) and
+      # stay green on clean data. startup-failure-probe-weekly.yml cites this
+      # suite, but until 2026-07-30 nothing ran it.
+      - name: Run startup-failure detector controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/tests/test-detect-startup-failures.py 2>&1 | tee /tmp/startup-failure-controls.txt
+
       # The branch-pin guard's contract surface (baseline suppression, the
       # exit code the swift-ci fast-check keys on, --orgs-file resolution)
       # is not reachable through run.sh's repo-shaped fixtures.
@@ -192,5 +214,17 @@ jobs:
             echo
             echo '```'
             tail -n 15 /tmp/branch-pin-controls.txt 2>/dev/null || echo "(controls produced no output)"
+            echo '```'
+            echo
+            echo "### File-naming validator controls"
+            echo
+            echo '```'
+            tail -n 15 /tmp/file-naming-controls.txt 2>/dev/null || echo "(controls produced no output)"
+            echo '```'
+            echo
+            echo "### Startup-failure detector controls"
+            echo
+            echo '```'
+            tail -n 15 /tmp/startup-failure-controls.txt 2>/dev/null || echo "(controls produced no output)"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
