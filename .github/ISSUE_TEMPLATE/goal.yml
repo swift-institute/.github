@@ -1,0 +1,117 @@
+name: Goal
+description: Propose a durable Institute-wide observable outcome.
+type: goal
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A Goal is a durable Institute-wide observable outcome, not a specific
+        piece of work — file a Change request or Bug report instead if the
+        work is owned by one repository. Use the discussion hub for
+        open-ended exploration; file this form only once the outcome is
+        actionable. Opening this issue activates nothing: a Goal activates
+        only when its dedicated assessment, posted publicly on the issue, is
+        accepted by dated principal comment.
+
+        The four fields below are the record grammar's minimal required
+        core (kind, owner coordinate, status, grammar version). Every other
+        section renders the Goal's full structure and is not required to
+        open the issue, but a Goal without them is missing standing content
+        its accepted assessment and its children will need to reference.
+
+  # ── Minimal required core (record grammar §5) ──────────────────────
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind
+      description: The record kind this issue is. Always "Goal" for this form.
+      options:
+        - Goal
+      default: 0
+    validations:
+      required: true
+  - type: input
+    id: owner-coordinate
+    attributes:
+      label: Owner coordinate
+      description: >-
+        The exact-owner repository (owner/name) accountable for this
+        Goal's cross-repository standard, fleet closure, and final receipt.
+      placeholder: swift-institute/.github
+    validations:
+      required: true
+  - type: dropdown
+    id: status
+    attributes:
+      label: Status
+      description: >-
+        This Goal's lifecycle stage. Open/closed and close reason remain
+        the sole completion state; this field only distinguishes the
+        pre-completion stages the Activation section gates on.
+      options:
+        - Proposed
+        - Assessed
+        - Active
+    validations:
+      required: true
+  - type: input
+    id: grammar-version
+    attributes:
+      label: Grammar version
+      description: >-
+        The record-grammar version this issue conforms to. Self-describing:
+        a conforming record stays valid under the next version, or the
+        version bump ships with a filed migration sweep.
+      placeholder: "1"
+    validations:
+      required: true
+
+  # ── Full section list (rendering only, not required core) ──────────
+  - type: textarea
+    id: objective
+    attributes:
+      label: Objective
+      description: The durable, observable outcome this Goal converges the fleet on.
+  - type: textarea
+    id: owner-and-scope
+    attributes:
+      label: Owner and scope
+      description: >-
+        Who owns which part of the standard, its enforcement, and its
+        closure; what is explicitly out of scope.
+  - type: textarea
+    id: boundaries
+    attributes:
+      label: Boundaries with existing authorities
+      description: >-
+        How this Goal relates to other Goals, ratified doctrine, and
+        standing authorities it does not reopen, restate, or supersede.
+  - type: textarea
+    id: activation
+    attributes:
+      label: Activation
+      description: >-
+        What must happen (e.g. a dedicated assessment accepted by dated
+        principal comment) before this Goal's children may execute.
+  - type: textarea
+    id: gates
+    attributes:
+      label: Gates and derived constraints
+      description: >-
+        Ordering, canary, and mutation-channel constraints this Goal's
+        execution must satisfy, and the order work happens in.
+  - type: textarea
+    id: native-relationships
+    attributes:
+      label: Native relationships
+      description: >-
+        The classes of exact-owner child issues expected, linked as native
+        sub-issues at filing; any actual blocking dependencies between them.
+  - type: textarea
+    id: completion
+    attributes:
+      label: Completion
+      description: >-
+        The precise, checkable condition under which this Goal closes
+        completed, and the separate condition under which it closes not
+        planned.
