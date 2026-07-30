@@ -41,6 +41,36 @@ disabled_rules:
   - closure_parameter_position   # Conflicts with swift-format line breaking
   - opening_brace                # Conflicts with swift-format for long declarations
   - comma  # Conflicts with swift-format (@_implements attribute-argument spacing); swift-format owns comma spacing
+  # trailing_comma (ruled swift-institute/.github#135, 2026-07-30): swift-format
+  # owns collection-comma PLACEMENT exactly as it owns comma SPACING (see the
+  # `comma` entry above). The two tools use different predicates for "multiline
+  # collection literal": swift-format's is element-COUNT based
+  # (`multiElementCollectionTrailingCommas` — literally multi-ELEMENT: it adds
+  # the comma at >=2 elements and REMOVES it at exactly 1), SwiftLint's is
+  # line-SPAN based (element list spans >1 line). They differ on exactly one
+  # cell — a one-element literal whose single element itself spans several
+  # lines — where the two demands are contradictory and no setting of either
+  # tool satisfies both (`mandatory_comma: true` fails that cell;
+  # `mandatory_comma: false` fails every >=2-element literal). Nothing is lost
+  # by yielding: the gating `format` leg runs `swift-format lint --strict`,
+  # which emits `[TrailingComma] add trailing comma to the last element in
+  # multiline collection literal` and fails the build on precisely the case
+  # 57f03cc set out to enforce. Verified on swift-ietf/swift-rfc-2822@8d7f192
+  # (9 sites) with swiftlint 0.65.0 / swift-format 6.3.3.
+  - trailing_comma
+  # function_name_whitespace (ruled swift-institute/.github#135, 2026-07-30):
+  # swift-format MANUFACTURES this violation. A [TEST-005] backticked test name
+  # inside the nested `@Suite struct Test` shape can exceed lineLength on its
+  # own; swift-format then wraps BETWEEN `func` and the name, and SwiftLint
+  # reads that line break plus continuation indent as "too many spaces between
+  # 'func' and function name". The source it flags is the formatter's output,
+  # never the author's input. The rule takes `severity` only — nothing narrows
+  # it — and raising `lineLength` merely moves the threshold (a descriptive
+  # test name at sufficient nesting depth exceeds any bound). Same jurisdiction
+  # as `opening_brace` above: swift-format owns declaration wrapping. Verified
+  # on swift-ietf/swift-rfc-2822@8d7f192 (2 sites) and isolated reproduction
+  # with swiftlint 0.65.0 / swift-format 6.3.3.
+  - function_name_whitespace
   # prefer_self_in_static_references (master adjudication 2026-07-10): pulled
   # from the Tier A opt-in cohort — see the removal note at that list entry
   # below. Misfires on the institute's nested `struct Test` suite pattern
@@ -105,18 +135,6 @@ function_parameter_count:
   warning: 6
   error: 8
 
-# trailing_comma (2026-07-30): SwiftLint's default trailing_comma rule
-# forbids trailing commas, which directly contradicts the Institute's
-# checked-in .swift-format configuration (which REQUIRES trailing commas).
-# Concretely verified 2026-07-30 on swift-foundations/swift-products#1 and
-# swift-foundations/swift-sockets-ip-address#1, where fixing one tool's
-# finding creates the other's. Rather than disabling trailing_comma
-# outright (the prior state), configure it to agree with swift-format:
-# mandatory_comma requires a trailing comma on multi-line collection
-# literals/argument lists, matching swift-format's requirement instead of
-# fighting it.
-trailing_comma:
-  mandatory_comma: true
 
 # ── Custom rules ─────────────────────────────────────────────────────────────
 #
