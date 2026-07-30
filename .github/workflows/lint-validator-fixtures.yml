@@ -32,23 +32,31 @@ on:
       - '.github/scripts/validate-*.py'
       - '.github/scripts/validate_lib.py'
       - '.github/scripts/detect-startup-failures.py'
+      - '.github/scripts/check-lint-validators-weekly-parity.py'
       - '.github/scripts/.branch-pin-baseline'
       - '.github/scripts/tests/**'
       - '.github/workflows/lint-validator-fixtures.yml'
       # test-ci-ok-aggregate.py extracts its control-plane shell subjects from
       # swift-ci.yml, so an edit there is an edit to what this suite tests.
       - '.github/workflows/swift-ci.yml'
+      # check-lint-validators-weekly-parity.py parses this file's report job;
+      # an edit here is an edit to what that checker's own test asserts.
+      - '.github/workflows/lint-validators-weekly.yml'
   pull_request:
     paths:
       - '.github/scripts/validate-*.py'
       - '.github/scripts/validate_lib.py'
       - '.github/scripts/detect-startup-failures.py'
+      - '.github/scripts/check-lint-validators-weekly-parity.py'
       - '.github/scripts/.branch-pin-baseline'
       - '.github/scripts/tests/**'
       - '.github/workflows/lint-validator-fixtures.yml'
       # test-ci-ok-aggregate.py extracts its control-plane shell subjects from
       # swift-ci.yml, so an edit there is an edit to what this suite tests.
       - '.github/workflows/swift-ci.yml'
+      # check-lint-validators-weekly-parity.py parses this file's report job;
+      # an edit here is an edit to what that checker's own test asserts.
+      - '.github/workflows/lint-validators-weekly.yml'
   schedule:
     - cron: '0 7 * * 3'   # weekly Wednesday 07:00 UTC, clear of the Tuesday sweep
   workflow_dispatch: {}
@@ -150,6 +158,18 @@ jobs:
           set -euo pipefail
           python3 .github/scripts/tests/test-validate-branch-pins.py 2>&1 | tee /tmp/branch-pin-controls.txt
 
+      # #117: lint-validators-weekly.yml's report job repeats its scan-leg
+      # set across five hand-synchronized surfaces with nothing checking
+      # they stay in correspondence with the scan-* jobs actually defined
+      # in the workflow. This suite's own leg-removed positive controls
+      # prove the checker can fail; its real-workflow assertion is the
+      # fail-closed gate itself.
+      - name: Run lint-validators-weekly report-surface drift controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/tests/test-lint-validators-weekly-drift.py 2>&1 | tee /tmp/lint-validators-drift-controls.txt
+
       # The branch-pin baseline is a shrink-only ratchet: entries may be
       # pruned as repointings land, never added — a new branch pin is a
       # regression the guard exists to reject, not baseline material. An
@@ -226,5 +246,11 @@ jobs:
             echo
             echo '```'
             tail -n 15 /tmp/startup-failure-controls.txt 2>/dev/null || echo "(controls produced no output)"
+            echo '```'
+            echo
+            echo "### lint-validators-weekly report-surface drift controls"
+            echo
+            echo '```'
+            tail -n 20 /tmp/lint-validators-drift-controls.txt 2>/dev/null || echo "(controls produced no output)"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"

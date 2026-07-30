@@ -509,12 +509,20 @@ jobs:
           # validator that found nothing.
           ALL_CLEAN=true
           SKIPPED=""
+          # TOTAL_VALIDATORS derives the validator count from the pair
+          # list's own length at run time (#117) instead of a hard-coded
+          # "12" that silently goes stale the next time a scan-* leg is
+          # added here without a matching count bump elsewhere. Persisted
+          # via GITHUB_ENV so the close-when-clean step (a separate step)
+          # can read it too.
+          TOTAL_VALIDATORS=0
           for pair in "thin-callers:$RESULT_THIN_CALLERS" "file-naming:$RESULT_FILE_NAMING" \
                       "github-metadata:$RESULT_GITHUB_METADATA" "package-structure:$RESULT_PACKAGE_STRUCTURE" \
                       "docc-structure:$RESULT_DOCC_STRUCTURE" "package-shape:$RESULT_PACKAGE_SHAPE" \
                       "platform-architecture:$RESULT_PLATFORM_ARCHITECTURE" "readme:$RESULT_README" \
                       "diagnostic-format:$RESULT_DIAGNOSTIC_FORMAT" "layer-deps:$RESULT_LAYER_DEPS" \
                       "branch-pins:$RESULT_BRANCH_PINS" "gitignore:$RESULT_GITIGNORE"; do
+            TOTAL_VALIDATORS=$((TOTAL_VALIDATORS + 1))
             name="${pair%%:*}"; r="${pair#*:}"
             case "$r" in
               success) ;;
@@ -522,12 +530,13 @@ jobs:
               *) ALL_CLEAN=false ;;
             esac
           done
+          echo "TOTAL_VALIDATORS=${TOTAL_VALIDATORS}" >> "$GITHUB_ENV"
           if [ -n "$SKIPPED" ]; then
             echo "::error::These validators did NOT RUN (empty matrix or skipped job):${SKIPPED}. A validator that did not run is not a validator that found nothing."
           fi
 
           if [[ "$ALL_CLEAN" == "true" ]]; then
-            echo "All 12 scan jobs converged cleanly (success/skipped) — no tracking issue needed."
+            echo "All ${TOTAL_VALIDATORS} scan jobs converged cleanly (success/skipped) — no tracking issue needed."
             echo "FILE_ISSUE=false" >> "$GITHUB_ENV"
             echo "CLEAN_RUN=true" >> "$GITHUB_ENV"
             exit 0
@@ -600,7 +609,7 @@ jobs:
           - For each finding, either fix the consumer repo to conform or amend
             the rule via /promote-rule.
           - This issue is updated in place by the next weekly run; auto-closed
-            when all 12 validators report 0 violations across their respective coverage.
+            when all ${TOTAL_VALIDATORS} validators report 0 violations across their respective coverage.
 
           *Idempotent: this issue is updated in place.*
           EOF
@@ -743,6 +752,9 @@ jobs:
         if: ${{ env.CLEAN_RUN == 'true' && inputs.dry-run != true }}
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
+          # Set by the "Build issue body" step via GITHUB_ENV; carries the
+          # run-time-derived validator count (#117) into this later step.
+          TOTAL_VALIDATORS: ${{ env.TOTAL_VALIDATORS }}
         shell: bash
         run: |
           set -euo pipefail
@@ -759,6 +771,6 @@ jobs:
           for n in $existing; do
             gh issue close "$n" \
               --repo swift-institute/.github \
-              --comment "All 12 validators clean as of run ${{ github.run_id }}; auto-closing."
+              --comment "All ${TOTAL_VALIDATORS} validators clean as of run ${{ github.run_id }}; auto-closing."
             echo "closed #${n}"
           done
