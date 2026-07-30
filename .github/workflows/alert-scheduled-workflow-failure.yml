@@ -72,7 +72,7 @@ on:
     workflows:
       - ci-sweep
       - clean-room-resolve
-      - ecosystem-coherence
+      # - ecosystem-coherence   # paired with the temporarily-disabled schedule in ecosystem-coherence.yml (coordinator, 2026-07-30, #125 calibration gate); restore both together
       - link-check-weekly
       - lint-license-header-weekly
       - lint-mechanical-hygiene-weekly
