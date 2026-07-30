@@ -7,7 +7,16 @@ name: activation-baseline-sweep
 permissions: {}
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      cohort:
+        description: "Bounded evidence cohort"
+        type: choice
+        required: true
+        default: all
+        options:
+          - smoke
+          - all
 
 env:
   ACTIVATION_RECEIPT_DIGEST: 89924760b9b292ea2d18118c4c9d99af20e218a59b8538ef420bd6e0712f1483
@@ -18,6 +27,8 @@ jobs:
   measure:
     name: Measure activation baseline
     if: ${{ !github.event.repository.private }}
+    outputs:
+      receipt-sha: ${{ steps.measure.outputs.receipt-sha }}
     runs-on: ubuntu-latest
     timeout-minutes: 360
     permissions:
@@ -53,10 +64,12 @@ jobs:
           cp "$work/MANIFEST.txt" "$RUNNER_TEMP/activation-runner-manifest.txt"
           echo "ACTIVATION_MANIFEST=$RUNNER_TEMP/activation-runner-manifest.txt" >> "$GITHUB_ENV"
 
-      - name: Measure every Workspace package root
+      - name: Measure Workspace package roots
+        id: measure
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          COHORT: ${{ inputs.cohort }}
         run: |
           set -euo pipefail
           workspace="$RUNNER_TEMP/workspace"
@@ -64,13 +77,22 @@ jobs:
           workspace_sha="$(git -C "$workspace" rev-parse HEAD)"
           inventory="$workspace/Workspace.json"
           jq --exit-status 'type == "object" and (.repositories | type == "array" and length > 0)' "$inventory" >/dev/null
+          case "$COHORT" in
+            smoke|all) ;;
+            *) echo "::error::Unsupported cohort '$COHORT'; expected smoke or all."; exit 1 ;;
+          esac
+          if [ "$COHORT" = smoke ]; then
+            selected_roots=3
+          else
+            selected_roots="$(jq '.repositories | length' "$inventory")"
+          fi
 
           receipt="$RUNNER_TEMP/activation-receipt.json"
           ledger="$RUNNER_TEMP/activation-ledger.jsonl"
           : > "$ledger"
           manifest_json="$(jq -Rs . "$ACTIVATION_MANIFEST")"
-          printf '{"activationReceipt":"%s","workspace":"%s","workspaceCommit":"%s","runnerManifest":%s,"results":[' \
-            "$ACTIVATION_RECEIPT_DIGEST" "$WORKSPACE_REPOSITORY" "$workspace_sha" "$manifest_json" > "$receipt"
+          printf '{"activationReceipt":"%s","cohort":"%s","workspace":"%s","workspaceCommit":"%s","runnerManifest":%s,"results":[' \
+            "$ACTIVATION_RECEIPT_DIGEST" "$COHORT" "$WORKSPACE_REPOSITORY" "$workspace_sha" "$manifest_json" > "$receipt"
 
           first=true
           eligible=0
@@ -194,7 +216,12 @@ jobs:
             status=$?
             set -e
             adjudicate "$repo" "$bundle" "$output" "$status"
-          done < <(jq -r '.repositories[] | [.layer, .organization, .name] | @tsv' "$inventory")
+          done < <(jq -r --arg cohort "$COHORT" '
+            .repositories
+            | sort_by(.organization, .name)
+            | if $cohort == "smoke" then .[0:3] else . end
+            | .[] | [.layer, .organization, .name] | @tsv
+          ' "$inventory")
 
           printf ']}' >> "$receipt"
           total=$((clean + noncompliant + blocked))
@@ -202,15 +229,21 @@ jobs:
             echo "::error::Ledger invariant failed: eligible=$eligible but classifications=$total."
             exit 1
           fi
-          jq --slurp --arg receipt "$ACTIVATION_RECEIPT_DIGEST" --arg workspace "$workspace_sha" \
+          canonical_receipt="$RUNNER_TEMP/activation-receipt.canonical.json"
+          jq -S -c . "$receipt" > "$canonical_receipt"
+          receipt_sha="$(sha256sum "$canonical_receipt" | cut -d' ' -f1)"
+          echo "receipt-sha=$receipt_sha" >> "$GITHUB_OUTPUT"
+          jq --slurp --arg receipt "$ACTIVATION_RECEIPT_DIGEST" --arg cohort "$COHORT" --arg workspace "$workspace_sha" --arg receipt_sha "$receipt_sha" \
             --argjson manifest "$manifest_json" \
-            '{activationReceipt:$receipt,workspaceCommit:$workspace,runnerManifest:$manifest,results:.}' \
+            '{activationReceipt:$receipt,cohort:$cohort,workspaceCommit:$workspace,runnerManifest:$manifest,receiptSha256:$receipt_sha,results:.}' \
             "$ledger" > "$RUNNER_TEMP/activation-ledger.json"
           {
             echo '## Activation baseline receipt'
             echo
             echo "- Runner receipt: \`$ACTIVATION_RECEIPT_DIGEST\`"
+            echo "- Cohort: \`$COHORT\` ($selected_roots deterministic roots selected)"
             echo "- Workspace inventory commit: \`$workspace_sha\`"
+            echo "- Generated receipt SHA-256: \`$receipt_sha\`"
             echo "- Eligible: $eligible; clean: $clean; noncompliant: $noncompliant; genuinely blocked: $blocked; excluded: $excluded"
             echo
             echo '```json'
