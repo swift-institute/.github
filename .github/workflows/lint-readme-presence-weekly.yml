@@ -35,28 +35,32 @@ on:
         default: false
 
 jobs:
+  # Org population from the canonical read-orgs manifest (#43 item 7) —
+  # a new org propagates here without editing this orchestrator.
+  config:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      orgs: ${{ steps.read.outputs.orgs }}
+    steps:
+      - name: Harden runner (audit-mode egress logging)
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - id: read
+        uses: swift-institute/.github/.github/actions/read-orgs@main
+        with:
+          filter: '.name'
+
   sweep:
+    needs: config
     strategy:
       fail-fast: false
       matrix:
-        org:
-          - swift-institute
-          - swift-primitives
-          - swift-standards
-          - swift-foundations
-          - swift-ietf
-          - swift-iso
-          - swift-ieee
-          - swift-iec
-          - swift-w3c
-          - swift-whatwg
-          - swift-ecma
-          - swift-incits
-          - swift-linux-foundation
-          - swift-microsoft
-          - swift-arm-ltd
-          - swift-intel
-          - swift-riscv
+        org: ${{ fromJSON(needs.config.outputs.orgs) }}
     # [CI-106] Caller must grant equivalent or greater than the called
     # reusable's per-job permissions (lint-readme-presence.yml `scan` job:
     # contents: read).

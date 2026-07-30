@@ -36,7 +36,31 @@ on:
 # The schedule path inherits the same per-job grant.
 
 jobs:
+  # Sub-org population from the canonical read-orgs manifest (#43 item 7):
+  # every active org EXCEPT the three family roots and the meta org, which
+  # own (or host) the layer wrappers this rule says sub-orgs must not
+  # carry. A new sub-org propagates here without editing this workflow.
+  config:
+    if: ${{ !github.event.repository.private }}     # [CI-032]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      orgs: ${{ steps.read.outputs.orgs }}
+    steps:
+      - name: Harden runner (audit-mode egress logging)
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - id: read
+        uses: swift-institute/.github/.github/actions/read-orgs@main
+        with:
+          filter: 'select((.name == "swift-primitives" or .name == "swift-standards" or .name == "swift-foundations" or .name == "swift-institute") | not) | .name'
+
   scan:
+    needs: config
     if: ${{ !github.event.repository.private }}     # [CI-032]
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -47,20 +71,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        sub-org:
-          - swift-ietf
-          - swift-iso
-          - swift-w3c
-          - swift-whatwg
-          - swift-ecma
-          - swift-incits
-          - swift-ieee
-          - swift-iec
-          - swift-arm-ltd
-          - swift-intel
-          - swift-riscv
-          - swift-linux-foundation
-          - swift-microsoft
+        sub-org: ${{ fromJSON(needs.config.outputs.orgs) }}
     steps:
       - name: Harden runner
         uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
