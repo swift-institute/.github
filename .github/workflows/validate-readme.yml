@@ -6,7 +6,9 @@
 #
 # Scope (v1):
 #   Universal: [README-017], [README-026]
-#   Family E:  [README-001], [README-003], [README-008], [README-013], [README-016]
+#   Family E:  [README-001], [README-008], [README-013], [README-016]
+#     ([README-003] removed 2026-07-30, superseded in full by
+#     https://github.com/swift-institute/.github/issues/126)
 #   Family C:  [README-137], [README-138]
 #   Family F:  [README-150], [README-151]
 #   Family G:  [README-116]

@@ -21,7 +21,10 @@ Rules checked (v1):
 
   Family E (sub-package):
     [README-001] Required inventory: title (H1), badges, one-liner, ## License section.
-    [README-003] First badge is the development-status shield.
+    [README-003] Removed 2026-07-30: the development-status-badge requirement it
+                 enforced was superseded in full by
+                 https://github.com/swift-institute/.github/issues/126. Rule ID
+                 retired, never recycled.
     [README-008] ## Installation section MUST include both Package.swift dep AND target config.
     [README-013] Error Handling threshold (Decision 5): if the package has any
                  public function with throws(...) and a non-Never error type, the
@@ -67,7 +70,6 @@ FORBIDDEN_RULE_ID = re.compile(
 H1_LINE = re.compile(r"^#\s+\S")
 H2_LINE = re.compile(r"^##\s+\S")
 BADGE_LINE = re.compile(r"^!\[")
-DEV_STATUS_BADGE = re.compile(r"!\[Development Status\]\(https://img\.shields\.io/badge/")
 INSTALL_DEP_RE = re.compile(r"\.package\(", re.MULTILINE)
 # A target-configuration block may be declared with any of SwiftPM's
 # target-declaration forms. Test-support packages (swift-testing, swift-tests,
@@ -218,13 +220,10 @@ def validate_universal(repo: str, readme: Path, content: str) -> int:
 
 def validate_family_e(repo: str, readme: Path, content: str, repo_root: Path) -> int:
     findings = 0
-    # [README-003] first badge is dev-status shield
-    badge_lines = [ln for ln in content.splitlines() if BADGE_LINE.match(ln)]
-    if badge_lines and not DEV_STATUS_BADGE.search(badge_lines[0]):
-        emit(repo, "README-003",
-             f"{readme.name}: first badge is not Development Status shield "
-             f"(got {badge_lines[0][:60]!r})")
-        findings += 1
+    # [README-003] removed 2026-07-30: superseded in full by
+    # https://github.com/swift-institute/.github/issues/126 (the
+    # development-status-badge requirement it enforced is struck at the
+    # semantic owner, documentation/readmes.md in swift-institute/Skills).
     # [README-001] License section present
     if "## License" not in content:
         emit(repo, "README-001",
