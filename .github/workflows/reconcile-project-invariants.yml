@@ -49,7 +49,13 @@ name: reconcile-project-invariants
 #     issues are not expected on the Project);
 #   - Project rows whose content lives in a repository the token cannot
 #     read resolve with null/REDACTED content; they are reported in
-#     their own section instead of crashing or being misclassified.
+#     their own section instead of crashing or being misclassified;
+#   - the org issueTypes list is gated on the org-level Issue Types
+#     permission, which the App has not been granted on any
+#     installation, and the resource is org-local to the minted
+#     installation — a FORBIDDEN issue-type read therefore degrades to
+#     a per-org "parity unobservable" line in the report (run 30527206227
+#     showed all 17 orgs denied) instead of failing the run.
 
 on:
   schedule:
@@ -89,7 +95,11 @@ jobs:
       # organization-projects: the ProjectV2 read. issues: divergence-issue
       # lifecycle plus issue content on items. pull-requests: item content
       # casts (a PR row is itself a reported divergence, but reading it must
-      # not be denied). metadata is implied by any grant; named for clarity.
+      # not be denied). organization-administration read: a probe of whether
+      # the org-settings read covers the home org's issueTypes list — the
+      # dedicated Issue Types org permission is not in the App's granted
+      # set, so it cannot be requested here. metadata is implied by any
+      # grant; named for clarity.
       - name: Mint installation token (project read, issue write)
         id: token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
@@ -98,6 +108,7 @@ jobs:
           private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
           owner: swift-institute
           permission-organization-projects: read
+          permission-organization-administration: read
           permission-issues: write
           permission-pull-requests: read
           permission-metadata: read
@@ -242,18 +253,30 @@ jobs:
                     | .url] | .[]' \
               "$workdir/search-${org}.json" >> "$workdir/open-issues.txt"
 
-            if ! gql "$workdir/types-${org}.json" \
-              -f query='
+            # The org issueTypes list is gated on the org-level Issue
+            # Types permission, which no installation of the App has been
+            # granted, and the resource is org-local to the minted
+            # installation besides — so a FORBIDDEN read is an
+            # observability gap the report states per org, not a run
+            # failure. Every other failure class still fails the run.
+            types_out="$workdir/types-${org}.json"
+            if gh api graphql -f query='
                 query($org: String!) {
                   organization(login: $org) {
                     issueTypes(first: 25) { nodes { name isEnabled } }
                   }
-                }' -f org="$org"; then
-              org_failures=$((org_failures + 1)); continue
-            fi
-            if ! require_data "$workdir/types-${org}.json" \
-              '.data.organization.issueTypes.nodes != null' \
-              "Issue-type read (org ${org})"; then
+                }' -f org="$org" > "$types_out" 2> "${types_out}.stderr" \
+              && jq -e '.data.organization.issueTypes.nodes != null' "$types_out" > /dev/null; then
+              : # readable; parity is checked below
+            elif jq -e '[.errors[]? | select(.type == "FORBIDDEN")] | length > 0' "$types_out" > /dev/null 2>&1 \
+              || grep -q "Resource not accessible by integration" "${types_out}.stderr"; then
+              echo "${org}: issue-type parity unobservable — the bot token was denied the org issueTypes read" \
+                >> "$workdir/type-parity.txt"
+              continue
+            else
+              echo "::error::GraphQL call failed (types-${org}.json); API error follows"
+              cat "${types_out}.stderr" >&2
+              { [ -s "$types_out" ] && cat "$types_out" >&2; } || true
               org_failures=$((org_failures + 1)); continue
             fi
             types=$(jq -r '[.data.organization.issueTypes.nodes[] | select(.isEnabled) | .name] | sort | join(",")' \
