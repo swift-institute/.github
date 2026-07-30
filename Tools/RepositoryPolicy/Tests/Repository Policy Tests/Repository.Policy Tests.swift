@@ -535,6 +535,128 @@ struct RepositoryPolicyTests {
         #expect(report.advisories.isEmpty)
     }
 
+    // MARK: - REPO-README-001 / REPO-README-002 (struck badge, struck platform matrix)
+
+    // Positive: a development-status badge image in root README.md produces
+    // exactly one REPO-README-001 advisory, and only that identifier.
+    @Test
+    func readmeAdvisoryFiresOnDevelopmentStatusBadge() throws {
+        let root = try repositoryFixture(
+            files: [
+                "README.md": """
+                    # Example
+
+                    ![Status](https://img.shields.io/badge/status-active--development-blue.svg)
+
+                    Example is a typed configuration surface.
+                    """
+            ]
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let report = try RepositoryPolicy.validateSurface(
+            repository: "swift-foundations/swift-example",
+            repositoryClass: .package,
+            root: root,
+            policy: .init(schemaVersion: 1, actionGrants: [], exemptions: [])
+        )
+
+        #expect(report.advisories.map(\.identifier) == ["REPO-README-001"])
+        #expect(report.passed)
+    }
+
+    // Positive: a `## Platform Support` heading in root README.md produces
+    // exactly one REPO-README-002 advisory, and only that identifier.
+    @Test
+    func readmeAdvisoryFiresOnPlatformSupportHeading() throws {
+        let root = try repositoryFixture(
+            files: [
+                "README.md": """
+                    # Example
+
+                    ## Platform Support
+
+                    | Platform | Minimum |
+                    | --- | --- |
+                    | macOS | 15 |
+                    """
+            ]
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let report = try RepositoryPolicy.validateSurface(
+            repository: "swift-foundations/swift-example",
+            repositoryClass: .package,
+            root: root,
+            policy: .init(schemaVersion: 1, actionGrants: [], exemptions: [])
+        )
+
+        #expect(report.advisories.map(\.identifier) == ["REPO-README-002"])
+        #expect(report.passed)
+    }
+
+    // Negative: a converted README carrying neither construct — no advisory
+    // from either identifier.
+    @Test
+    func readmeAdvisoriesAreSilentOnAConvertedREADME() throws {
+        let root = try repositoryFixture(
+            files: [
+                "README.md": """
+                    # Example
+
+                    Example is a typed configuration surface for the repository policy tool.
+
+                    ## Installation
+
+                    Add the package to your manifest.
+                    """
+            ]
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let report = try RepositoryPolicy.validateSurface(
+            repository: "swift-foundations/swift-example",
+            repositoryClass: .package,
+            root: root,
+            policy: .init(schemaVersion: 1, actionGrants: [], exemptions: [])
+        )
+
+        #expect(report.advisories.isEmpty)
+    }
+
+    // Edge/fail-closed: both constructs present, but only inside a fenced
+    // code block — the fence-stripped scan (mirroring README-017/026's
+    // fence exclusion) must not see them, so no advisory from either
+    // identifier.
+    @Test
+    func readmeAdvisoriesAreSilentInsideAFencedCodeBlock() throws {
+        let root = try repositoryFixture(
+            files: [
+                "README.md": """
+                    # Example
+
+                    ```markdown
+                    ![Status](https://img.shields.io/badge/status-active--development-blue.svg)
+
+                    ## Platform Support
+                    ```
+
+                    Example is a typed configuration surface for the repository policy tool.
+                    """
+            ]
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let report = try RepositoryPolicy.validateSurface(
+            repository: "swift-foundations/swift-example",
+            repositoryClass: .package,
+            root: root,
+            policy: .init(schemaVersion: 1, actionGrants: [], exemptions: [])
+        )
+
+        #expect(report.advisories.isEmpty)
+    }
+
     private func repositoryFixture(files: [String: String]) throws -> URL {
         let root =
             FileManager.default.temporaryDirectory

@@ -334,6 +334,30 @@ extension RepositoryPolicy {
             }
         }
 
+        if let readme = snapshot.readmeContents {
+            for line in stripFencedCodeBlocks(readme) {
+                if containsStatusBadge(line: line) {
+                    advisories.append(
+                        .init(
+                            identifier: "REPO-README-001",
+                            path: "README.md",
+                            message: "development-status badge (img.shields.io/badge/status-) is struck; remove it"
+                        )
+                    )
+                }
+                if isPlatformSupportHeading(line) {
+                    advisories.append(
+                        .init(
+                            identifier: "REPO-README-002",
+                            path: "README.md",
+                            message:
+                                "Platform Support section is struck; the platform matrix is derived from the manifest"
+                        )
+                    )
+                }
+            }
+        }
+
         return .init(
             repository: repository,
             repositoryClass: repositoryClass,
@@ -356,6 +380,74 @@ extension RepositoryPolicy {
 
 private let doccPlaceholderMarker =
     "umbrella catalog placeholder. Replace this line with a one-sentence"
+
+/// Removes fenced ``` ... ``` code blocks line-by-line (rather than a
+/// dotall regex over the whole file) so lines outside a fence keep their
+/// exact boundaries; returns the surviving lines in order.
+private func stripFencedCodeBlocks(_ text: String) -> [Substring] {
+    var lines = [Substring]()
+    var inFence = false
+    for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
+        if line.trimmingCharacters(in: .whitespaces).hasPrefix("```") {
+            inFence.toggle()
+            continue
+        }
+        if inFence { continue }
+        lines.append(line)
+    }
+    return lines
+}
+
+/// True when `line` contains a Markdown image (`![alt](url)`) whose target
+/// URL contains the literal `img.shields.io/badge/status-`.
+private func containsStatusBadge(line: Substring) -> Bool {
+    var searchStart = line.startIndex
+    while let altStart = line.range(of: "![", range: searchStart..<line.endIndex) {
+        guard let altClose = line.range(of: "]", range: altStart.upperBound..<line.endIndex)
+        else { break }
+        guard altClose.upperBound < line.endIndex, line[altClose.upperBound] == "(" else {
+            searchStart = altStart.upperBound
+            continue
+        }
+        let urlStart = line.index(after: altClose.upperBound)
+        guard let urlClose = line.range(of: ")", range: urlStart..<line.endIndex) else { break }
+        let url = line[urlStart..<urlClose.lowerBound]
+        if url.contains("img.shields.io/badge/status-") {
+            return true
+        }
+        searchStart = urlClose.upperBound
+    }
+    return false
+}
+
+/// True when `line` matches `^#{2,6}[ \t]+Platform Support[ \t]*$`,
+/// case-exact.
+private func isPlatformSupportHeading(_ line: Substring) -> Bool {
+    let characters = Array(line)
+    var index = 0
+    var hashCount = 0
+    while index < characters.count, characters[index] == "#" {
+        hashCount += 1
+        index += 1
+    }
+    guard hashCount >= 2, hashCount <= 6 else { return false }
+    guard index < characters.count, characters[index] == " " || characters[index] == "\t" else {
+        return false
+    }
+    while index < characters.count, characters[index] == " " || characters[index] == "\t" {
+        index += 1
+    }
+    let title = Array("Platform Support")
+    guard characters.count - index >= title.count else { return false }
+    for offset in title.indices where characters[index + offset] != title[offset] {
+        return false
+    }
+    index += title.count
+    while index < characters.count, characters[index] == " " || characters[index] == "\t" {
+        index += 1
+    }
+    return index == characters.count
+}
 
 private extension RepositoryPolicy.SurfacePolicy {
     func exempts(
@@ -413,6 +505,7 @@ private struct SurfaceSnapshot {
     let issueForms: [String]
     let hasSPIYML: Bool
     let doccMarkdownFiles: [DoccMarkdownFile]
+    let readmeContents: String?
 
     init(root: URL) throws {
         let manager = FileManager.default
@@ -430,6 +523,7 @@ private struct SurfaceSnapshot {
         var issueForms = [String]()
         var hasSPIYML = false
         var doccMarkdownFiles = [DoccMarkdownFile]()
+        var readmeContents: String?
         let rootPath = root.standardizedFileURL.path
         while let url = enumerator.nextObject() as? URL {
             let values = try url.resourceValues(forKeys: [.isRegularFileKey])
@@ -442,6 +536,9 @@ private struct SurfaceSnapshot {
 
             if path == ".spi.yml" {
                 hasSPIYML = true
+            }
+            if path == "README.md" {
+                readmeContents = try String(contentsOf: url, encoding: .utf8)
             }
             if isDoccMarkdownPath(path) {
                 let contents = try String(contentsOf: url, encoding: .utf8)
@@ -469,6 +566,7 @@ private struct SurfaceSnapshot {
         self.issueForms = issueForms.sorted()
         self.hasSPIYML = hasSPIYML
         self.doccMarkdownFiles = doccMarkdownFiles.sorted { $0.path < $1.path }
+        self.readmeContents = readmeContents
     }
 
     init(files: [String: String]) throws {
@@ -476,12 +574,16 @@ private struct SurfaceSnapshot {
         var issueForms = [String]()
         var hasSPIYML = false
         var doccMarkdownFiles = [DoccMarkdownFile]()
+        var readmeContents: String?
         for (path, source) in files {
             if path.hasPrefix(".github/ISSUE_TEMPLATE/") {
                 issueForms.append(path)
             }
             if path == ".spi.yml" {
                 hasSPIYML = true
+            }
+            if path == "README.md" {
+                readmeContents = source
             }
             if isDoccMarkdownPath(path) {
                 doccMarkdownFiles.append(DoccMarkdownFile(path: path, contents: source))
@@ -506,6 +608,7 @@ private struct SurfaceSnapshot {
         self.issueForms = issueForms.sorted()
         self.hasSPIYML = hasSPIYML
         self.doccMarkdownFiles = doccMarkdownFiles.sorted { $0.path < $1.path }
+        self.readmeContents = readmeContents
     }
 }
 
