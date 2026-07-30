@@ -91,6 +91,17 @@ inputs:
       step can reference env.<NAME>. Default empty (no env write).
     required: false
     default: ''
+  expected-tag:
+    description: >
+      Optional deterministic-runtime pin (#43 item 5). When non-empty,
+      the run fails if the release tag resolved from releases.json
+      differs from this value (e.g. `swift-6.4-RELEASE`), so the SDK
+      identity is fully pinned per run instead of floating with
+      swift.org publication state. Default empty: keep the checksummed
+      dynamic resolve that pairs the SDK to the container toolchain.
+      Wrappers adopt this when the #67 floor bump lands.
+    required: false
+    default: ''
 
 runs:
   using: 'composite'
@@ -103,6 +114,7 @@ runs:
         INPUT_USE_PLATFORM_VERSION: ${{ inputs.use-platform-version }}
         INPUT_SDK_ID: ${{ inputs.sdk-id }}
         INPUT_OUTPUT_ENV_VAR: ${{ inputs.output-env-var }}
+        INPUT_EXPECTED_TAG: ${{ inputs.expected-tag }}
       run: |
         set -euo pipefail
         apt-get update -qq && apt-get install -qq -y curl jq
@@ -138,6 +150,24 @@ runs:
         echo "Resolved checksum: ${CHECKSUM}"
         echo "Resolved URL:      ${SDK_URL}"
         echo "Resolved SDK ID:   ${RESOLVED_SDK_ID}"
+        # Run identity (#43 item 5): the tag + checksum resolved at run time
+        # ARE this run's SDK identity — record them where a reader of the
+        # run can see them without opening the raw log.
+        {
+          echo "### install-swift-sdk resolved identity (${INPUT_PLATFORM})"
+          echo ""
+          echo "| Field | Value |"
+          echo "|---|---|"
+          echo "| Release tag | \`${TAG}\` |"
+          echo "| Bundle checksum | \`${CHECKSUM}\` |"
+          echo "| Bundle URL | \`${SDK_URL}\` |"
+          echo "| SDK ID | \`${RESOLVED_SDK_ID}\` |"
+          echo ""
+        } >> "${GITHUB_STEP_SUMMARY}"
+        if [[ -n "${INPUT_EXPECTED_TAG}" && "${TAG}" != "${INPUT_EXPECTED_TAG}" ]]; then
+          echo "::error::install-swift-sdk resolved tag ${TAG} but expected-tag pins ${INPUT_EXPECTED_TAG}; the SDK identity moved out from under the pin."
+          exit 1
+        fi
         swift sdk install "${SDK_URL}" --checksum "${CHECKSUM}"
         if [[ "${INPUT_PLATFORM}" == "android-sdk" ]]; then
           # Swift 6.3's official Android setup requires NDK r27d or later:
