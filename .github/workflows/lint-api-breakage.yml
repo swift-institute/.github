@@ -58,8 +58,9 @@ on:
         description: |
           Legacy-era App ID secret name carried by some orgs (e.g.
           swift-primitives; numeric App ID value class). Accepted as
-          fallback when _APP_CLIENT_ID is absent; client-id wins when
-          both exist (create-github-app-token@v3 resolution order).
+          fallback when _APP_CLIENT_ID is absent; configure-private-repos
+          routes it into create-github-app-token's `client-id` input,
+          never the deprecated `app-id` input (#139).
       SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY:
         required: false
         description: |

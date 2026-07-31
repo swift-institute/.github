@@ -28,16 +28,15 @@
 #        SWIFT_INSTITUTE_BOT_APP_CLIENT_ID  (preferred; Client ID value class)
 #        SWIFT_INSTITUTE_BOT_APP_ID         (legacy era, e.g. swift-primitives;
 #                                            numeric App ID value class)
-#      Callers pass both; each routes to its matching
-#      create-github-app-token input. Citation (verified at the @v3 pin):
-#      action.yml defines `client-id` ("GitHub App Client ID") AND `app-id`
-#      ("GitHub App ID", deprecationMessage "Use 'client-id' instead.");
-#      README §Inputs: "The legacy `app-id` input is also accepted, but
-#      `client-id` is recommended"; dist/main.cjs resolves
-#      `getInput("client-id") || getInput("app-id")`, so client-id wins
-#      when both are set — matching this composite's preference order.
-#      Name-normalization to _APP_CLIENT_ID everywhere is a cosmetic
-#      follow-up; the fallback then goes dormant.
+#      Callers pass both; this composite routes them into a SINGLE
+#      create-github-app-token input — `client-id: ${{ app-client-id ||
+#      app-id }}` — never the deprecated `app-id` input. Per that action's
+#      v2+ contract, `client-id` accepts either value class (Client ID or
+#      the legacy numeric App ID), so the fallback carries the same
+#      credential value the legacy input used to and mints identically;
+#      only the deprecation warning disappears (#139). Name-normalization
+#      to _APP_CLIENT_ID everywhere is a cosmetic follow-up; the fallback
+#      then goes dormant.
 #
 #      Org-secret visibility (free plan): "Public repositories" delivery
 #      is the designed-for class. Org secrets CANNOT reach private repos
@@ -122,9 +121,11 @@ inputs:
   app-id:
     description: >
       swift-institute-bot numeric App ID (SWIFT_INSTITUTE_BOT_APP_ID org
-      secret; legacy name era, e.g. swift-primitives). Routed to
-      create-github-app-token's legacy `app-id` input. client-id wins when
-      both are set (action resolution order at the v3 pin).
+      secret; legacy name era, e.g. swift-primitives). Routed into
+      create-github-app-token's `client-id` input as the fallback value
+      when `app-client-id` is empty (that action's v2+ contract accepts
+      either value class through `client-id`; the deprecated `app-id`
+      input is never passed).
     required: false
     default: ''
   app-private-key:
@@ -151,8 +152,7 @@ runs:
       name: Mint App token (swift-primitives, contents:read)
       uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
       with:
-        client-id: ${{ inputs.app-client-id }}
-        app-id: ${{ inputs.app-id }}
+        client-id: ${{ inputs.app-client-id || inputs.app-id }}
         private-key: ${{ inputs.app-private-key }}
         owner: swift-primitives
         permission-contents: read
@@ -162,8 +162,7 @@ runs:
       name: Mint App token (swift-standards, contents:read)
       uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
       with:
-        client-id: ${{ inputs.app-client-id }}
-        app-id: ${{ inputs.app-id }}
+        client-id: ${{ inputs.app-client-id || inputs.app-id }}
         private-key: ${{ inputs.app-private-key }}
         owner: swift-standards
         permission-contents: read
@@ -173,8 +172,7 @@ runs:
       name: Mint App token (swift-foundations, contents:read)
       uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
       with:
-        client-id: ${{ inputs.app-client-id }}
-        app-id: ${{ inputs.app-id }}
+        client-id: ${{ inputs.app-client-id || inputs.app-id }}
         private-key: ${{ inputs.app-private-key }}
         owner: swift-foundations
         permission-contents: read
@@ -187,8 +185,7 @@ runs:
       name: Mint App token (swift-iso, contents:read)
       uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
       with:
-        client-id: ${{ inputs.app-client-id }}
-        app-id: ${{ inputs.app-id }}
+        client-id: ${{ inputs.app-client-id || inputs.app-id }}
         private-key: ${{ inputs.app-private-key }}
         owner: swift-iso
         permission-contents: read
@@ -198,8 +195,7 @@ runs:
       name: Mint App token (swift-microsoft, contents:read)
       uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
       with:
-        client-id: ${{ inputs.app-client-id }}
-        app-id: ${{ inputs.app-id }}
+        client-id: ${{ inputs.app-client-id || inputs.app-id }}
         private-key: ${{ inputs.app-private-key }}
         owner: swift-microsoft
         permission-contents: read
@@ -209,8 +205,7 @@ runs:
       name: Mint App token (swift-arm-ltd, contents:read)
       uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
       with:
-        client-id: ${{ inputs.app-client-id }}
-        app-id: ${{ inputs.app-id }}
+        client-id: ${{ inputs.app-client-id || inputs.app-id }}
         private-key: ${{ inputs.app-private-key }}
         owner: swift-arm-ltd
         permission-contents: read
@@ -220,8 +215,7 @@ runs:
       name: Mint App token (swift-intel, contents:read)
       uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
       with:
-        client-id: ${{ inputs.app-client-id }}
-        app-id: ${{ inputs.app-id }}
+        client-id: ${{ inputs.app-client-id || inputs.app-id }}
         private-key: ${{ inputs.app-private-key }}
         owner: swift-intel
         permission-contents: read
@@ -231,8 +225,7 @@ runs:
       name: Mint App token (swift-linux-foundation, contents:read)
       uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
       with:
-        client-id: ${{ inputs.app-client-id }}
-        app-id: ${{ inputs.app-id }}
+        client-id: ${{ inputs.app-client-id || inputs.app-id }}
         private-key: ${{ inputs.app-private-key }}
         owner: swift-linux-foundation
         permission-contents: read
@@ -242,8 +235,7 @@ runs:
       name: Mint App token (swift-ietf, contents:read)
       uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
       with:
-        client-id: ${{ inputs.app-client-id }}
-        app-id: ${{ inputs.app-id }}
+        client-id: ${{ inputs.app-client-id || inputs.app-id }}
         private-key: ${{ inputs.app-private-key }}
         owner: swift-ietf
         permission-contents: read

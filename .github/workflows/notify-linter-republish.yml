@@ -35,12 +35,15 @@ on:
         description: >
           swift-institute-bot App Client ID (org-level secret; preferred
           name era). Preferred over the legacy numeric App ID when both
-          are present (create-github-app-token@v3 resolution order).
+          are present; this job routes the chosen value into
+          create-github-app-token's `client-id` input only.
       SWIFT_INSTITUTE_BOT_APP_ID:
         required: false
         description: >
           Legacy-era numeric App ID secret name carried by some orgs
-          (e.g. swift-primitives). Fallback when _APP_CLIENT_ID is absent.
+          (e.g. swift-primitives). Fallback when _APP_CLIENT_ID is absent,
+          still routed through `client-id` — the deprecated `app-id`
+          input of create-github-app-token is never passed (#139).
       SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY:
         required: true
         description: >
@@ -62,8 +65,7 @@ jobs:
         name: Mint App token (swift-foundations/swift-linter, actions:write)
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
         with:
-          client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
-          app-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
+          client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID || secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
           private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
           owner: swift-foundations
           repositories: swift-linter
