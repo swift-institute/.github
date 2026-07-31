@@ -1,0 +1,32 @@
+name: Fail — L1 embedded job's .build cache (carve-out retired)
+
+# This fixture mirrors the L1 layer wrapper's embedded job as it stood
+# until 2026-07-31: basename swift-ci.yml, job name `embedded`, cache step
+# with an exact-match key and NO restore-keys. It used to be an `edge/`
+# fixture asserting the validator stayed silent.
+#
+# The carve-out is retired (swift-institute/.github#161): that shape is
+# exactly what let the nightly-Embedded leg report "Build complete!" with
+# zero `Compiling` lines off an ~84MB cache hit. The key hashes only the
+# manifests, so it encodes neither the toolchain nor branch-pinned
+# dependency contents — exact-match buys nothing here.
+#
+# This is now the positive control for the un-carved rule: if a future
+# edit reintroduces any job-name or filename special case, this fixture
+# stops firing and the test run fails. Expected: 1 CI-040 finding.
+
+on:
+  workflow_call:
+
+jobs:
+  embedded:
+    runs-on: ubuntu-latest
+    container: swiftlang/swift:nightly-main-jammy
+    steps:
+      - uses: actions/checkout@v6
+      - name: Cache Swift packages
+        uses: actions/cache@v5
+        with:
+          path: .build
+          key: linux-embedded-swift63-spm-v1-${{ hashFiles('Package.swift', 'Package@*.swift') }}
+      - run: swift build -Xswiftc -enable-experimental-feature -Xswiftc Embedded

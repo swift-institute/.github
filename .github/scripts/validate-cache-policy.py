@@ -17,15 +17,18 @@ Rules checked:
             `actions/cache@*` step whose `with.path:` references a `.build`
             path component.
 
-            Permitted exception (L1 embedded job): the `embedded` job in
-            `swift-primitives/.github/.github/workflows/swift-ci.yml` MAY
-            cache `.build/` keyed exact-match on a
-            `hashFiles(Package.swift, Package@*.swift)` digest with NO
-            `restore-keys:` partial-prefix fallback. The carve-out is
-            detected by (file basename == `swift-ci.yml`) AND (job name ==
-            `embedded`) AND (no `restore-keys` in the cache step's `with:`
-            block). The carve-out is rule-bounded; tightening the
-            detection further (e.g., key-shape match) is deferred.
+            NO CARVE-OUT. The L1-embedded-job exemption that stood here
+            until 2026-07-31 is retired (swift-institute/.github#161): the
+            `embedded` job in swift-primitives/.github's swift-ci.yml was
+            restoring ~84MB of `.build` and reporting "Build complete!" with
+            zero `Compiling` lines, so the leg's green attested a cache
+            restore rather than a compile. An exact-match key does not save
+            it — the key hashed only the manifests, so it encoded neither the
+            toolchain (a 6.3-built `.build` satisfied a 6.5-dev nightly job)
+            nor branch-pinned dependency contents. Under gitignored
+            `Package.resolved` plus branch pins, no key can prove a `.build`
+            represents the resolved graph, which is why the rule is now what
+            the ci-cd skill already said it was: absolute.
 
             Tool-binary caches (SwiftLint, lychee, yq, gh CLI) are
             permitted per [CI-044] and are out of scope for [CI-040] —
@@ -38,8 +41,8 @@ Rules checked:
             `restore-keys` key (regardless of path).
 
             No carve-out — the rule applies to all cache classes.
-            Tool-binary caches (CI-044), L1 embedded (CI-040 carve-out),
-            and any other cache use MUST be exact-match-only.
+            Tool-binary caches (CI-044) and any other permitted cache use
+            MUST be exact-match-only.
 
 Both rules iterate the same per-step inspection; the validator may emit
 both findings on a single step (e.g., a `.build`-path cache with
@@ -108,26 +111,23 @@ def check_workflow(repo: str, wf_path: Path) -> int:
             with_block = step.get("with")
             if not isinstance(with_block, dict):
                 continue
-            # [CI-040] check: cache step targeting .build outside L1 carve-out.
+            # [CI-040] check: any cache step targeting .build. No carve-out.
             if cache_targets_build(with_block):
-                is_l1_embedded = (
-                    wf_path.name == "swift-ci.yml"
-                    and job_name == "embedded"
-                    and "restore-keys" not in with_block
+                path_val = with_block.get("path", "")
+                emit(
+                    repo,
+                    "CI-040",
+                    f"{wf_path.name}: job {job_name!r} caches `.build/` via "
+                    f"`actions/cache` per [CI-040] — the no-`.build/`-cache "
+                    f"rule is permanent AND carve-out-free under the "
+                    f"gitignored-Package.resolved + branch-pinned-deps "
+                    f"constraint set. No key, however exact, can prove a "
+                    f"restored `.build` matches the resolved graph or the "
+                    f"running toolchain; a hit turns the job's green into "
+                    f"evidence of a restore rather than a compile "
+                    f"(swift-institute/.github#161). path={path_val!r}",
                 )
-                if not is_l1_embedded:
-                    path_val = with_block.get("path", "")
-                    emit(
-                        repo,
-                        "CI-040",
-                        f"{wf_path.name}: job {job_name!r} caches `.build/` via "
-                        f"`actions/cache` per [CI-040] — the no-`.build/`-cache "
-                        f"rule is permanent under the gitignored-Package.resolved "
-                        f"+ branch-pinned-deps constraint set. Only carve-out is "
-                        f"the L1 embedded job in swift-primitives/.github's "
-                        f"swift-ci.yml. path={path_val!r}",
-                    )
-                    findings += 1
+                findings += 1
             # [CI-042] check: any cache step with `restore-keys` is a violation.
             # No carve-out — exact-match-only applies to all cache classes
             # (build cache, tool-binary cache, anything else).
