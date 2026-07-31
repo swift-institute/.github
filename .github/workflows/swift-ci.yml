@@ -549,7 +549,7 @@ jobs:
           repository: ${{ inputs.target-repo || github.repository }}
           ref: ${{ inputs.ref }}
 
-      - uses: swift-institute/.github/.github/actions/configure-private-repos@2d8dcb700888fdc60be0ff1a9af6d7058d122833  # main 2026-07-30, advanced by pin-advance (#43)
+      - uses: swift-institute/.github/.github/actions/configure-private-repos@5cc13635cfc295c1cb69dd87b17016218483e618  # main 2026-07-31, advanced ahead of the weekly pin-advance cadence for #139 (client-id fix)
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
           app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
@@ -597,7 +597,7 @@ jobs:
           repository: ${{ inputs.target-repo || github.repository }}
           ref: ${{ inputs.ref }}
 
-      - uses: swift-institute/.github/.github/actions/configure-private-repos@2d8dcb700888fdc60be0ff1a9af6d7058d122833  # main 2026-07-30, advanced by pin-advance (#43)
+      - uses: swift-institute/.github/.github/actions/configure-private-repos@5cc13635cfc295c1cb69dd87b17016218483e618  # main 2026-07-31, advanced ahead of the weekly pin-advance cadence for #139 (client-id fix)
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
           app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
@@ -647,7 +647,7 @@ jobs:
           repository: ${{ inputs.target-repo || github.repository }}
           ref: ${{ inputs.ref }}
 
-      - uses: swift-institute/.github/.github/actions/configure-private-repos@2d8dcb700888fdc60be0ff1a9af6d7058d122833  # main 2026-07-30, advanced by pin-advance (#43)
+      - uses: swift-institute/.github/.github/actions/configure-private-repos@5cc13635cfc295c1cb69dd87b17016218483e618  # main 2026-07-31, advanced ahead of the weekly pin-advance cadence for #139 (client-id fix)
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
           app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
@@ -732,7 +732,7 @@ jobs:
           repository: ${{ inputs.target-repo || github.repository }}
           ref: ${{ inputs.ref }}
 
-      - uses: swift-institute/.github/.github/actions/configure-private-repos@2d8dcb700888fdc60be0ff1a9af6d7058d122833  # main 2026-07-30, advanced by pin-advance (#43)
+      - uses: swift-institute/.github/.github/actions/configure-private-repos@5cc13635cfc295c1cb69dd87b17016218483e618  # main 2026-07-31, advanced ahead of the weekly pin-advance cadence for #139 (client-id fix)
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
           app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
@@ -780,7 +780,7 @@ jobs:
           repository: ${{ inputs.target-repo || github.repository }}
           ref: ${{ inputs.ref }}
 
-      - uses: swift-institute/.github/.github/actions/configure-private-repos@2d8dcb700888fdc60be0ff1a9af6d7058d122833  # main 2026-07-30, advanced by pin-advance (#43)
+      - uses: swift-institute/.github/.github/actions/configure-private-repos@5cc13635cfc295c1cb69dd87b17016218483e618  # main 2026-07-31, advanced ahead of the weekly pin-advance cadence for #139 (client-id fix)
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
           app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
@@ -855,7 +855,7 @@ jobs:
           repository: ${{ inputs.target-repo || github.repository }}
           ref: ${{ inputs.ref }}
 
-      - uses: swift-institute/.github/.github/actions/configure-private-repos@2d8dcb700888fdc60be0ff1a9af6d7058d122833  # main 2026-07-30, advanced by pin-advance (#43)
+      - uses: swift-institute/.github/.github/actions/configure-private-repos@5cc13635cfc295c1cb69dd87b17016218483e618  # main 2026-07-31, advanced ahead of the weekly pin-advance cadence for #139 (client-id fix)
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
           app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
@@ -1326,7 +1326,7 @@ jobs:
           fi
 
       - name: Configure private-dep access
-        uses: swift-institute/.github/.github/actions/configure-private-repos@2d8dcb700888fdc60be0ff1a9af6d7058d122833  # main 2026-07-30, advanced by pin-advance (#43)
+        uses: swift-institute/.github/.github/actions/configure-private-repos@5cc13635cfc295c1cb69dd87b17016218483e618  # main 2026-07-31, advanced ahead of the weekly pin-advance cadence for #139 (client-id fix)
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
           app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
