@@ -1229,6 +1229,101 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           echo "Published binaries installed. Build manifest:"
           cat "$work/MANIFEST.txt"
+          # Read by "Advise on ci-binaries staleness" below (#138). The step
+          # runs in its own shell, so the path travels via GITHUB_ENV rather
+          # than a bash variable.
+          echo "CI_BINARIES_MANIFEST=$work/MANIFEST.txt" >> "$GITHUB_ENV"
+
+      # ── Advise on ci-binaries staleness (#138; non-gating) ──
+      # The install step above verifies the release is CORRECT (checksum,
+      # completeness) but says nothing about CURRENCY: a release can be
+      # valid and stale for days without failing anything, and #137
+      # deliberately retired the identity check that used to catch this
+      # (`manifest engine == engine main HEAD`) because that check pinned
+      # the leg to a moving coordinate and turned one stale republish into
+      # a fleet-wide fallback-to-source outage. This step restores
+      # visibility into staleness WITHOUT reintroducing that failure mode:
+      # every exit path is 0 and `continue-on-error` backstops the step, so
+      # nothing here can affect ci-ok or any other leg's verdict.
+      #
+      # Threshold ruled 2026-07-31 (coordinator, issue #138, comment
+      # 5140090863): AGE-based, 72 hours — fires when the engine-main HEAD
+      # commit timestamp exceeds the installed manifest's `engine=` commit
+      # timestamp by more than 72h. Commit-distance was considered and
+      # rejected in that ruling: it costs more API calls and is more
+      # volatile without adding signal (a burst of small commits is not
+      # "more stale" than one large one), whereas age tolerates ordinary
+      # weekend republish gaps and still catches the observed failure mode
+      # (publish attempts silently failing for days at a time).
+      #
+      # ONE engine-repo API read at consume time, per the ruling: GitHub's
+      # `compare` endpoint returns both endpoints' commit metadata in a
+      # single response — the manifest's `engine=` SHA as `base_commit`,
+      # and engine-main's current HEAD as the last entry of `commits`
+      # (empty when the manifest SHA already IS main HEAD, i.e. exactly
+      # zero staleness). Authenticated with this job's own GITHUB_TOKEN
+      # so ~559 consumer repos hitting this on every push don't share the
+      # 60 req/hr UNauthenticated cap on a public cross-repo read.
+      - name: Advise on ci-binaries staleness (non-gating)
+        shell: bash
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ENGINE_REPO: swift-foundations/swift-linter
+          STALENESS_THRESHOLD_HOURS: "72"
+        run: |
+          set -uo pipefail
+
+          skip() {
+            echo "::warning::ci-binaries staleness advisory skipped: $1"
+            exit 0
+          }
+
+          [ -n "${CI_BINARIES_MANIFEST:-}" ] && [ -f "$CI_BINARIES_MANIFEST" ] \
+            || skip "no manifest path recorded by the install step."
+
+          ENGINE_SHA="$(grep '^engine=' "$CI_BINARIES_MANIFEST" | cut -d= -f2)"
+          [ -n "$ENGINE_SHA" ] || skip "manifest has no 'engine=' entry."
+
+          command -v jq >/dev/null 2>&1 \
+            || { apt-get update -qq && apt-get install -qq -y jq; } >/dev/null 2>&1 \
+            || true
+          command -v jq >/dev/null 2>&1 || skip "jq unavailable and could not be installed."
+
+          RESP="$(curl --fail --silent --show-error --location \
+            --header "Authorization: Bearer ${GH_TOKEN}" \
+            --header "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${ENGINE_REPO}/compare/${ENGINE_SHA}...main")" \
+            || skip "the engine-repo compare API read failed."
+
+          ENGINE_DATE="$(jq -r '.base_commit.commit.committer.date // empty' <<<"$RESP")"
+          HEAD_DATE="$(jq -r '.commits[-1].commit.committer.date // .base_commit.commit.committer.date // empty' <<<"$RESP")"
+          [ -n "$ENGINE_DATE" ] && [ -n "$HEAD_DATE" ] \
+            || skip "the compare response is missing commit timestamps."
+
+          ENGINE_EPOCH="$(date -u -d "$ENGINE_DATE" +%s 2>/dev/null || true)"
+          HEAD_EPOCH="$(date -u -d "$HEAD_DATE" +%s 2>/dev/null || true)"
+          [[ "$ENGINE_EPOCH" =~ ^[0-9]+$ ]] && [[ "$HEAD_EPOCH" =~ ^[0-9]+$ ]] \
+            || skip "could not parse commit timestamps ('$ENGINE_DATE', '$HEAD_DATE')."
+
+          AGE_HOURS=$(( (HEAD_EPOCH - ENGINE_EPOCH) / 3600 ))
+          {
+            echo "### ci-binaries staleness advisory (non-gating, #138)"
+            echo ""
+            echo "- Installed manifest \`engine=\` commit: \`${ENGINE_SHA}\` (${ENGINE_DATE})"
+            echo "- \`${ENGINE_REPO}\`@main HEAD commit timestamp: ${HEAD_DATE}"
+            echo "- Age: ${AGE_HOURS}h (threshold: ${STALENESS_THRESHOLD_HOURS}h, ruled on #138)"
+            echo ""
+            if [ "$AGE_HOURS" -gt "$STALENESS_THRESHOLD_HOURS" ]; then
+              echo "**Advisory: the installed \`ci-binaries\` release is more than ${STALENESS_THRESHOLD_HOURS}h behind engine main.** This does not affect the leg's verdict — it only makes staleness observable."
+            else
+              echo "Within threshold — no staleness advisory."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$AGE_HOURS" -gt "$STALENESS_THRESHOLD_HOURS" ]; then
+            echo "::warning::ci-binaries release is ${AGE_HOURS}h behind ${ENGINE_REPO}@main (threshold ${STALENESS_THRESHOLD_HOURS}h, non-gating, #138)."
+          fi
 
       - name: Configure private-dep access
         uses: swift-institute/.github/.github/actions/configure-private-repos@2d8dcb700888fdc60be0ff1a9af6d7058d122833  # main 2026-07-30, advanced by pin-advance (#43)
