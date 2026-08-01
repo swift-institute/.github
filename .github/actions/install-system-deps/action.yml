@@ -19,12 +19,16 @@
 # Instead of hard-coding a per-package apt list (which drifts), this derives
 # the needed packages from the resolved graph:
 #
-#   1. `swift package resolve` to populate `.build/checkouts/` (must run AFTER
-#      configure-private-repos so private deps can be cloned).
-#   2. Scan the root manifest AND every resolved dependency manifest (incl.
-#      version-specific `Package@swift-*.swift`) for `.linkedLibrary("<name>")`.
-#      The linked library is usually declared by a DEPENDENCY, not the root
-#      package, so scanning only the root manifest is insufficient.
+#   1. `swift package resolve` to populate every compiled package graph's
+#      `.build/checkouts/` (must run AFTER configure-private-repos so private
+#      deps can be cloned). The sanctioned nested-test layout declares a
+#      second graph at `Tests/Package.swift`, which `swift test` later
+#      compiles from `Tests/`.
+#   2. Scan every compiled package root AND every resolved dependency manifest
+#      (incl. version-specific `Package@swift-*.swift`) for
+#      `.linkedLibrary("<name>")`. The linked library is usually declared by
+#      a DEPENDENCY, not the root package, so scanning only the root manifest
+#      is insufficient.
 #   3. Map each linker name to its apt `-dev` package and install the union.
 #      Libraries provided by `libc6-dev` (already in the image) map to nothing;
 #      an unmapped library emits a `::warning::` (one-line map addition) rather
@@ -52,16 +56,34 @@ runs:
           exit 0
         fi
 
-        # Populate .build/checkouts so transitive-dependency manifests are
-        # scannable. Best-effort: if resolve fails, the downstream build step
-        # surfaces the real error; we install nothing rather than masking it.
-        swift package resolve \
-          || echo "::warning::swift package resolve failed during system-dep derivation; continuing best-effort"
+        # Populate every graph that a Test step can compile. The sanctioned
+        # nested-test layout has a distinct manifest and dependency graph at
+        # Tests/Package.swift; resolving only the root misses its C shims.
+        package_roots=(.)
+        if [ -f Tests/Package.swift ]; then
+          package_roots+=(Tests)
+        fi
+        for package_root in "${package_roots[@]}"; do
+          (
+            cd "$package_root"
+            swift package resolve
+          ) || echo "::warning::swift package resolve failed during system-dep derivation for $package_root; continuing best-effort"
+        done
 
-        # Scan root + every resolved manifest for .linkedLibrary("<name>").
-        libs=$(grep -rhoE '\.linkedLibrary\("[^"]+"' \
-                 Package.swift Package@swift-*.swift \
-                 .build/checkouts/*/Package.swift .build/checkouts/*/Package@swift-*.swift 2>/dev/null \
+        # Scan every compiled package graph + its resolved manifests for
+        # .linkedLibrary("<name>"). nullglob avoids passing literal unmatched
+        # paths to grep while preserving spaces in manifest filenames.
+        shopt -s nullglob
+        manifests=()
+        for package_root in "${package_roots[@]}"; do
+          manifests+=(
+            "$package_root"/Package.swift
+            "$package_root"/Package@swift-*.swift
+            "$package_root"/.build/checkouts/*/Package.swift
+            "$package_root"/.build/checkouts/*/Package@swift-*.swift
+          )
+        done
+        libs=$(grep -hroE '\.linkedLibrary\("[^"]+"' "${manifests[@]}" 2>/dev/null \
                | sed -E 's/.*"([^"]+)".*/\1/' | sort -u || true)
         echo "Linked libraries in dependency graph: ${libs:-<none>}"
 
