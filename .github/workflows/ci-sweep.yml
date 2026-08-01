@@ -41,7 +41,7 @@ permissions: {}
 
 on:
   schedule:
-    - cron: '11 2 * * *'   # nightly 02:11 UTC (offset from the weekly 06:xx family)
+    - cron: '11 0 * * *'   # nightly 00:11 UTC — interim measure (#168): 2h earlier than 02:11 to move the observed 05:17-05:44 UTC delayed start to ~03:17 UTC, clear of the 04:00 UTC metadata-sync cron cluster
   workflow_dispatch:
     inputs:
       repos:
