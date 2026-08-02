@@ -1,0 +1,52 @@
+name: Task
+description: Record an exact-owner, executable unit of work.
+type: task
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The compact profile below is the versioned Issue-record core. GitHub
+        owns Issue state, hierarchy, dependencies, Project membership, and
+        assignees; do not copy those native facts into this body.
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind
+      options: [Task]
+      default: 0
+    validations:
+      required: true
+  - type: input
+    id: owner-coordinate
+    attributes:
+      label: Owner coordinate
+      placeholder: swift-institute/.github
+    validations:
+      required: true
+  - type: dropdown
+    id: status
+    attributes:
+      label: Status
+      options: [Active, Blocked]
+      default: 0
+    validations:
+      required: true
+  - type: input
+    id: grammar-version
+    attributes:
+      label: Grammar version
+      placeholder: "1"
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Proposed outcome
+    validations:
+      required: true

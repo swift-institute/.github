@@ -657,6 +657,132 @@ struct RepositoryPolicyTests {
         #expect(report.advisories.isEmpty)
     }
 
+    // MARK: - Issue-record grammar
+
+    @Test
+    func issueRecordParserAcceptsTheCompactTaskProfile() throws {
+        let record = try RepositoryPolicy.Issue.Parser.record("""
+            ### Kind
+
+            Task
+
+            ### Owner coordinate
+
+            swift-institute/.github
+
+            ### Status
+
+            Active
+
+            ### Grammar version
+
+            1
+            """)
+
+        #expect(record.kind == .task)
+        #expect(record.owner == "swift-institute/.github")
+        #expect(record.status == .active)
+        #expect(record.grammarVersion == 1)
+    }
+
+    // Positive control: an omitted core field must be reported malformed,
+    // not silently accepted as an otherwise clean record.
+    @Test
+    func issueRecordReconcilerReportsMalformedCore() {
+        let report = RepositoryPolicy.Issue.reconcile([
+            .init(
+                coordinate: "swift-institute/.github#173",
+                body: """
+                    ### Kind
+
+                    Task
+
+                    ### Owner coordinate
+
+                    swift-institute/.github
+
+                    ### Status
+
+                    Active
+                    """,
+                native: .init(state: .open)
+            )
+        ])
+
+        #expect(report.map(\.finding) == [.malformed])
+    }
+
+    @Test
+    func issueRecordReconcilerSeparatesNativeStateAndUnavailableInputs() throws {
+        let active = """
+            ### Kind
+
+            Task
+
+            ### Owner coordinate
+
+            swift-institute/.github
+
+            ### Status
+
+            Active
+
+            ### Grammar version
+
+            1
+            """
+        let decision = try RepositoryPolicy.Issue.Decision(
+            grammarVersion: 1,
+            status: "superseded",
+            supersededBy: "https://github.com/swift-institute/.github/issues/174"
+        )
+
+        let report = RepositoryPolicy.Issue.reconcile([
+            .init(coordinate: "z#1", body: nil, native: .init(state: .open)),
+            .init(coordinate: "a#1", body: active, native: .init(state: .completed)),
+            .init(coordinate: "b#1", body: active, native: .init(state: .open), decision: decision),
+            .init(coordinate: "c#1", body: active, native: .init(state: .open, parent: "a#0"))
+        ])
+
+        #expect(report.map(\.coordinate) == ["a#1", "b#1", "c#1", "z#1"])
+        #expect(report.map(\.finding) == [.stale, .superseded, .conforming, .unavailable])
+    }
+
+    @Test
+    func issueRecordReconcilerIncludesEveryPage() {
+        let report = RepositoryPolicy.Issue.reconcile(pages: [
+            .init(
+                inputs: [.init(coordinate: "b#2", body: nil, native: .init(state: .open))],
+                hasNextPage: true
+            ),
+            .init(
+                inputs: [.init(coordinate: "a#1", body: nil, native: .init(state: .open))],
+                hasNextPage: false
+            ),
+        ])
+
+        #expect(report.map(\.coordinate) == ["a#1", "b#2"])
+        #expect(report.map(\.finding) == [.unavailable, .unavailable])
+    }
+
+    @Test
+    func typedLifecycleRecordsRejectInvalidVersionAndDigest() {
+        #expect(throws: RepositoryPolicy.Issue.Error.self) {
+            try RepositoryPolicy.Issue.CompactionCheckpoint(
+                grammarVersion: 2,
+                source: "https://github.com/swift-institute/.github/issues/173",
+                digest: "0123456789abcdef0123456789abcdef01234567"
+            )
+        }
+        #expect(throws: RepositoryPolicy.Issue.Error.self) {
+            try RepositoryPolicy.Issue.TerminalReceipt(
+                grammarVersion: 1,
+                revision: "not-a-revision",
+                verification: "workspace package test"
+            )
+        }
+    }
+
     private func repositoryFixture(files: [String: String]) throws -> URL {
         let root =
             FileManager.default.temporaryDirectory
