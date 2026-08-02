@@ -2,57 +2,45 @@ import PR_Transaction
 import Testing
 
 extension PRTransaction {
-    @Suite struct Transaction {
-        @Suite struct Unit {}
-    }
+    @Suite struct Transaction { @Suite struct Unit {} }
 }
 
 extension PRTransaction.Transaction.Unit {
+    private static let base = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
     private static let head = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    private static let old = "cccccccccccccccccccccccccccccccccccccccc"
 
-    private static func fixture() -> PRTransaction.Snapshot {
+    private static func fixture(
+        task: Int = 176, taskState: String = "OPEN", planBase: String? = nil, planHead: String? = nil,
+        evidenceHead: String? = nil, approvalHead: String? = nil, reviewer: String = "swift-institute-bot[bot]", fullTier: String? = "success", queuedRun: Bool = false, receipt: Bool = true
+    ) -> PRTransaction.Snapshot {
+        let task = PRTransaction.Snapshot.Issue(repository: "swift-institute/.github", number: task, state: taskState)
+        let evidence = PRTransaction.Snapshot.Evidence(command: "workspace package test", result: "success", head: evidenceHead ?? head)
+        let payload = PRTransaction.Snapshot.Payload(preflighted: true, head: head)
+        let plan = PRTransaction.Snapshot.Plan(accepted: true, base: planBase ?? base, head: planHead ?? head, fixer: "coenttb", paths: ["Tools/PRTransaction"], evidence: [evidence], payload: payload, nextOwner: "swift-institute-bot[bot]")
+        let approval = PRTransaction.Snapshot.Review(actor: reviewer, state: "APPROVED", head: approvalHead ?? head)
+        let checks = [
+            PRTransaction.Snapshot.Check(name: "ci-ok", head: head, conclusion: "success"),
+            PRTransaction.Snapshot.Check(name: "full-tier", head: head, conclusion: fullTier),
+        ] + (queuedRun ? [PRTransaction.Snapshot.Check(name: "required-run", head: head, conclusion: "in_progress")] : [])
+        let receipt = PRTransaction.Snapshot.Receipt(complete: receipt, head: head, issueClosed: receipt, unassigned: receipt)
         .init(
-            repository: "swift-institute/.github",
-            pull: 1,
-            head: head,
-            fixer: "coenttb",
-            plan: .init(accepted: true, head: head, fixer: "coenttb"),
-            reviews: [.init(actor: "swift-institute-bot[bot]", state: "APPROVED", head: head)],
-            checks: [.init(name: "ci-ok", head: head, conclusion: "success")],
-            unresolvedThreads: 0,
-            issues: [.init(repository: "swift-institute/.github", state: "OPEN")],
-            merge: .init(squash: true, mergeCommit: false, rebase: false)
+            repository: "swift-institute/.github", pull: 181, base: base, head: head, fixer: "coenttb",
+            owningTask: task, plan: plan, reviews: [approval], checks: checks,
+            unresolvedThreads: 0, merge: .init(squash: true, mergeCommit: false, rebase: false),
+            receipt: receipt
         )
     }
 
-    @Test func `accepts every current head control`() throws {
-        #expect(try PRTransaction.merge(fixture()) == .readyForMerge)
-    }
-
-    @Test func `refuses an unaccepted plan`() {
-        var snapshot = fixture()
-        snapshot = .init(repository: snapshot.repository, pull: snapshot.pull, head: snapshot.head, fixer: snapshot.fixer, plan: .init(accepted: false, head: snapshot.head, fixer: snapshot.fixer), reviews: snapshot.reviews, checks: snapshot.checks, unresolvedThreads: snapshot.unresolvedThreads, issues: snapshot.issues, merge: snapshot.merge)
-        #expect(throws: PRTransaction.Error.planNotAccepted) { try PRTransaction.review(snapshot) }
-    }
-
-    @Test func `refuses a stale plan head`() {
-        let snapshot = fixture(stalePlan: true)
-        #expect(throws: PRTransaction.Error.stalePlan(expected: head, actual: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")) { try PRTransaction.review(snapshot) }
-    }
-
-    @Test func `refuses a stale ci head`() {
-        let snapshot = fixture(staleCI: true)
-        #expect(throws: PRTransaction.Error.staleCI) { try PRTransaction.review(snapshot) }
-    }
-
-    @Test func `refuses a stale bot approval`() {
-        let snapshot = fixture(staleApproval: true)
-        #expect(throws: PRTransaction.Error.staleBotApproval) { try PRTransaction.merge(snapshot) }
-    }
-
-    private static func fixture(stalePlan: Bool = false, staleCI: Bool = false, staleApproval: Bool = false) -> PRTransaction.Snapshot {
-        let snapshot = fixture()
-        let old = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-        return .init(repository: snapshot.repository, pull: snapshot.pull, head: snapshot.head, fixer: snapshot.fixer, plan: .init(accepted: true, head: stalePlan ? old : snapshot.head, fixer: snapshot.fixer), reviews: [.init(actor: "swift-institute-bot[bot]", state: "APPROVED", head: staleApproval ? old : snapshot.head)], checks: [.init(name: "ci-ok", head: staleCI ? old : snapshot.head, conclusion: "success")], unresolvedThreads: snapshot.unresolvedThreads, issues: snapshot.issues, merge: snapshot.merge)
-    }
+    @Test func `accepts a complete current-head transaction`() throws { #expect(try PRTransaction.complete(fixture()) == .readyForCompletion) }
+    @Test func `rejects an unrelated open issue`() { #expect(throws: PRTransaction.Error.invalidOwningTask) { try PRTransaction.review(fixture(task: 175)) } }
+    @Test func `rejects a closed governing task`() { #expect(throws: PRTransaction.Error.invalidOwningTask) { try PRTransaction.review(fixture(taskState: "CLOSED")) } }
+    @Test func `rejects a stale prepared base`() { #expect(throws: PRTransaction.Error.stalePlanBase(expected: base, actual: old)) { try PRTransaction.review(fixture(planBase: old)) } }
+    @Test func `rejects a stale prepared head`() { #expect(throws: PRTransaction.Error.stalePlanHead(expected: head, actual: old)) { try PRTransaction.review(fixture(planHead: old)) } }
+    @Test func `rejects stale evidence after a head change`() { #expect(throws: PRTransaction.Error.staleEvidence) { try PRTransaction.review(fixture(evidenceHead: old)) } }
+    @Test func `rejects a nonterminal full tier`() { #expect(throws: PRTransaction.Error.nonterminalFullTier) { try PRTransaction.review(fixture(fullTier: "in_progress")) } }
+    @Test func `rejects an old bot approval`() { #expect(throws: PRTransaction.Error.staleBotApproval) { try PRTransaction.merge(fixture(approvalHead: old)) } }
+    @Test func `rejects a fixer approval`() { #expect(throws: PRTransaction.Error.reviewerIsFixer) { try PRTransaction.merge(fixture(reviewer: "coenttb")) } }
+    @Test func `rejects ci completion while a required run is queued`() { #expect(throws: PRTransaction.Error.nonterminalRequiredRun) { try PRTransaction.complete(fixture(queuedRun: true)) } }
+    @Test func `rejects an incomplete post-green receipt`() { #expect(throws: PRTransaction.Error.incompleteReceipt) { try PRTransaction.complete(fixture(receipt: false)) } }
 }
