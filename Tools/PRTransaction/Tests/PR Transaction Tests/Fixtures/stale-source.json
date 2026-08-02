@@ -1,0 +1,56 @@
+{
+  "repository": "swift-institute/.github",
+  "pull": 189,
+  "base": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "fixer": "coenttb",
+  "owningTask": {
+    "repository": "swift-institute/.github",
+    "number": 188,
+    "state": "OPEN"
+  },
+  "plan": {
+    "accepted": true,
+    "base": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "head": "cccccccccccccccccccccccccccccccccccccccc",
+    "task": {
+      "repository": "swift-institute/.github",
+      "number": 188,
+      "state": "OPEN"
+    },
+    "verification": {
+      "package": {}
+    },
+    "paths": [
+      "Tools/PRTransaction"
+    ],
+    "evidence": [
+      {
+        "command": "workspace package test --package-path Tools/PRTransaction --fresh --jobs 4",
+        "result": "success",
+        "head": "cccccccccccccccccccccccccccccccccccccccc"
+      }
+    ],
+    "payloadPreflighted": true,
+    "nextOwner": "swift-institute-bot[bot]"
+  },
+  "reviews": [],
+  "checks": [
+    {
+      "name": "ci-ok",
+      "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "conclusion": "success"
+    },
+    {
+      "name": "full-tier",
+      "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "conclusion": "success"
+    }
+  ],
+  "unresolvedThreads": 0,
+  "merge": {
+    "squash": true,
+    "mergeCommit": false,
+    "rebase": false
+  }
+}
