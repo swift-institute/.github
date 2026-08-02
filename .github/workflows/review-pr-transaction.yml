@@ -117,7 +117,9 @@ jobs:
                 | { repository: $repository, number, state: "OPEN" }
               '
           )
-          reviews=$(gh api --paginate "repos/${repository}/pulls/${PULL}/reviews")
+          gh api --paginate --slurp \
+            "repos/${repository}/pulls/${PULL}/reviews?per_page=100" \
+            > "$RUNNER_TEMP/review-pages.json"
           # Preserve every API page and its declared total for the typed producer.
           # The producer combines the pages and fails closed if pagination is
           # absent, inconsistent, or incomplete.
@@ -127,36 +129,55 @@ jobs:
           gh api --paginate --slurp \
             "repos/${repository}/actions/runs?head_sha=${head}&per_page=100" \
             > "$RUNNER_TEMP/run-pages.json"
-          graph=$(gh api graphql -F owner=swift-institute -F name=.github -F number="${PULL}" -f query='
-            query($owner: String!, $name: String!, $number: Int!) {
+          gh api graphql -F owner=swift-institute -F name=.github -F number="${PULL}" \
+            -F task="${task_number}" -f query='
+            query($owner: String!, $name: String!, $number: Int!, $task: Int!) {
               repository(owner: $owner, name: $name) {
                 mergeCommitAllowed
                 rebaseMergeAllowed
                 squashMergeAllowed
-                pullRequest(number: $number) {
-                  reviewThreads(first: 100) { nodes { isResolved } pageInfo { hasNextPage } }
-                  closingIssuesReferences(first: 100) {
-                    nodes { number state repository { nameWithOwner } }
+                issue(number: $task) {
+                  number
+                  state
+                  issueType { name }
+                  repository { nameWithOwner }
+                  timelineItems(itemTypes: [CROSS_REFERENCED_EVENT], first: 100) {
+                    nodes {
+                      ... on CrossReferencedEvent {
+                        source {
+                          __typename
+                          ... on PullRequest {
+                            number
+                            repository { nameWithOwner }
+                          }
+                        }
+                      }
+                    }
                     pageInfo { hasNextPage }
                   }
                 }
+                pullRequest(number: $number) {
+                  reviewThreads(first: 100) { nodes { isResolved } pageInfo { hasNextPage } }
+                }
               }
-            }')
+            }' > "$RUNNER_TEMP/graph.json"
           jq -e '
+            .data.repository.issue != null and
+            .data.repository.issue.timelineItems.pageInfo.hasNextPage == false and
             .data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage == false and
-            .data.repository.pullRequest.closingIssuesReferences.pageInfo.hasNextPage == false
-          ' <<<"$graph" >/dev/null
-          jq -e --arg repository "$task_repository" --argjson number "$task_number" '
-            [
-              .data.repository.pullRequest.closingIssuesReferences.nodes[]
+            .data.repository.issue.repository.nameWithOwner == "swift-institute/.github" and
+            .data.repository.issue.number == $task and
+            .data.repository.issue.state == "OPEN" and
+            .data.repository.issue.issueType.name == "Task" and
+            ([
+              .data.repository.issue.timelineItems.nodes[].source
               | select(
-                  .repository.nameWithOwner == $repository and
-                  .number == $number and
-                  .state == "OPEN"
+                  .__typename == "PullRequest" and
+                  .repository.nameWithOwner == "swift-institute/.github" and
+                  .number == $number
                 )
-            ]
-            | length == 1
-          ' <<<"$graph" >/dev/null
+            ] | length > 0)
+          ' --argjson task "$task_number" --argjson number "$PULL" "$RUNNER_TEMP/graph.json" >/dev/null
           jq -n \
             --arg repository "$repository" \
             --argjson pull "$PULL" \
@@ -165,10 +186,10 @@ jobs:
             --arg fixer "$fixer" \
             --argjson owningTask "$owning_task" \
             --argjson plan "$plan" \
-            --argjson reviews "$reviews" \
+            --slurpfile reviews "$RUNNER_TEMP/review-pages.json" \
             --slurpfile checks "$RUNNER_TEMP/check-pages.json" \
             --slurpfile runs "$RUNNER_TEMP/run-pages.json" \
-            --argjson graph "$graph" '
+            --slurpfile graph "$RUNNER_TEMP/graph.json" '
               {
                 repository: $repository,
                 pull: $pull,
@@ -177,7 +198,7 @@ jobs:
                 fixer: $fixer,
                 owningTask: $owningTask,
                 plan: $plan,
-                reviews: [ $reviews[] | { actor: .user.login, state: .state, head: (.commit_id // "") } ],
+                reviews: [ $reviews[0][][] | { actor: .user.login, state: .state, head: (.commit_id // "") } ],
                 checkPages: [
                   $checks[0][]
                   | {
@@ -198,11 +219,11 @@ jobs:
                       ]
                     }
                 ],
-                unresolvedThreads: ([ $graph.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved | not) ] | length),
+                unresolvedThreads: ([ $graph[0].data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved | not) ] | length),
                 merge: {
-                  squash: $graph.data.repository.squashMergeAllowed,
-                  mergeCommit: $graph.data.repository.mergeCommitAllowed,
-                  rebase: $graph.data.repository.rebaseMergeAllowed
+                  squash: $graph[0].data.repository.squashMergeAllowed,
+                  mergeCommit: $graph[0].data.repository.mergeCommitAllowed,
+                  rebase: $graph[0].data.repository.rebaseMergeAllowed
                 }
               }
             ' > producer-input.json

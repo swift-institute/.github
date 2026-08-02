@@ -2,9 +2,9 @@ import Foundation
 import Repository_Policy
 
 #if canImport(Darwin)
-import Darwin
+    import Darwin
 #elseif canImport(Glibc)
-import Glibc
+    import Glibc
 #endif
 
 @main
@@ -15,6 +15,8 @@ enum Main {
                 try validate(ValidationArguments(Array(CommandLine.arguments.dropFirst(2))))
             } else if CommandLine.arguments.dropFirst().first == "compact" {
                 try await compact(CompactionArguments(Array(CommandLine.arguments.dropFirst(2))))
+            } else if CommandLine.arguments.dropFirst().first == "ruleset" {
+                try ruleset(RulesetArguments(Array(CommandLine.arguments.dropFirst(2))))
             } else {
                 try await reconcile(ReconcileArguments(CommandLine.arguments))
             }
@@ -36,12 +38,13 @@ enum Main {
             revision: arguments.revision,
             digest: arguments.digest
         )
-        let plan = try await RepositoryPolicy.GitHubClient(token: token, baseURL: baseURL).compactIssue(
-            arguments.repository,
-            number: arguments.issue,
-            guard: expected,
-            apply: arguments.apply
-        )
+        let plan = try await RepositoryPolicy.GitHubClient(token: token, baseURL: baseURL)
+            .compactIssue(
+                arguments.repository,
+                number: arguments.issue,
+                guard: expected,
+                apply: arguments.apply
+            )
         guard let plan else {
             print("repository-policy: compact already-converged")
             return
@@ -78,10 +81,8 @@ enum Main {
                 for violation in repository.violations {
                     FileHandle.standardError.write(
                         Data(
-                            (
-                                "\(repository.repository)/\(violation.path): "
-                                    + "\(violation.identifier): \(violation.message)\n"
-                            ).utf8
+                            ("\(repository.repository)/\(violation.path): "
+                                + "\(violation.identifier): \(violation.message)\n").utf8
                         )
                     )
                 }
@@ -104,6 +105,14 @@ enum Main {
                 + "eligible=\(receipt.eligible) converged=\(receipt.converged) "
                 + "enabled=\(receipt.enabled) would-enable=\(receipt.wouldEnable)"
         )
+    }
+
+    private static func ruleset(_ arguments: RulesetArguments) throws {
+        let payload = try RepositoryPolicy.Ruleset.protectedMainPayload(
+            from: URL(filePath: arguments.policy)
+        )
+        FileHandle.standardOutput.write(payload)
+        FileHandle.standardOutput.write(Data("\n".utf8))
     }
 
     private static func write<T: Encodable>(_ value: T, to path: String?) throws {
@@ -233,7 +242,9 @@ enum Main {
                 }
                 index += 2
             }
-            guard let repository, repository.split(separator: "/", omittingEmptySubsequences: false).count == 2 else {
+            guard let repository,
+                repository.split(separator: "/", omittingEmptySubsequences: false).count == 2
+            else {
                 throw RepositoryPolicy.ConfigurationError("--repository must use owner/name form")
             }
             guard let issue, issue > 0 else {
@@ -250,6 +261,17 @@ enum Main {
             self.revision = revision
             self.digest = digest
             self.apply = apply
+        }
+    }
+
+    private struct RulesetArguments {
+        let policy: String
+
+        init(_ arguments: [String]) throws {
+            guard arguments.count == 2, arguments[0] == "--policy" else {
+                throw RepositoryPolicy.ConfigurationError("ruleset requires --policy <path>")
+            }
+            policy = arguments[1]
         }
     }
 

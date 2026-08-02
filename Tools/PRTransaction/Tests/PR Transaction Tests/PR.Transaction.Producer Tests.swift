@@ -57,6 +57,18 @@ extension PRTransaction.Transaction {
             }
         }
 
+        @Test func `paginated review response flattens every REST page`() throws {
+            let pages = try JSONDecoder().decode(
+                [[Review]].self,
+                from: Data(contentsOf: try fixture("review-pages"))
+            )
+
+            #expect(
+                pages.flatMap { $0 }.map(\.actor)
+                    == ["first-reviewer", "second-reviewer", "third-reviewer"]
+            )
+        }
+
         @Test func `producer rejects a failed duplicate check after the first hundred`() throws {
             let first = requiredChecks()
             #expect(first.count == 100)
@@ -163,6 +175,24 @@ extension PRTransaction.Transaction {
 
         private func decode(_ url: URL) throws -> PRTransaction.Snapshot {
             try JSONDecoder().decode(PRTransaction.Snapshot.self, from: Data(contentsOf: url))
+        }
+
+        private struct Review: Decodable {
+            let actor: String
+
+            private enum CodingKeys: String, CodingKey {
+                case user
+            }
+
+            private enum UserCodingKeys: String, CodingKey {
+                case login
+            }
+
+            init(from decoder: any Decoder) throws {
+                let container = try decoder.container(keyedBy: CodingKeys.self)
+                let user = try container.nestedContainer(keyedBy: UserCodingKeys.self, forKey: .user)
+                actor = try user.decode(String.self, forKey: .login)
+            }
         }
 
         private func fixture(_ name: String) throws -> URL {

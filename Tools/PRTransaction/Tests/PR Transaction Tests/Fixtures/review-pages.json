@@ -1,0 +1,21 @@
+[
+  [
+    {
+      "user": { "login": "first-reviewer" },
+      "state": "APPROVED",
+      "commit_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "user": { "login": "second-reviewer" },
+      "state": "COMMENTED",
+      "commit_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ],
+  [
+    {
+      "user": { "login": "third-reviewer" },
+      "state": "APPROVED",
+      "commit_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ]
+]
