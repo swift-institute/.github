@@ -16,6 +16,10 @@ extension PRTransaction.Transaction {
             defer { try? FileManager.default.removeItem(at: output) }
 
             let snapshot = try decode(output)
+            #expect(snapshot.repository == "swift-foundations/swift-tests")
+            #expect(snapshot.pull == 8)
+            #expect(snapshot.plan.repository == snapshot.repository)
+            #expect(snapshot.plan.pull == snapshot.pull)
             #expect(snapshot.plan.task == snapshot.owningTask)
             #expect(snapshot.plan.verification == .package)
             #expect(snapshot.plan.payload.verification == .package)
@@ -259,6 +263,8 @@ extension PRTransaction.Transaction {
                 owningTask: task,
                 plan: .init(
                     accepted: true,
+                    repository: "swift-institute/.github",
+                    pull: 189,
                     base: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
                     head: head,
                     task: task,

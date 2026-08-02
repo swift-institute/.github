@@ -1,6 +1,6 @@
 {
-  "repository": "swift-institute/.github",
-  "pull": 189,
+  "repository": "swift-foundations/swift-tests",
+  "pull": 8,
   "base": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
   "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "fixer": "coenttb",
@@ -11,6 +11,8 @@
   },
   "plan": {
     "accepted": true,
+    "repository": "swift-foundations/swift-tests",
+    "pull": 8,
     "base": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "task": {

@@ -27,6 +27,8 @@ extension PRTransaction.Snapshot {
                 owningTask: owningTask,
                 plan: PRTransaction.Snapshot.Plan(
                     accepted: plan.accepted,
+                    repository: plan.repository,
+                    pull: plan.pull,
                     base: plan.base,
                     head: plan.head,
                     fixer: fixer,

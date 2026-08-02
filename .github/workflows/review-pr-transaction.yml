@@ -6,14 +6,21 @@
 # `accepted-plan` is `Snapshot.Source.Plan` JSON. Its `verification` is exactly
 # `{ "package": {} }` or `{ "control": { "checks": [<non-empty names>] } }`;
 # absent, empty, duplicate, or additional profile fields fail closed.
+# The target App token is scoped to one selected repository. Minting fails when
+# that owner/repository is outside the App's existing Institute installations.
 
 name: review-pr-transaction
 
 on:
   workflow_dispatch:
     inputs:
+      repository:
+        description: 'Exact Institute target repository in owner/name form.'
+        required: true
+        default: 'swift-institute/.github'
+        type: string
       pull:
-        description: 'Open pull-request number in swift-institute/.github.'
+        description: 'Open pull-request number in the exact target repository.'
         required: true
         type: string
       accepted-plan:
@@ -43,13 +50,35 @@ jobs:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
 
+      - name: Resolve exact target scope
+        id: target
+        shell: bash
+        env:
+          TARGET_REPOSITORY: ${{ inputs.repository }}
+          TARGET_PULL: ${{ inputs.pull }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$TARGET_REPOSITORY" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9._-]+$ ]]; then
+            echo "::error::'repository' must be one exact owner/name coordinate."
+            exit 1
+          fi
+          if [[ ! "$TARGET_PULL" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::'pull' must be one positive decimal pull-request number."
+            exit 1
+          fi
+          echo "repository=${TARGET_REPOSITORY}" >> "$GITHUB_OUTPUT"
+          echo "owner=${TARGET_REPOSITORY%/*}" >> "$GITHUB_OUTPUT"
+          echo "name=${TARGET_REPOSITORY#*/}" >> "$GITHUB_OUTPUT"
+          echo "pull=${TARGET_PULL}" >> "$GITHUB_OUTPUT"
+
       - name: Mint narrowed reviewer token
         id: token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
           private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
-          owner: swift-institute
+          owner: ${{ steps.target.outputs.owner }}
+          repositories: ${{ steps.target.outputs.name }}
           permission-metadata: read
           permission-contents: read
           permission-pull-requests: write
@@ -59,11 +88,12 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
-          PULL: ${{ inputs.pull }}
+          TARGET_REPOSITORY: ${{ steps.target.outputs.repository }}
+          PULL: ${{ steps.target.outputs.pull }}
           ACCEPTED_PLAN: ${{ inputs.accepted-plan }}
         run: |
           set -euo pipefail
-          repository='swift-institute/.github'
+          repository="$TARGET_REPOSITORY"
           plan=$(jq -ce '
             def nonempty_strings:
               type == "array" and length > 0 and all(.[]; type == "string" and length > 0);
@@ -79,6 +109,8 @@ jobs:
               );
             select(type == "object")
             | select(.accepted == true)
+            | select(.repository | type == "string" and length > 0)
+            | select(.pull | type == "number" and . > 0 and floor == .)
             | select(.base | exact_revision)
             | select(.head | exact_revision)
             | select(
@@ -107,9 +139,18 @@ jobs:
           fixer=$(jq -er '.user.login' <<<"$pull")
           test "$(jq -r '.state' <<<"$pull")" = open
           test "$(jq -r '.draft' <<<"$pull")" = false
+          test "$(jq -r '.repository' <<<"$plan")" = "$repository"
+          test "$(jq -r '.pull' <<<"$plan")" = "$PULL"
           task_repository=$(jq -er '.task.repository' <<<"$plan")
           task_number=$(jq -er '.task.number' <<<"$plan")
-          test "$task_repository" = "$repository"
+          if [[ ! "$task_repository" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9._-]+$ ]]; then
+            echo "::error::Accepted-plan Task repository must be one exact owner/name coordinate."
+            exit 1
+          fi
+          task_owner="${task_repository%/*}"
+          task_name="${task_repository#*/}"
+          target_owner="${repository%/*}"
+          target_name="${repository#*/}"
           owning_task=$(
             gh api "repos/${task_repository}/issues/${task_number}" |
               jq -ce --arg repository "$task_repository" --argjson number "$task_number" '
@@ -129,13 +170,39 @@ jobs:
           gh api --paginate --slurp \
             "repos/${repository}/actions/runs?head_sha=${head}&per_page=100" \
             > "$RUNNER_TEMP/run-pages.json"
-          gh api graphql -F owner=swift-institute -F name=.github -F number="${PULL}" \
-            -F task="${task_number}" -f query='
-            query($owner: String!, $name: String!, $number: Int!, $task: Int!) {
-              repository(owner: $owner, name: $name) {
+          gh api graphql -F owner="$target_owner" -F name="$target_name" -F number="${PULL}" \
+            -F taskOwner="$task_owner" -F taskName="$task_name" -F task="${task_number}" -f query='
+            query(
+              $owner: String!, $name: String!, $number: Int!,
+              $taskOwner: String!, $taskName: String!, $task: Int!
+            ) {
+              target: repository(owner: $owner, name: $name) {
                 mergeCommitAllowed
                 rebaseMergeAllowed
                 squashMergeAllowed
+                pullRequest(number: $number) {
+                  reviewThreads(first: 100) { nodes { isResolved } pageInfo { hasNextPage } }
+                  timelineItems(itemTypes: [CROSS_REFERENCED_EVENT], first: 100) {
+                    nodes {
+                      ... on CrossReferencedEvent {
+                        source {
+                          __typename
+                          ... on Issue {
+                            number
+                            repository { nameWithOwner }
+                          }
+                          ... on PullRequest {
+                            number
+                            repository { nameWithOwner }
+                          }
+                        }
+                      }
+                    }
+                    pageInfo { hasNextPage }
+                  }
+                }
+              }
+              taskRepository: repository(owner: $taskOwner, name: $taskName) {
                 issue(number: $task) {
                   number
                   state
@@ -156,28 +223,40 @@ jobs:
                     pageInfo { hasNextPage }
                   }
                 }
-                pullRequest(number: $number) {
-                  reviewThreads(first: 100) { nodes { isResolved } pageInfo { hasNextPage } }
-                }
               }
             }' > "$RUNNER_TEMP/graph.json"
           jq -e '
-            .data.repository.issue != null and
-            .data.repository.issue.timelineItems.pageInfo.hasNextPage == false and
-            .data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage == false and
-            .data.repository.issue.repository.nameWithOwner == "swift-institute/.github" and
-            .data.repository.issue.number == $task and
-            .data.repository.issue.state == "OPEN" and
-            .data.repository.issue.issueType.name == "Task" and
-            ([
-              .data.repository.issue.timelineItems.nodes[].source
-              | select(
-                  .__typename == "PullRequest" and
-                  .repository.nameWithOwner == "swift-institute/.github" and
-                  .number == $number
-                )
-            ] | length > 0)
-          ' --argjson task "$task_number" --argjson number "$PULL" "$RUNNER_TEMP/graph.json" >/dev/null
+            .data.target != null and
+            .data.target.pullRequest != null and
+            .data.taskRepository.issue != null and
+            .data.taskRepository.issue.timelineItems.pageInfo.hasNextPage == false and
+            .data.target.pullRequest.reviewThreads.pageInfo.hasNextPage == false and
+            .data.target.pullRequest.timelineItems.pageInfo.hasNextPage == false and
+            .data.taskRepository.issue.repository.nameWithOwner == $taskRepository and
+            .data.taskRepository.issue.number == $task and
+            .data.taskRepository.issue.state == "OPEN" and
+            .data.taskRepository.issue.issueType.name == "Task" and
+            (
+              ([
+                .data.taskRepository.issue.timelineItems.nodes[].source
+                | select(
+                    .__typename == "PullRequest" and
+                    .repository.nameWithOwner == $repository and
+                    .number == $number
+                  )
+              ] | length > 0) or
+              ([
+                .data.target.pullRequest.timelineItems.nodes[].source
+                | select(
+                    .__typename == "Issue" and
+                    .repository.nameWithOwner == $taskRepository and
+                    .number == $task
+                  )
+              ] | length > 0)
+            )
+          ' --arg repository "$repository" --arg taskRepository "$task_repository" \
+            --argjson task "$task_number" --argjson number "$PULL" \
+            "$RUNNER_TEMP/graph.json" >/dev/null
           jq -n \
             --arg repository "$repository" \
             --argjson pull "$PULL" \
@@ -219,11 +298,11 @@ jobs:
                       ]
                     }
                 ],
-                unresolvedThreads: ([ $graph[0].data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved | not) ] | length),
+                unresolvedThreads: ([ $graph[0].data.target.pullRequest.reviewThreads.nodes[] | select(.isResolved | not) ] | length),
                 merge: {
-                  squash: $graph[0].data.repository.squashMergeAllowed,
-                  mergeCommit: $graph[0].data.repository.mergeCommitAllowed,
-                  rebase: $graph[0].data.repository.rebaseMergeAllowed
+                  squash: $graph[0].data.target.squashMergeAllowed,
+                  mergeCommit: $graph[0].data.target.mergeCommitAllowed,
+                  rebase: $graph[0].data.target.rebaseMergeAllowed
                 }
               }
             ' > producer-input.json
@@ -236,11 +315,12 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
-          PULL: ${{ inputs.pull }}
+          TARGET_REPOSITORY: ${{ steps.target.outputs.repository }}
+          PULL: ${{ steps.target.outputs.pull }}
           HEAD: ${{ steps.guard.outputs.head }}
         run: |
           set -euo pipefail
-          repository='swift-institute/.github'
+          repository="$TARGET_REPOSITORY"
           current=$(gh api "repos/${repository}/pulls/${PULL}" --jq .head.sha)
           test "$current" = "$HEAD"
           gh api --method POST "repos/${repository}/pulls/${PULL}/reviews" \

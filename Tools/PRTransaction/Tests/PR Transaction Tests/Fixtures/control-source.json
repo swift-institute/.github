@@ -11,6 +11,8 @@
   },
   "plan": {
     "accepted": true,
+    "repository": "swift-institute/.github",
+    "pull": 189,
     "base": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "task": {
