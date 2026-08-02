@@ -2,9 +2,9 @@ import Foundation
 import Repository_Policy
 
 #if canImport(Darwin)
-import Darwin
+    import Darwin
 #elseif canImport(Glibc)
-import Glibc
+    import Glibc
 #endif
 
 @main
@@ -38,12 +38,13 @@ enum Main {
             revision: arguments.revision,
             digest: arguments.digest
         )
-        let plan = try await RepositoryPolicy.GitHubClient(token: token, baseURL: baseURL).compactIssue(
-            arguments.repository,
-            number: arguments.issue,
-            guard: expected,
-            apply: arguments.apply
-        )
+        let plan = try await RepositoryPolicy.GitHubClient(token: token, baseURL: baseURL)
+            .compactIssue(
+                arguments.repository,
+                number: arguments.issue,
+                guard: expected,
+                apply: arguments.apply
+            )
         guard let plan else {
             print("repository-policy: compact already-converged")
             return
@@ -80,10 +81,8 @@ enum Main {
                 for violation in repository.violations {
                     FileHandle.standardError.write(
                         Data(
-                            (
-                                "\(repository.repository)/\(violation.path): "
-                                    + "\(violation.identifier): \(violation.message)\n"
-                            ).utf8
+                            ("\(repository.repository)/\(violation.path): "
+                                + "\(violation.identifier): \(violation.message)\n").utf8
                         )
                     )
                 }
@@ -243,7 +242,9 @@ enum Main {
                 }
                 index += 2
             }
-            guard let repository, repository.split(separator: "/", omittingEmptySubsequences: false).count == 2 else {
+            guard let repository,
+                repository.split(separator: "/", omittingEmptySubsequences: false).count == 2
+            else {
                 throw RepositoryPolicy.ConfigurationError("--repository must use owner/name form")
             }
             guard let issue, issue > 0 else {

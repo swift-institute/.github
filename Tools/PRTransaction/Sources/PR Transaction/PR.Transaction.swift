@@ -114,13 +114,19 @@ public enum PRTransaction {
             throw Error.stalePlanHead(expected: snapshot.head, actual: snapshot.plan.head)
         }
         guard !snapshot.plan.paths.isEmpty else { throw Error.missingPaths }
-        guard !snapshot.plan.evidence.isEmpty, snapshot.plan.evidence.allSatisfy({ !$0.command.isEmpty && $0.result == "success" }) else {
+        guard !snapshot.plan.evidence.isEmpty,
+            snapshot.plan.evidence.allSatisfy({ !$0.command.isEmpty && $0.result == "success" })
+        else {
             throw Error.missingEvidence
         }
-        guard snapshot.plan.evidence.allSatisfy({ $0.head == snapshot.head }) else { throw Error.staleEvidence }
+        guard snapshot.plan.evidence.allSatisfy({ $0.head == snapshot.head }) else {
+            throw Error.staleEvidence
+        }
         guard snapshot.plan.payload.preflighted else { throw Error.payloadNotPreflighted }
         guard snapshot.plan.payload.head == snapshot.head else { throw Error.stalePayload }
-        guard snapshot.plan.nextOwner == "swift-institute-bot[bot]" else { throw Error.missingNextOwner }
+        guard snapshot.plan.nextOwner == "swift-institute-bot[bot]" else {
+            throw Error.missingNextOwner
+        }
         guard snapshot.owningTask.repository == snapshot.repository,
             snapshot.owningTask.number == snapshot.plan.task,
             snapshot.owningTask.state == "OPEN",
@@ -131,33 +137,54 @@ public enum PRTransaction {
         }
         let ci = snapshot.checks.filter { $0.name == "ci-ok" }
         guard !ci.isEmpty else { throw Error.missingCI }
-        guard ci.contains(where: { $0.head == snapshot.head && $0.conclusion == "success" }) else { throw Error.staleCI }
+        guard ci.contains(where: { $0.head == snapshot.head && $0.conclusion == "success" }) else {
+            throw Error.staleCI
+        }
         let fullTier = snapshot.checks.filter { $0.name == "full-tier" }
-        guard fullTier.contains(where: { $0.head == snapshot.head && $0.conclusion == "success" }) else {
+        guard fullTier.contains(where: { $0.head == snapshot.head && $0.conclusion == "success" })
+        else {
             throw Error.nonterminalFullTier
         }
-        guard snapshot.unresolvedThreads == 0 else { throw Error.unresolvedThreads(snapshot.unresolvedThreads) }
-        guard snapshot.merge.squash, !snapshot.merge.mergeCommit, !snapshot.merge.rebase else { throw Error.mergeMethod }
+        guard snapshot.unresolvedThreads == 0 else {
+            throw Error.unresolvedThreads(snapshot.unresolvedThreads)
+        }
+        guard snapshot.merge.squash, !snapshot.merge.mergeCommit, !snapshot.merge.rebase else {
+            throw Error.mergeMethod
+        }
         return .readyForReview
     }
 
     public static func merge(_ snapshot: Snapshot) throws -> Verdict {
         _ = try review(snapshot)
-        guard !snapshot.reviews.contains(where: { $0.state == "APPROVED" && $0.actor == snapshot.fixer }) else {
+        guard
+            !snapshot.reviews.contains(where: {
+                $0.state == "APPROVED" && $0.actor == snapshot.fixer
+            })
+        else {
             throw Error.reviewerIsFixer
         }
-        let approvals = snapshot.reviews.filter { $0.actor == "swift-institute-bot[bot]" && $0.state == "APPROVED" }
+        let approvals = snapshot.reviews.filter {
+            $0.actor == "swift-institute-bot[bot]" && $0.state == "APPROVED"
+        }
         guard !approvals.isEmpty else { throw Error.missingBotApproval }
-        guard approvals.contains(where: { $0.head == snapshot.head }) else { throw Error.staleBotApproval }
+        guard approvals.contains(where: { $0.head == snapshot.head }) else {
+            throw Error.staleBotApproval
+        }
         return .readyForMerge
     }
 
     public static func complete(_ snapshot: Snapshot) throws -> Verdict {
         _ = try merge(snapshot)
-        guard snapshot.checks.allSatisfy({ ["success", "failure", "cancelled", "skipped"].contains($0.conclusion ?? "") }) else {
+        guard
+            snapshot.checks.allSatisfy({
+                ["success", "failure", "cancelled", "skipped"].contains($0.conclusion ?? "")
+            })
+        else {
             throw Error.nonterminalRequiredRun
         }
-        guard snapshot.receipt.complete, snapshot.receipt.head == snapshot.head, snapshot.receipt.issueClosed, snapshot.receipt.unassigned else {
+        guard snapshot.receipt.complete, snapshot.receipt.head == snapshot.head,
+            snapshot.receipt.issueClosed, snapshot.receipt.unassigned
+        else {
             throw Error.incompleteReceipt
         }
         return .readyForCompletion
