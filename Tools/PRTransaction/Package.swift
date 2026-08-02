@@ -12,7 +12,11 @@ let package = Package(
     targets: [
         .target(name: "PR Transaction"),
         .executableTarget(name: "PR Transaction CLI", dependencies: ["PR Transaction"]),
-        .testTarget(name: "PR Transaction Tests", dependencies: ["PR Transaction"]),
+        .testTarget(
+            name: "PR Transaction Tests",
+            dependencies: ["PR Transaction"],
+            resources: [.copy("Fixtures")]
+        ),
     ],
     swiftLanguageModes: [.v6]
 )
