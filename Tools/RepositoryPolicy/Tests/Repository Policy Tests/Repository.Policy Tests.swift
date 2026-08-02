@@ -872,6 +872,27 @@ struct RepositoryPolicyTests {
     }
 
     @Test
+    func `Issue snapshot digest matches known vectors across chunk boundaries`() {
+        let vectors = [
+            ("", "da39a3ee5e6b4b0d3255bfef95601890afd80709"),
+            ("abc", "a9993e364706816aba3e25717850c26c9cd0d89d"),
+            (String(repeating: "a", count: 64), "0098ba824b5c16427bd7a1122a5a442a25ec644d"),
+            (String(repeating: "a", count: 65), "11655326c708d70319be2610e8a57d9a5b959d3b"),
+        ]
+
+        for (body, digest) in vectors {
+            let snapshot = RepositoryPolicy.Issue.Snapshot(
+                coordinate: "swift-institute/.github#183",
+                revision: "\"known-vector\"",
+                body: body,
+                native: .init(state: .open)
+            )
+
+            #expect(snapshot.digest == digest)
+        }
+    }
+
+    @Test
     func activeRecordCompactorRendersOnlyTheCurrentSpecificationAndCheckpoint() throws {
         let body = """
             ### Problem
@@ -910,7 +931,7 @@ struct RepositoryPolicyTests {
         )
 
         let plan = try #require(
-            RepositoryPolicy.Issue.Compactor.plan(snapshot: snapshot, guard: expected)
+            try RepositoryPolicy.Issue.Compactor.plan(snapshot: snapshot, guard: expected)
         )
 
         #expect(
