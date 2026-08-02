@@ -481,6 +481,7 @@ jobs:
         with:
           org: ${{ inputs.org }}
           visibility: 'public'
+          exclude-forks: 'true'
           gh-token: ${{ steps.token.outputs.token }}
 
       - name: Converge protected main ruleset

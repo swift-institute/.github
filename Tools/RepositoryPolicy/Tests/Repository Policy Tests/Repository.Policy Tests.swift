@@ -79,6 +79,34 @@ struct RepositoryPolicyTests {
     }
 
     @Test
+    func `ruleset org enumerator excludes forks`() throws {
+        let url = URL(filePath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appending(path: ".github/workflows/sync-metadata.yml")
+        let workflow = try String(contentsOf: url, encoding: .utf8)
+        let rulesets = try #require(workflow.range(of: "\n  rulesets:\n"))
+        let enumerator = try #require(
+            workflow.range(
+                of: "      - name: Enumerate org repos\n",
+                range: rulesets.upperBound..<workflow.endIndex
+            )
+        )
+        let converge = try #require(
+            workflow.range(
+                of: "      - name: Converge protected main ruleset\n",
+                range: enumerator.upperBound..<workflow.endIndex
+            )
+        )
+        let inputs = workflow[enumerator.upperBound..<converge.lowerBound]
+
+        #expect(inputs.contains("\n          exclude-forks: 'true'\n"))
+    }
+
+    @Test
     func botReviewTransactionSourcesCollectionsFromFiles() throws {
         let url = URL(filePath: #filePath)
             .deletingLastPathComponent()
