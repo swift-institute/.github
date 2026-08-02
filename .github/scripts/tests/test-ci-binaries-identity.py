@@ -1,28 +1,12 @@
 #!/usr/bin/env python3
-"""Fail-closed controls for swift-ci.yml's prebuilt-linter identity check.
+"""Fail-closed controls for swift-ci.yml's published-linter installer.
 
-#43 item 4: the `ci-binaries` release tag is mutable and its SHA256SUMS
-travels with the binaries it attests, so a download that verifies only
-against the fetched sums has no immutable identity — the whole set can
-move together. The shipped step therefore requires MANIFEST.txt to name
-the engine commit and requires it to match the engine's current main
-HEAD, falling back closed (ok=false → pinned source build) otherwise.
-
-Reasoning that the step would fall back is not watching it fall back, so
-this suite extracts the shipped step body from swift-ci.yml (same
-discipline as test-ci-ok-aggregate.py: the bytes under test are the
-bytes that ship) and runs it hermetically — `curl`, `git`, and `install`
-are PATH shims, the release set is a seeded fixture — asserting:
-
-  - a manifest that omits `engine=` sets ok=false (fetch omitted the
-    immutable identity);
-  - a manifest whose engine mismatches the resolved main HEAD sets
-    ok=false (stale or moved release);
-  - an unresolvable engine HEAD sets ok=false;
-  - the matching case still installs and sets ok=true (positive control
-    that the fast path survives the gate);
-  - a corrupted binary still fails the checksum leg (the pre-existing
-    gate keeps firing behind the new one).
+The workflow now installs the checksum-sealed `ci-binaries` release directly;
+it no longer has a mutable-release identity comparison or a source-build
+fallback. This suite extracts the shipped installation step and executes it
+against a hermetic release fixture, proving that a complete manifest installs
+and that missing authority provenance or a checksum mismatch still refuses to
+install.
 """
 from __future__ import annotations
 
@@ -35,11 +19,17 @@ from pathlib import Path
 import yaml
 
 WORKFLOW = Path(__file__).parents[2] / "workflows" / "swift-ci.yml"
-STEP_NAME = "Download prebuilt linter binaries"
+STEP_NAME = "Install published linter binaries"
 JOB_ID = "swift-linter"
 
-ENGINE_SHA = "a" * 40
-OTHER_SHA = "b" * 40
+AUTHORITIES = [
+    "engine",
+    "swift-primitives-linter-rules",
+    "swift-standards-linter-rules",
+    "swift-institute-linter-rules",
+    "swift-linter-rules",
+    "swift-linter-primitives",
+]
 
 
 def extract_step() -> str:
@@ -59,10 +49,10 @@ def extract_step() -> str:
     )
 
 
-class IdentityGateTests(unittest.TestCase):
+class PublishedBinariesInstallerTests(unittest.TestCase):
     script = extract_step()
 
-    def run_step(self, manifest: str, head_sha: str | None, corrupt: bool = False):
+    def run_step(self, manifest: str, corrupt: bool = False):
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
             release = root / "release"
@@ -81,23 +71,17 @@ class IdentityGateTests(unittest.TestCase):
             shims.mkdir()
             (shims / "curl").write_text(
                 "#!/usr/bin/env bash\n"
-                '# hermetic shim: last two args are -o <dest> ... <url>; serve the fixture file\n'
+                '# hermetic shim: serve the requested release fixture asset\n'
                 'dest=""; url=""\n'
                 'while [ $# -gt 0 ]; do\n'
                 '  case "$1" in\n'
-                '    -o) dest="$2"; shift 2 ;;\n'
+                '    -o|--output) dest="$2"; shift 2 ;;\n'
                 '    *) url="$1"; shift ;;\n'
                 '  esac\n'
                 'done\n'
                 f'cp "{release}/$(basename "$url")" "$dest"\n',
                 encoding="utf-8",
             )
-            git_body = "#!/usr/bin/env bash\n"
-            if head_sha is None:
-                git_body += "exit 0\n"
-            else:
-                git_body += f'printf "%s\\trefs/heads/main\\n" "{head_sha}"\n'
-            (shims / "git").write_text(git_body, encoding="utf-8")
             installed = root / "installed.log"
             (shims / "install").write_text(
                 "#!/usr/bin/env bash\n"
@@ -114,47 +98,35 @@ class IdentityGateTests(unittest.TestCase):
             env = dict(os.environ)
             env["PATH"] = f"{shims}:{env['PATH']}"
             env["GITHUB_OUTPUT"] = str(output)
+            env["GITHUB_STEP_SUMMARY"] = str(root / "github_summary")
+            env["GITHUB_ENV"] = str(root / "github_env")
+            env["LINTER_RELEASE"] = "https://fixture.invalid/ci-binaries"
             result = subprocess.run(
                 ["bash", str(script)], capture_output=True, text=True, env=env
             )
             return result, output.read_text(encoding="utf-8"), installed.exists()
 
-    def manifest(self, engine_line: str) -> str:
-        return f"digest={'c' * 64}\n{engine_line}built-at=2026-07-30T00:00:00Z\n"
-
-    def test_missing_engine_identity_falls_back_closed(self) -> None:
-        result, output, installed = self.run_step(self.manifest(""), ENGINE_SHA)
-        self.assertIn("ok=false", output, result.stdout + result.stderr)
-        self.assertIn("names no engine commit", result.stdout)
-        self.assertFalse(installed)
-
-    def test_engine_mismatch_falls_back_closed(self) -> None:
-        result, output, installed = self.run_step(
-            self.manifest(f"engine={OTHER_SHA}\n"), ENGINE_SHA
+    def manifest(self, omitted: str | None = None) -> str:
+        return "".join(
+            f"{authority}={'a' * 40}\n"
+            for authority in AUTHORITIES
+            if authority != omitted
         )
-        self.assertIn("ok=false", output, result.stdout + result.stderr)
-        self.assertIn("does not match engine main HEAD", result.stdout)
-        self.assertFalse(installed)
 
-    def test_unresolvable_head_falls_back_closed(self) -> None:
-        result, output, installed = self.run_step(
-            self.manifest(f"engine={ENGINE_SHA}\n"), None
-        )
-        self.assertIn("ok=false", output, result.stdout + result.stderr)
-        self.assertFalse(installed)
-
-    def test_matching_identity_installs(self) -> None:
-        result, output, installed = self.run_step(
-            self.manifest(f"engine={ENGINE_SHA}\n"), ENGINE_SHA
-        )
-        self.assertIn("ok=true", output, result.stdout + result.stderr)
+    def test_complete_manifest_installs(self) -> None:
+        result, _, installed = self.run_step(self.manifest())
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertTrue(installed)
 
-    def test_checksum_still_gates_behind_identity(self) -> None:
-        result, output, installed = self.run_step(
-            self.manifest(f"engine={ENGINE_SHA}\n"), ENGINE_SHA, corrupt=True
-        )
-        self.assertIn("ok=false", output, result.stdout + result.stderr)
+    def test_missing_authority_refuses_install(self) -> None:
+        result, _, installed = self.run_step(self.manifest(omitted="engine"))
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("omits 'engine'", result.stdout)
+        self.assertFalse(installed)
+
+    def test_checksum_mismatch_refuses_install(self) -> None:
+        result, _, installed = self.run_step(self.manifest(), corrupt=True)
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertFalse(installed)
 
 
