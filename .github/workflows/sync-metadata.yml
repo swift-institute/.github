@@ -507,11 +507,13 @@ jobs:
           ENUM_REPOS: ${{ steps.enum.outputs.repos }}
         run: |
           set -euo pipefail
-          desired=$(swift run --package-path institute-ci/Tools/RepositoryPolicy repository-policy ruleset --policy institute-ci/Tools/RepositoryPolicy/Policy/protected-main-ruleset.json)
+          desired_package=$(swift run --package-path institute-ci/Tools/RepositoryPolicy repository-policy ruleset --policy institute-ci/Tools/RepositoryPolicy/Policy/protected-main-ruleset.json --class package)
+          desired_control=$(swift run --package-path institute-ci/Tools/RepositoryPolicy repository-policy ruleset --policy institute-ci/Tools/RepositoryPolicy/Policy/protected-main-control-ruleset.json --class control-plane)
           normalize() {
             jq -S '{name, target, enforcement, conditions, bypass_actors, rules:(.rules | sort_by(.type) | map(if .parameters? then .parameters.required_status_checks? |= (if . then sort_by(.context) else . end) else . end))}'
           }
-          desired_normalized=$(printf '%s' "$desired" | normalize)
+          desired_package_normalized=$(printf '%s' "$desired_package" | normalize)
+          desired_control_normalized=$(printf '%s' "$desired_control" | normalize)
           if [[ -n "$SINGLE_REPO" ]]; then
             targets=("$SINGLE_REPO")
           else
@@ -519,16 +521,34 @@ jobs:
             while IFS= read -r target; do [[ -n "$target" ]] && targets+=("$target"); done <<< "$ENUM_REPOS"
           fi
           for target in "${targets[@]}"; do
+            # Classify mechanically: a root Package.swift present at the
+            # default branch means the package contract (the repo emits
+            # `ci / ci-ok`); its absence means the control-plane contract.
+            # This mirrors RepositoryPolicy.GitHubClient.rootManifestKind's
+            # `contents/Package.swift` probe (200 + type "file" vs 404),
+            # which the `surfaces` job's private-vulnerability-reporting
+            # eligibility gate already uses to the same end
+            # (Repository.Policy.Run.swift, swift-institute/.github#200).
+            manifest_type=$(gh api "repos/$target/contents/Package.swift" --jq '.type' 2>/dev/null) || manifest_type=""
+            if [[ "$manifest_type" == "file" ]]; then
+              ruleset_name="Institute protected main"
+              desired="$desired_package"
+              desired_normalized="$desired_package_normalized"
+            else
+              ruleset_name="Institute protected main (control)"
+              desired="$desired_control"
+              desired_normalized="$desired_control_normalized"
+            fi
             current=$(gh api --paginate "repos/$target/rulesets?per_page=100")
-            matches=$(printf '%s' "$current" | jq '[.[] | select(.name == "Institute protected main")]')
+            matches=$(printf '%s' "$current" | jq --arg name "$ruleset_name" '[.[] | select(.name == $name)]')
             count=$(printf '%s' "$matches" | jq 'length')
             if [[ "$count" -gt 1 ]]; then
-              echo "::error::$target has multiple Institute protected main rulesets"
+              echo "::error::$target has multiple $ruleset_name rulesets"
               exit 1
             fi
             if [[ "$count" -eq 0 ]]; then
               if [[ "$DRY_RUN" == true ]]; then
-                echo "$target: would create Institute protected main"
+                echo "$target: would create $ruleset_name"
                 continue
               fi
               id=$(printf '%s' "$desired" | gh api -X POST "repos/$target/rulesets" --input - --jq .id)
@@ -536,21 +556,21 @@ jobs:
               id=$(printf '%s' "$matches" | jq -r '.[0].id')
               actual=$(gh api "repos/$target/rulesets/$id" | normalize)
               if [[ "$actual" == "$desired_normalized" ]]; then
-                echo "$target: protected main converged"
+                echo "$target: $ruleset_name converged"
                 continue
               fi
               if [[ "$DRY_RUN" == true ]]; then
-                echo "$target: would update Institute protected main ($id)"
+                echo "$target: would update $ruleset_name ($id)"
                 continue
               fi
               printf '%s' "$desired" | gh api -X PUT "repos/$target/rulesets/$id" --input - >/dev/null
             fi
             readback=$(gh api "repos/$target/rulesets/$id" | normalize)
             if [[ "$readback" != "$desired_normalized" ]]; then
-              echo "::error::$target ruleset read-back differs from the protected-main contract"
+              echo "::error::$target ruleset read-back differs from the $ruleset_name contract"
               exit 1
             fi
-            echo "$target: protected main converged ($id)"
+            echo "$target: $ruleset_name converged ($id)"
           done
 
   # Repository surface enforcement + private vulnerability reporting.
