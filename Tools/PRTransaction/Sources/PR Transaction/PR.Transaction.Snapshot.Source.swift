@@ -9,13 +9,16 @@ extension PRTransaction.Snapshot {
         public let owningTask: Issue
         public let plan: Plan
         public let reviews: [Review]
-        public let checks: [Check]
+        public let checkPages: [Page<Check>]
+        public let runPages: [Page<Check>]
         public let unresolvedThreads: Int
         public let merge: Merge
 
-        /// Binds the accepted plan's exact Issue and profile into its preflighted payload.
-        public func snapshot() -> PRTransaction.Snapshot {
-            PRTransaction.Snapshot(
+        /// Combines complete API pages and binds the plan into its preflighted payload.
+        public func snapshot() throws(PRTransaction.Error) -> PRTransaction.Snapshot {
+            let checks = try collect(checkPages, name: "check-runs")
+            let runs = try collect(runPages, name: "workflow-runs")
+            return PRTransaction.Snapshot(
                 repository: repository,
                 pull: pull,
                 base: base,
@@ -39,7 +42,10 @@ extension PRTransaction.Snapshot {
                     nextOwner: plan.nextOwner
                 ),
                 reviews: reviews,
-                checks: checks,
+                checks: checks
+                    + runs.filter { $0.name == "swift-ci" }.map {
+                        Check(name: "full-tier", head: $0.head, conclusion: $0.conclusion)
+                    },
                 unresolvedThreads: unresolvedThreads,
                 merge: merge,
                 receipt: PRTransaction.Snapshot.Receipt(
@@ -49,6 +55,21 @@ extension PRTransaction.Snapshot {
                     unassigned: false
                 )
             )
+        }
+
+        private func collect<Element: Codable & Sendable>(
+            _ pages: [Page<Element>],
+            name: String
+        ) throws(PRTransaction.Error) -> [Element] {
+            let values = pages.flatMap(\.values)
+            guard let total = pages.first?.total,
+                total >= 0,
+                pages.allSatisfy({ $0.total == total }),
+                values.count == total
+            else {
+                throw PRTransaction.Error.incomplete(name)
+            }
+            return values
         }
     }
 }

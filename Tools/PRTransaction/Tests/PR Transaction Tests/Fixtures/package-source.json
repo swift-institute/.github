@@ -35,16 +35,28 @@
     "nextOwner": "swift-institute-bot[bot]"
   },
   "reviews": [],
-  "checks": [
+  "checkPages": [
     {
-      "name": "ci-ok",
-      "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "conclusion": "success"
-    },
+      "total": 1,
+      "values": [
+        {
+          "name": "ci-ok",
+          "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "conclusion": "success"
+        }
+      ]
+    }
+  ],
+  "runPages": [
     {
-      "name": "full-tier",
-      "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "conclusion": "success"
+      "total": 1,
+      "values": [
+        {
+          "name": "swift-ci",
+          "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "conclusion": "success"
+        }
+      ]
     }
   ],
   "unresolvedThreads": 0,

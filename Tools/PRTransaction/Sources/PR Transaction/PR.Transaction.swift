@@ -104,6 +104,7 @@ public enum PRTransaction {
         case nonterminalRequiredRun
         case incompleteReceipt
         case profile
+        case incomplete(String)
         case missing(String)
         case stale(String)
         case nonterminal(String)

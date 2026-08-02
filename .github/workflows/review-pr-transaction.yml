@@ -118,8 +118,15 @@ jobs:
               '
           )
           reviews=$(gh api --paginate "repos/${repository}/pulls/${PULL}/reviews")
-          checks=$(gh api "repos/${repository}/commits/${head}/check-runs?per_page=100")
-          runs=$(gh api "repos/${repository}/actions/runs?head_sha=${head}&per_page=100")
+          # Preserve every API page and its declared total for the typed producer.
+          # The producer combines the pages and fails closed if pagination is
+          # absent, inconsistent, or incomplete.
+          gh api --paginate --slurp \
+            "repos/${repository}/commits/${head}/check-runs?per_page=100" \
+            > "$RUNNER_TEMP/check-pages.json"
+          gh api --paginate --slurp \
+            "repos/${repository}/actions/runs?head_sha=${head}&per_page=100" \
+            > "$RUNNER_TEMP/run-pages.json"
           graph=$(gh api graphql -F owner=swift-institute -F name=.github -F number="${PULL}" -f query='
             query($owner: String!, $name: String!, $number: Int!) {
               repository(owner: $owner, name: $name) {
@@ -159,8 +166,8 @@ jobs:
             --argjson owningTask "$owning_task" \
             --argjson plan "$plan" \
             --argjson reviews "$reviews" \
-            --argjson checks "$checks" \
-            --argjson runs "$runs" \
+            --slurpfile checks "$RUNNER_TEMP/check-pages.json" \
+            --slurpfile runs "$RUNNER_TEMP/run-pages.json" \
             --argjson graph "$graph" '
               {
                 repository: $repository,
@@ -171,14 +178,26 @@ jobs:
                 owningTask: $owningTask,
                 plan: $plan,
                 reviews: [ $reviews[] | { actor: .user.login, state: .state, head: (.commit_id // "") } ],
-                checks: (
-                  [ $checks.check_runs[] | { name: .name, head: .head_sha, conclusion: .conclusion } ]
-                  + [
-                    $runs.workflow_runs[]
-                    | select(.name == "swift-ci")
-                    | { name: "full-tier", head: .head_sha, conclusion: .conclusion }
-                  ]
-                ),
+                checkPages: [
+                  $checks[0][]
+                  | {
+                      total: .total_count,
+                      values: [
+                        .check_runs[]
+                        | { name: .name, head: .head_sha, conclusion: .conclusion }
+                      ]
+                    }
+                ],
+                runPages: [
+                  $runs[0][]
+                  | {
+                      total: .total_count,
+                      values: [
+                        .workflow_runs[]
+                        | { name: .name, head: .head_sha, conclusion: .conclusion }
+                      ]
+                    }
+                ],
                 unresolvedThreads: ([ $graph.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved | not) ] | length),
                 merge: {
                   squash: $graph.data.repository.squashMergeAllowed,
