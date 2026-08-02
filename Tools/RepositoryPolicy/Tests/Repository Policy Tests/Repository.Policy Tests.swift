@@ -70,12 +70,35 @@ struct RepositoryPolicyTests {
         #expect(review["require_last_push_approval"] as? Bool == true)
         #expect(review["dismiss_stale_reviews_on_push"] as? Bool == true)
         // GitHub's PR gate rejects unresolved conversations and a non-current
-        // check; `ci-ok` is the one required current-head status.
+        // check; the caller-path-prefixed `ci / ci-ok` aggregate is the one
+        // required current-head status, as rendered on live package PR heads.
         #expect(review["required_review_thread_resolution"] as? Bool == true)
         #expect(checks["strict_required_status_checks_policy"] as? Bool == true)
         let required = try #require(checks["required_status_checks"] as? [[String: Any]])
         #expect(required.count == 1)
-        #expect(required.first?["context"] as? String == "ci-ok")
+        #expect(required.first?["context"] as? String == "ci / ci-ok")
+    }
+
+    // Positive control: the retired bare `ci-ok` context is a name no caller
+    // path renders, so a payload requiring it would gate main on a check that
+    // can never report. The validator must refuse it.
+    @Test
+    func protectedMainPayloadRejectsTheBareLegacyContext() throws {
+        let canonical = URL(filePath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appending(path: "Policy/protected-main-ruleset.json")
+        let legacy = try String(contentsOf: canonical, encoding: .utf8)
+            .replacingOccurrences(of: "\"context\": \"ci / ci-ok\"", with: "\"context\": \"ci-ok\"")
+        let url = FileManager.default.temporaryDirectory
+            .appending(path: "protected-main-ruleset-\(UUID().uuidString).json")
+        try Data(legacy.utf8).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        #expect(throws: RepositoryPolicy.ConfigurationError.self) {
+            try RepositoryPolicy.Ruleset.protectedMainPayload(from: url)
+        }
     }
 
     @Test

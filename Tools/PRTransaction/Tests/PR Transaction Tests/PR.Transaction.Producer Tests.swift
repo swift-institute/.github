@@ -146,8 +146,8 @@ extension PRTransaction.Transaction {
             #expect(first.count == 100)
             let source = source(
                 verification: .package,
-                checks: pages([[check("ci-ok")]]),
-                runs: pages([first, [check("swift-ci", conclusion: "failure")]])
+                checks: pages([[check("ci / ci-ok")]]),
+                runs: pages([first, [run("CI", conclusion: "failure")]])
             )
 
             #expect(throws: PRTransaction.Error.nonterminalFullTier) {
@@ -160,8 +160,8 @@ extension PRTransaction.Transaction {
             #expect(first.count == 100)
             let source = source(
                 verification: .package,
-                checks: pages([[check("ci-ok")]]),
-                runs: pages([first, [check("swift-ci", conclusion: nil)]])
+                checks: pages([[check("ci / ci-ok")]]),
+                runs: pages([first, [run("CI", conclusion: nil)]])
             )
 
             #expect(throws: PRTransaction.Error.nonterminalFullTier) {
@@ -175,17 +175,46 @@ extension PRTransaction.Transaction {
             #expect(first.count == 100)
             let source = source(
                 verification: .package,
-                checks: pages([[check("ci-ok")]]),
-                runs: pages([first, [check("swift-ci")]])
+                checks: pages([[check("ci / ci-ok")]]),
+                runs: pages([first, [run("CI")]])
             )
 
             #expect(try PRTransaction.review(source.snapshot()) == .readyForReview)
         }
 
+        @Test func `full tier ignores the retired swift-ci workflow name`() {
+            // The fleet thin caller is named `CI`; a run under the retired
+            // `swift-ci` name must synthesize no full-tier evidence.
+            let source = source(
+                verification: .package,
+                checks: pages([[check("ci / ci-ok")]]),
+                runs: pages([[run("swift-ci")]])
+            )
+
+            #expect(throws: PRTransaction.Error.nonterminalFullTier) {
+                try PRTransaction.review(source.snapshot())
+            }
+        }
+
+        @Test func `full tier ignores a pull-request run of the caller workflow`() {
+            // Tier follows the event: only the workflow_dispatch run of the
+            // caller is the full tier. A pull_request run of the same
+            // workflow is a lower tier and must not stand in for it.
+            let source = source(
+                verification: .package,
+                checks: pages([[check("ci / ci-ok")]]),
+                runs: pages([[run("CI", event: "pull_request")]])
+            )
+
+            #expect(throws: PRTransaction.Error.nonterminalFullTier) {
+                try PRTransaction.review(source.snapshot())
+            }
+        }
+
         @Test func `producer rejects an incomplete check-run collection`() {
             let source = source(
                 verification: .package,
-                checks: pages([[check("ci-ok")]], total: 2)
+                checks: pages([[check("ci / ci-ok")]], total: 2)
             )
 
             #expect(throws: PRTransaction.Error.incomplete("check-runs")) {
@@ -196,8 +225,8 @@ extension PRTransaction.Transaction {
         @Test func `producer rejects an incomplete workflow-run collection`() {
             let source = source(
                 verification: .package,
-                checks: pages([[check("ci-ok")]]),
-                runs: pages([[check("swift-ci")]], total: 2)
+                checks: pages([[check("ci / ci-ok")]]),
+                runs: pages([[run("CI")]], total: 2)
             )
 
             #expect(throws: PRTransaction.Error.incomplete("workflow-runs")) {
@@ -252,10 +281,18 @@ extension PRTransaction.Transaction {
             .init(name: name, head: head, conclusion: conclusion)
         }
 
-        private func pages(
-            _ values: [[PRTransaction.Snapshot.Check]],
+        private func run(
+            _ name: String,
+            event: String = "workflow_dispatch",
+            conclusion: String? = "success"
+        ) -> PRTransaction.Snapshot.Source.Run {
+            .init(name: name, event: event, head: head, conclusion: conclusion)
+        }
+
+        private func pages<Element: Codable & Sendable>(
+            _ values: [[Element]],
             total: Int? = nil
-        ) -> [PRTransaction.Snapshot.Source.Page<PRTransaction.Snapshot.Check>] {
+        ) -> [PRTransaction.Snapshot.Source.Page<Element>] {
             let declared = total ?? values.reduce(0) { $0 + $1.count }
             return values.map { .init(total: declared, values: $0) }
         }
@@ -265,9 +302,9 @@ extension PRTransaction.Transaction {
                 + (0..<97).map { check("unrelated-\($0)") }
         }
 
-        private func workflowRuns() -> [PRTransaction.Snapshot.Check] {
-            [check("swift-ci")]
-                + (0..<99).map { check("unrelated-workflow-\($0)") }
+        private func workflowRuns() -> [PRTransaction.Snapshot.Source.Run] {
+            [run("CI")]
+                + (0..<99).map { run("unrelated-workflow-\($0)") }
         }
 
         private func source(
@@ -277,7 +314,7 @@ extension PRTransaction.Transaction {
                 repository: "swift-institute/.github",
                 visibility: "public"
             ),
-            runs: [PRTransaction.Snapshot.Source.Page<PRTransaction.Snapshot.Check>] = [
+            runs: [PRTransaction.Snapshot.Source.Page<PRTransaction.Snapshot.Source.Run>] = [
                 .init(total: 0, values: [])
             ]
         ) -> PRTransaction.Snapshot.Source {

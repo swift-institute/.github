@@ -2,7 +2,9 @@ extension PRTransaction {
     static func verify(_ snapshot: Snapshot) throws {
         switch snapshot.plan.verification {
         case .package:
-            let ci = snapshot.checks.filter { $0.name == "ci-ok" }
+            // Check-run names are caller-path-prefixed: the thin caller's `ci`
+            // job renders the universal aggregate as `ci / ci-ok`.
+            let ci = snapshot.checks.filter { $0.name == "ci / ci-ok" }
             guard !ci.isEmpty else { throw Error.missingCI }
             guard ci.allSatisfy({ terminal($0.conclusion) }) else { throw Error.staleCI }
             let currentCI = ci.filter { $0.head == snapshot.head }

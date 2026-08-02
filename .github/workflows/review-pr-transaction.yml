@@ -54,6 +54,9 @@ jobs:
         id: target
         shell: bash
         env:
+          # The workflow token, not the App token: this step only reads public
+          # repository metadata, and it runs before any App token is minted.
+          GH_TOKEN: ${{ github.token }}
           TARGET_REPOSITORY: ${{ inputs.repository }}
           TARGET_PULL: ${{ inputs.pull }}
         run: |
@@ -303,7 +306,7 @@ jobs:
                       total: .total_count,
                       values: [
                         .workflow_runs[]
-                        | { name: .name, head: .head_sha, conclusion: .conclusion }
+                        | { name: .name, event: .event, head: .head_sha, conclusion: .conclusion }
                       ]
                     }
                 ],

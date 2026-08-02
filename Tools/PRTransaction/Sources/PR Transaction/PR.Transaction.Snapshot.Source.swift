@@ -11,7 +11,7 @@ extension PRTransaction.Snapshot {
         public let plan: Plan
         public let reviews: [Review]
         public let checkPages: [Page<Check>]
-        public let runPages: [Page<Check>]
+        public let runPages: [Page<Run>]
         public let unresolvedThreads: Int
         public let merge: Merge
 
@@ -49,7 +49,11 @@ extension PRTransaction.Snapshot {
                 ),
                 reviews: reviews,
                 checks: checks
-                    + runs.filter { $0.name == "swift-ci" }.map {
+                    // The full tier is the `workflow_dispatch` run of the fleet
+                    // thin caller, which every package repository names `CI`.
+                    // Runs of the same workflow for other events are lower tiers
+                    // and are not full-tier evidence.
+                    + runs.filter { $0.name == "CI" && $0.event == "workflow_dispatch" }.map {
                         Check(name: "full-tier", head: $0.head, conclusion: $0.conclusion)
                     },
                 unresolvedThreads: unresolvedThreads,

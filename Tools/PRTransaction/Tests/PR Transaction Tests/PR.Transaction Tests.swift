@@ -80,7 +80,7 @@ extension PRTransaction.Transaction.Unit {
             head: approvalHead ?? head
         )
         let packageChecks = [
-            check("ci-ok"),
+            check("ci / ci-ok"),
             check("full-tier"),
         ]
         let checks =
@@ -217,36 +217,43 @@ extension PRTransaction.Transaction.Unit {
             try PRTransaction.review(fixture(checks: [check("full-tier")]))
         }
     }
+    @Test func `package profile rejects the bare legacy ci-ok name`() {
+        // GitHub renders the fleet aggregate as `ci / ci-ok`; bare `ci-ok` is
+        // a name no caller path produces, so it must not satisfy the profile.
+        #expect(throws: PRTransaction.Error.missingCI) {
+            try PRTransaction.review(fixture(checks: [check("ci-ok"), check("full-tier")]))
+        }
+    }
     @Test func `package profile rejects a stale ci-ok`() {
         #expect(throws: PRTransaction.Error.staleCI) {
             try PRTransaction.review(
-                fixture(checks: [check("ci-ok", revision: old), check("full-tier")])
+                fixture(checks: [check("ci / ci-ok", revision: old), check("full-tier")])
             )
         }
     }
     @Test func `package profile rejects a failed ci-ok`() {
         #expect(throws: PRTransaction.Error.staleCI) {
             try PRTransaction.review(
-                fixture(checks: [check("ci-ok", conclusion: "failure"), check("full-tier")])
+                fixture(checks: [check("ci / ci-ok", conclusion: "failure"), check("full-tier")])
             )
         }
     }
     @Test func `package profile rejects an absent full tier`() {
         #expect(throws: PRTransaction.Error.nonterminalFullTier) {
-            try PRTransaction.review(fixture(checks: [check("ci-ok")]))
+            try PRTransaction.review(fixture(checks: [check("ci / ci-ok")]))
         }
     }
     @Test func `package profile rejects a stale full tier`() {
         #expect(throws: PRTransaction.Error.nonterminalFullTier) {
             try PRTransaction.review(
-                fixture(checks: [check("ci-ok"), check("full-tier", revision: old)])
+                fixture(checks: [check("ci / ci-ok"), check("full-tier", revision: old)])
             )
         }
     }
     @Test func `package profile rejects a nonterminal full tier`() {
         #expect(throws: PRTransaction.Error.nonterminalFullTier) {
             try PRTransaction.review(
-                fixture(checks: [check("ci-ok"), check("full-tier", conclusion: nil)])
+                fixture(checks: [check("ci / ci-ok"), check("full-tier", conclusion: nil)])
             )
         }
     }
