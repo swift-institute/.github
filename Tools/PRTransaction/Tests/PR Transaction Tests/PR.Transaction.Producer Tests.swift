@@ -46,6 +46,25 @@ extension PRTransaction.Transaction {
             )
         }
 
+        // Positive: an actual empty check-runs page (`total: 0, values: []`)
+        // and an empty workflow-runs page, exactly as a genuinely
+        // check-less PR reports them, produce a passing reviewOnly
+        // transaction end to end through the producer and CLI
+        // (swift-institute/.github#200).
+        @Test func `reviewOnly plan survives producer JSON and CLI validation`() throws {
+            let output = try produce("review-only-source")
+            defer { try? FileManager.default.removeItem(at: output) }
+
+            let snapshot = try decode(output)
+            #expect(snapshot.checks.isEmpty)
+            #expect(snapshot.plan.verification == .reviewOnly)
+            #expect(snapshot.plan.payload.verification == .reviewOnly)
+            #expect(
+                try PRTransaction.Command.run(["review", output.path])
+                    == "pr-transaction: ready-for-bot-review head=\(head)"
+            )
+        }
+
         @Test func `CLI rejects a stale producer plan`() throws {
             let output = try produce("stale-source")
             defer { try? FileManager.default.removeItem(at: output) }

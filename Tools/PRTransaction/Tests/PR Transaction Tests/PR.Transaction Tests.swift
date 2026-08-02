@@ -317,6 +317,73 @@ extension PRTransaction.Transaction.Unit {
             )
         }
     }
+
+    // MARK: - reviewOnly profile (swift-institute/.github#200)
+    //
+    // Reserved for legitimately check-less PRs — a path outside every
+    // path-filtered workflow's trigger. Fail-closed: satisfied only when the
+    // exact-head check-run collection is empty; any check run present,
+    // including a synthesized `full-tier` entry, is an uncited check and
+    // must refuse.
+
+    @Test func `reviewOnly profile accepts an empty exact-head check collection`() throws {
+        #expect(
+            try PRTransaction.review(fixture(verification: .reviewOnly, checks: []))
+                == .readyForReview
+        )
+    }
+    @Test func `reviewOnly profile rejects an existing check run at the head`() {
+        #expect(throws: PRTransaction.Error.uncitedChecks) {
+            try PRTransaction.review(
+                fixture(verification: .reviewOnly, checks: [check("some-other-check")])
+            )
+        }
+    }
+    @Test func `reviewOnly profile rejects a full-tier run at the head`() {
+        // Checks presence is what matters, not name — a full-tier run is
+        // still a cited check the reviewOnly profile does not admit.
+        #expect(throws: PRTransaction.Error.uncitedChecks) {
+            try PRTransaction.review(
+                fixture(verification: .reviewOnly, checks: [check("full-tier")])
+            )
+        }
+    }
+    @Test func `reviewOnly profile ignores a check run at a different head`() throws {
+        // Belt-and-braces: the verifier re-filters by head itself rather
+        // than trusting the collection to already be head-scoped, so a
+        // leftover entry from a superseded head must not block an otherwise
+        // check-less current head.
+        #expect(
+            try PRTransaction.review(
+                fixture(
+                    verification: .reviewOnly,
+                    checks: [check("some-other-check", revision: old)]
+                )
+            ) == .readyForReview
+        )
+    }
+    @Test func `serialized plan and payload retain the reviewOnly profile`() throws {
+        let snapshot = fixture(verification: .reviewOnly, checks: [])
+        let data = try JSONEncoder().encode(snapshot)
+        let decoded = try JSONDecoder().decode(PRTransaction.Snapshot.self, from: data)
+        #expect(decoded.plan.verification == .reviewOnly)
+        #expect(decoded.plan.payload.verification == .reviewOnly)
+    }
+
+    // Positive controls: adding the reviewOnly profile must not weaken the
+    // package or control profiles — each still refuses an entirely empty
+    // exact-head check collection exactly as before.
+    @Test func `package profile still rejects an entirely empty check collection`() {
+        #expect(throws: PRTransaction.Error.missingCI) {
+            try PRTransaction.review(fixture(checks: []))
+        }
+    }
+    @Test func `control profile still rejects an entirely empty check collection`() {
+        #expect(throws: PRTransaction.Error.missing("fixtures")) {
+            try PRTransaction.review(fixture(verification: native, checks: []))
+        }
+    }
+
     @Test func `rejects an old bot approval`() {
         #expect(throws: PRTransaction.Error.staleBotApproval) {
             try PRTransaction.merge(fixture(approvalHead: old))

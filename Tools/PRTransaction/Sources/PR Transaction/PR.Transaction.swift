@@ -114,6 +114,7 @@ public enum PRTransaction {
         case stale(String)
         case nonterminal(String)
         case unsuccessful(String)
+        case uncitedChecks
     }
 
     public static func review(_ snapshot: Snapshot) throws -> Verdict {

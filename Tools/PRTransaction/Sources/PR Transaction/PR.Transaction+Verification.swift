@@ -45,6 +45,15 @@ extension PRTransaction {
                     throw Error.unsuccessful(name)
                 }
             }
+
+        case .reviewOnly:
+            // Fail-closed: satisfied only when NO check run — including a
+            // synthesized `full-tier` entry — is cited at the exact head.
+            // Any check present is an uncited check standing in for the
+            // review this profile does not admit.
+            guard snapshot.checks.filter({ $0.head == snapshot.head }).isEmpty else {
+                throw Error.uncitedChecks
+            }
         }
     }
 
