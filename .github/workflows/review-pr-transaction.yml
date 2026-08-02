@@ -1,0 +1,194 @@
+# review-pr-transaction.yml — a manually invoked, exact-head bot approval.
+#
+# This workflow deliberately has no merge step. It approves only after the
+# independent transaction model accepts a public, exact-head plan and all
+# current-head merge prerequisites other than the approval it is about to add.
+
+name: review-pr-transaction
+
+on:
+  workflow_dispatch:
+    inputs:
+      pull:
+        description: 'Open pull-request number in swift-institute/.github.'
+        required: true
+        type: string
+      accepted-plan-head:
+        description: 'Accepted 40-character PR head revision; must equal the live head.'
+        required: true
+        type: string
+      accepted-plan-base:
+        description: 'Accepted exact base revision; must equal the live PR base.'
+        required: true
+        type: string
+      intended-path:
+        description: 'One intended changed path recorded in the accepted plan.'
+        required: true
+        type: string
+      local-evidence-command:
+        description: 'Required local evidence command from the accepted plan.'
+        required: true
+        type: string
+      local-evidence-result:
+        description: 'Required local evidence result (`success`).'
+        required: true
+        type: string
+      local-evidence-head:
+        description: 'Head revision on which the local evidence was recorded.'
+        required: true
+        type: string
+      payload-preflighted:
+        description: 'Set only after the public mutation payload has been preflighted.'
+        required: true
+        type: boolean
+      next-owner:
+        description: 'Named next owner of the prepared transaction.'
+        required: true
+        type: string
+      plan-accepted:
+        description: 'Set only after the exact revision plan has been accepted.'
+        required: true
+        type: boolean
+
+permissions: {}
+
+jobs:
+  approve:
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout transaction guard
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Never execute PR-controlled source while the App token exists.
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: Mint narrowed reviewer token
+        id: token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: swift-institute
+          permission-metadata: read
+          permission-contents: read
+          permission-pull-requests: write
+
+      - name: Validate the guarded transaction
+        id: guard
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          PULL: ${{ inputs.pull }}
+          PLAN_HEAD: ${{ inputs.accepted-plan-head }}
+          PLAN_BASE: ${{ inputs.accepted-plan-base }}
+          PLAN_ACCEPTED: ${{ inputs.plan-accepted }}
+          PLAN_PATH: ${{ inputs.intended-path }}
+          EVIDENCE_COMMAND: ${{ inputs.local-evidence-command }}
+          EVIDENCE_RESULT: ${{ inputs.local-evidence-result }}
+          EVIDENCE_HEAD: ${{ inputs.local-evidence-head }}
+          PAYLOAD_PREFLIGHTED: ${{ inputs.payload-preflighted }}
+          NEXT_OWNER: ${{ inputs.next-owner }}
+        run: |
+          set -euo pipefail
+          repository='swift-institute/.github'
+          pull=$(gh api "repos/${repository}/pulls/${PULL}")
+          head=$(jq -er '.head.sha' <<<"$pull")
+          base=$(jq -er '.base.sha' <<<"$pull")
+          fixer=$(jq -er '.user.login' <<<"$pull")
+          test "$(jq -r '.state' <<<"$pull")" = open
+          test "$(jq -r '.draft' <<<"$pull")" = false
+          reviews=$(gh api --paginate "repos/${repository}/pulls/${PULL}/reviews")
+          checks=$(gh api "repos/${repository}/commits/${head}/check-runs")
+          runs=$(gh api "repos/${repository}/actions/runs?head_sha=${head}&per_page=100")
+          graph=$(gh api graphql -F owner=swift-institute -F name=.github -F number="${PULL}" -f query='
+            query($owner: String!, $name: String!, $number: Int!) {
+              repository(owner: $owner, name: $name) {
+                mergeCommitAllowed
+                rebaseMergeAllowed
+                squashMergeAllowed
+                pullRequest(number: $number) {
+                  reviewThreads(first: 100) { nodes { isResolved } pageInfo { hasNextPage } }
+                  closingIssuesReferences(first: 100) {
+                    nodes { number state repository { nameWithOwner } }
+                    pageInfo { hasNextPage }
+                  }
+                }
+              }
+            }')
+          jq -e '
+            .data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage == false and
+            .data.repository.pullRequest.closingIssuesReferences.pageInfo.hasNextPage == false
+          ' <<<"$graph" >/dev/null
+          jq -n \
+            --arg repository "$repository" \
+            --argjson pull "$PULL" \
+            --arg head "$head" \
+            --arg base "$base" \
+            --arg fixer "$fixer" \
+            --arg planHead "$PLAN_HEAD" \
+            --arg planBase "$PLAN_BASE" \
+            --arg planAccepted "$PLAN_ACCEPTED" \
+            --arg planPath "$PLAN_PATH" \
+            --arg evidenceCommand "$EVIDENCE_COMMAND" \
+            --arg evidenceResult "$EVIDENCE_RESULT" \
+            --arg evidenceHead "$EVIDENCE_HEAD" \
+            --arg payloadPreflighted "$PAYLOAD_PREFLIGHTED" \
+            --arg nextOwner "$NEXT_OWNER" \
+            --argjson reviews "$reviews" \
+            --argjson checks "$checks" \
+            --argjson runs "$runs" \
+            --argjson graph "$graph" '
+              {
+                repository: $repository,
+                pull: $pull,
+                base: $base,
+                head: $head,
+                fixer: $fixer,
+                owningTask: ([ $graph.data.repository.pullRequest.closingIssuesReferences.nodes[] | select(.repository.nameWithOwner == $repository and .number == 176) | { repository: .repository.nameWithOwner, number, state } ][0]),
+                plan: {
+                  accepted: ($planAccepted == "true"), base: $planBase, head: $planHead, fixer: $fixer,
+                  paths: [$planPath], evidence: [{ command: $evidenceCommand, result: $evidenceResult, head: $evidenceHead }],
+                  payload: { preflighted: ($payloadPreflighted == "true"), head: $head }, nextOwner: $nextOwner
+                },
+                reviews: [ $reviews[] | { actor: .user.login, state: .state, head: (.commit_id // "") } ],
+                checks: (
+                  [ $checks.check_runs[] | { name: .name, head: $head, conclusion: .conclusion } ]
+                  + [ $runs.workflow_runs[] | select(.name == "swift-ci") | { name: "full-tier", head: .head_sha, conclusion: .conclusion } ]
+                ),
+                unresolvedThreads: ([ $graph.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved | not) ] | length),
+                merge: {
+                  squash: $graph.data.repository.squashMergeAllowed,
+                  mergeCommit: $graph.data.repository.mergeCommitAllowed,
+                  rebase: $graph.data.repository.rebaseMergeAllowed
+                },
+                receipt: { complete: false, head: $head, issueClosed: false, unassigned: false }
+              }
+            ' > transaction.json
+          swift run --package-path Tools/PRTransaction pr-transaction review transaction.json
+          echo "head=${head}" >> "$GITHUB_OUTPUT"
+
+      - name: Approve the still-current head
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          PULL: ${{ inputs.pull }}
+          HEAD: ${{ steps.guard.outputs.head }}
+        run: |
+          set -euo pipefail
+          repository='swift-institute/.github'
+          current=$(gh api "repos/${repository}/pulls/${PULL}" --jq .head.sha)
+          test "$current" = "$HEAD"
+          gh api --method POST "repos/${repository}/pulls/${PULL}/reviews" \
+            -f event=APPROVE \
+            -f commit_id="$HEAD" \
+            -f body='Independent transaction review: exact-head guards satisfied; approval is not merge authorization.' >/dev/null
