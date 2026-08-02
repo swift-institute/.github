@@ -712,6 +712,38 @@ struct RepositoryPolicyTests {
         #expect(report.map(\.finding) == [.malformed])
     }
 
+    // Positive control: a core-field profile has one value. The parser must
+    // not overwrite a malformed first value with a later conforming one.
+    @Test
+    func issueRecordReconcilerRejectsAdditionalCoreFieldContent() {
+        let report = RepositoryPolicy.Issue.reconcile([
+            .init(
+                coordinate: "swift-institute/.github#173",
+                body: """
+                    ### Kind
+
+                    not Task
+                    Task
+
+                    ### Owner coordinate
+
+                    swift-institute/.github
+
+                    ### Status
+
+                    Active
+
+                    ### Grammar version
+
+                    1
+                    """,
+                native: .init(state: .open)
+            )
+        ])
+
+        #expect(report.map(\.finding) == [.malformed])
+    }
+
     @Test
     func issueRecordReconcilerSeparatesNativeStateAndUnavailableInputs() throws {
         let active = """

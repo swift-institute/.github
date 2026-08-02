@@ -223,7 +223,10 @@ extension RepositoryPolicy.Issue {
                 var value = ""
                 while index < lines.count, !lines[index].hasPrefix("### ") {
                     let line = lines[index].trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !line.isEmpty { value = String(line) }
+                    if !line.isEmpty {
+                        guard value.isEmpty else { throw Error.duplicateField(name) }
+                        value = String(line)
+                    }
                     index += 1
                 }
                 result[name] = value
