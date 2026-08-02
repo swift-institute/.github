@@ -198,7 +198,7 @@ jobs:
                 fixer: $fixer,
                 owningTask: $owningTask,
                 plan: $plan,
-                reviews: [ $reviews[0][] | { actor: .user.login, state: .state, head: (.commit_id // "") } ],
+                reviews: [ $reviews[0][][] | { actor: .user.login, state: .state, head: (.commit_id // "") } ],
                 checkPages: [
                   $checks[0][]
                   | {
