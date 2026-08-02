@@ -1,6 +1,16 @@
 import Foundation
 
 extension RepositoryPolicy {
+    /// The Institute protected-main branch ruleset contract, converged by
+    /// `sync-metadata`'s `rulesets` job and read back for drift detection.
+    ///
+    /// Break-glass: in a genuine emergency, an organization admin may delete
+    /// the "Institute protected main" ruleset directly on the affected
+    /// repository to bypass enforcement. This bypass requires a durable
+    /// receipt comment on the owning issue naming who performed it, why, and
+    /// when. Once the emergency is over, the ruleset must be re-applied by
+    /// dispatching `sync-metadata` with `apply-rulesets: true` against that
+    /// repository — never left deleted or hand-recreated.
     public enum Ruleset {
         public static func protectedMainPayload(from url: URL) throws -> Data {
             let source = try Data(contentsOf: url)
