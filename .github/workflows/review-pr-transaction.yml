@@ -21,6 +21,10 @@ on:
         description: 'Accepted exact base revision; must equal the live PR base.'
         required: true
         type: string
+      owning-task:
+        description: 'Owning Task number recorded in the accepted plan.'
+        required: true
+        type: string
       intended-path:
         description: 'One intended changed path recorded in the accepted plan.'
         required: true
@@ -81,6 +85,7 @@ jobs:
           owner: swift-institute
           permission-metadata: read
           permission-contents: read
+          permission-issues: read
           permission-pull-requests: write
 
       - name: Validate the guarded transaction
@@ -91,6 +96,7 @@ jobs:
           PULL: ${{ inputs.pull }}
           PLAN_HEAD: ${{ inputs.accepted-plan-head }}
           PLAN_BASE: ${{ inputs.accepted-plan-base }}
+          OWNING_TASK: ${{ inputs.owning-task }}
           PLAN_ACCEPTED: ${{ inputs.plan-accepted }}
           PLAN_PATH: ${{ inputs.intended-path }}
           EVIDENCE_COMMAND: ${{ inputs.local-evidence-command }}
@@ -101,37 +107,63 @@ jobs:
         run: |
           set -euo pipefail
           repository='swift-institute/.github'
-          pull=$(gh api "repos/${repository}/pulls/${PULL}")
-          head=$(jq -er '.head.sha' <<<"$pull")
-          base=$(jq -er '.base.sha' <<<"$pull")
-          fixer=$(jq -er '.user.login' <<<"$pull")
-          test "$(jq -r '.state' <<<"$pull")" = open
-          test "$(jq -r '.draft' <<<"$pull")" = false
-          reviews=$(gh api --paginate "repos/${repository}/pulls/${PULL}/reviews")
-          checks=$(gh api "repos/${repository}/commits/${head}/check-runs")
-          runs=$(gh api "repos/${repository}/actions/runs?head_sha=${head}&per_page=100")
-          graph=$(gh api graphql -F owner=swift-institute -F name=.github -F number="${PULL}" -f query='
-            query($owner: String!, $name: String!, $number: Int!) {
+          [[ "$OWNING_TASK" =~ ^[1-9][0-9]*$ ]]
+          transaction_dir=$(mktemp -d)
+          trap 'rm -rf "$transaction_dir"' EXIT
+          pull_file="$transaction_dir/pull.json"
+          reviews_file="$transaction_dir/reviews.json"
+          checks_file="$transaction_dir/checks.json"
+          runs_file="$transaction_dir/runs.json"
+          graph_file="$transaction_dir/graph.json"
+          gh api "repos/${repository}/pulls/${PULL}" > "$pull_file"
+          head=$(jq -er '.head.sha' "$pull_file")
+          base=$(jq -er '.base.sha' "$pull_file")
+          fixer=$(jq -er '.user.login' "$pull_file")
+          test "$(jq -r '.state' "$pull_file")" = open
+          test "$(jq -r '.draft' "$pull_file")" = false
+          gh api --paginate "repos/${repository}/pulls/${PULL}/reviews?per_page=100" > "$reviews_file"
+          gh api --paginate "repos/${repository}/commits/${head}/check-runs?per_page=100" > "$checks_file"
+          gh api --paginate "repos/${repository}/actions/runs?head_sha=${head}&per_page=100" > "$runs_file"
+          gh api graphql -F owner=swift-institute -F name=.github -F number="${PULL}" -F task="${OWNING_TASK}" -f query='
+            query($owner: String!, $name: String!, $number: Int!, $task: Int!) {
               repository(owner: $owner, name: $name) {
                 mergeCommitAllowed
                 rebaseMergeAllowed
                 squashMergeAllowed
-                pullRequest(number: $number) {
-                  reviewThreads(first: 100) { nodes { isResolved } pageInfo { hasNextPage } }
-                  closingIssuesReferences(first: 100) {
-                    nodes { number state repository { nameWithOwner } }
+                issue(number: $task) {
+                  number
+                  state
+                  issueType { name }
+                  repository { nameWithOwner }
+                  timelineItems(itemTypes: [CROSS_REFERENCED_EVENT], first: 100) {
+                    nodes {
+                      ... on CrossReferencedEvent {
+                        source {
+                          __typename
+                          ... on PullRequest {
+                            number
+                            repository { nameWithOwner }
+                          }
+                        }
+                      }
+                    }
                     pageInfo { hasNextPage }
                   }
                 }
+                pullRequest(number: $number) {
+                  reviewThreads(first: 100) { nodes { isResolved } pageInfo { hasNextPage } }
+                }
               }
-            }')
+            }' > "$graph_file"
           jq -e '
-            .data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage == false and
-            .data.repository.pullRequest.closingIssuesReferences.pageInfo.hasNextPage == false
-          ' <<<"$graph" >/dev/null
+            .data.repository.issue != null and
+            .data.repository.issue.timelineItems.pageInfo.hasNextPage == false and
+            .data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage == false
+          ' "$graph_file" >/dev/null
           jq -n \
             --arg repository "$repository" \
-            --argjson pull "$PULL" \
+            --arg pull "$PULL" \
+            --arg owningTask "$OWNING_TASK" \
             --arg head "$head" \
             --arg base "$base" \
             --arg fixer "$fixer" \
@@ -144,32 +176,43 @@ jobs:
             --arg evidenceHead "$EVIDENCE_HEAD" \
             --arg payloadPreflighted "$PAYLOAD_PREFLIGHTED" \
             --arg nextOwner "$NEXT_OWNER" \
-            --argjson reviews "$reviews" \
-            --argjson checks "$checks" \
-            --argjson runs "$runs" \
-            --argjson graph "$graph" '
+            --slurpfile reviews "$reviews_file" \
+            --slurpfile checks "$checks_file" \
+            --slurpfile runs "$runs_file" \
+            --slurpfile graph "$graph_file" '
               {
                 repository: $repository,
-                pull: $pull,
+                pull: ($pull | tonumber),
                 base: $base,
                 head: $head,
                 fixer: $fixer,
-                owningTask: ([ $graph.data.repository.pullRequest.closingIssuesReferences.nodes[] | select(.repository.nameWithOwner == $repository and .number == 176) | { repository: .repository.nameWithOwner, number, state } ][0]),
+                owningTask: ($graph[0].data.repository.issue | {
+                  repository: .repository.nameWithOwner,
+                  number,
+                  state,
+                  type: .issueType.name,
+                  isReferencedByPull: ([.timelineItems.nodes[].source | select(
+                    .__typename == "PullRequest" and
+                    .repository.nameWithOwner == $repository and
+                    .number == ($pull | tonumber)
+                  )] | length > 0)
+                }),
                 plan: {
                   accepted: ($planAccepted == "true"), base: $planBase, head: $planHead, fixer: $fixer,
+                  task: ($owningTask | tonumber),
                   paths: [$planPath], evidence: [{ command: $evidenceCommand, result: $evidenceResult, head: $evidenceHead }],
                   payload: { preflighted: ($payloadPreflighted == "true"), head: $head }, nextOwner: $nextOwner
                 },
-                reviews: [ $reviews[] | { actor: .user.login, state: .state, head: (.commit_id // "") } ],
+                reviews: [ $reviews[][] | { actor: .user.login, state: .state, head: (.commit_id // "") } ],
                 checks: (
-                  [ $checks.check_runs[] | { name: .name, head: $head, conclusion: .conclusion } ]
-                  + [ $runs.workflow_runs[] | select(.name == "swift-ci") | { name: "full-tier", head: .head_sha, conclusion: .conclusion } ]
+                  [ $checks[].check_runs[] | { name: .name, head: $head, conclusion: .conclusion } ]
+                  + [ $runs[].workflow_runs[] | select(.name == "swift-ci") | { name: "full-tier", head: .head_sha, conclusion: .conclusion } ]
                 ),
-                unresolvedThreads: ([ $graph.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved | not) ] | length),
+                unresolvedThreads: ([ $graph[0].data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved | not) ] | length),
                 merge: {
-                  squash: $graph.data.repository.squashMergeAllowed,
-                  mergeCommit: $graph.data.repository.mergeCommitAllowed,
-                  rebase: $graph.data.repository.rebaseMergeAllowed
+                  squash: $graph[0].data.repository.squashMergeAllowed,
+                  mergeCommit: $graph[0].data.repository.mergeCommitAllowed,
+                  rebase: $graph[0].data.repository.rebaseMergeAllowed
                 },
                 receipt: { complete: false, head: $head, issueClosed: false, unassigned: false }
               }

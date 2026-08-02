@@ -7,6 +7,7 @@ public enum PRTransaction {
             public let base: String
             public let head: String
             public let fixer: String
+            public let task: Int
             public let paths: [String]
             public let evidence: [Evidence]
             public let payload: Payload
@@ -40,6 +41,8 @@ public enum PRTransaction {
             public let repository: String
             public let number: Int
             public let state: String
+            public let type: String
+            public let isReferencedByPull: Bool
         }
 
         public struct Merge: Codable, Sendable {
@@ -118,7 +121,12 @@ public enum PRTransaction {
         guard snapshot.plan.payload.preflighted else { throw Error.payloadNotPreflighted }
         guard snapshot.plan.payload.head == snapshot.head else { throw Error.stalePayload }
         guard snapshot.plan.nextOwner == "swift-institute-bot[bot]" else { throw Error.missingNextOwner }
-        guard snapshot.owningTask.repository == snapshot.repository, snapshot.owningTask.number == 176, snapshot.owningTask.state == "OPEN" else {
+        guard snapshot.owningTask.repository == snapshot.repository,
+            snapshot.owningTask.number == snapshot.plan.task,
+            snapshot.owningTask.state == "OPEN",
+            snapshot.owningTask.type == "Task",
+            snapshot.owningTask.isReferencedByPull
+        else {
             throw Error.invalidOwningTask
         }
         let ci = snapshot.checks.filter { $0.name == "ci-ok" }
