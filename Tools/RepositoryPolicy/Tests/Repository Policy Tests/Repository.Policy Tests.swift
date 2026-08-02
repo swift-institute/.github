@@ -49,15 +49,15 @@ struct RepositoryPolicyTests {
         let root = try repositoryFixture(
             files: [
                 ".github/workflows/ci.yml": """
-                    name: CI
-                    on:
-                      push:
-                      pull_request:
-                      workflow_dispatch:
-                    jobs:
-                      ci:
-                        uses: swift-foundations/.github/.github/workflows/swift-ci.yml@main
-                    """
+                name: CI
+                on:
+                  push:
+                  pull_request:
+                  workflow_dispatch:
+                jobs:
+                  ci:
+                    uses: swift-foundations/.github/.github/workflows/swift-ci.yml@main
+                """
             ]
         )
         defer { try? FileManager.default.removeItem(at: root) }
@@ -93,16 +93,16 @@ struct RepositoryPolicyTests {
         let root = try repositoryFixture(
             files: [
                 ".github/workflows/ci.yml": """
-                    name: CI
-                    on:
-                      schedule:
-                        - cron: "0 4 * * *"
-                    jobs:
-                      ci:
-                        runs-on: ubuntu-latest
-                        steps:
-                          - uses: actions/checkout@v7
-                    """
+                name: CI
+                on:
+                  schedule:
+                    - cron: "0 4 * * *"
+                jobs:
+                  ci:
+                    runs-on: ubuntu-latest
+                    steps:
+                      - uses: actions/checkout@v7
+                """
             ]
         )
         defer { try? FileManager.default.removeItem(at: root) }
@@ -139,23 +139,23 @@ struct RepositoryPolicyTests {
         let root = try repositoryFixture(
             files: [
                 ".github/workflows/lint.yml": """
-                    name: Lint
-                    on:
-                      workflow_call:
-                    jobs:
-                      lint:
-                        runs-on: ubuntu-latest
-                        steps:
-                          - uses: ./.github/actions/install
-                    """,
+                name: Lint
+                on:
+                  workflow_call:
+                jobs:
+                  lint:
+                    runs-on: ubuntu-latest
+                    steps:
+                      - uses: ./.github/actions/install
+                """,
                 ".github/actions/install/action.yml": """
-                    name: Install
-                    description: Install the tool
-                    runs:
-                      using: composite
-                      steps:
-                        - uses: actions/checkout@v7
-                    """,
+                name: Install
+                description: Install the tool
+                runs:
+                  using: composite
+                  steps:
+                    - uses: actions/checkout@v7
+                """,
             ]
         )
         defer { try? FileManager.default.removeItem(at: root) }
@@ -197,14 +197,14 @@ struct RepositoryPolicyTests {
         let root = try repositoryFixture(
             files: [
                 ".github/workflows/recovery.yml": """
-                    name: Recovery
-                    on: workflow_dispatch
-                    jobs:
-                      recover:
-                        runs-on: ubuntu-latest
-                        steps:
-                          - uses: actions/checkout@v7
-                    """,
+                name: Recovery
+                on: workflow_dispatch
+                jobs:
+                  recover:
+                    runs-on: ubuntu-latest
+                    steps:
+                      - uses: actions/checkout@v7
+                """,
                 ".github/ISSUE_TEMPLATE/bug.yml": "name: Bug\n",
             ]
         )
@@ -255,12 +255,12 @@ struct RepositoryPolicyTests {
             repositoryClass: .package,
             files: [
                 ".github/workflows/ci.yml": """
-                    name: CI
-                    on: [push, pull_request]
-                    jobs:
-                      ci:
-                        uses: swift-foundations/.github/.github/workflows/swift-ci.yml@main
-                    """,
+                name: CI
+                on: [push, pull_request]
+                jobs:
+                  ci:
+                    uses: swift-foundations/.github/.github/workflows/swift-ci.yml@main
+                """,
                 ".github/ISSUE_TEMPLATE/bug.yml": "name: Bug\n",
                 "Sources/Example.swift": "public struct Example {}\n",
             ],
@@ -359,12 +359,12 @@ struct RepositoryPolicyTests {
             repositoryClass: .package,
             files: [
                 ".github/workflows/ci.yml": """
-                    name: CI
-                    on: [push, pull_request, workflow_dispatch]
-                    jobs:
-                      ci:
-                        uses: swift-primitives/.github/.github/workflows/swift-ci.yml@0123456789abcdef0123456789abcdef01234567
-                    """
+                name: CI
+                on: [push, pull_request, workflow_dispatch]
+                jobs:
+                  ci:
+                    uses: swift-primitives/.github/.github/workflows/swift-ci.yml@0123456789abcdef0123456789abcdef01234567
+                """
             ],
             policy: policy
         )
@@ -404,14 +404,14 @@ struct RepositoryPolicyTests {
             repositoryClass: .package,
             files: [
                 ".github/workflows/ci.yml": """
-                    name: CI
-                    on: [push, pull_request, workflow_dispatch]
-                    jobs:
-                      ci:
-                        uses: swift-primitives/.github/.github/workflows/swift-ci.yml@main
-                      notify:
-                        uses: swift-institute/.github/.github/workflows/notify-linter-republish.yml@main
-                    """
+                name: CI
+                on: [push, pull_request, workflow_dispatch]
+                jobs:
+                  ci:
+                    uses: swift-primitives/.github/.github/workflows/swift-ci.yml@main
+                  notify:
+                    uses: swift-institute/.github/.github/workflows/notify-linter-republish.yml@main
+                """
             ],
             policy: policy
         )
@@ -461,11 +461,11 @@ struct RepositoryPolicyTests {
             files: [
                 ".spi.yml": "version: 1\n",
                 "Sources/Example/Example.docc/Example.md": """
-                    # ``Example``
+                # ``Example``
 
-                    This is the umbrella catalog placeholder. Replace this line with a one-sentence \
-                    summary of the module.
-                    """,
+                This is the umbrella catalog placeholder. Replace this line with a one-sentence \
+                summary of the module.
+                """,
             ]
         )
         defer { try? FileManager.default.removeItem(at: root) }
@@ -490,10 +490,10 @@ struct RepositoryPolicyTests {
             files: [
                 ".spi.yml": "version: 1\n",
                 "Sources/Example/Example.docc/Example.md": """
-                    # ``Example``
+                # ``Example``
 
-                    Example provides a typed configuration surface for the repository policy tool.
-                    """,
+                Example provides a typed configuration surface for the repository policy tool.
+                """,
             ]
         )
         defer { try? FileManager.default.removeItem(at: root) }
@@ -516,11 +516,11 @@ struct RepositoryPolicyTests {
         let root = try repositoryFixture(
             files: [
                 "Sources/Example/Example.docc/Example.md": """
-                    # ``Example``
+                # ``Example``
 
-                    This is the umbrella catalog placeholder. Replace this line with a one-sentence \
-                    summary of the module.
-                    """
+                This is the umbrella catalog placeholder. Replace this line with a one-sentence \
+                summary of the module.
+                """
             ]
         )
         defer { try? FileManager.default.removeItem(at: root) }
@@ -544,12 +544,12 @@ struct RepositoryPolicyTests {
         let root = try repositoryFixture(
             files: [
                 "README.md": """
-                    # Example
+                # Example
 
-                    ![Status](https://img.shields.io/badge/status-active--development-blue.svg)
+                ![Status](https://img.shields.io/badge/status-active--development-blue.svg)
 
-                    Example is a typed configuration surface.
-                    """
+                Example is a typed configuration surface.
+                """
             ]
         )
         defer { try? FileManager.default.removeItem(at: root) }
@@ -572,14 +572,14 @@ struct RepositoryPolicyTests {
         let root = try repositoryFixture(
             files: [
                 "README.md": """
-                    # Example
+                # Example
 
-                    ## Platform Support
+                ## Platform Support
 
-                    | Platform | Minimum |
-                    | --- | --- |
-                    | macOS | 15 |
-                    """
+                | Platform | Minimum |
+                | --- | --- |
+                | macOS | 15 |
+                """
             ]
         )
         defer { try? FileManager.default.removeItem(at: root) }
@@ -602,14 +602,14 @@ struct RepositoryPolicyTests {
         let root = try repositoryFixture(
             files: [
                 "README.md": """
-                    # Example
+                # Example
 
-                    Example is a typed configuration surface for the repository policy tool.
+                Example is a typed configuration surface for the repository policy tool.
 
-                    ## Installation
+                ## Installation
 
-                    Add the package to your manifest.
-                    """
+                Add the package to your manifest.
+                """
             ]
         )
         defer { try? FileManager.default.removeItem(at: root) }
@@ -633,16 +633,16 @@ struct RepositoryPolicyTests {
         let root = try repositoryFixture(
             files: [
                 "README.md": """
-                    # Example
+                # Example
 
-                    ```markdown
-                    ![Status](https://img.shields.io/badge/status-active--development-blue.svg)
+                ```markdown
+                ![Status](https://img.shields.io/badge/status-active--development-blue.svg)
 
-                    ## Platform Support
-                    ```
+                ## Platform Support
+                ```
 
-                    Example is a typed configuration surface for the repository policy tool.
-                    """
+                Example is a typed configuration surface for the repository policy tool.
+                """
             ]
         )
         defer { try? FileManager.default.removeItem(at: root) }
@@ -661,7 +661,8 @@ struct RepositoryPolicyTests {
 
     @Test
     func issueRecordParserAcceptsTheCompactTaskProfile() throws {
-        let record = try RepositoryPolicy.Issue.Parser.record("""
+        let record = try RepositoryPolicy.Issue.Parser.record(
+            """
             ### Kind
 
             Task
@@ -677,7 +678,8 @@ struct RepositoryPolicyTests {
             ### Grammar version
 
             1
-            """)
+            """
+        )
 
         #expect(record.kind == .task)
         #expect(record.owner == "swift-institute/.github")
@@ -773,7 +775,7 @@ struct RepositoryPolicyTests {
             .init(coordinate: "z#1", body: nil, native: .init(state: .open)),
             .init(coordinate: "a#1", body: active, native: .init(state: .completed)),
             .init(coordinate: "b#1", body: active, native: .init(state: .open), decision: decision),
-            .init(coordinate: "c#1", body: active, native: .init(state: .open, parent: "a#0"))
+            .init(coordinate: "c#1", body: active, native: .init(state: .open, parent: "a#0")),
         ])
 
         #expect(report.map(\.coordinate) == ["a#1", "b#1", "c#1", "z#1"])
@@ -816,6 +818,27 @@ struct RepositoryPolicyTests {
     }
 
     @Test
+    func `Issue snapshot digest matches known vectors across chunk boundaries`() {
+        let vectors = [
+            ("", "da39a3ee5e6b4b0d3255bfef95601890afd80709"),
+            ("abc", "a9993e364706816aba3e25717850c26c9cd0d89d"),
+            (String(repeating: "a", count: 64), "0098ba824b5c16427bd7a1122a5a442a25ec644d"),
+            (String(repeating: "a", count: 65), "11655326c708d70319be2610e8a57d9a5b959d3b"),
+        ]
+
+        for (body, digest) in vectors {
+            let snapshot = RepositoryPolicy.Issue.Snapshot(
+                coordinate: "swift-institute/.github#183",
+                revision: "\"known-vector\"",
+                body: body,
+                native: .init(state: .open)
+            )
+
+            #expect(snapshot.digest == digest)
+        }
+    }
+
+    @Test
     func activeRecordCompactorRendersOnlyTheCurrentSpecificationAndCheckpoint() throws {
         let body = """
             ### Problem
@@ -853,27 +876,36 @@ struct RepositoryPolicyTests {
             digest: snapshot.digest
         )
 
-        let plan = try #require(RepositoryPolicy.Issue.Compactor.plan(snapshot: snapshot, guard: expected))
+        let plan = try #require(
+            try RepositoryPolicy.Issue.Compactor.plan(snapshot: snapshot, guard: expected)
+        )
 
-        #expect(plan.body == """
-            ### Kind
+        #expect(
+            plan.body == """
+                ### Kind
 
-            Task
+                Task
 
-            ### Owner coordinate
+                ### Owner coordinate
 
-            swift-institute/.github
+                swift-institute/.github
 
-            ### Status
+                ### Status
 
-            Active
+                Active
 
-            ### Grammar version
+                ### Grammar version
 
-            1
-            """)
-        #expect(try RepositoryPolicy.Issue.Parser.checkpoint(plan.checkpoint).source == snapshot.coordinate)
-        #expect(try RepositoryPolicy.Issue.Parser.checkpoint(plan.checkpoint).digest == snapshot.digest)
+                1
+                """
+        )
+        #expect(
+            try RepositoryPolicy.Issue.Parser.checkpoint(plan.checkpoint).source
+                == snapshot.coordinate
+        )
+        #expect(
+            try RepositoryPolicy.Issue.Parser.checkpoint(plan.checkpoint).digest == snapshot.digest
+        )
         #expect(!plan.body.contains("Earlier detail"))
         #expect(!plan.checkpoint.contains("Earlier detail"))
     }

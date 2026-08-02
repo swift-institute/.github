@@ -122,7 +122,8 @@ extension RepositoryPolicy.Issue {
             guard grammarVersion == 1 else {
                 throw Error.unsupportedVersion(grammarVersion)
             }
-            guard revision.count == 40, revision.allSatisfy(\.isHexDigit), !verification.isEmpty else {
+            guard revision.count == 40, revision.allSatisfy(\.isHexDigit), !verification.isEmpty
+            else {
                 throw Error.invalidReceipt
             }
             self.grammarVersion = grammarVersion
@@ -278,19 +279,39 @@ extension RepositoryPolicy.Issue {
     public static func reconcile(_ inputs: [Input]) -> [Report] {
         inputs.sorted { $0.coordinate < $1.coordinate }.map { input in
             guard let body = input.body, let native = input.native else {
-                return .init(coordinate: input.coordinate, finding: .unavailable, message: "body or native state is unavailable")
+                return .init(
+                    coordinate: input.coordinate,
+                    finding: .unavailable,
+                    message: "body or native state is unavailable"
+                )
             }
             if input.decision?.status == "superseded" {
-                return .init(coordinate: input.coordinate, finding: .superseded, message: "decision record is superseded")
+                return .init(
+                    coordinate: input.coordinate,
+                    finding: .superseded,
+                    message: "decision record is superseded"
+                )
             }
             do {
                 let record = try Parser.record(body)
                 if native.state != .open, record.status == .active {
-                    return .init(coordinate: input.coordinate, finding: .stale, message: "active body record disagrees with terminal native state")
+                    return .init(
+                        coordinate: input.coordinate,
+                        finding: .stale,
+                        message: "active body record disagrees with terminal native state"
+                    )
                 }
-                return .init(coordinate: input.coordinate, finding: .conforming, message: "record conforms to grammar v1")
+                return .init(
+                    coordinate: input.coordinate,
+                    finding: .conforming,
+                    message: "record conforms to grammar v1"
+                )
             } catch {
-                return .init(coordinate: input.coordinate, finding: .malformed, message: "record body does not conform to grammar v1")
+                return .init(
+                    coordinate: input.coordinate,
+                    finding: .malformed,
+                    message: "record body does not conform to grammar v1"
+                )
             }
         }
     }
@@ -339,12 +360,12 @@ extension RepositoryPolicy.Issue {
     /// update only `body` and append only `checkpoint`; comments and native
     /// GitHub state are intentionally absent from this value.
     public struct Compaction: Equatable, Sendable {
-        public let guard: Guard
+        public let `guard`: Guard
         public let body: String
         public let checkpoint: String
 
-        public init(guard: Guard, body: String, checkpoint: String) {
-            self.guard = guard
+        public init(`guard`: Guard, body: String, checkpoint: String) {
+            self.`guard` = `guard`
             self.body = body
             self.checkpoint = checkpoint
         }
@@ -418,40 +439,56 @@ extension RepositoryPolicy.Issue {
             bytes += withUnsafeBytes(of: bitCount.bigEndian, Array.init)
 
             var hash: [UInt32] = [
-                0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476, 0xC3D2E1F0,
+                0x6745_2301, 0xEFCD_AB89, 0x98BA_DCFE, 0x1032_5476, 0xC3D2_E1F0,
             ]
-            for block in bytes.indices.stride(from: 0, to: bytes.count, by: 64) {
+            for block in stride(from: bytes.startIndex, to: bytes.endIndex, by: 64) {
                 var words = [UInt32](repeating: 0, count: 80)
                 for index in 0..<16 {
                     let offset = block + (index * 4)
-                    words[index] = (UInt32(bytes[offset]) << 24)
+                    words[index] =
+                        (UInt32(bytes[offset]) << 24)
                         | (UInt32(bytes[offset + 1]) << 16)
                         | (UInt32(bytes[offset + 2]) << 8)
                         | UInt32(bytes[offset + 3])
                 }
                 for index in 16..<80 {
-                    words[index] = (words[index - 3] ^ words[index - 8] ^ words[index - 14] ^ words[index - 16]).rotatedLeft(1)
+                    words[index] =
+                        (words[index - 3] ^ words[index - 8] ^ words[index - 14] ^ words[index - 16])
+                        .rotatedLeft(1)
                 }
-                var a = hash[0], b = hash[1], c = hash[2], d = hash[3], e = hash[4]
+                var a = hash[0]
+                var b = hash[1]
+                var c = hash[2]
+                var d = hash[3]
+                var e = hash[4]
                 for index in 0..<80 {
-                    let (f, k): (UInt32, UInt32) = switch index {
-                    case 0..<20: ((b & c) | (~b & d), 0x5A827999)
-                    case 20..<40: (b ^ c ^ d, 0x6ED9EBA1)
-                    case 40..<60: ((b & c) | (b & d) | (c & d), 0x8F1BBCDC)
-                    default: (b ^ c ^ d, 0xCA62C1D6)
-                    }
+                    let (f, k): (UInt32, UInt32) =
+                        switch index {
+                        case 0..<20: ((b & c) | (~b & d), 0x5A82_7999)
+                        case 20..<40: (b ^ c ^ d, 0x6ED9_EBA1)
+                        case 40..<60: ((b & c) | (b & d) | (c & d), 0x8F1B_BCDC)
+                        default: (b ^ c ^ d, 0xCA62_C1D6)
+                        }
                     let next = a.rotatedLeft(5) &+ f &+ e &+ k &+ words[index]
-                    e = d; d = c; c = b.rotatedLeft(30); b = a; a = next
+                    e = d
+                    d = c
+                    c = b.rotatedLeft(30)
+                    b = a
+                    a = next
                 }
-                hash[0] &+= a; hash[1] &+= b; hash[2] &+= c; hash[3] &+= d; hash[4] &+= e
+                hash[0] &+= a
+                hash[1] &+= b
+                hash[2] &+= c
+                hash[3] &+= d
+                hash[4] &+= e
             }
             return hash.map { String(format: "%08x", $0) }.joined()
         }
     }
 }
 
-private extension UInt32 {
-    func rotatedLeft(_ count: UInt32) -> UInt32 {
+extension UInt32 {
+    fileprivate func rotatedLeft(_ count: UInt32) -> UInt32 {
         (self << count) | (self >> (32 - count))
     }
 }
