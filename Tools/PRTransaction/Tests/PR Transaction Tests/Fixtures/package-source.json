@@ -1,5 +1,9 @@
 {
   "repository": "swift-foundations/swift-tests",
+  "target": {
+    "repository": "swift-foundations/swift-tests",
+    "visibility": "public"
+  },
   "pull": 8,
   "base": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
   "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",

@@ -1,5 +1,9 @@
 {
   "repository": "swift-institute/.github",
+  "target": {
+    "repository": "swift-institute/.github",
+    "visibility": "public"
+  },
   "pull": 189,
   "base": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
   "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",

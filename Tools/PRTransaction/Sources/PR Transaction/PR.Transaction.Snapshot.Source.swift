@@ -2,6 +2,7 @@ extension PRTransaction.Snapshot {
     /// The live repository data and accepted plan used to produce a guarded snapshot.
     public struct Source: Codable, Sendable {
         public let repository: String
+        public let target: Target
         public let pull: Int
         public let base: String
         public let head: String
@@ -16,6 +17,9 @@ extension PRTransaction.Snapshot {
 
         /// Combines complete API pages and binds the plan into its preflighted payload.
         public func snapshot() throws(PRTransaction.Error) -> PRTransaction.Snapshot {
+            guard target.repository == repository, target.visibility == "public" else {
+                throw PRTransaction.Error.invalidTarget
+            }
             let checks = try collect(checkPages, name: "check-runs")
             let runs = try collect(runPages, name: "workflow-runs")
             return PRTransaction.Snapshot(

@@ -55,6 +55,34 @@ extension PRTransaction.Transaction {
             }
         }
 
+        @Test func `CLI rejects a private target repository`() throws {
+            #expect(throws: PRTransaction.Error.invalidTarget) {
+                try PRTransaction.Command.run(["produce", fixture("private-target-source").path])
+            }
+        }
+
+        @Test func `producer rejects a target response for another repository`() {
+            let source = source(
+                verification: control,
+                checks: pages([[check("fixtures"), check("correspondence"), check("scan")]]),
+                target: .init(repository: "swift-foundations/swift-tests", visibility: "public")
+            )
+
+            #expect(throws: PRTransaction.Error.invalidTarget) {
+                try source.snapshot()
+            }
+        }
+
+        @Test func `producer rejects a target response without visibility`() {
+            let data = Data(#"""
+                { "repository": "swift-institute/.github", "target": { "repository": "swift-institute/.github" } }
+                """#.utf8)
+
+            #expect(throws: DecodingError.self) {
+                try JSONDecoder().decode(PRTransaction.Snapshot.Source.self, from: data)
+            }
+        }
+
         @Test func `CLI rejects a legacy snapshot missing task and profiles`() throws {
             #expect(throws: DecodingError.self) {
                 try PRTransaction.Command.run(["review", fixture("legacy-snapshot").path])
@@ -245,6 +273,10 @@ extension PRTransaction.Transaction {
         private func source(
             verification: PRTransaction.Snapshot.Verification,
             checks: [PRTransaction.Snapshot.Source.Page<PRTransaction.Snapshot.Check>],
+            target: PRTransaction.Snapshot.Source.Target = .init(
+                repository: "swift-institute/.github",
+                visibility: "public"
+            ),
             runs: [PRTransaction.Snapshot.Source.Page<PRTransaction.Snapshot.Check>] = [
                 .init(total: 0, values: [])
             ]
@@ -256,6 +288,7 @@ extension PRTransaction.Transaction {
             )
             return PRTransaction.Snapshot.Source(
                 repository: "swift-institute/.github",
+                target: target,
                 pull: 189,
                 base: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
                 head: head,

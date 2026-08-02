@@ -66,10 +66,16 @@ jobs:
             echo "::error::'pull' must be one positive decimal pull-request number."
             exit 1
           fi
+          target=$(gh api "repos/${TARGET_REPOSITORY}" | jq -ce \
+            --arg repository "$TARGET_REPOSITORY" '
+              select(.full_name == $repository and .visibility == "public")
+              | { repository: .full_name, visibility }
+            ')
           echo "repository=${TARGET_REPOSITORY}" >> "$GITHUB_OUTPUT"
           echo "owner=${TARGET_REPOSITORY%/*}" >> "$GITHUB_OUTPUT"
           echo "name=${TARGET_REPOSITORY#*/}" >> "$GITHUB_OUTPUT"
           echo "pull=${TARGET_PULL}" >> "$GITHUB_OUTPUT"
+          echo "target=${target}" >> "$GITHUB_OUTPUT"
 
       - name: Mint narrowed reviewer token
         id: token
@@ -89,6 +95,7 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
           TARGET_REPOSITORY: ${{ steps.target.outputs.repository }}
+          TARGET: ${{ steps.target.outputs.target }}
           PULL: ${{ steps.target.outputs.pull }}
           ACCEPTED_PLAN: ${{ inputs.accepted-plan }}
         run: |
@@ -259,6 +266,7 @@ jobs:
             "$RUNNER_TEMP/graph.json" >/dev/null
           jq -n \
             --arg repository "$repository" \
+            --argjson target "$TARGET" \
             --argjson pull "$PULL" \
             --arg head "$head" \
             --arg base "$base" \
@@ -271,6 +279,7 @@ jobs:
             --slurpfile graph "$RUNNER_TEMP/graph.json" '
               {
                 repository: $repository,
+                target: $target,
                 pull: $pull,
                 base: $base,
                 head: $head,

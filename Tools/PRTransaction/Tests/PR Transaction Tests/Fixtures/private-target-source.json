@@ -2,7 +2,7 @@
   "repository": "swift-institute/.github",
   "target": {
     "repository": "swift-institute/.github",
-    "visibility": "public"
+    "visibility": "private"
   },
   "pull": 189,
   "base": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
@@ -18,23 +18,23 @@
     "repository": "swift-institute/.github",
     "pull": 189,
     "base": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-    "head": "cccccccccccccccccccccccccccccccccccccccc",
+    "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "task": {
       "repository": "swift-institute/.github",
       "number": 188,
       "state": "OPEN"
     },
     "verification": {
-      "package": {}
+      "control": {
+        "checks": ["fixtures", "correspondence", "scan"]
+      }
     },
-    "paths": [
-      "Tools/PRTransaction"
-    ],
+    "paths": [".github/workflows/review-pr-transaction.yml"],
     "evidence": [
       {
         "command": "workspace package test --package-path Tools/PRTransaction --fresh --jobs 4",
         "result": "success",
-        "head": "cccccccccccccccccccccccccccccccccccccccc"
+        "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       }
     ],
     "payloadPreflighted": true,
@@ -43,32 +43,15 @@
   "reviews": [],
   "checkPages": [
     {
-      "total": 1,
+      "total": 3,
       "values": [
-        {
-          "name": "ci-ok",
-          "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-          "conclusion": "success"
-        }
+        { "name": "fixtures", "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "conclusion": "success" },
+        { "name": "correspondence", "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "conclusion": "success" },
+        { "name": "scan", "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "conclusion": "success" }
       ]
     }
   ],
-  "runPages": [
-    {
-      "total": 1,
-      "values": [
-        {
-          "name": "swift-ci",
-          "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-          "conclusion": "success"
-        }
-      ]
-    }
-  ],
+  "runPages": [{ "total": 0, "values": [] }],
   "unresolvedThreads": 0,
-  "merge": {
-    "squash": true,
-    "mergeCommit": false,
-    "rebase": false
-  }
+  "merge": { "squash": true, "mergeCommit": false, "rebase": false }
 }
