@@ -100,10 +100,20 @@ enum Main {
                 receipt: URL(filePath: arguments.receipt)
             )
         )
+        // `excluded` names why an examined repository (including an
+        // explicitly named single one) did not reconcile, so a divergence
+        // is legible from the step output alone (swift-institute/.github#160).
+        let excludedDescription =
+            receipt.excluded.isEmpty
+            ? "none"
+            : receipt.excluded.sorted { $0.key < $1.key }
+                .map { "\($0.key)=\($0.value)" }
+                .joined(separator: ",")
         print(
             "repository-policy: scope=\(receipt.scope) examined=\(receipt.examined) "
-                + "eligible=\(receipt.eligible) converged=\(receipt.converged) "
-                + "enabled=\(receipt.enabled) would-enable=\(receipt.wouldEnable)"
+                + "eligible=\(receipt.eligible) excluded=\(excludedDescription) "
+                + "converged=\(receipt.converged) enabled=\(receipt.enabled) "
+                + "would-enable=\(receipt.wouldEnable)"
         )
     }
 

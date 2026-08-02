@@ -125,9 +125,13 @@ extension RepositoryPolicy {
             }
         }
 
-        if configuration.scope.repository != nil, eligible != 1 {
-            throw ConfigurationError("explicit canary repository is not eligible")
-        }
+        // An explicitly named repository that turns out excluded (not
+        // public, archived, a fork, empty, or missing a root manifest) is a
+        // legitimate GitHub-side fact, not an operator mistake — a typo or
+        // out-of-scope owner already fails earlier, in `Scope.init` or the
+        // repository fetch above. Report the divergence through `excluded`
+        // on the receipt below rather than failing the whole dispatch
+        // (swift-institute/.github#160).
 
         let receipt = Receipt(
             scope: scopeDescription,
