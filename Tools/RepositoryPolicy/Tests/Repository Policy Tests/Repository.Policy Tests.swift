@@ -73,6 +73,20 @@ struct RepositoryPolicyTests {
         // check; the caller-path-prefixed `ci / ci-ok` aggregate is the one
         // required current-head status, as rendered on live package PR heads.
         #expect(review["required_review_thread_resolution"] as? Bool == true)
+        // GitHub server-canonicalizes allowed_merge_methods,
+        // dismissal_restriction, and required_reviewers onto every
+        // pull_request rule even when the contract omits them
+        // (swift-institute/.github#196); the contract now pins all three
+        // explicitly so the applied ruleset's read-back stays in exact
+        // correspondence, and squash-only merge policy is an enforced fact
+        // rather than an unpinned server default.
+        #expect(review["allowed_merge_methods"] as? [String] == ["squash"])
+        #expect((review["required_reviewers"] as? [Any])?.isEmpty == true)
+        let dismissalRestriction = try #require(
+            review["dismissal_restriction"] as? [String: Any]
+        )
+        #expect(dismissalRestriction["enabled"] as? Bool == false)
+        #expect((dismissalRestriction["allowed_actors"] as? [Any])?.isEmpty == true)
         #expect(checks["strict_required_status_checks_policy"] as? Bool == true)
         let required = try #require(checks["required_status_checks"] as? [[String: Any]])
         #expect(required.count == 1)
@@ -94,6 +108,108 @@ struct RepositoryPolicyTests {
         let url = FileManager.default.temporaryDirectory
             .appending(path: "protected-main-ruleset-\(UUID().uuidString).json")
         try Data(legacy.utf8).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        #expect(throws: RepositoryPolicy.ConfigurationError.self) {
+            try RepositoryPolicy.Ruleset.protectedMainPayload(from: url)
+        }
+    }
+
+    // Positive control: GitHub's read-back carries additional top-level
+    // server metadata (id, node_id, source_type, timestamps) the contract
+    // never emits (swift-institute/.github#196). Once the pull_request
+    // parameters carry the exact pinned shape, that additive metadata must
+    // not fail validation — the read-back comparison in sync-metadata.yml's
+    // `rulesets` job only needs the pinned fields, not byte-identical
+    // top-level shape.
+    @Test
+    func protectedMainPayloadAcceptsACanonicalReadbackAroundThePinnedContract() throws {
+        let canonical = URL(filePath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appending(path: "Policy/protected-main-ruleset.json")
+        var object = try #require(
+            try JSONSerialization.jsonObject(with: Data(contentsOf: canonical)) as? [String: Any]
+        )
+        object["id"] = 20_244_631
+        object["node_id"] = "RUL_lADummyReadback"
+        object["source_type"] = "Repository"
+        object["created_at"] = "2026-08-02T00:00:00Z"
+        object["updated_at"] = "2026-08-02T00:00:00Z"
+        let url = FileManager.default.temporaryDirectory
+            .appending(path: "protected-main-ruleset-\(UUID().uuidString).json")
+        try JSONSerialization.data(withJSONObject: object).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let payload = try RepositoryPolicy.Ruleset.protectedMainPayload(from: url)
+        let decoded = try #require(
+            try JSONSerialization.jsonObject(with: payload) as? [String: Any]
+        )
+        let rules = try #require(decoded["rules"] as? [[String: Any]])
+        let review = try #require(
+            rules.first(where: { $0["type"] as? String == "pull_request" })?["parameters"]
+                as? [String: Any]
+        )
+        #expect(review["allowed_merge_methods"] as? [String] == ["squash"])
+    }
+
+    // Discriminating negative: GitHub's server-default merge-method set —
+    // all three methods — must be rejected. Institute policy is
+    // squash-only; a contract or read-back carrying the wider set is a
+    // policy weakening (swift-institute/.github#196), not normalization
+    // drift, so it must fail closed rather than pass as "close enough".
+    @Test
+    func protectedMainPayloadRejectsAllMergeMethods() throws {
+        let canonical = URL(filePath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appending(path: "Policy/protected-main-ruleset.json")
+        let allMethods = try String(contentsOf: canonical, encoding: .utf8)
+            .replacingOccurrences(
+                of: "\"allowed_merge_methods\": [\"squash\"]",
+                with: "\"allowed_merge_methods\": [\"merge\", \"squash\", \"rebase\"]"
+            )
+        #expect(allMethods.contains("\"merge\", \"squash\", \"rebase\""))
+        let url = FileManager.default.temporaryDirectory
+            .appending(path: "protected-main-ruleset-\(UUID().uuidString).json")
+        try Data(allMethods.utf8).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        #expect(throws: RepositoryPolicy.ConfigurationError.self) {
+            try RepositoryPolicy.Ruleset.protectedMainPayload(from: url)
+        }
+    }
+
+    // Discriminating negative: the pre-fix contract shape — silent on
+    // allowed_merge_methods, dismissal_restriction, and required_reviewers —
+    // must be rejected going forward (swift-institute/.github#196), even
+    // though GitHub itself accepts it and silently canonicalizes a weaker
+    // merge-method default over it.
+    @Test
+    func protectedMainPayloadRejectsAnUnpinnedMergeMethodContract() throws {
+        let canonical = URL(filePath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appending(path: "Policy/protected-main-ruleset.json")
+        let unpinned =
+            try String(contentsOf: canonical, encoding: .utf8)
+            .replacingOccurrences(of: "\"allowed_merge_methods\": [\"squash\"], ", with: "")
+            .replacingOccurrences(
+                of: "\"dismissal_restriction\": { \"allowed_actors\": [], \"enabled\": false }, ",
+                with: ""
+            )
+            .replacingOccurrences(of: ", \"required_reviewers\": []", with: "")
+        // Confirm the substitution actually reproduces the pre-fix shape
+        // before asserting on the validator's behavior against it.
+        #expect(!unpinned.contains("allowed_merge_methods"))
+        #expect(!unpinned.contains("dismissal_restriction"))
+        #expect(!unpinned.contains("required_reviewers"))
+        let url = FileManager.default.temporaryDirectory
+            .appending(path: "protected-main-ruleset-\(UUID().uuidString).json")
+        try Data(unpinned.utf8).write(to: url)
         defer { try? FileManager.default.removeItem(at: url) }
 
         #expect(throws: RepositoryPolicy.ConfigurationError.self) {
