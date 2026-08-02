@@ -8,9 +8,12 @@
 # harmonization.md § 4.2.
 #
 # Inputs:
-#   repo:     "owner/name" form. When set, scope to one repo.
-#   org:      org name. When set, scope to one org. Ignored if `repo` set.
-#   dry-run:  when true, print proposed edits without applying.
+#   repo:           "owner/name" form. When set, scope to one repo.
+#   org:            org name. When set, scope to one org. Ignored if `repo` set.
+#   dry-run:        when true, print proposed edits without applying.
+#   apply-rulesets: when true, also converge the protected-main ruleset.
+#                   Defaults false: ruleset application is an explicit,
+#                   deliberate act, never a nightly side effect.
 # (When both repo and org are unset, sweeps all 17 ecosystem orgs.)
 #
 # Authentication: swift-institute-bot GitHub App (per Skills/github-repository
@@ -37,6 +40,11 @@ on:
         type: boolean
         required: false
         default: false
+      apply-rulesets:
+        description: 'Converge the protected-main ruleset (skipped unless explicitly true).'
+        type: boolean
+        required: false
+        default: false
     outputs:
       edits-applied:
         description: 'Number of fields actually edited (0 in dry-run).'
@@ -57,6 +65,11 @@ on:
         required: false
       dry-run:
         description: 'Print proposed edits without applying.'
+        type: boolean
+        required: false
+        default: false
+      apply-rulesets:
+        description: 'Converge the protected-main ruleset (skipped unless explicitly true).'
         type: boolean
         required: false
         default: false
@@ -414,7 +427,9 @@ jobs:
   rulesets:
     # The source-controlled contract is applied only by the trusted central
     # workflow. No write-capable credential is made available to PR code.
-    if: ${{ !github.event.repository.private }}
+    # Ruleset convergence runs only on the explicit `apply-rulesets` opt-in:
+    # the nightly sweep must never apply rulesets fleet-wide as a side effect.
+    if: ${{ !github.event.repository.private && inputs.apply-rulesets }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:

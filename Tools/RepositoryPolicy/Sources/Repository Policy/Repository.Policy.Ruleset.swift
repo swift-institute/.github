@@ -56,7 +56,7 @@ extension RepositoryPolicy {
                 checks["strict_required_status_checks_policy"] as? Bool == true,
                 checks["do_not_enforce_on_create"] as? Bool == false,
                 let required = checks["required_status_checks"] as? [[String: Any]],
-                required.count == 1, required.first?["context"] as? String == "ci-ok"
+                required.count == 1, required.first?["context"] as? String == "ci / ci-ok"
             else {
                 throw ConfigurationError(
                     "protected-main status-check transaction differs from the Institute contract"

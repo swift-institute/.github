@@ -46,7 +46,7 @@
       "total": 1,
       "values": [
         {
-          "name": "ci-ok",
+          "name": "ci / ci-ok",
           "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           "conclusion": "success"
         }
@@ -58,7 +58,8 @@
       "total": 1,
       "values": [
         {
-          "name": "swift-ci",
+          "name": "CI",
+          "event": "workflow_dispatch",
           "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           "conclusion": "success"
         }
