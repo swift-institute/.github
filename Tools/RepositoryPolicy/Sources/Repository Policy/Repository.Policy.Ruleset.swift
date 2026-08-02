@@ -43,7 +43,22 @@ extension RepositoryPolicy {
                 review["dismiss_stale_reviews_on_push"] as? Bool == true,
                 review["require_last_push_approval"] as? Bool == true,
                 review["required_review_thread_resolution"] as? Bool == true,
-                review["require_code_owner_review"] as? Bool == false
+                review["require_code_owner_review"] as? Bool == false,
+                // GitHub server-canonicalizes these three fields onto every
+                // pull_request rule even when the contract omits them, which
+                // fails the fail-closed read-back comparison in
+                // sync-metadata.yml's `rulesets` job. Pinning them here keeps
+                // the contract, the applied ruleset, and its read-back in
+                // exact correspondence, and keeps merge-method policy
+                // (squash-only) an explicit, enforced fact rather than an
+                // unpinned server default.
+                review["allowed_merge_methods"] as? [String] == ["squash"],
+                let requiredReviewers = review["required_reviewers"] as? [Any],
+                requiredReviewers.isEmpty,
+                let dismissalRestriction = review["dismissal_restriction"] as? [String: Any],
+                dismissalRestriction["enabled"] as? Bool == false,
+                let allowedActors = dismissalRestriction["allowed_actors"] as? [Any],
+                allowedActors.isEmpty
             else {
                 throw ConfigurationError(
                     "protected-main pull-request transaction differs from the Institute contract"
