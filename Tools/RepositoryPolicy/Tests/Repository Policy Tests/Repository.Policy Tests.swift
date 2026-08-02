@@ -546,6 +546,56 @@ struct RepositoryPolicyTests {
         #expect(report.issueFormFiles == 0)
     }
 
+    // Regression for the nightly org-scope sweep false positive: `branches:`
+    // and `tags:` are filter keys nested under `push:`/`pull_request:`, not
+    // sibling trigger names, and must never be flattened into the scanned
+    // `triggers` set alongside them.
+    @Test
+    func surfacePolicyIgnoresBranchAndTagFiltersNestedUnderATrigger() throws {
+        let root = try repositoryFixture(
+            files: [
+                ".github/workflows/ci.yml": """
+                name: CI
+                on:
+                  push:
+                    branches: [main]
+                    tags: ['v*']
+                  pull_request:
+                    branches: [main]
+                  workflow_dispatch:
+                jobs:
+                  ci:
+                    uses: swift-foundations/.github/.github/workflows/swift-ci.yml@main
+                """
+            ]
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let report = try RepositoryPolicy.validateSurface(
+            repository: "swift-foundations/swift-example",
+            repositoryClass: .package,
+            root: root,
+            policy: .init(
+                schemaVersion: 1,
+                actionGrants: [
+                    .init(
+                        repositoryClass: .package,
+                        path: ".github/workflows/ci.yml",
+                        kind: .thinCaller,
+                        triggers: ["pull_request", "push", "workflow_dispatch"],
+                        uses: [
+                            "swift-foundations/.github/.github/workflows/swift-ci.yml@main"
+                        ]
+                    )
+                ],
+                exemptions: []
+            )
+        )
+
+        #expect(report.passed)
+        #expect(report.violations.isEmpty)
+    }
+
     @Test
     func surfacePolicyRejectsUnlistedTriggerUseAndInlineJob() throws {
         let root = try repositoryFixture(

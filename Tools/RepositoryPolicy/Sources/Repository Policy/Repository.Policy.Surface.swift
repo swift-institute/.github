@@ -636,6 +636,7 @@ private struct ActionFile {
         var hasRunsOn = false
         var inOn = false
         var onIndent = 0
+        var onChildIndent: Int?
         var inJobs = false
         var jobsIndent = 0
         var currentJobIndent: Int?
@@ -659,6 +660,7 @@ private struct ActionFile {
 
             if inOn, indent <= onIndent {
                 inOn = false
+                onChildIndent = nil
             }
             if inJobs, indent <= jobsIndent, normalizedKey(trimmed) != "jobs:" {
                 finishJob()
@@ -668,13 +670,19 @@ private struct ActionFile {
             if indent == 0, let value = value(after: "on", in: trimmed) {
                 inOn = true
                 onIndent = indent
+                onChildIndent = nil
                 for trigger in inlineValues(value) {
                     triggers.insert(trigger)
                 }
                 continue
             }
             if inOn, indent > onIndent, let key = mappingKey(trimmed) {
-                triggers.insert(key)
+                if onChildIndent == nil {
+                    onChildIndent = indent
+                }
+                if indent == onChildIndent {
+                    triggers.insert(key)
+                }
             }
 
             if indent == 0, normalizedKey(trimmed) == "jobs:" {
