@@ -15,6 +15,8 @@ enum Main {
                 try validate(ValidationArguments(Array(CommandLine.arguments.dropFirst(2))))
             } else if CommandLine.arguments.dropFirst().first == "compact" {
                 try await compact(CompactionArguments(Array(CommandLine.arguments.dropFirst(2))))
+            } else if CommandLine.arguments.dropFirst().first == "ruleset" {
+                try ruleset(RulesetArguments(Array(CommandLine.arguments.dropFirst(2))))
             } else {
                 try await reconcile(ReconcileArguments(CommandLine.arguments))
             }
@@ -104,6 +106,14 @@ enum Main {
                 + "eligible=\(receipt.eligible) converged=\(receipt.converged) "
                 + "enabled=\(receipt.enabled) would-enable=\(receipt.wouldEnable)"
         )
+    }
+
+    private static func ruleset(_ arguments: RulesetArguments) throws {
+        let payload = try RepositoryPolicy.Ruleset.protectedMainPayload(
+            from: URL(filePath: arguments.policy)
+        )
+        FileHandle.standardOutput.write(payload)
+        FileHandle.standardOutput.write(Data("\n".utf8))
     }
 
     private static func write<T: Encodable>(_ value: T, to path: String?) throws {
@@ -250,6 +260,17 @@ enum Main {
             self.revision = revision
             self.digest = digest
             self.apply = apply
+        }
+    }
+
+    private struct RulesetArguments {
+        let policy: String
+
+        init(_ arguments: [String]) throws {
+            guard arguments.count == 2, arguments[0] == "--policy" else {
+                throw RepositoryPolicy.ConfigurationError("ruleset requires --policy <path>")
+            }
+            policy = arguments[1]
         }
     }
 

@@ -45,6 +45,40 @@ struct RepositoryPolicyTests {
     }
 
     @Test
+    func protectedMainRulesetFixtureDefinesThePRTransaction() throws {
+        let url = URL(filePath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appending(path: "Policy/protected-main-ruleset.json")
+        let payload = try RepositoryPolicy.Ruleset.protectedMainPayload(from: url)
+        let object = try #require(try JSONSerialization.jsonObject(with: payload) as? [String: Any])
+        #expect((object["bypass_actors"] as? [Any])?.isEmpty == true)
+        #expect((object["enforcement"] as? String) == "active")
+        let rules = try #require(object["rules"] as? [[String: Any]])
+        let review = try #require(
+            rules.first(where: { $0["type"] as? String == "pull_request" })?["parameters"]
+                as? [String: Any]
+        )
+        let checks = try #require(
+            rules.first(where: { $0["type"] as? String == "required_status_checks" })?["parameters"]
+                as? [String: Any]
+        )
+        // A bot's existing approval counts, but a pusher (including coenttb)
+        // cannot approve its own last push; stale approvals are dismissed.
+        #expect(review["required_approving_review_count"] as? Int == 1)
+        #expect(review["require_last_push_approval"] as? Bool == true)
+        #expect(review["dismiss_stale_reviews_on_push"] as? Bool == true)
+        // GitHub's PR gate rejects unresolved conversations and a non-current
+        // check; `ci-ok` is the one required current-head status.
+        #expect(review["required_review_thread_resolution"] as? Bool == true)
+        #expect(checks["strict_required_status_checks_policy"] as? Bool == true)
+        let required = try #require(checks["required_status_checks"] as? [[String: Any]])
+        #expect(required.count == 1)
+        #expect(required.first?["context"] as? String == "ci-ok")
+    }
+
+    @Test
     func surfacePolicyAcceptsWhitelistedThinCaller() throws {
         let root = try repositoryFixture(
             files: [

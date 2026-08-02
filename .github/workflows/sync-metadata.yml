@@ -411,6 +411,132 @@ jobs:
             for line in "${summary_lines[@]}"; do echo "$line"; done
           } >> "$GITHUB_STEP_SUMMARY"
 
+  rulesets:
+    # The source-controlled contract is applied only by the trusted central
+    # workflow. No write-capable credential is made available to PR code.
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Harden runner (audit-mode egress logging)
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Check out the central repository-policy product
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: swift-institute/.github
+          ref: ${{ job.workflow_sha }}
+          path: institute-ci
+          persist-credentials: false
+
+      - name: Select Swift 6.3
+        uses: SwiftyLab/setup-swift@38f54a76b70d989321de9dc7c840618c08cf56e9 # v1.14.0
+        with:
+          swift-version: '6.3'
+
+      - name: Validate inputs
+        env:
+          INPUT_REPO: ${{ inputs.repo }}
+          INPUT_ORG: ${{ inputs.org }}
+        run: |
+          if [[ -z "$INPUT_REPO" && -z "$INPUT_ORG" ]]; then
+            echo "::error::Either 'repo' (owner/name) or 'org' input is required."
+            exit 1
+          fi
+
+      - name: Compute auth scope
+        id: scope
+        env:
+          INPUT_REPO: ${{ inputs.repo }}
+          INPUT_ORG: ${{ inputs.org }}
+        run: |
+          if [[ -n "$INPUT_REPO" ]]; then
+            echo "owner=${INPUT_REPO%/*}" >> "$GITHUB_OUTPUT"
+            echo "repositories=${INPUT_REPO#*/}" >> "$GITHUB_OUTPUT"
+          else
+            echo "owner=${INPUT_ORG}" >> "$GITHUB_OUTPUT"
+            echo "repositories=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Mint installation token
+        id: token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: ${{ steps.scope.outputs.owner }}
+          repositories: ${{ steps.scope.outputs.repositories }}
+          permission-administration: write
+          permission-contents: read
+          permission-metadata: read
+
+      - name: Enumerate org repos
+        if: ${{ inputs.repo == '' }}
+        id: enum
+        uses: swift-institute/.github/.github/actions/enumerate-org-public-repos@main
+        with:
+          org: ${{ inputs.org }}
+          visibility: 'public'
+          gh-token: ${{ steps.token.outputs.token }}
+
+      - name: Converge protected main ruleset
+        env:
+          DRY_RUN: ${{ inputs.dry-run }}
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          SINGLE_REPO: ${{ inputs.repo }}
+          ENUM_REPOS: ${{ steps.enum.outputs.repos }}
+        run: |
+          set -euo pipefail
+          desired=$(swift run --package-path institute-ci/Tools/RepositoryPolicy repository-policy ruleset --policy institute-ci/Tools/RepositoryPolicy/Policy/protected-main-ruleset.json)
+          normalize() {
+            jq -S '{name, target, enforcement, conditions, bypass_actors, rules:(.rules | sort_by(.type) | map(if .parameters? then .parameters.required_status_checks? |= (if . then sort_by(.context) else . end) else . end))}'
+          }
+          desired_normalized=$(printf '%s' "$desired" | normalize)
+          if [[ -n "$SINGLE_REPO" ]]; then
+            targets=("$SINGLE_REPO")
+          else
+            targets=()
+            while IFS= read -r target; do [[ -n "$target" ]] && targets+=("$target"); done <<< "$ENUM_REPOS"
+          fi
+          for target in "${targets[@]}"; do
+            current=$(gh api --paginate "repos/$target/rulesets?per_page=100")
+            matches=$(printf '%s' "$current" | jq '[.[] | select(.name == "Institute protected main")]')
+            count=$(printf '%s' "$matches" | jq 'length')
+            if [[ "$count" -gt 1 ]]; then
+              echo "::error::$target has multiple Institute protected main rulesets"
+              exit 1
+            fi
+            if [[ "$count" -eq 0 ]]; then
+              if [[ "$DRY_RUN" == true ]]; then
+                echo "$target: would create Institute protected main"
+                continue
+              fi
+              id=$(printf '%s' "$desired" | gh api -X POST "repos/$target/rulesets" --input - --jq .id)
+            else
+              id=$(printf '%s' "$matches" | jq -r '.[0].id')
+              actual=$(gh api "repos/$target/rulesets/$id" | normalize)
+              if [[ "$actual" == "$desired_normalized" ]]; then
+                echo "$target: protected main converged"
+                continue
+              fi
+              if [[ "$DRY_RUN" == true ]]; then
+                echo "$target: would update Institute protected main ($id)"
+                continue
+              fi
+              printf '%s' "$desired" | gh api -X PUT "repos/$target/rulesets/$id" --input - >/dev/null
+            fi
+            readback=$(gh api "repos/$target/rulesets/$id" | normalize)
+            if [[ "$readback" != "$desired_normalized" ]]; then
+              echo "::error::$target ruleset read-back differs from the protected-main contract"
+              exit 1
+            fi
+            echo "$target: protected main converged ($id)"
+          done
+
   # Repository surface enforcement + private vulnerability reporting.
   # Deliberately NOT a dependency of `sync` — see the note under `jobs:`.
   # This job still fails loudly on REPO-ACTIONS violations, which fails the
