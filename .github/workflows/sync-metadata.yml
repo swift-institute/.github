@@ -507,11 +507,13 @@ jobs:
           ENUM_REPOS: ${{ steps.enum.outputs.repos }}
         run: |
           set -euo pipefail
-          desired=$(swift run --package-path institute-ci/Tools/RepositoryPolicy repository-policy ruleset --policy institute-ci/Tools/RepositoryPolicy/Policy/protected-main-ruleset.json)
+          desired_package=$(swift run --package-path institute-ci/Tools/RepositoryPolicy repository-policy ruleset --policy institute-ci/Tools/RepositoryPolicy/Policy/protected-main-ruleset.json --class package)
+          desired_control=$(swift run --package-path institute-ci/Tools/RepositoryPolicy repository-policy ruleset --policy institute-ci/Tools/RepositoryPolicy/Policy/protected-main-control-ruleset.json --class control-plane)
           normalize() {
             jq -S '{name, target, enforcement, conditions, bypass_actors, rules:(.rules | sort_by(.type) | map(if .parameters? then .parameters.required_status_checks? |= (if . then sort_by(.context) else . end) else . end))}'
           }
-          desired_normalized=$(printf '%s' "$desired" | normalize)
+          desired_package_normalized=$(printf '%s' "$desired_package" | normalize)
+          desired_control_normalized=$(printf '%s' "$desired_control" | normalize)
           if [[ -n "$SINGLE_REPO" ]]; then
             targets=("$SINGLE_REPO")
           else
@@ -519,38 +521,107 @@ jobs:
             while IFS= read -r target; do [[ -n "$target" ]] && targets+=("$target"); done <<< "$ENUM_REPOS"
           fi
           for target in "${targets[@]}"; do
-            current=$(gh api --paginate "repos/$target/rulesets?per_page=100")
-            matches=$(printf '%s' "$current" | jq '[.[] | select(.name == "Institute protected main")]')
-            count=$(printf '%s' "$matches" | jq 'length')
-            if [[ "$count" -gt 1 ]]; then
-              echo "::error::$target has multiple Institute protected main rulesets"
+            # Classify mechanically: a root Package.swift present at the
+            # default branch means the package contract (the repo emits
+            # `ci / ci-ok`); its absence means the control-plane contract.
+            # This mirrors RepositoryPolicy.GitHubClient.rootManifestKind's
+            # `contents/Package.swift` probe (200 + type "file" vs 404),
+            # which the `surfaces` job's private-vulnerability-reporting
+            # eligibility gate already uses to the same end
+            # (Repository.Policy.Run.swift, swift-institute/.github#200).
+            #
+            # Fail-closed, not fail-open: `gh api` reports the HTTP status on
+            # any non-2xx response in its stderr (e.g. "gh: Not Found
+            # (HTTP 404)"), so a genuine 404 (absent Package.swift — control)
+            # is distinguished from every other failure (rate limit, 403,
+            # 5xx, network error, token expiry, jq shape mismatch on a
+            # 200) — those must stop the run rather than silently
+            # misclassify the repo as control-plane and deploy the weaker
+            # contract on what may be a package repository.
+            manifest_error="$RUNNER_TEMP/manifest-kind-error-$$.txt"
+            if manifest_type=$(gh api "repos/$target/contents/Package.swift" --jq '.type' 2>"$manifest_error"); then
+              :
+            elif grep -q '(HTTP 404)' "$manifest_error"; then
+              manifest_type=""
+            else
+              echo "::error::$target: could not determine whether a root Package.swift exists: $(cat "$manifest_error")"
+              rm -f "$manifest_error"
               exit 1
             fi
-            if [[ "$count" -eq 0 ]]; then
+            rm -f "$manifest_error"
+
+            package_name="Institute protected main"
+            control_name="Institute protected main (control)"
+            if [[ "$manifest_type" == "file" ]]; then
+              ruleset_name="$package_name"
+              opposite_name="$control_name"
+              desired="$desired_package"
+              desired_normalized="$desired_package_normalized"
+            else
+              ruleset_name="$control_name"
+              opposite_name="$package_name"
+              desired="$desired_control"
+              desired_normalized="$desired_control_normalized"
+            fi
+
+            current=$(gh api --paginate "repos/$target/rulesets?per_page=100")
+            matches=$(printf '%s' "$current" | jq --arg name "$ruleset_name" '[.[] | select(.name == $name)]')
+            count=$(printf '%s' "$matches" | jq 'length')
+            if [[ "$count" -gt 1 ]]; then
+              echo "::error::$target has multiple $ruleset_name rulesets"
+              exit 1
+            fi
+            # A stale ruleset under the OTHER class's name (a class flip
+            # since the last sweep — e.g. a control-plane repo gained a root
+            # Package.swift) must not be left enforcing while a second,
+            # class-correct ruleset is created alongside it. Converge it in
+            # place instead: the desired payload's own `name` field carries
+            # the rename, so routing its id through the existing update path
+            # below both renames and re-shapes it in one PUT.
+            opposite_matches=$(printf '%s' "$current" | jq --arg name "$opposite_name" '[.[] | select(.name == $name)]')
+            opposite_count=$(printf '%s' "$opposite_matches" | jq 'length')
+            if [[ "$opposite_count" -gt 1 ]]; then
+              echo "::error::$target has multiple $opposite_name rulesets"
+              exit 1
+            fi
+            if [[ "$count" -eq 1 && "$opposite_count" -eq 1 ]]; then
+              echo "::error::$target has both $ruleset_name and $opposite_name rulesets"
+              exit 1
+            fi
+
+            if [[ "$count" -eq 1 ]]; then
+              id=$(printf '%s' "$matches" | jq -r '.[0].id')
+            elif [[ "$opposite_count" -eq 1 ]]; then
+              id=$(printf '%s' "$opposite_matches" | jq -r '.[0].id')
+              echo "$target: class flip — converging $opposite_name ($id) to $ruleset_name"
+            else
+              id=""
+            fi
+
+            if [[ -z "$id" ]]; then
               if [[ "$DRY_RUN" == true ]]; then
-                echo "$target: would create Institute protected main"
+                echo "$target: would create $ruleset_name"
                 continue
               fi
               id=$(printf '%s' "$desired" | gh api -X POST "repos/$target/rulesets" --input - --jq .id)
             else
-              id=$(printf '%s' "$matches" | jq -r '.[0].id')
               actual=$(gh api "repos/$target/rulesets/$id" | normalize)
               if [[ "$actual" == "$desired_normalized" ]]; then
-                echo "$target: protected main converged"
+                echo "$target: $ruleset_name converged"
                 continue
               fi
               if [[ "$DRY_RUN" == true ]]; then
-                echo "$target: would update Institute protected main ($id)"
+                echo "$target: would update $ruleset_name ($id)"
                 continue
               fi
               printf '%s' "$desired" | gh api -X PUT "repos/$target/rulesets/$id" --input - >/dev/null
             fi
             readback=$(gh api "repos/$target/rulesets/$id" | normalize)
             if [[ "$readback" != "$desired_normalized" ]]; then
-              echo "::error::$target ruleset read-back differs from the protected-main contract"
+              echo "::error::$target ruleset read-back differs from the $ruleset_name contract"
               exit 1
             fi
-            echo "$target: protected main converged ($id)"
+            echo "$target: $ruleset_name converged ($id)"
           done
 
   # Repository surface enforcement + private vulnerability reporting.

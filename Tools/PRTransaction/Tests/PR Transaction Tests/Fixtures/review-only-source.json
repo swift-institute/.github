@@ -1,0 +1,62 @@
+{
+  "repository": "swift-institute/.github",
+  "target": {
+    "repository": "swift-institute/.github",
+    "visibility": "public"
+  },
+  "pull": 200,
+  "base": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "fixer": "coenttb",
+  "owningTask": {
+    "repository": "swift-institute/.github",
+    "number": 200,
+    "state": "OPEN"
+  },
+  "plan": {
+    "accepted": true,
+    "repository": "swift-institute/.github",
+    "pull": 200,
+    "base": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "task": {
+      "repository": "swift-institute/.github",
+      "number": 200,
+      "state": "OPEN"
+    },
+    "verification": {
+      "reviewOnly": {}
+    },
+    "paths": [
+      "Tools/RepositoryPolicy/Policy/protected-main-control-ruleset.json"
+    ],
+    "evidence": [
+      {
+        "command": "workspace package test --package-path Tools/RepositoryPolicy --fresh --jobs 4",
+        "result": "success",
+        "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ],
+    "payloadPreflighted": true,
+    "nextOwner": "swift-institute-bot[bot]"
+  },
+  "reviews": [],
+  "checkPages": [
+    {
+      "total": 0,
+      "values": []
+    }
+  ],
+  "runPages": [
+    {
+      "total": 0,
+      "values": []
+    }
+  ],
+  "unresolvedThreads": 0,
+  "merge": {
+    "squash": true,
+    "mergeCommit": false,
+    "rebase": false
+  }
+}

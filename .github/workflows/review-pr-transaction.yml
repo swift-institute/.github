@@ -4,8 +4,14 @@
 # independent transaction model accepts a public, exact-head plan and all
 # current-head merge prerequisites other than the approval it is about to add.
 # `accepted-plan` is `Snapshot.Source.Plan` JSON. Its `verification` is exactly
-# `{ "package": {} }` or `{ "control": { "checks": [<non-empty names>] } }`;
-# absent, empty, duplicate, or additional profile fields fail closed.
+# `{ "package": {} }`, `{ "control": { "checks": [<non-empty names>] } }`, or
+# `{ "reviewOnly": {} }`; absent, empty, duplicate, or additional profile
+# fields fail closed. `reviewOnly` is reserved for legitimately check-less
+# PRs (paths outside every path-filtered workflow's trigger, e.g. Tools-only
+# changes in this repository — swift-institute/.github#200): the Swift
+# verification (PR.Transaction+Verification.swift) accepts it only when the
+# exact-head check-run collection is empty, and fails closed the instant any
+# check run — including a synthesized full-tier run — is cited at that head.
 # The target App token is scoped to one selected repository. Minting fails when
 # that owner/repository is outside the App's existing Institute installations.
 
@@ -121,7 +127,8 @@ jobs:
                 (.control | keys == ["checks"]) and
                 (.control.checks | nonempty_strings) and
                 (.control.checks | unique | length) == (.control.checks | length)
-              );
+              ) or
+              (keys == ["reviewOnly"] and .reviewOnly == {});
             select(type == "object")
             | select(.accepted == true)
             | select(.repository | type == "string" and length > 0)

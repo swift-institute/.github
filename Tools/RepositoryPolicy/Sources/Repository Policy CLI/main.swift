@@ -108,9 +108,18 @@ enum Main {
     }
 
     private static func ruleset(_ arguments: RulesetArguments) throws {
-        let payload = try RepositoryPolicy.Ruleset.protectedMainPayload(
-            from: URL(filePath: arguments.policy)
-        )
+        let url = URL(filePath: arguments.policy)
+        let payload: Data
+        switch arguments.repositoryClass {
+        case .package:
+            payload = try RepositoryPolicy.Ruleset.protectedMainPayload(from: url)
+        case .controlPlane:
+            payload = try RepositoryPolicy.Ruleset.protectedMainControlPayload(from: url)
+        case .tool:
+            throw RepositoryPolicy.ConfigurationError(
+                "ruleset --class must be package or control-plane"
+            )
+        }
         FileHandle.standardOutput.write(payload)
         FileHandle.standardOutput.write(Data("\n".utf8))
     }
@@ -266,12 +275,46 @@ enum Main {
 
     private struct RulesetArguments {
         let policy: String
+        let repositoryClass: RepositoryPolicy.RepositoryClass
 
         init(_ arguments: [String]) throws {
-            guard arguments.count == 2, arguments[0] == "--policy" else {
+            var values = [String: String]()
+            var index = 0
+            while index < arguments.count {
+                let name = arguments[index]
+                guard index + 1 < arguments.count else {
+                    throw RepositoryPolicy.ConfigurationError("missing value for \(name)")
+                }
+                guard name.hasPrefix("--") else {
+                    throw RepositoryPolicy.ConfigurationError("unknown argument \(name)")
+                }
+                values[name] = arguments[index + 1]
+                index += 2
+            }
+            guard let policy = values.removeValue(forKey: "--policy") else {
                 throw RepositoryPolicy.ConfigurationError("ruleset requires --policy <path>")
             }
-            policy = arguments[1]
+            // Defaults to `package` so any caller predating the control-plane
+            // variant (swift-institute/.github#200) keeps its prior behavior
+            // unchanged.
+            let classValue =
+                values.removeValue(forKey: "--class")
+                ?? RepositoryPolicy.RepositoryClass.package.rawValue
+            guard
+                let repositoryClass = RepositoryPolicy.RepositoryClass(rawValue: classValue),
+                repositoryClass == .package || repositoryClass == .controlPlane
+            else {
+                throw RepositoryPolicy.ConfigurationError(
+                    "--class must be package or control-plane"
+                )
+            }
+            guard values.isEmpty else {
+                throw RepositoryPolicy.ConfigurationError(
+                    "unknown argument \(values.keys.sorted().joined(separator: ", "))"
+                )
+            }
+            self.policy = policy
+            self.repositoryClass = repositoryClass
         }
     }
 
