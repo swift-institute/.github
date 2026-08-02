@@ -298,6 +298,8 @@ jobs:
       tier: ${{ steps.classify.outputs.tier }}
       legs: ${{ steps.classify.outputs.legs }}
       gating: ${{ steps.classify.outputs.gating }}
+      subject-repository: ${{ steps.classify.outputs.subject-repository }}
+      subject-sha: ${{ steps.classify.outputs.subject-sha }}
     steps:
       - name: Harden runner (audit-mode egress logging)
         uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
@@ -306,8 +308,8 @@ jobs:
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: ${{ inputs.target-repo || github.repository }}
-          ref: ${{ inputs.ref }}
+          repository: ${{ inputs.target-repo || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name) || github.repository }}
+          ref: ${{ inputs.ref || (github.event_name == 'pull_request' && github.event.pull_request.head.sha) || github.sha }}
 
       # Identity-conflict fast-check ([PKG-DEP-009] class): fails in <1s with
       # the exact edge named when this repo's manifests spell one identity two
@@ -370,8 +372,33 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           HEAD_MSG: ${{ github.event.head_commit.message }}
           PLATFORM_SUPPORT: ${{ inputs.platform-support }}
+          INPUT_TARGET_REPOSITORY: ${{ inputs.target-repo }}
+          INPUT_REF: ${{ inputs.ref }}
+          PULL_REQUEST_HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          PULL_REQUEST_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          TRIGGER_REPOSITORY: ${{ github.repository }}
+          TRIGGER_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
+          # The subject is the immutable repository revision this run attests.
+          # A PR's repository is its head repository, not its base repository:
+          # forks are untrusted, so every job remains read-only while checking
+          # out that exact head SHA. ci-dispatch remains an explicit debug
+          # surface and deliberately keeps its caller-provided target/ref.
+          if [ -n "$INPUT_TARGET_REPOSITORY" ]; then
+            SUBJECT_REPOSITORY="$INPUT_TARGET_REPOSITORY"
+            SUBJECT_SHA="$INPUT_REF"
+          elif [ "$EVENT_NAME" = "pull_request" ]; then
+            SUBJECT_REPOSITORY="$PULL_REQUEST_HEAD_REPOSITORY"
+            SUBJECT_SHA="$PULL_REQUEST_HEAD_SHA"
+          else
+            SUBJECT_REPOSITORY="$TRIGGER_REPOSITORY"
+            SUBJECT_SHA="$TRIGGER_SHA"
+          fi
+          if [ -z "$SUBJECT_REPOSITORY" ] || [ -z "$SUBJECT_SHA" ]; then
+            echo "::error::CI subject repository/SHA is empty; refusing to attest an unspecified revision."
+            exit 1
+          fi
           if [ -n "$PLATFORM_SUPPORT" ]; then
             REMAINING_FAMILIES="$PLATFORM_SUPPORT"
             SEEN_FAMILIES=","
@@ -448,6 +475,12 @@ jobs:
           if [ -z "$TIER" ] && [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             TIER="full"
           fi
+          # Merge candidates and the integration branch need the complete
+          # platform contract. An input may request extra coverage elsewhere,
+          # but it may never weaken either of these evidence boundaries.
+          if [ "$EVENT_NAME" = "pull_request" ] || [ "$GITHUB_REF" = "refs/heads/main" ]; then
+            TIER="full"
+          fi
           [ -n "$TIER" ] || TIER="build"
           case "$TIER" in
             build)
@@ -517,6 +550,8 @@ jobs:
           echo "tier=$TIER" >> "$GITHUB_OUTPUT"
           echo "legs=$LEGS" >> "$GITHUB_OUTPUT"
           echo "gating=$GATING" >> "$GITHUB_OUTPUT"
+          echo "subject-repository=$SUBJECT_REPOSITORY" >> "$GITHUB_OUTPUT"
+          echo "subject-sha=$SUBJECT_SHA" >> "$GITHUB_OUTPUT"
           echo "Selected tier: $TIER"
           echo "legs: $LEGS"
           echo "gating: $GATING"
@@ -546,8 +581,8 @@ jobs:
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: ${{ inputs.target-repo || github.repository }}
-          ref: ${{ inputs.ref }}
+          repository: ${{ inputs.target-repo || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name) || github.repository }}
+          ref: ${{ inputs.ref || (github.event_name == 'pull_request' && github.event.pull_request.head.sha) || github.sha }}
 
       - uses: swift-institute/.github/.github/actions/configure-private-repos@5cc13635cfc295c1cb69dd87b17016218483e618  # main 2026-07-31, advanced ahead of the weekly pin-advance cadence for #139 (client-id fix)
         with:
@@ -605,8 +640,8 @@ jobs:
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: ${{ inputs.target-repo || github.repository }}
-          ref: ${{ inputs.ref }}
+          repository: ${{ inputs.target-repo || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name) || github.repository }}
+          ref: ${{ inputs.ref || (github.event_name == 'pull_request' && github.event.pull_request.head.sha) || github.sha }}
 
       - uses: swift-institute/.github/.github/actions/configure-private-repos@5cc13635cfc295c1cb69dd87b17016218483e618  # main 2026-07-31, advanced ahead of the weekly pin-advance cadence for #139 (client-id fix)
         with:
@@ -664,8 +699,8 @@ jobs:
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: ${{ inputs.target-repo || github.repository }}
-          ref: ${{ inputs.ref }}
+          repository: ${{ inputs.target-repo || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name) || github.repository }}
+          ref: ${{ inputs.ref || (github.event_name == 'pull_request' && github.event.pull_request.head.sha) || github.sha }}
 
       - uses: swift-institute/.github/.github/actions/configure-private-repos@5cc13635cfc295c1cb69dd87b17016218483e618  # main 2026-07-31, advanced ahead of the weekly pin-advance cadence for #139 (client-id fix)
         with:
@@ -758,8 +793,8 @@ jobs:
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: ${{ inputs.target-repo || github.repository }}
-          ref: ${{ inputs.ref }}
+          repository: ${{ inputs.target-repo || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name) || github.repository }}
+          ref: ${{ inputs.ref || (github.event_name == 'pull_request' && github.event.pull_request.head.sha) || github.sha }}
 
       - uses: swift-institute/.github/.github/actions/configure-private-repos@5cc13635cfc295c1cb69dd87b17016218483e618  # main 2026-07-31, advanced ahead of the weekly pin-advance cadence for #139 (client-id fix)
         with:
@@ -815,8 +850,8 @@ jobs:
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: ${{ inputs.target-repo || github.repository }}
-          ref: ${{ inputs.ref }}
+          repository: ${{ inputs.target-repo || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name) || github.repository }}
+          ref: ${{ inputs.ref || (github.event_name == 'pull_request' && github.event.pull_request.head.sha) || github.sha }}
 
       - uses: swift-institute/.github/.github/actions/configure-private-repos@5cc13635cfc295c1cb69dd87b17016218483e618  # main 2026-07-31, advanced ahead of the weekly pin-advance cadence for #139 (client-id fix)
         with:
@@ -903,8 +938,8 @@ jobs:
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: ${{ inputs.target-repo || github.repository }}
-          ref: ${{ inputs.ref }}
+          repository: ${{ inputs.target-repo || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name) || github.repository }}
+          ref: ${{ inputs.ref || (github.event_name == 'pull_request' && github.event.pull_request.head.sha) || github.sha }}
 
       - uses: swift-institute/.github/.github/actions/configure-private-repos@5cc13635cfc295c1cb69dd87b17016218483e618  # main 2026-07-31, advanced ahead of the weekly pin-advance cadence for #139 (client-id fix)
         with:
@@ -987,8 +1022,8 @@ jobs:
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: ${{ inputs.target-repo || github.repository }}
-          ref: ${{ inputs.ref }}
+          repository: ${{ inputs.target-repo || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name) || github.repository }}
+          ref: ${{ inputs.ref || (github.event_name == 'pull_request' && github.event.pull_request.head.sha) || github.sha }}
 
       - name: Print swift-format version
         run: swift-format --version
@@ -1033,8 +1068,8 @@ jobs:
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: ${{ inputs.target-repo || github.repository }}
-          ref: ${{ inputs.ref }}
+          repository: ${{ inputs.target-repo || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name) || github.repository }}
+          ref: ${{ inputs.ref || (github.event_name == 'pull_request' && github.event.pull_request.head.sha) || github.sha }}
 
       - name: Cache SwiftLint binary
         id: cache-swiftlint
@@ -1159,8 +1194,8 @@ jobs:
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: ${{ inputs.target-repo || github.repository }}
-          ref: ${{ inputs.ref }}
+          repository: ${{ inputs.target-repo || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name) || github.repository }}
+          ref: ${{ inputs.ref || (github.event_name == 'pull_request' && github.event.pull_request.head.sha) || github.sha }}
           path: consumer
 
       # Classifies WHICH lint path runs. It no longer decides WHETHER one does
@@ -1713,6 +1748,11 @@ jobs:
           NEEDS_JSON: ${{ toJson(needs) }}
           PLANNED_GATING: ${{ needs.plan.outputs.gating }}
           PLANNED_TIER: ${{ needs.plan.outputs.tier }}
+          PLANNED_SUBJECT_REPOSITORY: ${{ needs.plan.outputs.subject-repository }}
+          PLANNED_SUBJECT_SHA: ${{ needs.plan.outputs.subject-sha }}
+          EXPECTED_SUBJECT_REPOSITORY: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name || github.repository }}
+          EXPECTED_SUBJECT_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          REQUIRE_FULL_TIER: ${{ github.event_name == 'pull_request' || github.ref == 'refs/heads/main' }}
         run: |
           set -euo pipefail
           # ubuntu-latest pre-installs jq.
@@ -1726,6 +1766,19 @@ jobs:
           if [ -z "${PLANNED_GATING:-}" ]; then
             echo "::error::the plan named no gating legs. A run with nothing required cannot report success."
             RC=1
+          fi
+          if [ -z "${PLANNED_SUBJECT_REPOSITORY:-}" ] || [ -z "${PLANNED_SUBJECT_SHA:-}" ]; then
+            echo "::error::the plan named an empty CI subject; ci-ok cannot attest an unspecified revision."
+            RC=1
+          elif [ "$PLANNED_SUBJECT_REPOSITORY" != "$EXPECTED_SUBJECT_REPOSITORY" ] || [ "$PLANNED_SUBJECT_SHA" != "$EXPECTED_SUBJECT_SHA" ]; then
+            echo "::error::the plan's CI subject ($PLANNED_SUBJECT_REPOSITORY@$PLANNED_SUBJECT_SHA) does not match this event's immutable subject ($EXPECTED_SUBJECT_REPOSITORY@$EXPECTED_SUBJECT_SHA). Stale or mismatched evidence is not admissible."
+            RC=1
+          fi
+          if [ "$REQUIRE_FULL_TIER" = "true" ]; then
+            if [ "$PLANNED_TIER" != "full" ]; then
+              echo "::error::PR and main evidence requires the full tier; got '${PLANNED_TIER:-empty}'. Every selected full gating leg must succeed below."
+              RC=1
+            fi
           fi
 
           BUILT=""

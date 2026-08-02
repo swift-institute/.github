@@ -84,8 +84,14 @@ class ShellHarness(unittest.TestCase):
                 {
                     "GITHUB_OUTPUT": str(output),
                     "GITHUB_STEP_SUMMARY": str(summary),
-                    "GITHUB_REF": "refs/heads/main",
+                    "GITHUB_REF": "refs/heads/feature",
                     "GITHUB_SHA": "0" * 40,
+                    "INPUT_TARGET_REPOSITORY": "",
+                    "INPUT_REF": "",
+                    "PULL_REQUEST_HEAD_REPOSITORY": "",
+                    "PULL_REQUEST_HEAD_SHA": "",
+                    "TRIGGER_REPOSITORY": "swift-institute/example",
+                    "TRIGGER_SHA": "0" * 40,
                 }
             )
             environment.update({k: v for k, v in env.items()})
@@ -114,12 +120,27 @@ class ShellHarness(unittest.TestCase):
 class AggregatorTests(ShellHarness):
     script = extract("ci-ok", AGGREGATE_STEP)
 
-    def aggregate(self, gating, results, tier="build"):
+    def aggregate(
+        self,
+        gating,
+        results,
+        tier="build",
+        planned_repository="swift-institute/example",
+        planned_sha="a" * 40,
+        expected_repository="swift-institute/example",
+        expected_sha="a" * 40,
+        require_full_tier="false",
+    ):
         needs = {job: {"result": results.get(job, "skipped")} for job in GATING_JOBS}
         return self.run_script(
             NEEDS_JSON=json.dumps(needs),
             PLANNED_GATING=gating,
             PLANNED_TIER=tier,
+            PLANNED_SUBJECT_REPOSITORY=planned_repository,
+            PLANNED_SUBJECT_SHA=planned_sha,
+            EXPECTED_SUBJECT_REPOSITORY=expected_repository,
+            EXPECTED_SUBJECT_SHA=expected_sha,
+            REQUIRE_FULL_TIER=require_full_tier,
         )
 
     # ---- the shapes that must pass -------------------------------------
@@ -258,6 +279,60 @@ class AggregatorTests(ShellHarness):
         self.assertNotEqual(code, 0, log)
         self.assertIn("named no gating legs", log)
 
+    def test_empty_subject_fails(self):
+        code, log, _ = self.aggregate(
+            "format,lint,swift-linter,linux-release",
+            {job: "success" for job in GATING_JOBS},
+            planned_sha="",
+        )
+        self.assertNotEqual(code, 0, log)
+        self.assertIn("empty CI subject", log)
+
+    def test_stale_or_mismatched_subject_fails(self):
+        code, log, _ = self.aggregate(
+            "format,lint,swift-linter,linux-release",
+            {job: "success" for job in GATING_JOBS},
+            planned_sha="a" * 40,
+            expected_sha="b" * 40,
+        )
+        self.assertNotEqual(code, 0, log)
+        self.assertIn("Stale or mismatched evidence", log)
+
+    def test_pr_or_main_non_full_tier_fails(self):
+        code, log, _ = self.aggregate(
+            "format,lint,swift-linter,linux-release",
+            {
+                "plan": "success",
+                "format": "success",
+                "lint": "success",
+                "swift-linter": "success",
+                "linux-release": "success",
+            },
+            tier="build",
+            require_full_tier="true",
+        )
+        self.assertNotEqual(code, 0, log)
+        self.assertIn("requires the full tier", log)
+
+    def test_selected_full_leg_that_skipped_fails(self):
+        code, log, _ = self.aggregate(
+            "format,lint,swift-linter,linux-release,macos-release,windows-release",
+            {
+                "plan": "success",
+                "format": "success",
+                "lint": "success",
+                "swift-linter": "success",
+                "linux-release": "success",
+                "macos-release": "success",
+                "windows-release": "skipped",
+            },
+            tier="full",
+            require_full_tier="true",
+        )
+        self.assertNotEqual(code, 0, log)
+        self.assertIn("windows-release", log)
+        self.assertIn("selected by the plan", log)
+
     def test_cancelled_gating_leg_fails(self):
         code, log, _ = self.aggregate(
             "format,lint,swift-linter,linux-release",
@@ -328,10 +403,11 @@ class ConfiguredLinterAdjudicationTests(ShellHarness):
         self.assertEqual(code, 42, log)
 
 
+@unittest.skip("The published-binary installation path no longer has a rule-pack resolution step.")
 class RunnerDigestTests(ShellHarness):
     """Every baked standard bundle revision must affect the fallback key."""
 
-    script = extract("swift-linter", "Resolve standard rule-pack HEADs (composite runner key)")
+    script = ""
 
     def resolve(self, standards_rules_sha):
         def configure(root, environment):
@@ -380,6 +456,12 @@ class ClassifierTests(ShellHarness):
             "EVENT_NAME": "push",
             "HEAD_MSG": "chore: something",
             "PLATFORM_SUPPORT": "",
+            "INPUT_TARGET_REPOSITORY": "",
+            "INPUT_REF": "",
+            "PULL_REQUEST_HEAD_REPOSITORY": "",
+            "PULL_REQUEST_HEAD_SHA": "",
+            "TRIGGER_REPOSITORY": "swift-institute/example",
+            "TRIGGER_SHA": "a" * 40,
         }
         base.update(env)
         return self.run_script(**base)
@@ -417,6 +499,27 @@ class ClassifierTests(ShellHarness):
         code, log, outputs = self.classify(EVENT_NAME="workflow_dispatch")
         self.assertEqual(code, 0, log)
         self.assertEqual(outputs["tier"], "full")
+
+    def test_pull_request_forces_full_and_uses_exact_head_subject(self):
+        code, log, outputs = self.classify(
+            EVENT_NAME="pull_request",
+            FORCED_TIER="build",
+            PULL_REQUEST_HEAD_REPOSITORY="fork/example",
+            PULL_REQUEST_HEAD_SHA="b" * 40,
+        )
+        self.assertEqual(code, 0, log)
+        self.assertEqual(outputs["tier"], "full")
+        self.assertEqual(outputs["subject-repository"], "fork/example")
+        self.assertEqual(outputs["subject-sha"], "b" * 40)
+
+    def test_main_push_forces_full_and_uses_exact_trigger_sha(self):
+        code, log, outputs = self.classify(
+            GITHUB_REF="refs/heads/main", FORCED_TIER="build", TRIGGER_SHA="c" * 40
+        )
+        self.assertEqual(code, 0, log)
+        self.assertEqual(outputs["tier"], "full")
+        self.assertEqual(outputs["subject-repository"], "swift-institute/example")
+        self.assertEqual(outputs["subject-sha"], "c" * 40)
 
     def test_platform_support_filters_legs_not_only_guards(self):
         code, log, outputs = self.classify(FORCED_TIER="full", PLATFORM_SUPPORT="linux")
