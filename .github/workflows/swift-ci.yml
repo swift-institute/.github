@@ -261,8 +261,8 @@ jobs:
   # Selects the verification tier for this run and runs the identity-conflict
   # fast-check ONCE (previously duplicated into every leg). Tier semantics:
   #   build — format + lint + swift-linter + the primary supported release leg
-  #           (default for ordinary pushes: Linux unless platform-support
-  #           declares a platform-specific package)
+  #           (default for ordinary pushes and pull requests: Linux unless
+  #           platform-support declares a platform-specific package)
   #   full  — the complete [CI-010]/[CI-091] platform contract including the
   #           advisory legs; unconditional on tag refs; forced by ci-sweep.yml
   #           and the '[ci full]' commit token.
@@ -455,30 +455,21 @@ jobs:
               *"[ci build]"*) TIER="build" ;;
             esac
           fi
-          # Manual consumer dispatch = someone asking for verification → full.
+          # Manual consumer dispatch = final qualification → full. Pull
+          # requests exercise the build tier before merge; a separate manual
+          # full run is reserved for the integration/landing boundary.
           #
-          # READ THIS BEFORE CHANGING TIER LOGIC. This line creates an
-          # asymmetry that is easy to discover too late: because every
-          # workflow_dispatch forces `full`, there is NO way to exercise the
-          # `build` tier ahead of shipping. Not ci-dispatch (single-job, so
-          # ci-ok skips), not ci-sweep (passes tier: full), not a manual
-          # dispatch on a branch. A tier that can only be entered by an
-          # ordinary push cannot be tested before it ships.
-          #
-          # So the build tier's classifier and gating set are covered by
+          # The classifier and gating set are also covered by
           # .github/scripts/tests/test-ci-ok-aggregate.py, which extracts this
-          # script and runs it directly against every tier × platform-support
-          # combination. That suite is not belt-and-braces for this path — it
-          # is the ONLY pre-merge evidence the build tier has. Treat a change
-          # here as unverified until it has passed there, and expect the first
-          # real exercise to be the first consumer push after merge.
+          # script and runs it directly against the event and tier boundaries.
+          # Keep those controls in lockstep with this policy.
           if [ -z "$TIER" ] && [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             TIER="full"
           fi
-          # Merge candidates and the integration branch need the complete
-          # platform contract. An input may request extra coverage elsewhere,
-          # but it may never weaken either of these evidence boundaries.
-          if [ "$EVENT_NAME" = "pull_request" ] || [ "$GITHUB_REF" = "refs/heads/main" ]; then
+          # The integration branch needs the complete platform contract. An
+          # input may request extra coverage elsewhere, but it may never weaken
+          # this evidence boundary.
+          if [ "$GITHUB_REF" = "refs/heads/main" ]; then
             TIER="full"
           fi
           [ -n "$TIER" ] || TIER="build"
@@ -1752,7 +1743,7 @@ jobs:
           PLANNED_SUBJECT_SHA: ${{ needs.plan.outputs.subject-sha }}
           EXPECTED_SUBJECT_REPOSITORY: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name || github.repository }}
           EXPECTED_SUBJECT_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-          REQUIRE_FULL_TIER: ${{ github.event_name == 'pull_request' || github.ref == 'refs/heads/main' }}
+          REQUIRE_FULL_TIER: ${{ github.ref == 'refs/heads/main' }}
         run: |
           set -euo pipefail
           # ubuntu-latest pre-installs jq.
@@ -1776,7 +1767,7 @@ jobs:
           fi
           if [ "$REQUIRE_FULL_TIER" = "true" ]; then
             if [ "$PLANNED_TIER" != "full" ]; then
-              echo "::error::PR and main evidence requires the full tier; got '${PLANNED_TIER:-empty}'. Every selected full gating leg must succeed below."
+              echo "::error::main integration evidence requires the full tier; got '${PLANNED_TIER:-empty}'. Every selected full gating leg must succeed below."
               RC=1
             fi
           fi

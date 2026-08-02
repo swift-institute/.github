@@ -298,7 +298,7 @@ class AggregatorTests(ShellHarness):
         self.assertNotEqual(code, 0, log)
         self.assertIn("Stale or mismatched evidence", log)
 
-    def test_pr_or_main_non_full_tier_fails(self):
+    def test_main_non_full_tier_fails(self):
         code, log, _ = self.aggregate(
             "format,lint,swift-linter,linux-release",
             {
@@ -313,6 +313,18 @@ class AggregatorTests(ShellHarness):
         )
         self.assertNotEqual(code, 0, log)
         self.assertIn("requires the full tier", log)
+
+    def test_only_main_requires_full_tier_at_aggregation(self):
+        document = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+        step = next(
+            step
+            for step in document["jobs"]["ci-ok"]["steps"]
+            if step.get("name") == AGGREGATE_STEP
+        )
+        self.assertEqual(
+            step["env"]["REQUIRE_FULL_TIER"],
+            "${{ github.ref == 'refs/heads/main' }}",
+        )
 
     def test_selected_full_leg_that_skipped_fails(self):
         code, log, _ = self.aggregate(
@@ -490,6 +502,11 @@ class ClassifierTests(ShellHarness):
         self.assertEqual(code, 0, log)
         self.assertEqual(outputs["tier"], "full")
 
+    def test_explicit_full_request_stays_full(self):
+        code, log, outputs = self.classify(FORCED_TIER="full")
+        self.assertEqual(code, 0, log)
+        self.assertEqual(outputs["tier"], "full")
+
     def test_tag_ref_forces_full(self):
         code, log, outputs = self.classify(GITHUB_REF="refs/tags/1.0.0")
         self.assertEqual(code, 0, log)
@@ -500,19 +517,27 @@ class ClassifierTests(ShellHarness):
         self.assertEqual(code, 0, log)
         self.assertEqual(outputs["tier"], "full")
 
-    def test_pull_request_forces_full_and_uses_exact_head_subject(self):
+    def test_pull_request_defaults_to_build_and_uses_exact_head_subject(self):
         code, log, outputs = self.classify(
             EVENT_NAME="pull_request",
-            FORCED_TIER="build",
             PULL_REQUEST_HEAD_REPOSITORY="fork/example",
             PULL_REQUEST_HEAD_SHA="b" * 40,
         )
         self.assertEqual(code, 0, log)
-        self.assertEqual(outputs["tier"], "full")
+        self.assertEqual(outputs["tier"], "build")
         self.assertEqual(outputs["subject-repository"], "fork/example")
         self.assertEqual(outputs["subject-sha"], "b" * 40)
 
-    def test_main_push_forces_full_and_uses_exact_trigger_sha(self):
+    def test_main_push_defaults_to_full_and_uses_exact_trigger_sha(self):
+        code, log, outputs = self.classify(
+            GITHUB_REF="refs/heads/main", TRIGGER_SHA="c" * 40
+        )
+        self.assertEqual(code, 0, log)
+        self.assertEqual(outputs["tier"], "full")
+        self.assertEqual(outputs["subject-repository"], "swift-institute/example")
+        self.assertEqual(outputs["subject-sha"], "c" * 40)
+
+    def test_explicit_build_cannot_weaken_main_integration(self):
         code, log, outputs = self.classify(
             GITHUB_REF="refs/heads/main", FORCED_TIER="build", TRIGGER_SHA="c" * 40
         )
@@ -520,6 +545,15 @@ class ClassifierTests(ShellHarness):
         self.assertEqual(outputs["tier"], "full")
         self.assertEqual(outputs["subject-repository"], "swift-institute/example")
         self.assertEqual(outputs["subject-sha"], "c" * 40)
+
+    def test_build_tier_keeps_quality_gates_and_a_release_build(self):
+        code, log, outputs = self.classify(FORCED_TIER="build")
+        self.assertEqual(code, 0, log)
+        gating = set(outputs["gating"].split(","))
+        self.assertTrue({"format", "lint", "swift-linter"} <= gating)
+        self.assertTrue(
+            {"macos-release", "linux-release", "windows-release"} & gating
+        )
 
     def test_platform_support_filters_legs_not_only_guards(self):
         code, log, outputs = self.classify(FORCED_TIER="full", PLATFORM_SUPPORT="linux")
