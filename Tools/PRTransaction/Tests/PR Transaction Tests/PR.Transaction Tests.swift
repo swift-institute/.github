@@ -4,53 +4,65 @@ import Testing
 @testable import PR_Transaction
 
 extension PRTransaction {
-    @Suite struct Transaction {
-        @Suite struct Unit {}
-        @Suite struct Integration {}
-    }
+    @Suite struct Transaction { @Suite struct Unit {} }
 }
 
 extension PRTransaction.Transaction.Unit {
-    private static let base = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-    private static let head = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    private static let old = "cccccccccccccccccccccccccccccccccccccccc"
+    private var base: String { "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" }
+    private var head: String { "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
+    private var old: String { "cccccccccccccccccccccccccccccccccccccccc" }
+    private var native: PRTransaction.Snapshot.Verification {
+        .control(checks: ["fixtures", "correspondence", "scan"])
+    }
 
-    fileprivate static func fixture(
+    private func fixture(
         task: Int = 177,
-        plannedTask: Int = 177,
+        planTask: Int? = nil,
+        taskRepository: String = "swift-institute/.github",
+        planRepository: String? = nil,
         taskState: String = "OPEN",
-        taskType: String = "Task",
-        taskReferencesPull: Bool = true,
+        planTaskState: String? = nil,
         planBase: String? = nil,
         planHead: String? = nil,
         evidenceHead: String? = nil,
+        payloadHead: String? = nil,
         approvalHead: String? = nil,
         botApproval: Bool = true,
         reviewer: String = "swift-institute-bot[bot]",
-        fullTier: String? = "success",
-        fullTierIncluded: Bool = true,
+        verification: PRTransaction.Snapshot.Verification = .package,
+        payloadVerification: PRTransaction.Snapshot.Verification? = nil,
+        checks: [PRTransaction.Snapshot.Check]? = nil,
         queuedRun: Bool = false,
-        receipt: Bool = true
+        receipt: Bool = true,
+        receiptHead: String? = nil
     ) -> PRTransaction.Snapshot {
         let task = PRTransaction.Snapshot.Issue(
-            repository: "swift-institute/.github",
+            repository: taskRepository,
             number: task,
-            state: taskState,
-            type: taskType,
-            isReferencedByPull: taskReferencesPull
+            state: taskState
+        )
+        let planTask = PRTransaction.Snapshot.Issue(
+            repository: planRepository ?? taskRepository,
+            number: planTask ?? task.number,
+            state: planTaskState ?? taskState
         )
         let evidence = PRTransaction.Snapshot.Evidence(
             command: "workspace package test",
             result: "success",
             head: evidenceHead ?? head
         )
-        let payload = PRTransaction.Snapshot.Payload(preflighted: true, head: head)
+        let payload = PRTransaction.Snapshot.Payload(
+            preflighted: true,
+            head: payloadHead ?? head,
+            verification: payloadVerification ?? verification
+        )
         let plan = PRTransaction.Snapshot.Plan(
             accepted: true,
             base: planBase ?? base,
             head: planHead ?? head,
             fixer: "coenttb",
-            task: plannedTask,
+            task: planTask,
+            verification: verification,
             paths: ["Tools/PRTransaction"],
             evidence: [evidence],
             payload: payload,
@@ -61,29 +73,16 @@ extension PRTransaction.Transaction.Unit {
             state: "APPROVED",
             head: approvalHead ?? head
         )
+        let packageChecks = [
+            check("ci-ok"),
+            check("full-tier"),
+        ]
         let checks =
-            [
-                PRTransaction.Snapshot.Check(name: "ci-ok", head: head, conclusion: "success")
-            ]
-            + (fullTierIncluded
-                ? [
-                    PRTransaction.Snapshot.Check(
-                        name: "full-tier",
-                        head: head,
-                        conclusion: fullTier
-                    )
-                ] : [])
-            + (queuedRun
-                ? [
-                    PRTransaction.Snapshot.Check(
-                        name: "required-run",
-                        head: head,
-                        conclusion: "in_progress"
-                    )
-                ] : [])
+            (checks ?? packageChecks)
+            + (queuedRun ? [check("required-run", conclusion: "in_progress")] : [])
         let receipt = PRTransaction.Snapshot.Receipt(
             complete: receipt,
-            head: head,
+            head: receiptHead ?? head,
             issueClosed: receipt,
             unassigned: receipt
         )
@@ -103,115 +102,217 @@ extension PRTransaction.Transaction.Unit {
         )
     }
 
+    private func check(
+        _ name: String,
+        revision: String? = nil,
+        conclusion: String? = "success"
+    ) -> PRTransaction.Snapshot.Check {
+        .init(name: name, head: revision ?? head, conclusion: conclusion)
+    }
+
     @Test func `accepts a complete current-head transaction`() throws {
-        #expect(try PRTransaction.complete(Self.fixture()) == .readyForCompletion)
+        #expect(try PRTransaction.complete(fixture()) == .readyForCompletion)
     }
-    @Test func `rejects an unrelated open task`() {
+    @Test func `accepts a matching successor task`() throws {
+        #expect(try PRTransaction.review(fixture(task: 177)) == .readyForReview)
+    }
+    @Test func `accepts declared native control-plane checks`() throws {
+        #expect(
+            try PRTransaction.review(
+                fixture(
+                    verification: native,
+                    checks: [check("fixtures"), check("correspondence"), check("scan")]
+                )
+            ) == .readyForReview
+        )
+    }
+    @Test func `serialized plan and payload retain the owning task and profile`() throws {
+        let snapshot = fixture(
+            verification: native,
+            checks: [check("fixtures"), check("correspondence"), check("scan")]
+        )
+        let data = try JSONEncoder().encode(snapshot)
+        let decoded = try JSONDecoder().decode(PRTransaction.Snapshot.self, from: data)
+        #expect(decoded.plan.task == decoded.owningTask)
+        #expect(decoded.plan.verification == native)
+        #expect(decoded.plan.payload.verification == native)
+    }
+    @Test func `rejects an unrelated open task snapshot`() {
         #expect(throws: PRTransaction.Error.invalidOwningTask) {
-            try PRTransaction.review(Self.fixture(task: 178))
+            try PRTransaction.review(fixture(task: 175, planTask: 177))
         }
     }
-    @Test func `rejects an open lookalike issue`() {
+    @Test func `rejects a mismatched accepted-plan task`() {
         #expect(throws: PRTransaction.Error.invalidOwningTask) {
-            try PRTransaction.review(Self.fixture(taskType: "Bug"))
+            try PRTransaction.review(fixture(task: 177, planTask: 176))
         }
     }
-    @Test func `rejects an unlinked open task`() {
+    @Test func `rejects a mismatched accepted-plan repository`() {
         #expect(throws: PRTransaction.Error.invalidOwningTask) {
-            try PRTransaction.review(Self.fixture(taskReferencesPull: false))
+            try PRTransaction.review(fixture(planRepository: "swift-institute/Workspace"))
+        }
+    }
+    @Test func `rejects a nonpositive accepted-plan task`() {
+        #expect(throws: PRTransaction.Error.invalidOwningTask) {
+            try PRTransaction.review(fixture(task: 0))
         }
     }
     @Test func `rejects a closed governing task`() {
         #expect(throws: PRTransaction.Error.invalidOwningTask) {
-            try PRTransaction.review(Self.fixture(taskState: "CLOSED"))
+            try PRTransaction.review(fixture(taskState: "CLOSED"))
         }
     }
     @Test func `rejects a stale prepared base`() {
-        #expect(throws: PRTransaction.Error.stalePlanBase(expected: Self.base, actual: Self.old)) {
-            try PRTransaction.review(Self.fixture(planBase: Self.old))
+        #expect(throws: PRTransaction.Error.stalePlanBase(expected: base, actual: old)) {
+            try PRTransaction.review(fixture(planBase: old))
         }
     }
     @Test func `rejects a stale prepared head`() {
-        #expect(throws: PRTransaction.Error.stalePlanHead(expected: Self.head, actual: Self.old)) {
-            try PRTransaction.review(Self.fixture(planHead: Self.old))
+        #expect(throws: PRTransaction.Error.stalePlanHead(expected: head, actual: old)) {
+            try PRTransaction.review(fixture(planHead: old))
         }
     }
     @Test func `rejects stale evidence after a head change`() {
         #expect(throws: PRTransaction.Error.staleEvidence) {
-            try PRTransaction.review(Self.fixture(evidenceHead: Self.old))
+            try PRTransaction.review(fixture(evidenceHead: old))
         }
     }
-    @Test func `rejects a nonterminal full tier`() {
-        #expect(throws: PRTransaction.Error.nonterminalFullTier) {
-            try PRTransaction.review(Self.fixture(fullTier: "in_progress"))
+    @Test func `rejects a stale payload after a head change`() {
+        #expect(throws: PRTransaction.Error.stalePayload) {
+            try PRTransaction.review(fixture(payloadHead: old))
         }
     }
-    @Test func `rejects an absent full tier`() {
+    @Test func `rejects a payload prepared for another profile`() {
+        #expect(throws: PRTransaction.Error.stalePayload) {
+            try PRTransaction.review(fixture(payloadVerification: native))
+        }
+    }
+    @Test func `package profile rejects an absent ci-ok`() {
+        #expect(throws: PRTransaction.Error.missingCI) {
+            try PRTransaction.review(fixture(checks: [check("full-tier")]))
+        }
+    }
+    @Test func `package profile rejects a stale ci-ok`() {
+        #expect(throws: PRTransaction.Error.staleCI) {
+            try PRTransaction.review(
+                fixture(checks: [check("ci-ok", revision: old), check("full-tier")])
+            )
+        }
+    }
+    @Test func `package profile rejects a failed ci-ok`() {
+        #expect(throws: PRTransaction.Error.staleCI) {
+            try PRTransaction.review(
+                fixture(checks: [check("ci-ok", conclusion: "failure"), check("full-tier")])
+            )
+        }
+    }
+    @Test func `package profile rejects an absent full tier`() {
         #expect(throws: PRTransaction.Error.nonterminalFullTier) {
-            try PRTransaction.review(Self.fixture(fullTierIncluded: false))
+            try PRTransaction.review(fixture(checks: [check("ci-ok")]))
+        }
+    }
+    @Test func `package profile rejects a stale full tier`() {
+        #expect(throws: PRTransaction.Error.nonterminalFullTier) {
+            try PRTransaction.review(
+                fixture(checks: [check("ci-ok"), check("full-tier", revision: old)])
+            )
+        }
+    }
+    @Test func `package profile rejects a nonterminal full tier`() {
+        #expect(throws: PRTransaction.Error.nonterminalFullTier) {
+            try PRTransaction.review(
+                fixture(checks: [check("ci-ok"), check("full-tier", conclusion: nil)])
+            )
+        }
+    }
+    @Test func `control profile rejects an empty required-check list`() {
+        #expect(throws: PRTransaction.Error.profile) {
+            try PRTransaction.review(fixture(verification: .control(checks: []), checks: []))
+        }
+    }
+    @Test func `control profile rejects duplicate required-check names`() {
+        #expect(throws: PRTransaction.Error.profile) {
+            try PRTransaction.review(
+                fixture(
+                    verification: .control(checks: ["fixtures", "fixtures"]),
+                    checks: [check("fixtures")]
+                )
+            )
+        }
+    }
+    @Test func `control profile rejects a missing native check`() {
+        #expect(throws: PRTransaction.Error.missing("scan")) {
+            try PRTransaction.review(
+                fixture(verification: native, checks: [check("fixtures"), check("correspondence")])
+            )
+        }
+    }
+    @Test func `control profile rejects a stale native check`() {
+        #expect(throws: PRTransaction.Error.stale("scan")) {
+            try PRTransaction.review(
+                fixture(
+                    verification: native,
+                    checks: [
+                        check("fixtures"), check("correspondence"), check("scan", revision: old),
+                    ]
+                )
+            )
+        }
+    }
+    @Test func `control profile rejects a failed native check`() {
+        #expect(throws: PRTransaction.Error.unsuccessful("scan")) {
+            try PRTransaction.review(
+                fixture(
+                    verification: native,
+                    checks: [
+                        check("fixtures"), check("correspondence"),
+                        check("scan", conclusion: "failure"),
+                    ]
+                )
+            )
+        }
+    }
+    @Test func `control profile rejects any nonterminal supplied run`() {
+        #expect(throws: PRTransaction.Error.nonterminal("scan")) {
+            try PRTransaction.review(
+                fixture(
+                    verification: native,
+                    checks: [
+                        check("fixtures"), check("correspondence"), check("scan"),
+                        check("scan", conclusion: nil),
+                    ]
+                )
+            )
         }
     }
     @Test func `rejects an old bot approval`() {
         #expect(throws: PRTransaction.Error.staleBotApproval) {
-            try PRTransaction.merge(Self.fixture(approvalHead: Self.old))
+            try PRTransaction.merge(fixture(approvalHead: old))
         }
     }
     @Test func `rejects an absent bot approval`() {
         #expect(throws: PRTransaction.Error.missingBotApproval) {
-            try PRTransaction.merge(Self.fixture(botApproval: false))
+            try PRTransaction.merge(fixture(botApproval: false))
         }
     }
     @Test func `rejects a fixer approval`() {
         #expect(throws: PRTransaction.Error.reviewerIsFixer) {
-            try PRTransaction.merge(Self.fixture(reviewer: "coenttb"))
+            try PRTransaction.merge(fixture(reviewer: "coenttb"))
         }
     }
     @Test func `rejects ci completion while a required run is queued`() {
         #expect(throws: PRTransaction.Error.nonterminalRequiredRun) {
-            try PRTransaction.complete(Self.fixture(queuedRun: true))
+            try PRTransaction.complete(fixture(queuedRun: true))
         }
     }
     @Test func `rejects an incomplete post-green receipt`() {
         #expect(throws: PRTransaction.Error.incompleteReceipt) {
-            try PRTransaction.complete(Self.fixture(receipt: false))
+            try PRTransaction.complete(fixture(receipt: false))
         }
     }
-}
-
-extension PRTransaction.Transaction.Integration {
-    @Test func `accepts a transaction larger than process argv when read from a file`() throws {
-        let snapshot = PRTransaction.Transaction.Unit.fixture()
-        let review = PRTransaction.Snapshot.Review(
-            actor: "swift-institute-bot[bot]",
-            state: "APPROVED",
-            head: snapshot.head
-        )
-        let large = PRTransaction.Snapshot(
-            repository: snapshot.repository,
-            pull: snapshot.pull,
-            base: snapshot.base,
-            head: snapshot.head,
-            fixer: snapshot.fixer,
-            owningTask: snapshot.owningTask,
-            plan: snapshot.plan,
-            reviews: Array(repeating: review, count: 50_000),
-            checks: snapshot.checks,
-            unresolvedThreads: snapshot.unresolvedThreads,
-            merge: snapshot.merge,
-            receipt: snapshot.receipt
-        )
-        let data = try JSONEncoder().encode(large)
-        #expect(data.count > 2_000_000)
-        let url = FileManager.default.temporaryDirectory
-            .appending(component: UUID().uuidString)
-            .appendingPathExtension("json")
-        try data.write(to: url)
-        defer { try? FileManager.default.removeItem(at: url) }
-
-        let decoded = try JSONDecoder().decode(
-            PRTransaction.Snapshot.self,
-            from: Data(contentsOf: url)
-        )
-        #expect(try PRTransaction.review(decoded) == .readyForReview)
+    @Test func `rejects a stale post-green receipt`() {
+        #expect(throws: PRTransaction.Error.incompleteReceipt) {
+            try PRTransaction.complete(fixture(receiptHead: old))
+        }
     }
 }

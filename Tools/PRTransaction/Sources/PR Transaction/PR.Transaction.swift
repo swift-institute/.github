@@ -7,7 +7,10 @@ public enum PRTransaction {
             public let base: String
             public let head: String
             public let fixer: String
-            public let task: Int
+            /// The exact open owning-Issue coordinate accepted by this plan.
+            public let task: Issue
+            /// The required-check profile accepted at this plan's exact head.
+            public let verification: Verification
             public let paths: [String]
             public let evidence: [Evidence]
             public let payload: Payload
@@ -23,6 +26,8 @@ public enum PRTransaction {
         public struct Payload: Codable, Sendable {
             public let preflighted: Bool
             public let head: String
+            /// The required-check profile included in the preflighted payload.
+            public let verification: Verification
         }
 
         public struct Review: Codable, Sendable {
@@ -37,12 +42,10 @@ public enum PRTransaction {
             public let conclusion: String?
         }
 
-        public struct Issue: Codable, Sendable {
+        public struct Issue: Codable, Equatable, Sendable {
             public let repository: String
             public let number: Int
             public let state: String
-            public let type: String
-            public let isReferencedByPull: Bool
         }
 
         public struct Merge: Codable, Sendable {
@@ -100,6 +103,12 @@ public enum PRTransaction {
         case staleBotApproval
         case nonterminalRequiredRun
         case incompleteReceipt
+        case profile
+        case incomplete(String)
+        case missing(String)
+        case stale(String)
+        case nonterminal(String)
+        case unsuccessful(String)
     }
 
     public static func review(_ snapshot: Snapshot) throws -> Verdict {
@@ -123,28 +132,21 @@ public enum PRTransaction {
             throw Error.staleEvidence
         }
         guard snapshot.plan.payload.preflighted else { throw Error.payloadNotPreflighted }
-        guard snapshot.plan.payload.head == snapshot.head else { throw Error.stalePayload }
+        guard snapshot.plan.payload.head == snapshot.head,
+            snapshot.plan.payload.verification == snapshot.plan.verification
+        else { throw Error.stalePayload }
         guard snapshot.plan.nextOwner == "swift-institute-bot[bot]" else {
             throw Error.missingNextOwner
         }
-        guard snapshot.owningTask.repository == snapshot.repository,
-            snapshot.owningTask.number == snapshot.plan.task,
-            snapshot.owningTask.state == "OPEN",
-            snapshot.owningTask.type == "Task",
-            snapshot.owningTask.isReferencedByPull
+        guard !snapshot.repository.isEmpty,
+            snapshot.plan.task.repository == snapshot.repository,
+            snapshot.plan.task.number > 0,
+            snapshot.plan.task.state == "OPEN",
+            snapshot.owningTask == snapshot.plan.task
         else {
             throw Error.invalidOwningTask
         }
-        let ci = snapshot.checks.filter { $0.name == "ci-ok" }
-        guard !ci.isEmpty else { throw Error.missingCI }
-        guard ci.contains(where: { $0.head == snapshot.head && $0.conclusion == "success" }) else {
-            throw Error.staleCI
-        }
-        let fullTier = snapshot.checks.filter { $0.name == "full-tier" }
-        guard fullTier.contains(where: { $0.head == snapshot.head && $0.conclusion == "success" })
-        else {
-            throw Error.nonterminalFullTier
-        }
+        try verify(snapshot)
         guard snapshot.unresolvedThreads == 0 else {
             throw Error.unresolvedThreads(snapshot.unresolvedThreads)
         }

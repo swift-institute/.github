@@ -121,8 +121,10 @@ struct RepositoryPolicyTests {
             #expect(workflow.contains("--slurpfile \(payload)"), "\(payload) must be file-backed")
             #expect(!workflow.contains("--argjson \(payload)"), "\(payload) must not enter argv")
         }
-        #expect(workflow.contains("owning-task:"))
+        #expect(workflow.contains("accepted-plan:"))
         #expect(workflow.contains("timelineItems(itemTypes: [CROSS_REFERENCED_EVENT]"))
+        #expect(workflow.contains("issueType.name == \"Task\""))
+        #expect(!workflow.contains("closingIssuesReferences"))
         #expect(!workflow.contains(".number == 176"))
     }
 

@@ -3,6 +3,9 @@
 # This workflow deliberately has no merge step. It approves only after the
 # independent transaction model accepts a public, exact-head plan and all
 # current-head merge prerequisites other than the approval it is about to add.
+# `accepted-plan` is `Snapshot.Source.Plan` JSON. Its `verification` is exactly
+# `{ "package": {} }` or `{ "control": { "checks": [<non-empty names>] } }`;
+# absent, empty, duplicate, or additional profile fields fail closed.
 
 name: review-pr-transaction
 
@@ -13,46 +16,10 @@ on:
         description: 'Open pull-request number in swift-institute/.github.'
         required: true
         type: string
-      accepted-plan-head:
-        description: 'Accepted 40-character PR head revision; must equal the live head.'
+      accepted-plan:
+        description: 'Exact accepted plan JSON, including owning Issue and verification profile.'
         required: true
         type: string
-      accepted-plan-base:
-        description: 'Accepted exact base revision; must equal the live PR base.'
-        required: true
-        type: string
-      owning-task:
-        description: 'Owning Task number recorded in the accepted plan.'
-        required: true
-        type: string
-      intended-path:
-        description: 'One intended changed path recorded in the accepted plan.'
-        required: true
-        type: string
-      local-evidence-command:
-        description: 'Required local evidence command from the accepted plan.'
-        required: true
-        type: string
-      local-evidence-result:
-        description: 'Required local evidence result (`success`).'
-        required: true
-        type: string
-      local-evidence-head:
-        description: 'Head revision on which the local evidence was recorded.'
-        required: true
-        type: string
-      payload-preflighted:
-        description: 'Set only after the public mutation payload has been preflighted.'
-        required: true
-        type: boolean
-      next-owner:
-        description: 'Named next owner of the prepared transaction.'
-        required: true
-        type: string
-      plan-accepted:
-        description: 'Set only after the exact revision plan has been accepted.'
-        required: true
-        type: boolean
 
 permissions: {}
 
@@ -85,7 +52,6 @@ jobs:
           owner: swift-institute
           permission-metadata: read
           permission-contents: read
-          permission-issues: read
           permission-pull-requests: write
 
       - name: Validate the guarded transaction
@@ -94,37 +60,77 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
           PULL: ${{ inputs.pull }}
-          PLAN_HEAD: ${{ inputs.accepted-plan-head }}
-          PLAN_BASE: ${{ inputs.accepted-plan-base }}
-          OWNING_TASK: ${{ inputs.owning-task }}
-          PLAN_ACCEPTED: ${{ inputs.plan-accepted }}
-          PLAN_PATH: ${{ inputs.intended-path }}
-          EVIDENCE_COMMAND: ${{ inputs.local-evidence-command }}
-          EVIDENCE_RESULT: ${{ inputs.local-evidence-result }}
-          EVIDENCE_HEAD: ${{ inputs.local-evidence-head }}
-          PAYLOAD_PREFLIGHTED: ${{ inputs.payload-preflighted }}
-          NEXT_OWNER: ${{ inputs.next-owner }}
+          ACCEPTED_PLAN: ${{ inputs.accepted-plan }}
         run: |
           set -euo pipefail
           repository='swift-institute/.github'
-          [[ "$OWNING_TASK" =~ ^[1-9][0-9]*$ ]]
-          transaction_dir=$(mktemp -d)
-          trap 'rm -rf "$transaction_dir"' EXIT
-          pull_file="$transaction_dir/pull.json"
-          reviews_file="$transaction_dir/reviews.json"
-          checks_file="$transaction_dir/checks.json"
-          runs_file="$transaction_dir/runs.json"
-          graph_file="$transaction_dir/graph.json"
-          gh api "repos/${repository}/pulls/${PULL}" > "$pull_file"
-          head=$(jq -er '.head.sha' "$pull_file")
-          base=$(jq -er '.base.sha' "$pull_file")
-          fixer=$(jq -er '.user.login' "$pull_file")
-          test "$(jq -r '.state' "$pull_file")" = open
-          test "$(jq -r '.draft' "$pull_file")" = false
-          gh api --paginate "repos/${repository}/pulls/${PULL}/reviews?per_page=100" > "$reviews_file"
-          gh api --paginate "repos/${repository}/commits/${head}/check-runs?per_page=100" > "$checks_file"
-          gh api --paginate "repos/${repository}/actions/runs?head_sha=${head}&per_page=100" > "$runs_file"
-          gh api graphql -F owner=swift-institute -F name=.github -F number="${PULL}" -F task="${OWNING_TASK}" -f query='
+          plan=$(jq -ce '
+            def nonempty_strings:
+              type == "array" and length > 0 and all(.[]; type == "string" and length > 0);
+            def exact_revision:
+              type == "string" and test("^[0-9a-f]{40}$");
+            def verification:
+              (keys == ["package"] and .package == {}) or
+              (
+                keys == ["control"] and
+                (.control | keys == ["checks"]) and
+                (.control.checks | nonempty_strings) and
+                (.control.checks | unique | length) == (.control.checks | length)
+              );
+            select(type == "object")
+            | select(.accepted == true)
+            | select(.base | exact_revision)
+            | select(.head | exact_revision)
+            | select(
+                (.task | type == "object") and
+                (.task.repository | type == "string" and length > 0) and
+                (.task.number | type == "number" and . > 0 and floor == .) and
+                .task.state == "OPEN"
+              )
+            | select(.verification | verification)
+            | select(.paths | nonempty_strings)
+            | select(
+                (.evidence | type == "array" and length > 0) and
+                all(
+                  .evidence[];
+                  (.command | type == "string" and length > 0) and
+                  .result == "success" and
+                  (.head | exact_revision)
+                )
+              )
+            | select(.payloadPreflighted == true)
+            | select(.nextOwner == "swift-institute-bot[bot]")
+          ' <<<"$ACCEPTED_PLAN")
+          pull=$(gh api "repos/${repository}/pulls/${PULL}")
+          head=$(jq -er '.head.sha' <<<"$pull")
+          base=$(jq -er '.base.sha' <<<"$pull")
+          fixer=$(jq -er '.user.login' <<<"$pull")
+          test "$(jq -r '.state' <<<"$pull")" = open
+          test "$(jq -r '.draft' <<<"$pull")" = false
+          task_repository=$(jq -er '.task.repository' <<<"$plan")
+          task_number=$(jq -er '.task.number' <<<"$plan")
+          test "$task_repository" = "$repository"
+          owning_task=$(
+            gh api "repos/${task_repository}/issues/${task_number}" |
+              jq -ce --arg repository "$task_repository" --argjson number "$task_number" '
+                select(.number == $number and .state == "open" and (has("pull_request") | not))
+                | { repository: $repository, number, state: "OPEN" }
+              '
+          )
+          gh api --paginate --slurp \
+            "repos/${repository}/pulls/${PULL}/reviews?per_page=100" \
+            > "$RUNNER_TEMP/review-pages.json"
+          # Preserve every API page and its declared total for the typed producer.
+          # The producer combines the pages and fails closed if pagination is
+          # absent, inconsistent, or incomplete.
+          gh api --paginate --slurp \
+            "repos/${repository}/commits/${head}/check-runs?per_page=100" \
+            > "$RUNNER_TEMP/check-pages.json"
+          gh api --paginate --slurp \
+            "repos/${repository}/actions/runs?head_sha=${head}&per_page=100" \
+            > "$RUNNER_TEMP/run-pages.json"
+          gh api graphql -F owner=swift-institute -F name=.github -F number="${PULL}" \
+            -F task="${task_number}" -f query='
             query($owner: String!, $name: String!, $number: Int!, $task: Int!) {
               repository(owner: $owner, name: $name) {
                 mergeCommitAllowed
@@ -154,69 +160,75 @@ jobs:
                   reviewThreads(first: 100) { nodes { isResolved } pageInfo { hasNextPage } }
                 }
               }
-            }' > "$graph_file"
+            }' > "$RUNNER_TEMP/graph.json"
           jq -e '
             .data.repository.issue != null and
             .data.repository.issue.timelineItems.pageInfo.hasNextPage == false and
-            .data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage == false
-          ' "$graph_file" >/dev/null
+            .data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage == false and
+            .data.repository.issue.repository.nameWithOwner == "swift-institute/.github" and
+            .data.repository.issue.number == $task and
+            .data.repository.issue.state == "OPEN" and
+            .data.repository.issue.issueType.name == "Task" and
+            ([
+              .data.repository.issue.timelineItems.nodes[].source
+              | select(
+                  .__typename == "PullRequest" and
+                  .repository.nameWithOwner == "swift-institute/.github" and
+                  .number == $number
+                )
+            ] | length > 0)
+          ' --argjson task "$task_number" --argjson number "$PULL" "$RUNNER_TEMP/graph.json" >/dev/null
           jq -n \
             --arg repository "$repository" \
-            --arg pull "$PULL" \
-            --arg owningTask "$OWNING_TASK" \
+            --argjson pull "$PULL" \
             --arg head "$head" \
             --arg base "$base" \
             --arg fixer "$fixer" \
-            --arg planHead "$PLAN_HEAD" \
-            --arg planBase "$PLAN_BASE" \
-            --arg planAccepted "$PLAN_ACCEPTED" \
-            --arg planPath "$PLAN_PATH" \
-            --arg evidenceCommand "$EVIDENCE_COMMAND" \
-            --arg evidenceResult "$EVIDENCE_RESULT" \
-            --arg evidenceHead "$EVIDENCE_HEAD" \
-            --arg payloadPreflighted "$PAYLOAD_PREFLIGHTED" \
-            --arg nextOwner "$NEXT_OWNER" \
-            --slurpfile reviews "$reviews_file" \
-            --slurpfile checks "$checks_file" \
-            --slurpfile runs "$runs_file" \
-            --slurpfile graph "$graph_file" '
+            --argjson owningTask "$owning_task" \
+            --argjson plan "$plan" \
+            --slurpfile reviews "$RUNNER_TEMP/review-pages.json" \
+            --slurpfile checks "$RUNNER_TEMP/check-pages.json" \
+            --slurpfile runs "$RUNNER_TEMP/run-pages.json" \
+            --slurpfile graph "$RUNNER_TEMP/graph.json" '
               {
                 repository: $repository,
-                pull: ($pull | tonumber),
+                pull: $pull,
                 base: $base,
                 head: $head,
                 fixer: $fixer,
-                owningTask: ($graph[0].data.repository.issue | {
-                  repository: .repository.nameWithOwner,
-                  number,
-                  state,
-                  type: .issueType.name,
-                  isReferencedByPull: ([.timelineItems.nodes[].source | select(
-                    .__typename == "PullRequest" and
-                    .repository.nameWithOwner == $repository and
-                    .number == ($pull | tonumber)
-                  )] | length > 0)
-                }),
-                plan: {
-                  accepted: ($planAccepted == "true"), base: $planBase, head: $planHead, fixer: $fixer,
-                  task: ($owningTask | tonumber),
-                  paths: [$planPath], evidence: [{ command: $evidenceCommand, result: $evidenceResult, head: $evidenceHead }],
-                  payload: { preflighted: ($payloadPreflighted == "true"), head: $head }, nextOwner: $nextOwner
-                },
-                reviews: [ $reviews[][] | { actor: .user.login, state: .state, head: (.commit_id // "") } ],
-                checks: (
-                  [ $checks[].check_runs[] | { name: .name, head: $head, conclusion: .conclusion } ]
-                  + [ $runs[].workflow_runs[] | select(.name == "swift-ci") | { name: "full-tier", head: .head_sha, conclusion: .conclusion } ]
-                ),
+                owningTask: $owningTask,
+                plan: $plan,
+                reviews: [ $reviews[0][] | { actor: .user.login, state: .state, head: (.commit_id // "") } ],
+                checkPages: [
+                  $checks[0][]
+                  | {
+                      total: .total_count,
+                      values: [
+                        .check_runs[]
+                        | { name: .name, head: .head_sha, conclusion: .conclusion }
+                      ]
+                    }
+                ],
+                runPages: [
+                  $runs[0][]
+                  | {
+                      total: .total_count,
+                      values: [
+                        .workflow_runs[]
+                        | { name: .name, head: .head_sha, conclusion: .conclusion }
+                      ]
+                    }
+                ],
                 unresolvedThreads: ([ $graph[0].data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved | not) ] | length),
                 merge: {
                   squash: $graph[0].data.repository.squashMergeAllowed,
                   mergeCommit: $graph[0].data.repository.mergeCommitAllowed,
                   rebase: $graph[0].data.repository.rebaseMergeAllowed
-                },
-                receipt: { complete: false, head: $head, issueClosed: false, unassigned: false }
+                }
               }
-            ' > transaction.json
+            ' > producer-input.json
+          swift run --package-path Tools/PRTransaction pr-transaction produce producer-input.json \
+            > transaction.json
           swift run --package-path Tools/PRTransaction pr-transaction review transaction.json
           echo "head=${head}" >> "$GITHUB_OUTPUT"
 
