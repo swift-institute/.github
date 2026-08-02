@@ -1,5 +1,9 @@
 {
   "repository": "swift-institute/.github",
+  "target": {
+    "repository": "swift-institute/.github",
+    "visibility": "public"
+  },
   "pull": 189,
   "base": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
   "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -11,6 +15,8 @@
   },
   "plan": {
     "accepted": true,
+    "repository": "swift-institute/.github",
+    "pull": 189,
     "base": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "task": {

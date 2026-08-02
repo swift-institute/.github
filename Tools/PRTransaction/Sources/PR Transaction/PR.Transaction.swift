@@ -4,6 +4,10 @@ public enum PRTransaction {
     public struct Snapshot: Codable, Sendable {
         public struct Plan: Codable, Sendable {
             public let accepted: Bool
+            /// The exact target repository accepted by this plan.
+            public let repository: String
+            /// The exact target pull request accepted by this plan.
+            public let pull: Int
             public let base: String
             public let head: String
             public let fixer: String
@@ -85,6 +89,7 @@ public enum PRTransaction {
         case fixer(String)
         case reviewerIsFixer
         case planNotAccepted
+        case invalidTarget
         case stalePlanBase(expected: String, actual: String)
         case stalePlanHead(expected: String, actual: String)
         case missingPaths
@@ -116,6 +121,13 @@ public enum PRTransaction {
             throw Error.fixer(snapshot.fixer)
         }
         guard snapshot.plan.accepted else { throw Error.planNotAccepted }
+        guard snapshot.plan.repository == snapshot.repository,
+            snapshot.plan.pull == snapshot.pull,
+            !snapshot.repository.isEmpty,
+            snapshot.pull > 0
+        else {
+            throw Error.invalidTarget
+        }
         guard snapshot.plan.base == snapshot.base else {
             throw Error.stalePlanBase(expected: snapshot.base, actual: snapshot.plan.base)
         }
@@ -138,9 +150,7 @@ public enum PRTransaction {
         guard snapshot.plan.nextOwner == "swift-institute-bot[bot]" else {
             throw Error.missingNextOwner
         }
-        guard !snapshot.repository.isEmpty,
-            snapshot.plan.task.repository == snapshot.repository,
-            snapshot.plan.task.number > 0,
+        guard snapshot.plan.task.number > 0,
             snapshot.plan.task.state == "OPEN",
             snapshot.owningTask == snapshot.plan.task
         else {

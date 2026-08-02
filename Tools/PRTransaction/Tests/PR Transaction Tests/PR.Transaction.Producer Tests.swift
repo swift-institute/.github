@@ -16,6 +16,10 @@ extension PRTransaction.Transaction {
             defer { try? FileManager.default.removeItem(at: output) }
 
             let snapshot = try decode(output)
+            #expect(snapshot.repository == "swift-foundations/swift-tests")
+            #expect(snapshot.pull == 8)
+            #expect(snapshot.plan.repository == snapshot.repository)
+            #expect(snapshot.plan.pull == snapshot.pull)
             #expect(snapshot.plan.task == snapshot.owningTask)
             #expect(snapshot.plan.verification == .package)
             #expect(snapshot.plan.payload.verification == .package)
@@ -48,6 +52,34 @@ extension PRTransaction.Transaction {
 
             #expect(throws: PRTransaction.Error.stalePlanHead(expected: head, actual: old)) {
                 try PRTransaction.Command.run(["review", output.path])
+            }
+        }
+
+        @Test func `CLI rejects a private target repository`() throws {
+            #expect(throws: PRTransaction.Error.invalidTarget) {
+                try PRTransaction.Command.run(["produce", fixture("private-target-source").path])
+            }
+        }
+
+        @Test func `producer rejects a target response for another repository`() {
+            let source = source(
+                verification: control,
+                checks: pages([[check("fixtures"), check("correspondence"), check("scan")]]),
+                target: .init(repository: "swift-foundations/swift-tests", visibility: "public")
+            )
+
+            #expect(throws: PRTransaction.Error.invalidTarget) {
+                try source.snapshot()
+            }
+        }
+
+        @Test func `producer rejects a target response without visibility`() {
+            let data = Data(#"""
+                { "repository": "swift-institute/.github", "target": { "repository": "swift-institute/.github" } }
+                """#.utf8)
+
+            #expect(throws: DecodingError.self) {
+                try JSONDecoder().decode(PRTransaction.Snapshot.Source.self, from: data)
             }
         }
 
@@ -241,6 +273,10 @@ extension PRTransaction.Transaction {
         private func source(
             verification: PRTransaction.Snapshot.Verification,
             checks: [PRTransaction.Snapshot.Source.Page<PRTransaction.Snapshot.Check>],
+            target: PRTransaction.Snapshot.Source.Target = .init(
+                repository: "swift-institute/.github",
+                visibility: "public"
+            ),
             runs: [PRTransaction.Snapshot.Source.Page<PRTransaction.Snapshot.Check>] = [
                 .init(total: 0, values: [])
             ]
@@ -252,6 +288,7 @@ extension PRTransaction.Transaction {
             )
             return PRTransaction.Snapshot.Source(
                 repository: "swift-institute/.github",
+                target: target,
                 pull: 189,
                 base: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
                 head: head,
@@ -259,6 +296,8 @@ extension PRTransaction.Transaction {
                 owningTask: task,
                 plan: .init(
                     accepted: true,
+                    repository: "swift-institute/.github",
+                    pull: 189,
                     base: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
                     head: head,
                     task: task,

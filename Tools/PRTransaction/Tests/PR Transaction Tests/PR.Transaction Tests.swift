@@ -16,6 +16,10 @@ extension PRTransaction.Transaction.Unit {
     }
 
     private func fixture(
+        repository: String = "swift-institute/.github",
+        pull: Int = 181,
+        planTargetRepository: String? = nil,
+        planPull: Int? = nil,
         task: Int = 177,
         planTask: Int? = nil,
         taskRepository: String = "swift-institute/.github",
@@ -58,6 +62,8 @@ extension PRTransaction.Transaction.Unit {
         )
         let plan = PRTransaction.Snapshot.Plan(
             accepted: true,
+            repository: planTargetRepository ?? repository,
+            pull: planPull ?? pull,
             base: planBase ?? base,
             head: planHead ?? head,
             fixer: "coenttb",
@@ -87,8 +93,8 @@ extension PRTransaction.Transaction.Unit {
             unassigned: receipt
         )
         return .init(
-            repository: "swift-institute/.github",
-            pull: 181,
+            repository: repository,
+            pull: pull,
             base: base,
             head: head,
             fixer: "coenttb",
@@ -115,6 +121,13 @@ extension PRTransaction.Transaction.Unit {
     }
     @Test func `accepts a matching successor task`() throws {
         #expect(try PRTransaction.review(fixture(task: 177)) == .readyForReview)
+    }
+    @Test func `accepts a central task governing another Institute repository`() throws {
+        #expect(
+            try PRTransaction.review(
+                fixture(repository: "swift-foundations/swift-tests")
+            ) == .readyForReview
+        )
     }
     @Test func `accepts declared native control-plane checks`() throws {
         #expect(
@@ -150,6 +163,18 @@ extension PRTransaction.Transaction.Unit {
     @Test func `rejects a mismatched accepted-plan repository`() {
         #expect(throws: PRTransaction.Error.invalidOwningTask) {
             try PRTransaction.review(fixture(planRepository: "swift-institute/Workspace"))
+        }
+    }
+    @Test func `rejects a plan for another target repository`() {
+        #expect(throws: PRTransaction.Error.invalidTarget) {
+            try PRTransaction.review(
+                fixture(planTargetRepository: "swift-foundations/swift-tests")
+            )
+        }
+    }
+    @Test func `rejects a plan for another pull request`() {
+        #expect(throws: PRTransaction.Error.invalidTarget) {
+            try PRTransaction.review(fixture(planPull: 8))
         }
     }
     @Test func `rejects a nonpositive accepted-plan task`() {

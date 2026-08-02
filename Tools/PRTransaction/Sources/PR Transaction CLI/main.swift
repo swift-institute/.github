@@ -6,7 +6,7 @@ enum Main {
         do {
             print(try PRTransaction.Command.run(Array(CommandLine.arguments.dropFirst())))
         } catch {
-            fputs("pr-transaction: \(error)\n", stderr)
+            FileHandle.standardError.write(Data("pr-transaction: \(error)\n".utf8))
             exit(1)
         }
     }
