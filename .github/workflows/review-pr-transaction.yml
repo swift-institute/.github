@@ -50,6 +50,11 @@ jobs:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
 
+      - name: Select Swift 6.3
+        uses: SwiftyLab/setup-swift@38f54a76b70d989321de9dc7c840618c08cf56e9 # v1.14.0
+        with:
+          swift-version: '6.3'
+
       - name: Resolve exact target scope
         id: target
         shell: bash
@@ -245,7 +250,11 @@ jobs:
             .data.taskRepository.issue.repository.nameWithOwner == $taskRepository and
             .data.taskRepository.issue.number == $task and
             .data.taskRepository.issue.state == "OPEN" and
-            .data.taskRepository.issue.issueType.name == "Task" and
+            (
+              .data.taskRepository.issue.issueType.name == "Task" or
+              .data.taskRepository.issue.issueType.name == "Bug" or
+              .data.taskRepository.issue.issueType.name == "Feature"
+            ) and
             (
               ([
                 .data.taskRepository.issue.timelineItems.nodes[].source
