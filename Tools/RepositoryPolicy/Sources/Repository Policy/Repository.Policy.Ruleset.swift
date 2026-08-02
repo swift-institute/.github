@@ -24,6 +24,19 @@ extension RepositoryPolicy {
     /// emergency is over, the ruleset must be re-applied by dispatching
     /// `sync-metadata` with `apply-rulesets: true` against that repository —
     /// never left deleted or hand-recreated.
+    ///
+    /// A deleted ruleset is re-applied by the next nightly unless the
+    /// owning-issue receipt says otherwise (swift-institute/.github#204).
+    /// Mechanically, a break-glass-deleted ruleset and a repository that has
+    /// never been enrolled look identical from current GitHub state alone,
+    /// so the scheduled/nightly sweep's `SweepMode.scheduledHeal` posture
+    /// (below) leaves an absent ruleset reported, not recreated — the
+    /// scheduled path by itself does not restore it. The expected default is
+    /// prompt restoration: an explicit `apply-rulesets: true` dispatch is the
+    /// one path that recreates it. A repository deliberately left without
+    /// enforcement past the emergency window needs that decision recorded on
+    /// the owning issue's receipt; absent that receipt, restore promptly
+    /// rather than let the bypass linger.
     public enum Ruleset {
         public static func protectedMainPayload(from url: URL) throws -> Data {
             let (object, rules) = try identity(

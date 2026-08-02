@@ -11,9 +11,18 @@
 #   repo:           "owner/name" form. When set, scope to one repo.
 #   org:            org name. When set, scope to one org. Ignored if `repo` set.
 #   dry-run:        when true, print proposed edits without applying.
-#   apply-rulesets: when true, also converge the protected-main ruleset.
-#                   Defaults false: ruleset application is an explicit,
-#                   deliberate act, never a nightly side effect.
+#   apply-rulesets: when true, converge the protected-main ruleset and permit
+#                   creating a first ruleset on a repository that has none.
+#                   Defaults false: first application is an explicit,
+#                   deliberate act, never a nightly side effect
+#                   (swift-institute/.github#193).
+#   heal-rulesets:  when true, converge the protected-main ruleset over
+#                   repositories that already have an Institute ruleset
+#                   (drift repair) but never create one where absent.
+#                   Defaults false; the nightly caller sets this true so the
+#                   scheduled sweep heals drift without ever initiating
+#                   enforcement on a previously unenforced repository
+#                   (swift-institute/.github#204).
 # (When both repo and org are unset, sweeps all 17 ecosystem orgs.)
 #
 # Authentication: swift-institute-bot GitHub App (per Skills/github-repository
@@ -45,6 +54,11 @@ on:
         type: boolean
         required: false
         default: false
+      heal-rulesets:
+        description: 'Re-apply the class-correct ruleset over an existing Institute ruleset only; never creates one where absent.'
+        type: boolean
+        required: false
+        default: false
     outputs:
       edits-applied:
         description: 'Number of fields actually edited (0 in dry-run).'
@@ -70,6 +84,11 @@ on:
         default: false
       apply-rulesets:
         description: 'Converge the protected-main ruleset (skipped unless explicitly true).'
+        type: boolean
+        required: false
+        default: false
+      heal-rulesets:
+        description: 'Re-apply the class-correct ruleset over an existing Institute ruleset only; never creates one where absent.'
         type: boolean
         required: false
         default: false
@@ -427,9 +446,14 @@ jobs:
   rulesets:
     # The source-controlled contract is applied only by the trusted central
     # workflow. No write-capable credential is made available to PR code.
-    # Ruleset convergence runs only on the explicit `apply-rulesets` opt-in:
-    # the nightly sweep must never apply rulesets fleet-wide as a side effect.
-    if: ${{ !github.event.repository.private && inputs.apply-rulesets }}
+    # Ruleset convergence runs on either explicit opt-in: `apply-rulesets`
+    # (may create a first ruleset — swift-institute/.github#193) or
+    # `heal-rulesets` (heals drift on an existing ruleset only, set `true` by
+    # the nightly caller — swift-institute/.github#204). The nightly sweep
+    # must never INITIATE enforcement on a previously unenforced repository
+    # as a side effect; healing an already-enforced repository's drift is the
+    # one thing the scheduled path now does unattended.
+    if: ${{ !github.event.repository.private && (inputs.apply-rulesets || inputs.heal-rulesets) }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -505,6 +529,7 @@ jobs:
           GH_TOKEN: ${{ steps.token.outputs.token }}
           SINGLE_REPO: ${{ inputs.repo }}
           ENUM_REPOS: ${{ steps.enum.outputs.repos }}
+          APPLY_RULESETS: ${{ inputs.apply-rulesets }}
         run: |
           set -euo pipefail
           desired_package=$(swift run --package-path institute-ci/Tools/RepositoryPolicy repository-policy ruleset --policy institute-ci/Tools/RepositoryPolicy/Policy/protected-main-ruleset.json --class package)
@@ -514,6 +539,15 @@ jobs:
           }
           desired_package_normalized=$(printf '%s' "$desired_package" | normalize)
           desired_control_normalized=$(printf '%s' "$desired_control" | normalize)
+          # explicit-apply (apply-rulesets: true) may create a first ruleset;
+          # scheduled-heal (the nightly's heal-rulesets: true) never does
+          # (swift-institute/.github#204) — the mechanical decision for each
+          # target lives in RepositoryPolicy.Ruleset.decideConvergence, not
+          # here.
+          mode="scheduled-heal"
+          if [[ "$APPLY_RULESETS" == "true" ]]; then
+            mode="explicit-apply"
+          fi
           if [[ -n "$SINGLE_REPO" ]]; then
             targets=("$SINGLE_REPO")
           else
@@ -596,6 +630,21 @@ jobs:
               echo "$target: class flip — converging $opposite_name ($id) to $ruleset_name"
             else
               id=""
+            fi
+
+            # The heal-existing-vs-skip-absent decision (#204) is made by the
+            # Swift tool, not here: existing (same class or a class flip)
+            # always re-applies under either posture; absent only creates
+            # under explicit-apply, and is reported and skipped under
+            # scheduled-heal.
+            existing_ruleset="false"
+            [[ -n "$id" ]] && existing_ruleset="true"
+            decision=$(swift run --package-path institute-ci/Tools/RepositoryPolicy repository-policy ruleset-convergence --mode "$mode" --existing-ruleset "$existing_ruleset")
+            action=$(printf '%s' "$decision" | jq -r '.action')
+            if [[ "$action" == "skipAbsentOnSchedule" ]]; then
+              reason=$(printf '%s' "$decision" | jq -r '.reason')
+              echo "$target: skipped — $reason"
+              continue
             fi
 
             if [[ -z "$id" ]]; then

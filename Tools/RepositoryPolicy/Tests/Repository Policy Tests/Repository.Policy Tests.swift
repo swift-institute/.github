@@ -371,6 +371,109 @@ struct RepositoryPolicyTests {
         #expect(inputs.contains("\n          exclude-forks: 'true'\n"))
     }
 
+    // MARK: - Ruleset sweep convergence (swift-institute/.github#204)
+
+    // Positive: an Institute ruleset that already exists is always
+    // re-applied, under either sweep posture — the nightly's scheduled-heal
+    // mode heals drift exactly like the explicit-apply mode does.
+    @Test
+    func decideConvergenceReappliesAnExistingRulesetUnderEitherMode() {
+        for mode: RepositoryPolicy.Ruleset.SweepMode in [.scheduledHeal, .explicitApply] {
+            let decision = RepositoryPolicy.Ruleset.decideConvergence(
+                rulesetExists: true,
+                mode: mode
+            )
+            #expect(decision.action == .reapply, "\(mode)")
+        }
+    }
+
+    // Positive: an absent ruleset under the explicit apply-rulesets opt-in
+    // still creates — the swift-institute/.github#193 first-application
+    // path is unchanged by #204.
+    @Test
+    func decideConvergenceCreatesAnAbsentRulesetUnderExplicitApply() {
+        let decision = RepositoryPolicy.Ruleset.decideConvergence(
+            rulesetExists: false,
+            mode: .explicitApply
+        )
+        #expect(decision.action == .create)
+    }
+
+    // Discriminating negative: an absent ruleset under the nightly's
+    // scheduled-heal posture is skipped, never created — first application
+    // on a previously unenforced repository stays excluded from the
+    // scheduled path (explicit opt-in only).
+    @Test
+    func decideConvergenceSkipsAnAbsentRulesetUnderScheduledHeal() {
+        let decision = RepositoryPolicy.Ruleset.decideConvergence(
+            rulesetExists: false,
+            mode: .scheduledHeal
+        )
+        #expect(decision.action == .skipAbsentOnSchedule)
+        #expect(decision.reason.contains("explicit opt-in only"))
+    }
+
+    // The nightly caller must actually opt in to heal-only convergence, and
+    // must not also opt into the create-capable explicit-apply path — the
+    // scheduled path stays limited to healing existing rulesets
+    // (swift-institute/.github#204).
+    @Test
+    func nightlySweepEnablesHealRulesetsAndNotApplyRulesets() throws {
+        let url = URL(filePath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appending(path: ".github/workflows/sync-metadata-nightly.yml")
+        let workflow = try String(contentsOf: url, encoding: .utf8)
+        let sweep = try #require(workflow.range(of: "\n  sweep:\n"))
+        let report = try #require(
+            workflow.range(of: "\n  report:\n", range: sweep.upperBound..<workflow.endIndex)
+        )
+        let sweepJob = workflow[sweep.upperBound..<report.lowerBound]
+
+        #expect(sweepJob.contains("\n      heal-rulesets: true\n"))
+        // Only the mapping key is forbidden (an explanatory comment
+        // mentioning apply-rulesets is fine); the sweep must not pass it.
+        #expect(!sweepJob.contains("\n      apply-rulesets:"))
+    }
+
+    // The `rulesets` job must run on either explicit opt-in, and the
+    // per-target convergence step must route the heal-vs-skip-absent
+    // decision through the Swift tool rather than re-deciding it in bash.
+    @Test
+    func rulesetsJobGatesOnEitherOptInAndDelegatesTheConvergenceDecision() throws {
+        let url = URL(filePath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appending(path: ".github/workflows/sync-metadata.yml")
+        let workflow = try String(contentsOf: url, encoding: .utf8)
+        let rulesets = try #require(workflow.range(of: "\n  rulesets:\n"))
+        let surfaces = try #require(
+            workflow.range(of: "\n  surfaces:\n", range: rulesets.upperBound..<workflow.endIndex)
+        )
+        let rulesetsJob = workflow[rulesets.upperBound..<surfaces.lowerBound]
+
+        #expect(
+            rulesetsJob.contains(
+                "if: ${{ !github.event.repository.private && (inputs.apply-rulesets || inputs.heal-rulesets) }}"
+            )
+        )
+        #expect(rulesetsJob.contains("repository-policy ruleset-convergence"))
+        #expect(rulesetsJob.contains("skipAbsentOnSchedule"))
+
+        // Both input blocks (workflow_call and workflow_dispatch) declare
+        // heal-rulesets, defaulted false so an ad hoc dispatch is unaffected
+        // unless it opts in explicitly.
+        let onBlock = try #require(workflow.range(of: "\non:\n", range: workflow.startIndex..<rulesets.lowerBound))
+        let inputsText = workflow[onBlock.upperBound..<rulesets.lowerBound]
+        #expect(inputsText.components(separatedBy: "heal-rulesets:").count - 1 == 2)
+    }
+
     @Test
     func botReviewTransactionSourcesCollectionsFromFiles() throws {
         let url = URL(filePath: #filePath)
