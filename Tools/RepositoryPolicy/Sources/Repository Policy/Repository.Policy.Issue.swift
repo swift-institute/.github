@@ -133,13 +133,16 @@ extension RepositoryPolicy.Issue {
 
     public enum Error: Swift.Error, Equatable, Sendable {
         case duplicateField(String)
+        case inactiveRecord
         case invalidCheckpoint
         case invalidDecisionStatus(String)
+        case invalidDigest
         case invalidOwner(String)
         case invalidReceipt
         case invalidStatus(kind: Kind, status: Status)
         case invalidSupersession
         case missingField(String)
+        case staleGuard
         case unsupportedVersion(Int)
     }
 
@@ -296,5 +299,159 @@ extension RepositoryPolicy.Issue {
     /// decision, so API page boundaries cannot change the report.
     public static func reconcile(pages: [Page]) -> [Report] {
         reconcile(pages.flatMap(\.inputs))
+    }
+
+    /// A read of the current Issue body. `revision` is the HTTP entity tag
+    /// returned with that body; the digest makes its content guard explicit in
+    /// reports and command-line invocations.
+    public struct Snapshot: Equatable, Sendable {
+        public let coordinate: String
+        public let revision: String
+        public let body: String
+        public let native: Native
+
+        public init(coordinate: String, revision: String, body: String, native: Native) {
+            self.coordinate = coordinate
+            self.revision = revision
+            self.body = body
+            self.native = native
+        }
+
+        public var digest: String { Digest.sha1(body) }
+    }
+
+    /// The sole pair of guards accepted by an apply operation. Both must
+    /// describe the current body; a revision alone is not a content witness.
+    public struct Guard: Equatable, Sendable {
+        public let revision: String
+        public let digest: String
+
+        public init(revision: String, digest: String) throws {
+            guard !revision.isEmpty, digest.count == 40, digest.allSatisfy(\.isHexDigit) else {
+                throw Error.invalidDigest
+            }
+            self.revision = revision
+            self.digest = digest
+        }
+    }
+
+    /// A deterministic, side-effect-free compaction result. The executor may
+    /// update only `body` and append only `checkpoint`; comments and native
+    /// GitHub state are intentionally absent from this value.
+    public struct Compaction: Equatable, Sendable {
+        public let guard: Guard
+        public let body: String
+        public let checkpoint: String
+
+        public init(guard: Guard, body: String, checkpoint: String) {
+            self.guard = guard
+            self.body = body
+            self.checkpoint = checkpoint
+        }
+    }
+
+    public enum Compactor {
+        /// Plans a rewrite only for an open, Active Issue whose supplied guard
+        /// still names its current body. Calling this method never mutates an
+        /// Issue or reads its history.
+        public static func plan(snapshot: Snapshot, guard expected: Guard) throws -> Compaction? {
+            guard snapshot.revision == expected.revision, snapshot.digest == expected.digest else {
+                throw Error.staleGuard
+            }
+            guard snapshot.native.state == .open else { throw Error.inactiveRecord }
+            let record = try Parser.record(snapshot.body)
+            guard record.status == .active else { throw Error.inactiveRecord }
+
+            let body = render(record)
+            guard body != snapshot.body else { return nil }
+            let checkpoint = try CompactionCheckpoint(
+                grammarVersion: record.grammarVersion,
+                source: snapshot.coordinate,
+                digest: snapshot.digest
+            )
+            return .init(guard: expected, body: body, checkpoint: render(checkpoint))
+        }
+
+        public static func render(_ record: Record) -> String {
+            """
+            ### Kind
+
+            \(record.kind.rawValue)
+
+            ### Owner coordinate
+
+            \(record.owner)
+
+            ### Status
+
+            \(record.status.rawValue)
+
+            ### Grammar version
+
+            \(record.grammarVersion)
+            """
+        }
+
+        public static func render(_ checkpoint: CompactionCheckpoint) -> String {
+            """
+            ### Grammar version
+
+            \(checkpoint.grammarVersion)
+
+            ### Source
+
+            \(checkpoint.source)
+
+            ### Digest
+
+            \(checkpoint.digest)
+            """
+        }
+    }
+
+    private enum Digest {
+        static func sha1(_ value: String) -> String {
+            var bytes = Array(value.utf8)
+            let bitCount = UInt64(bytes.count) * 8
+            bytes.append(0x80)
+            while bytes.count % 64 != 56 { bytes.append(0) }
+            bytes += withUnsafeBytes(of: bitCount.bigEndian, Array.init)
+
+            var hash: [UInt32] = [
+                0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476, 0xC3D2E1F0,
+            ]
+            for block in bytes.indices.stride(from: 0, to: bytes.count, by: 64) {
+                var words = [UInt32](repeating: 0, count: 80)
+                for index in 0..<16 {
+                    let offset = block + (index * 4)
+                    words[index] = (UInt32(bytes[offset]) << 24)
+                        | (UInt32(bytes[offset + 1]) << 16)
+                        | (UInt32(bytes[offset + 2]) << 8)
+                        | UInt32(bytes[offset + 3])
+                }
+                for index in 16..<80 {
+                    words[index] = (words[index - 3] ^ words[index - 8] ^ words[index - 14] ^ words[index - 16]).rotatedLeft(1)
+                }
+                var a = hash[0], b = hash[1], c = hash[2], d = hash[3], e = hash[4]
+                for index in 0..<80 {
+                    let (f, k): (UInt32, UInt32) = switch index {
+                    case 0..<20: ((b & c) | (~b & d), 0x5A827999)
+                    case 20..<40: (b ^ c ^ d, 0x6ED9EBA1)
+                    case 40..<60: ((b & c) | (b & d) | (c & d), 0x8F1BBCDC)
+                    default: (b ^ c ^ d, 0xCA62C1D6)
+                    }
+                    let next = a.rotatedLeft(5) &+ f &+ e &+ k &+ words[index]
+                    e = d; d = c; c = b.rotatedLeft(30); b = a; a = next
+                }
+                hash[0] &+= a; hash[1] &+= b; hash[2] &+= c; hash[3] &+= d; hash[4] &+= e
+            }
+            return hash.map { String(format: "%08x", $0) }.joined()
+        }
+    }
+}
+
+private extension UInt32 {
+    func rotatedLeft(_ count: UInt32) -> UInt32 {
+        (self << count) | (self >> (32 - count))
     }
 }

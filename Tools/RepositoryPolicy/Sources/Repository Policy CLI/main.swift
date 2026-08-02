@@ -13,6 +13,8 @@ enum Main {
         do {
             if CommandLine.arguments.dropFirst().first == "validate" {
                 try validate(ValidationArguments(Array(CommandLine.arguments.dropFirst(2))))
+            } else if CommandLine.arguments.dropFirst().first == "compact" {
+                try await compact(CompactionArguments(Array(CommandLine.arguments.dropFirst(2))))
             } else {
                 try await reconcile(ReconcileArguments(CommandLine.arguments))
             }
@@ -20,6 +22,34 @@ enum Main {
             FileHandle.standardError.write(Data("repository-policy: \(error)\n".utf8))
             exit(1)
         }
+    }
+
+    private static func compact(_ arguments: CompactionArguments) async throws {
+        guard let token = ProcessInfo.processInfo.environment["GH_TOKEN"], !token.isEmpty else {
+            throw RepositoryPolicy.ConfigurationError("GH_TOKEN is required")
+        }
+        let api = ProcessInfo.processInfo.environment["GITHUB_API_URL"] ?? "https://api.github.com"
+        guard let baseURL = URL(string: api) else {
+            throw RepositoryPolicy.ConfigurationError("GITHUB_API_URL is invalid")
+        }
+        let expected = try RepositoryPolicy.Issue.Guard(
+            revision: arguments.revision,
+            digest: arguments.digest
+        )
+        let plan = try await RepositoryPolicy.GitHubClient(token: token, baseURL: baseURL).compactIssue(
+            arguments.repository,
+            number: arguments.issue,
+            guard: expected,
+            apply: arguments.apply
+        )
+        guard let plan else {
+            print("repository-policy: compact already-converged")
+            return
+        }
+        print(
+            "repository-policy: compact \(arguments.apply ? "applied" : "dry-run") "
+                + "revision=\(plan.guard.revision) digest=\(plan.guard.digest)"
+        )
     }
 
     private static func reconcile(_ arguments: ReconcileArguments) async throws {
@@ -166,6 +196,60 @@ enum Main {
                 }
                 index += 2
             }
+        }
+    }
+
+    private struct CompactionArguments {
+        let repository: String
+        let issue: Int
+        let revision: String
+        let digest: String
+        var apply = false
+
+        init(_ arguments: [String]) throws {
+            var repository: String?
+            var issue: Int?
+            var revision: String?
+            var digest: String?
+            var apply = false
+            var index = 0
+            while index < arguments.count {
+                let name = arguments[index]
+                guard index + 1 < arguments.count else {
+                    throw RepositoryPolicy.ConfigurationError("missing value for \(name)")
+                }
+                let value = arguments[index + 1]
+                switch name {
+                case "--repository": repository = value
+                case "--issue": issue = Int(value)
+                case "--revision": revision = value
+                case "--digest": digest = value
+                case "--apply":
+                    guard let parsed = Bool(value) else {
+                        throw RepositoryPolicy.ConfigurationError("--apply must be true or false")
+                    }
+                    apply = parsed
+                default: throw RepositoryPolicy.ConfigurationError("unknown argument \(name)")
+                }
+                index += 2
+            }
+            guard let repository, repository.split(separator: "/", omittingEmptySubsequences: false).count == 2 else {
+                throw RepositoryPolicy.ConfigurationError("--repository must use owner/name form")
+            }
+            guard let issue, issue > 0 else {
+                throw RepositoryPolicy.ConfigurationError("--issue must be a positive number")
+            }
+            guard let revision, !revision.isEmpty else {
+                throw RepositoryPolicy.ConfigurationError("--revision is required")
+            }
+            guard let digest, !digest.isEmpty else {
+                throw RepositoryPolicy.ConfigurationError("--digest is required")
+            }
+            self.repository = repository
+            self.issue = issue
+            self.revision = revision
+            self.digest = digest
+            self.apply = apply
         }
     }
 
