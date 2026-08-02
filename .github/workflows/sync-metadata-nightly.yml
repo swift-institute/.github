@@ -3,7 +3,10 @@
 # Calls sync-metadata.yml once per ecosystem org via a matrix strategy at
 # 04:00 UTC daily. Each org gets its own auth scope. When any org applies
 # edits, opens or updates a tracking issue in swift-institute/.github
-# summarising what converged.
+# summarising what converged. Also heals ruleset drift on repositories that
+# already carry an Institute ruleset (`heal-rulesets: true`); it never
+# creates a first ruleset — first application on a previously unenforced
+# repository stays explicit-opt-in only (swift-institute/.github#204).
 #
 # Provenance: Skills/github-repository [GH-REPO-070] / [GH-REPO-071];
 # Research/github-metadata-harmonization.md § 4.2 / § 7 Q8.
@@ -57,6 +60,12 @@ jobs:
     with:
       org: ${{ matrix.org }}
       dry-run: ${{ inputs.dry-run || false }}
+      # Re-admit ruleset convergence to the nightly as post-wave drift
+      # repair (swift-institute/.github#204): heals an Institute ruleset
+      # that already exists, never creates one where absent.
+      # `apply-rulesets` stays unset (false) here — first application on a
+      # previously unenforced repository remains explicit-opt-in only.
+      heal-rulesets: true
     secrets: inherit
 
   report:

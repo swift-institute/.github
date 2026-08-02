@@ -17,6 +17,10 @@ enum Main {
                 try await compact(CompactionArguments(Array(CommandLine.arguments.dropFirst(2))))
             } else if CommandLine.arguments.dropFirst().first == "ruleset" {
                 try ruleset(RulesetArguments(Array(CommandLine.arguments.dropFirst(2))))
+            } else if CommandLine.arguments.dropFirst().first == "ruleset-convergence" {
+                try rulesetConvergence(
+                    RulesetConvergenceArguments(Array(CommandLine.arguments.dropFirst(2)))
+                )
             } else {
                 try await reconcile(ReconcileArguments(CommandLine.arguments))
             }
@@ -122,6 +126,18 @@ enum Main {
         }
         FileHandle.standardOutput.write(payload)
         FileHandle.standardOutput.write(Data("\n".utf8))
+    }
+
+    /// The heal-existing-vs-skip-absent decision for one repository
+    /// (swift-institute/.github#204). Pure and network-free: the caller
+    /// resolves whether an Institute ruleset currently exists and passes
+    /// that in, this only decides the mechanical action.
+    private static func rulesetConvergence(_ arguments: RulesetConvergenceArguments) throws {
+        let decision = RepositoryPolicy.Ruleset.decideConvergence(
+            rulesetExists: arguments.rulesetExists,
+            mode: arguments.mode
+        )
+        try write(decision, to: nil)
     }
 
     private static func write<T: Encodable>(_ value: T, to path: String?) throws {
@@ -315,6 +331,50 @@ enum Main {
             }
             self.policy = policy
             self.repositoryClass = repositoryClass
+        }
+    }
+
+    private struct RulesetConvergenceArguments {
+        let mode: RepositoryPolicy.Ruleset.SweepMode
+        let rulesetExists: Bool
+
+        init(_ arguments: [String]) throws {
+            var values = [String: String]()
+            var index = 0
+            while index < arguments.count {
+                let name = arguments[index]
+                guard index + 1 < arguments.count else {
+                    throw RepositoryPolicy.ConfigurationError("missing value for \(name)")
+                }
+                guard name.hasPrefix("--") else {
+                    throw RepositoryPolicy.ConfigurationError("unknown argument \(name)")
+                }
+                values[name] = arguments[index + 1]
+                index += 2
+            }
+            guard
+                let modeValue = values.removeValue(forKey: "--mode"),
+                let mode = RepositoryPolicy.Ruleset.SweepMode(rawValue: modeValue)
+            else {
+                throw RepositoryPolicy.ConfigurationError(
+                    "ruleset-convergence requires --mode scheduled-heal or explicit-apply"
+                )
+            }
+            guard
+                let existingValue = values.removeValue(forKey: "--existing-ruleset"),
+                let existing = Bool(existingValue)
+            else {
+                throw RepositoryPolicy.ConfigurationError(
+                    "ruleset-convergence requires --existing-ruleset true or false"
+                )
+            }
+            guard values.isEmpty else {
+                throw RepositoryPolicy.ConfigurationError(
+                    "unknown argument \(values.keys.sorted().joined(separator: ", "))"
+                )
+            }
+            self.mode = mode
+            self.rulesetExists = existing
         }
     }
 
