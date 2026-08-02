@@ -815,6 +815,161 @@ struct RepositoryPolicyTests {
         }
     }
 
+    @Test
+    func activeRecordCompactorRendersOnlyTheCurrentSpecificationAndCheckpoint() throws {
+        let body = """
+            ### Problem
+
+            Earlier detail remains in the Issue timeline.
+
+            ### Kind
+
+            Task
+
+            ### Owner coordinate
+
+            swift-institute/.github
+
+            ### Status
+
+            Active
+
+            ### Grammar version
+
+            1
+
+            ### Proposed outcome
+
+            Compact this current body without touching history.
+            """
+        let snapshot = RepositoryPolicy.Issue.Snapshot(
+            coordinate: "https://github.com/swift-institute/.github/issues/174",
+            revision: "\"issue-174-v1\"",
+            body: body,
+            native: .init(state: .open)
+        )
+        let expected = try RepositoryPolicy.Issue.Guard(
+            revision: snapshot.revision,
+            digest: snapshot.digest
+        )
+
+        let plan = try #require(RepositoryPolicy.Issue.Compactor.plan(snapshot: snapshot, guard: expected))
+
+        #expect(plan.body == """
+            ### Kind
+
+            Task
+
+            ### Owner coordinate
+
+            swift-institute/.github
+
+            ### Status
+
+            Active
+
+            ### Grammar version
+
+            1
+            """)
+        #expect(try RepositoryPolicy.Issue.Parser.checkpoint(plan.checkpoint).source == snapshot.coordinate)
+        #expect(try RepositoryPolicy.Issue.Parser.checkpoint(plan.checkpoint).digest == snapshot.digest)
+        #expect(!plan.body.contains("Earlier detail"))
+        #expect(!plan.checkpoint.contains("Earlier detail"))
+    }
+
+    // Positive control: a changed entity tag OR a changed body digest must
+    // refuse before any body rewrite or checkpoint can be proposed.
+    @Test
+    func activeRecordCompactorRefusesStaleRevisionAndDigest() throws {
+        let body = """
+            ### Kind
+
+            Task
+
+            ### Owner coordinate
+
+            swift-institute/.github
+
+            ### Status
+
+            Active
+
+            ### Grammar version
+
+            1
+
+            ### Problem
+
+            Needs compaction.
+            """
+        let snapshot = RepositoryPolicy.Issue.Snapshot(
+            coordinate: "https://github.com/swift-institute/.github/issues/174",
+            revision: "\"current\"",
+            body: body,
+            native: .init(state: .open)
+        )
+        let staleRevision = try RepositoryPolicy.Issue.Guard(
+            revision: "\"stale\"",
+            digest: snapshot.digest
+        )
+        let staleDigest = try RepositoryPolicy.Issue.Guard(
+            revision: snapshot.revision,
+            digest: "a9993e364706816aba3e25717850c26c9cd0d89d"
+        )
+
+        #expect(throws: RepositoryPolicy.Issue.Error.self) {
+            try RepositoryPolicy.Issue.Compactor.plan(snapshot: snapshot, guard: staleRevision)
+        }
+        #expect(throws: RepositoryPolicy.Issue.Error.self) {
+            try RepositoryPolicy.Issue.Compactor.plan(snapshot: snapshot, guard: staleDigest)
+        }
+    }
+
+    @Test
+    func activeRecordCompactorRefusesTerminalAndInactiveRecords() throws {
+        let body = """
+            ### Kind
+
+            Task
+
+            ### Owner coordinate
+
+            swift-institute/.github
+
+            ### Status
+
+            Blocked
+
+            ### Grammar version
+
+            1
+            """
+        let snapshot = RepositoryPolicy.Issue.Snapshot(
+            coordinate: "https://github.com/swift-institute/.github/issues/174",
+            revision: "\"current\"",
+            body: body,
+            native: .init(state: .open)
+        )
+        let expected = try RepositoryPolicy.Issue.Guard(
+            revision: snapshot.revision,
+            digest: snapshot.digest
+        )
+
+        #expect(throws: RepositoryPolicy.Issue.Error.self) {
+            try RepositoryPolicy.Issue.Compactor.plan(snapshot: snapshot, guard: expected)
+        }
+        let terminal = RepositoryPolicy.Issue.Snapshot(
+            coordinate: snapshot.coordinate,
+            revision: snapshot.revision,
+            body: snapshot.body,
+            native: .init(state: .completed)
+        )
+        #expect(throws: RepositoryPolicy.Issue.Error.self) {
+            try RepositoryPolicy.Issue.Compactor.plan(snapshot: terminal, guard: expected)
+        }
+    }
+
     private func repositoryFixture(files: [String: String]) throws -> URL {
         let root =
             FileManager.default.temporaryDirectory

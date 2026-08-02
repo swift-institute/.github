@@ -59,6 +59,74 @@ extension RepositoryPolicy {
             return try JSONDecoder().decode(Content.self, from: response.data).type
         }
 
+        /// Reads one current Issue body and its HTTP entity tag. The tag and
+        /// body digest are both required before an apply operation can begin.
+        public func issueSnapshot(_ fullName: String, number: Int) async throws -> Issue.Snapshot {
+            let path = "/repos/\(fullName)/issues/\(number)"
+            let response = try await request(method: "GET", path: path)
+            guard response.status == 200 else {
+                throw error(method: "GET", path: path, response: response)
+            }
+            guard let revision = response.headers["Etag"] ?? response.headers["ETag"] else {
+                throw ConfigurationError("\(fullName)#\(number): GitHub did not return an entity tag")
+            }
+            let issue = try JSONDecoder().decode(RemoteIssue.self, from: response.data)
+            let state: Issue.NativeState
+            if issue.state == "open" {
+                state = .open
+            } else if issue.stateReason == "not_planned" {
+                state = .notPlanned
+            } else if issue.stateReason == "duplicate" {
+                state = .duplicate
+            } else {
+                state = .completed
+            }
+            return .init(
+                coordinate: issue.htmlURL,
+                revision: revision,
+                body: issue.body ?? "",
+                native: .init(state: state)
+            )
+        }
+
+        /// Plans a compaction from one current body. `apply: false` is fully
+        /// report-only. On apply, the current GET compares the caller's
+        /// revision and digest immediately before the one body PATCH; GitHub
+        /// does not support conditional unsafe REST requests. The checkpoint
+        /// comment is posted only after that PATCH succeeds.
+        public func compactIssue(
+            _ fullName: String,
+            number: Int,
+            guard expected: Issue.Guard,
+            apply: Bool
+        ) async throws -> Issue.Compaction? {
+            let snapshot = try await issueSnapshot(fullName, number: number)
+            guard let plan = try Issue.Compactor.plan(snapshot: snapshot, guard: expected) else {
+                return nil
+            }
+            guard apply else { return plan }
+
+            let issuePath = "/repos/\(fullName)/issues/\(number)"
+            let update = try await request(
+                method: "PATCH",
+                path: issuePath,
+                body: try JSONEncoder().encode(["body": plan.body])
+            )
+            guard update.status == 200 else {
+                throw error(method: "PATCH", path: issuePath, response: update)
+            }
+            let commentPath = "\(issuePath)/comments"
+            let comment = try await request(
+                method: "POST",
+                path: commentPath,
+                body: try JSONEncoder().encode(["body": plan.checkpoint])
+            )
+            guard comment.status == 201 else {
+                throw error(method: "POST", path: commentPath, response: comment)
+            }
+            return plan
+        }
+
         public func surfaceFiles(_ fullName: String) async throws -> [String: String] {
             var pending = [
                 ".github/workflows",
@@ -138,8 +206,9 @@ extension RepositoryPolicy {
 
         private func request(
             method: String,
-            path: String
-        ) async throws -> (data: Data, status: Int) {
+            path: String,
+            body: Data? = nil
+        ) async throws -> (data: Data, status: Int, headers: [String: String]) {
             guard let url = URL(string: path, relativeTo: baseURL)?.absoluteURL else {
                 preconditionFailure("Invalid GitHub API path: \(path)")
             }
@@ -149,7 +218,10 @@ extension RepositoryPolicy {
             request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
             request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
             request.setValue("swift-institute-repository-policy", forHTTPHeaderField: "User-Agent")
-            if method == "PUT" {
+            if let body {
+                request.httpBody = body
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            } else if method == "PUT" {
                 request.httpBody = Data()
                 request.setValue("0", forHTTPHeaderField: "Content-Length")
             }
@@ -157,13 +229,15 @@ extension RepositoryPolicy {
             guard let response = response as? HTTPURLResponse else {
                 throw URLError(.badServerResponse)
             }
-            return (data, response.statusCode)
+            return (data, response.statusCode, response.allHeaderFields.reduce(into: [:]) {
+                $0[String(describing: $1.key)] = String(describing: $1.value)
+            })
         }
 
         private func error(
             method: String,
             path: String,
-            response: (data: Data, status: Int)
+            response: (data: Data, status: Int, headers: [String: String])
         ) -> Error {
             Error(
                 method: method,
@@ -191,6 +265,20 @@ extension RepositoryPolicy {
             let path: String
             let encoding: String?
             let content: String?
+        }
+
+        private struct RemoteIssue: Decodable {
+            let body: String?
+            let htmlURL: String
+            let state: String
+            let stateReason: String?
+
+            enum CodingKeys: String, CodingKey {
+                case body
+                case htmlURL = "html_url"
+                case state
+                case stateReason = "state_reason"
+            }
         }
 
         private struct PrivateVulnerabilityReporting: Decodable {
