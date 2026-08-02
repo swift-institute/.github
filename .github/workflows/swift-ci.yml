@@ -652,10 +652,19 @@ jobs:
           echo "OS release:"
           cat /etc/os-release 2>/dev/null || true
 
-      - name: Test (release)
+      - name: Build or test (release)
         env:
+          CI_TIER: ${{ needs.plan.outputs.tier }}
           TEST_FILTER: ${{ inputs.test-filter }}
         run: |
+          # Ordinary push and pull-request development runs select the build
+          # tier. Compile the supported release configuration there; reserve
+          # the expensive test corpus for the full tier and single-job
+          # ci-dispatch, where plan is skipped and CI_TIER is empty.
+          if [ "$CI_TIER" = "build" ]; then
+            swift build -c release
+            exit 0
+          fi
           # [swift-institute/.github#165] Detect the sanctioned nested-test-package
           # layout (Tests/Package.swift) and run its tests instead of a root
           # `swift test` that silently discovers zero tests and exits green.
@@ -805,10 +814,18 @@ jobs:
           echo "OS release:"
           cat /etc/os-release 2>/dev/null || true
 
-      - name: Test (release)
+      - name: Build or test (release)
         env:
+          CI_TIER: ${{ needs.plan.outputs.tier }}
           TEST_FILTER: ${{ inputs.test-filter }}
         run: |
+          # The 6.4 nightly is advisory on the fast build tier, but it must
+          # still compile the same release configuration. Full qualification
+          # and single-job dispatch retain the release test corpus below.
+          if [ "$CI_TIER" = "build" ]; then
+            swift build -c release
+            exit 0
+          fi
           # [swift-institute/.github#165] Detect the sanctioned nested-test-package
           # layout (Tests/Package.swift) and run its tests instead of a root
           # `swift test` that silently discovers zero tests and exits green.

@@ -593,6 +593,43 @@ class ClassifierTests(ShellHarness):
         self.assertIn("invalid platform-support family", log)
 
 
+class ReleaseModeTests(ShellHarness):
+    """Fast tier compiles release; full qualification keeps release tests."""
+
+    def run_release_step(self, job, tier, test_filter=""):
+        self.script = extract(job, "Build or test (release)")
+
+        def configure(root, environment):
+            binary = root / "bin"
+            binary.mkdir()
+            swift = binary / "swift"
+            swift.write_text(
+                "#!/bin/sh\nprintf 'SWIFT_CALL=%s\\n' \"$*\"\n",
+                encoding="utf-8",
+            )
+            swift.chmod(0o755)
+            environment["PATH"] = f"{binary}:{environment['PATH']}"
+
+        return self.run_script(
+            setup=configure, CI_TIER=tier, TEST_FILTER=test_filter
+        )
+
+    def test_fast_tier_builds_release_without_tests(self):
+        for job in ("linux-release", "linux-6-4"):
+            with self.subTest(job=job):
+                code, log, _ = self.run_release_step(job, "build")
+                self.assertEqual(code, 0, log)
+                self.assertIn("SWIFT_CALL=build -c release", log)
+                self.assertNotIn("SWIFT_CALL=test", log)
+
+    def test_full_tier_keeps_filtered_release_tests(self):
+        code, log, _ = self.run_release_step(
+            "linux-release", "full", test_filter="Report-Format"
+        )
+        self.assertEqual(code, 0, log)
+        self.assertIn("SWIFT_CALL=test -c release --filter Report_Format", log)
+
+
 class AdvisoryPostureTests(unittest.TestCase):
     """linux-6-4 runs on every push and gates nothing. Both halves matter.
 
