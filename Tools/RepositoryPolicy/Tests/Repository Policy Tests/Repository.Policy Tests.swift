@@ -217,6 +217,132 @@ struct RepositoryPolicyTests {
         }
     }
 
+    // MARK: - Control-plane ruleset contract (swift-institute/.github#200)
+
+    // Positive control: the shipped control-plane fixture is exactly three
+    // rules (deletion, non_fast_forward, pull_request), carries no
+    // required_status_checks rule at all, and pins the identical
+    // pull-request transaction as the package contract.
+    @Test
+    func protectedMainControlPayloadFixtureDefinesTheControlPlaneTransaction() throws {
+        let url = URL(filePath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appending(path: "Policy/protected-main-control-ruleset.json")
+        let payload = try RepositoryPolicy.Ruleset.protectedMainControlPayload(from: url)
+        let object = try #require(try JSONSerialization.jsonObject(with: payload) as? [String: Any])
+        #expect((object["name"] as? String) == "Institute protected main (control)")
+        #expect((object["bypass_actors"] as? [Any])?.isEmpty == true)
+        #expect((object["enforcement"] as? String) == "active")
+        let rules = try #require(object["rules"] as? [[String: Any]])
+        #expect(
+            Set(rules.compactMap { $0["type"] as? String })
+                == ["deletion", "non_fast_forward", "pull_request"]
+        )
+        #expect(!rules.contains { $0["type"] as? String == "required_status_checks" })
+        let review = try #require(
+            rules.first(where: { $0["type"] as? String == "pull_request" })?["parameters"]
+                as? [String: Any]
+        )
+        #expect(review["required_approving_review_count"] as? Int == 1)
+        #expect(review["require_last_push_approval"] as? Bool == true)
+        #expect(review["dismiss_stale_reviews_on_push"] as? Bool == true)
+        #expect(review["required_review_thread_resolution"] as? Bool == true)
+        #expect(review["allowed_merge_methods"] as? [String] == ["squash"])
+        #expect((review["required_reviewers"] as? [Any])?.isEmpty == true)
+    }
+
+    // Discriminating negative: a package contract missing its
+    // required_status_checks rule (name unchanged) must still be refused —
+    // isolates the rule-completeness check from the name/identity check.
+    @Test
+    func protectedMainPayloadRejectsAPayloadMissingTheRequiredStatusChecksRule() throws {
+        let canonical = URL(filePath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appending(path: "Policy/protected-main-ruleset.json")
+        var object = try #require(
+            try JSONSerialization.jsonObject(with: Data(contentsOf: canonical)) as? [String: Any]
+        )
+        var rules = try #require(object["rules"] as? [[String: Any]])
+        rules.removeAll { $0["type"] as? String == "required_status_checks" }
+        object["rules"] = rules
+        let url = FileManager.default.temporaryDirectory
+            .appending(path: "protected-main-ruleset-\(UUID().uuidString).json")
+        try JSONSerialization.data(withJSONObject: object).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        #expect(throws: RepositoryPolicy.ConfigurationError.self) {
+            try RepositoryPolicy.Ruleset.protectedMainPayload(from: url)
+        }
+    }
+
+    // Discriminating negative: a control contract carrying a smuggled
+    // required_status_checks rule (name unchanged) must be refused — the
+    // control contract's rule-type set admits exactly three rules.
+    @Test
+    func protectedMainControlPayloadRejectsASmuggledRequiredStatusChecksRule() throws {
+        let canonical = URL(filePath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appending(path: "Policy/protected-main-control-ruleset.json")
+        var object = try #require(
+            try JSONSerialization.jsonObject(with: Data(contentsOf: canonical)) as? [String: Any]
+        )
+        var rules = try #require(object["rules"] as? [[String: Any]])
+        rules.append([
+            "type": "required_status_checks",
+            "parameters": [
+                "do_not_enforce_on_create": false,
+                "required_status_checks": [["context": "ci / ci-ok"]],
+                "strict_required_status_checks_policy": true,
+            ],
+        ])
+        object["rules"] = rules
+        let url = FileManager.default.temporaryDirectory
+            .appending(path: "protected-main-control-ruleset-\(UUID().uuidString).json")
+        try JSONSerialization.data(withJSONObject: object).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        #expect(throws: RepositoryPolicy.ConfigurationError.self) {
+            try RepositoryPolicy.Ruleset.protectedMainControlPayload(from: url)
+        }
+    }
+
+    // Cross-validation: the control validator must refuse the real package
+    // payload (wrong name, and a required_status_checks rule the control
+    // rule-type set does not admit).
+    @Test
+    func protectedMainControlPayloadRejectsTheRealPackagePayload() throws {
+        let canonical = URL(filePath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appending(path: "Policy/protected-main-ruleset.json")
+
+        #expect(throws: RepositoryPolicy.ConfigurationError.self) {
+            try RepositoryPolicy.Ruleset.protectedMainControlPayload(from: canonical)
+        }
+    }
+
+    // Cross-validation: the package validator must refuse the real control
+    // payload (wrong name, and no required_status_checks rule at all).
+    @Test
+    func protectedMainPayloadRejectsTheRealControlPayload() throws {
+        let canonical = URL(filePath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appending(path: "Policy/protected-main-control-ruleset.json")
+
+        #expect(throws: RepositoryPolicy.ConfigurationError.self) {
+            try RepositoryPolicy.Ruleset.protectedMainPayload(from: canonical)
+        }
+    }
+
     @Test
     func `ruleset org enumerator excludes forks`() throws {
         let url = URL(filePath: #filePath)
@@ -262,7 +388,13 @@ struct RepositoryPolicyTests {
         }
         #expect(workflow.contains("accepted-plan:"))
         #expect(workflow.contains("timelineItems(itemTypes: [CROSS_REFERENCED_EVENT]"))
+        // The transaction engine admits every owning-issue type it is
+        // authorized against (swift-institute/.github#199, #201); pin all
+        // three comparisons, not just the first, so a future edit cannot
+        // silently narrow the admitted set back down without failing here.
         #expect(workflow.contains("issueType.name == \"Task\""))
+        #expect(workflow.contains("issueType.name == \"Bug\""))
+        #expect(workflow.contains("issueType.name == \"Feature\""))
         #expect(!workflow.contains("closingIssuesReferences"))
         #expect(!workflow.contains(".number == 176"))
     }

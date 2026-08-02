@@ -1,18 +1,95 @@
 import Foundation
 
 extension RepositoryPolicy {
-    /// The Institute protected-main branch ruleset contract, converged by
+    /// The Institute protected-main branch ruleset contracts, converged by
     /// `sync-metadata`'s `rulesets` job and read back for drift detection.
     ///
+    /// Two classes exist. `protectedMainPayload` is the package contract:
+    /// package repositories emit the `ci / ci-ok` status check, so it carries
+    /// a `required_status_checks` rule requiring that context. Control-plane
+    /// repositories (`.github` repos, Workspace, Research, Issues) never
+    /// produce that check, so `protectedMainControlPayload` is the same
+    /// contract minus the `required_status_checks` rule entirely — its
+    /// absence is fail-closed enforced by the validator, not merely
+    /// unchecked. The `rulesets` job classifies each target repository
+    /// mechanically (root `Package.swift` present ⇒ package; absent ⇒
+    /// control) and applies the class-correct contract
+    /// (swift-institute/.github#200).
+    ///
     /// Break-glass: in a genuine emergency, an organization admin may delete
-    /// the "Institute protected main" ruleset directly on the affected
-    /// repository to bypass enforcement. This bypass requires a durable
-    /// receipt comment on the owning issue naming who performed it, why, and
-    /// when. Once the emergency is over, the ruleset must be re-applied by
-    /// dispatching `sync-metadata` with `apply-rulesets: true` against that
-    /// repository — never left deleted or hand-recreated.
+    /// the "Institute protected main" (or "Institute protected main
+    /// (control)") ruleset directly on the affected repository to bypass
+    /// enforcement. This bypass requires a durable receipt comment on the
+    /// owning issue naming who performed it, why, and when. Once the
+    /// emergency is over, the ruleset must be re-applied by dispatching
+    /// `sync-metadata` with `apply-rulesets: true` against that repository —
+    /// never left deleted or hand-recreated.
     public enum Ruleset {
         public static func protectedMainPayload(from url: URL) throws -> Data {
+            let (object, rules) = try identity(
+                from: url,
+                expectedName: "Institute protected main"
+            )
+            guard
+                Set(rules.compactMap { $0["type"] as? String }) == [
+                    "deletion", "non_fast_forward", "pull_request", "required_status_checks",
+                ]
+            else {
+                throw ConfigurationError(
+                    "protected-main ruleset rules differ from the Institute contract"
+                )
+            }
+            try validatePullRequestRule(rules)
+            guard
+                let checks = rules.first(where: {
+                    $0["type"] as? String == "required_status_checks"
+                })?["parameters"] as? [String: Any],
+                checks["strict_required_status_checks_policy"] as? Bool == true,
+                checks["do_not_enforce_on_create"] as? Bool == false,
+                let required = checks["required_status_checks"] as? [[String: Any]],
+                required.count == 1, required.first?["context"] as? String == "ci / ci-ok"
+            else {
+                throw ConfigurationError(
+                    "protected-main status-check transaction differs from the Institute contract"
+                )
+            }
+            return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+        }
+
+        /// The control-plane variant: identical protections minus the
+        /// required-status-check rule, since control-plane repositories emit
+        /// no `ci / ci-ok`. Its rule-type set is exactly `deletion`,
+        /// `non_fast_forward`, `pull_request` — a payload carrying a fourth
+        /// rule of any type (including a smuggled `required_status_checks`)
+        /// fails closed, as does a package-shaped payload (wrong name, and a
+        /// `required_status_checks` rule the control set does not admit).
+        public static func protectedMainControlPayload(from url: URL) throws -> Data {
+            let (object, rules) = try identity(
+                from: url,
+                expectedName: "Institute protected main (control)"
+            )
+            guard
+                Set(rules.compactMap { $0["type"] as? String }) == [
+                    "deletion", "non_fast_forward", "pull_request",
+                ]
+            else {
+                throw ConfigurationError(
+                    "protected-main control ruleset rules differ from the Institute contract"
+                )
+            }
+            try validatePullRequestRule(rules)
+            return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+        }
+
+        /// Shared identity checks both contract classes require: schema
+        /// version, name/target/enforcement, no bypass actors, and the
+        /// main-only ref-name condition. Returns the schema-stripped object
+        /// together with its raw `rules` array for the caller's
+        /// class-specific rule validation.
+        private static func identity(
+            from url: URL,
+            expectedName: String
+        ) throws -> (object: [String: Any], rules: [[String: Any]]) {
             let source = try Data(contentsOf: url)
             guard var object = try JSONSerialization.jsonObject(with: source) as? [String: Any]
             else {
@@ -21,7 +98,7 @@ extension RepositoryPolicy {
             guard (object.removeValue(forKey: "schemaVersion") as? Int) == 1 else {
                 throw ConfigurationError("unsupported protected-main ruleset schema")
             }
-            guard object["name"] as? String == "Institute protected main",
+            guard object["name"] as? String == expectedName,
                 object["target"] as? String == "branch",
                 object["enforcement"] as? String == "active"
             else {
@@ -37,15 +114,16 @@ extension RepositoryPolicy {
             else {
                 throw ConfigurationError("protected-main ruleset must select only main")
             }
-            guard let rules = object["rules"] as? [[String: Any]],
-                Set(rules.compactMap { $0["type"] as? String }) == [
-                    "deletion", "non_fast_forward", "pull_request", "required_status_checks",
-                ]
-            else {
+            guard let rules = object["rules"] as? [[String: Any]] else {
                 throw ConfigurationError(
                     "protected-main ruleset rules differ from the Institute contract"
                 )
             }
+            return (object, rules)
+        }
+
+        /// The pull-request transaction both contract classes pin identically.
+        private static func validatePullRequestRule(_ rules: [[String: Any]]) throws {
             guard
                 let review = rules.first(where: { $0["type"] as? String == "pull_request" })?[
                     "parameters"
@@ -74,20 +152,6 @@ extension RepositoryPolicy {
                     "protected-main pull-request transaction differs from the Institute contract"
                 )
             }
-            guard
-                let checks = rules.first(where: {
-                    $0["type"] as? String == "required_status_checks"
-                })?["parameters"] as? [String: Any],
-                checks["strict_required_status_checks_policy"] as? Bool == true,
-                checks["do_not_enforce_on_create"] as? Bool == false,
-                let required = checks["required_status_checks"] as? [[String: Any]],
-                required.count == 1, required.first?["context"] as? String == "ci / ci-ok"
-            else {
-                throw ConfigurationError(
-                    "protected-main status-check transaction differs from the Institute contract"
-                )
-            }
-            return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
         }
     }
 }
