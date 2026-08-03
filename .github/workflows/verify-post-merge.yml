@@ -7,7 +7,7 @@
 # a repository's wave-mode PRs have merged (batchable — one dispatch per
 # repository after its drain completes, not per PR), dispatch invokes the
 # drained repository's own full-tier CI (the `workflow_dispatch` run of its
-# `CI.yml` thin caller — the same run the Swift verification in
+# `ci.yml` thin caller — the same run the Swift verification in
 # PR.Transaction+Verification.swift synthesizes as a `full-tier` check for
 # the `package` profile) against the exact expected main head, waits for its
 # conclusion, and reports on the outcome.
@@ -177,7 +177,7 @@ jobs:
           # same convention PR.Transaction.Snapshot.Source.swift relies on
           # to synthesize the `full-tier` check for the `package` profile.
           dispatched_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          gh workflow run CI.yml --repo "$repository" --ref "$default_branch"
+          gh workflow run ci.yml --repo "$repository" --ref "$default_branch"
 
           # Discovery tolerates a transient `gh` read error the same way the
           # poll below does — one bad call must not abort the whole watch —
@@ -187,7 +187,7 @@ jobs:
           run_id=""
           for _ in $(seq 1 30); do
             sleep 10
-            run_id=$(gh run list --repo "$repository" --workflow CI.yml \
+            run_id=$(gh run list --repo "$repository" --workflow ci.yml \
               --commit "$EXPECTED_HEAD" --event workflow_dispatch \
               --json databaseId,createdAt --limit 10 2>/dev/null \
               | jq -er --arg since "$dispatched_at" '
@@ -197,7 +197,7 @@ jobs:
           done
           if [[ -z "$run_id" ]]; then
             echo "lost-reason=run-not-discovered" >> "$GITHUB_OUTPUT"
-            echo "::error::No workflow_dispatch run of ${repository}'s CI.yml at ${EXPECTED_HEAD} appeared within the discovery window."
+            echo "::error::No workflow_dispatch run of ${repository}'s ci.yml at ${EXPECTED_HEAD} appeared within the discovery window."
             exit 1
           fi
           run_url="https://github.com/${repository}/actions/runs/${run_id}"
@@ -311,7 +311,7 @@ jobs:
           ### Minimal reproduction
 
           \`\`\`swift
-          gh workflow run CI.yml --repo ${TARGET_REPOSITORY} --ref <default-branch-at-${short}>
+          gh workflow run ci.yml --repo ${TARGET_REPOSITORY} --ref <default-branch-at-${short}>
           \`\`\`
 
           ### Swift version

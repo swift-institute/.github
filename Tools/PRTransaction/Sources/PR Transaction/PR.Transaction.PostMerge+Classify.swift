@@ -72,7 +72,7 @@ extension PRTransaction.PostMerge {
             additional = ""
         case .red(let conclusion, let runURL):
             observed = """
-                The mandatory post-merge full-tier verification (workflow_dispatch of `CI.yml` on `\(repository)`'s default branch at the wave-mode drained head `\(expectedHead)`) concluded `\(conclusion)`, not `success`. Run: \(runURL)
+                The mandatory post-merge full-tier verification (workflow_dispatch of `ci.yml` on `\(repository)`'s default branch at the wave-mode drained head `\(expectedHead)`) concluded `\(conclusion)`, not `success`. Run: \(runURL)
                 """
             expected = """
                 A wave-mode PR-tier landing (swift-institute/.github#211) requires the mandatory post-merge full tier to be green at the exact drained head. This run is red, so `\(repository)`'s default branch at `\(expectedHead)` has not been confirmed by the full-tier matrix the wave-mode profile deferred from PR-tier review.
@@ -81,7 +81,7 @@ extension PRTransaction.PostMerge {
         case .lost(let reason):
             let runNote = watch.runURL.map { " Run: \($0)" } ?? ""
             observed = """
-                The mandatory post-merge full-tier verification (workflow_dispatch of `CI.yml` on `\(repository)`'s default branch at the wave-mode drained head `\(expectedHead)`) did not reach a confirmed conclusion — the watch itself was lost (\(reason.rawValue)).\(runNote)
+                The mandatory post-merge full-tier verification (workflow_dispatch of `ci.yml` on `\(repository)`'s default branch at the wave-mode drained head `\(expectedHead)`) did not reach a confirmed conclusion — the watch itself was lost (\(reason.rawValue)).\(runNote)
                 """
             expected = """
                 A wave-mode PR-tier landing (swift-institute/.github#211) requires the mandatory post-merge full tier to be confirmed green at the exact drained head. A lost watch is not-green: `\(repository)`'s default branch at `\(expectedHead)` remains unconfirmed by the full-tier matrix the wave-mode profile deferred from PR-tier review, exactly as if the run itself had gone red.
@@ -102,7 +102,7 @@ extension PRTransaction.PostMerge {
             ### Minimal reproduction
 
             ```swift
-            gh workflow run CI.yml --repo \(repository) --ref <default-branch-at-\(short)>
+            gh workflow run ci.yml --repo \(repository) --ref <default-branch-at-\(short)>
             ```
 
             ### Swift version
