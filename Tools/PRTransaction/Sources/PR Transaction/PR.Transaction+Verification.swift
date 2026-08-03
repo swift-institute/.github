@@ -54,6 +54,35 @@ extension PRTransaction {
             guard snapshot.checks.filter({ $0.head == snapshot.head }).isEmpty else {
                 throw Error.uncitedChecks
             }
+
+        case .waveMechanical(let names, let mechanical):
+            // The mechanical-remediation class attestation is a second,
+            // independent gate from profile selection: a plan cannot admit
+            // this fast lane by choosing the case alone.
+            guard mechanical else { throw Error.profile }
+            guard !names.isEmpty,
+                names.allSatisfy({ !$0.isEmpty }),
+                Set(names).count == names.count
+            else {
+                throw Error.profile
+            }
+
+            // Deliberately no full-tier requirement: the mandatory
+            // post-merge full tier (verify-post-merge.yml) is the deferred
+            // gate for this profile.
+            for name in names {
+                let supplied = snapshot.checks.filter { $0.name == name }
+                guard !supplied.isEmpty else { throw Error.missing(name) }
+                guard supplied.allSatisfy({ terminal($0.conclusion) }) else {
+                    throw Error.nonterminal(name)
+                }
+
+                let current = supplied.filter { $0.head == snapshot.head }
+                guard !current.isEmpty else { throw Error.stale(name) }
+                guard current.allSatisfy({ $0.conclusion == "success" }) else {
+                    throw Error.unsuccessful(name)
+                }
+            }
         }
     }
 

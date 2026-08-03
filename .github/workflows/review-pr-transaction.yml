@@ -4,14 +4,24 @@
 # independent transaction model accepts a public, exact-head plan and all
 # current-head merge prerequisites other than the approval it is about to add.
 # `accepted-plan` is `Snapshot.Source.Plan` JSON. Its `verification` is exactly
-# `{ "package": {} }`, `{ "control": { "checks": [<non-empty names>] } }`, or
-# `{ "reviewOnly": {} }`; absent, empty, duplicate, or additional profile
-# fields fail closed. `reviewOnly` is reserved for legitimately check-less
-# PRs (paths outside every path-filtered workflow's trigger, e.g. Tools-only
-# changes in this repository — swift-institute/.github#200): the Swift
-# verification (PR.Transaction+Verification.swift) accepts it only when the
-# exact-head check-run collection is empty, and fails closed the instant any
-# check run — including a synthesized full-tier run — is cited at that head.
+# `{ "package": {} }`, `{ "control": { "checks": [<non-empty names>] } }`,
+# `{ "reviewOnly": {} }`, or `{ "waveMechanical": { "checks": [<non-empty
+# names>], "mechanical": true } }`; absent, empty, duplicate, or additional
+# profile fields fail closed. `reviewOnly` is reserved for legitimately
+# check-less PRs (paths outside every path-filtered workflow's trigger, e.g.
+# Tools-only changes in this repository — swift-institute/.github#200): the
+# Swift verification (PR.Transaction+Verification.swift) accepts it only when
+# the exact-head check-run collection is empty, and fails closed the instant
+# any check run — including a synthesized full-tier run — is cited at that
+# head. `waveMechanical` is the mechanical-remediation fast lane
+# (swift-institute/.github#211): every named check must be green at the exact
+# head, like `control`, but it deliberately admits no full-tier requirement —
+# the mandatory post-merge full tier (verify-post-merge.yml) is the deferred
+# gate. It is admissible only when the plan's own `mechanical: true` field
+# attests the mechanical-remediation class; selecting the profile without
+# that attestation fails closed exactly as an absent check list does.
+# The approval body records which profile was used, naming the fast lane in
+# the audit trail whenever it is the one that admitted the transaction.
 # The target App token is scoped to one selected repository. Minting fails when
 # that owner/repository is outside the App's existing Institute installations.
 
@@ -128,7 +138,14 @@ jobs:
                 (.control.checks | nonempty_strings) and
                 (.control.checks | unique | length) == (.control.checks | length)
               ) or
-              (keys == ["reviewOnly"] and .reviewOnly == {});
+              (keys == ["reviewOnly"] and .reviewOnly == {}) or
+              (
+                keys == ["waveMechanical"] and
+                (.waveMechanical | keys == ["checks","mechanical"]) and
+                (.waveMechanical.checks | nonempty_strings) and
+                (.waveMechanical.checks | unique | length) == (.waveMechanical.checks | length) and
+                (.waveMechanical.mechanical == true)
+              );
             select(type == "object")
             | select(.accepted == true)
             | select(.repository | type == "string" and length > 0)
@@ -337,7 +354,13 @@ jobs:
           swift run --package-path Tools/PRTransaction pr-transaction produce producer-input.json \
             > transaction.json
           swift run --package-path Tools/PRTransaction pr-transaction review transaction.json
+          # The plan already passed the closed-union `verification` gate
+          # above, so its sole top-level key is exactly one of the four
+          # known profile names — safe to interpolate into the approval
+          # body verbatim below.
+          profile=$(jq -er '.verification | keys[0]' <<<"$plan")
           echo "head=${head}" >> "$GITHUB_OUTPUT"
+          echo "profile=${profile}" >> "$GITHUB_OUTPUT"
 
       - name: Approve the still-current head
         shell: bash
@@ -346,6 +369,7 @@ jobs:
           TARGET_REPOSITORY: ${{ steps.target.outputs.repository }}
           PULL: ${{ steps.target.outputs.pull }}
           HEAD: ${{ steps.guard.outputs.head }}
+          PROFILE: ${{ steps.guard.outputs.profile }}
         run: |
           set -euo pipefail
           repository="$TARGET_REPOSITORY"
@@ -354,4 +378,4 @@ jobs:
           gh api --method POST "repos/${repository}/pulls/${PULL}/reviews" \
             -f event=APPROVE \
             -f commit_id="$HEAD" \
-            -f body='Independent transaction review: exact-head guards satisfied; approval is not merge authorization.' >/dev/null
+            -f body="Independent transaction review: exact-head guards satisfied via the ${PROFILE} profile; approval is not merge authorization." >/dev/null

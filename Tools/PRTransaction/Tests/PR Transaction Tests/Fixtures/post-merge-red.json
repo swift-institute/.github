@@ -1,0 +1,8 @@
+{
+  "repository": "swift-foundations/swift-tests",
+  "expectedHead": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "stepOutcome": "success",
+  "conclusion": "failure",
+  "runURL": "https://github.com/swift-foundations/swift-tests/actions/runs/456",
+  "lostReason": null
+}

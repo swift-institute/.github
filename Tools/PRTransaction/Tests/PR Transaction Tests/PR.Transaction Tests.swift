@@ -14,6 +14,9 @@ extension PRTransaction.Transaction.Unit {
     private var native: PRTransaction.Snapshot.Verification {
         .control(checks: ["fixtures", "correspondence", "scan"])
     }
+    private var wave: PRTransaction.Snapshot.Verification {
+        .waveMechanical(checks: ["fixtures", "correspondence", "scan"], mechanical: true)
+    }
 
     private func fixture(
         repository: String = "swift-institute/.github",
@@ -370,9 +373,145 @@ extension PRTransaction.Transaction.Unit {
         #expect(decoded.plan.payload.verification == .reviewOnly)
     }
 
-    // Positive controls: adding the reviewOnly profile must not weaken the
-    // package or control profiles — each still refuses an entirely empty
-    // exact-head check collection exactly as before.
+    // MARK: - waveMechanical profile (swift-institute/.github#211)
+    //
+    // The mechanical-remediation fast lane: every named check must be green
+    // at the exact head, exactly like `control`, but deliberately without a
+    // full-tier requirement — the mandatory post-merge full tier is the
+    // deferred gate. Admissible only when `mechanical` attests the
+    // mechanical-remediation class; the attestation is a second, independent
+    // gate from choosing the profile.
+
+    @Test func `wave-mode profile accepts declared mechanical checks`() throws {
+        #expect(
+            try PRTransaction.review(
+                fixture(
+                    verification: wave,
+                    checks: [check("fixtures"), check("correspondence"), check("scan")]
+                )
+            ) == .readyForReview
+        )
+    }
+    @Test func `wave-mode profile succeeds without a full-tier check present at the head`() throws {
+        // The entire point of the fast lane: a full-tier check is not among
+        // the checks supplied here, and admission still succeeds.
+        #expect(
+            try PRTransaction.review(
+                fixture(
+                    verification: wave,
+                    checks: [check("fixtures"), check("correspondence"), check("scan")]
+                )
+            ) == .readyForReview
+        )
+        #expect(
+            !fixture(
+                verification: wave,
+                checks: [check("fixtures"), check("correspondence"), check("scan")]
+            ).checks.contains { $0.name == "full-tier" }
+        )
+    }
+    @Test func `serialized plan and payload retain the wave-mode profile`() throws {
+        let snapshot = fixture(
+            verification: wave,
+            checks: [check("fixtures"), check("correspondence"), check("scan")]
+        )
+        let data = try JSONEncoder().encode(snapshot)
+        let decoded = try JSONDecoder().decode(PRTransaction.Snapshot.self, from: data)
+        #expect(decoded.plan.verification == wave)
+        #expect(decoded.plan.payload.verification == wave)
+    }
+    @Test func `wave-mode profile rejects a non-mechanical declaration`() {
+        // A plan cannot admit the fast lane by selecting the case alone —
+        // the mechanical-class attestation must also be true.
+        #expect(throws: PRTransaction.Error.profile) {
+            try PRTransaction.review(
+                fixture(
+                    verification: .waveMechanical(
+                        checks: ["fixtures", "correspondence", "scan"],
+                        mechanical: false
+                    ),
+                    checks: [check("fixtures"), check("correspondence"), check("scan")]
+                )
+            )
+        }
+    }
+    @Test func `wave-mode profile rejects an empty required-check list`() {
+        #expect(throws: PRTransaction.Error.profile) {
+            try PRTransaction.review(
+                fixture(
+                    verification: .waveMechanical(checks: [], mechanical: true),
+                    checks: []
+                )
+            )
+        }
+    }
+    @Test func `wave-mode profile rejects duplicate required-check names`() {
+        #expect(throws: PRTransaction.Error.profile) {
+            try PRTransaction.review(
+                fixture(
+                    verification: .waveMechanical(
+                        checks: ["fixtures", "fixtures"],
+                        mechanical: true
+                    ),
+                    checks: [check("fixtures")]
+                )
+            )
+        }
+    }
+    @Test func `wave-mode profile rejects a missing named check`() {
+        #expect(throws: PRTransaction.Error.missing("scan")) {
+            try PRTransaction.review(
+                fixture(verification: wave, checks: [check("fixtures"), check("correspondence")])
+            )
+        }
+    }
+    @Test func `wave-mode profile rejects a stale named check`() {
+        #expect(throws: PRTransaction.Error.stale("scan")) {
+            try PRTransaction.review(
+                fixture(
+                    verification: wave,
+                    checks: [
+                        check("fixtures"), check("correspondence"), check("scan", revision: old),
+                    ]
+                )
+            )
+        }
+    }
+    @Test func `wave-mode profile rejects a failed named check`() {
+        #expect(throws: PRTransaction.Error.unsuccessful("scan")) {
+            try PRTransaction.review(
+                fixture(
+                    verification: wave,
+                    checks: [
+                        check("fixtures"), check("correspondence"),
+                        check("scan", conclusion: "failure"),
+                    ]
+                )
+            )
+        }
+    }
+    @Test func `wave-mode profile rejects any nonterminal supplied run`() {
+        #expect(throws: PRTransaction.Error.nonterminal("scan")) {
+            try PRTransaction.review(
+                fixture(
+                    verification: wave,
+                    checks: [
+                        check("fixtures"), check("correspondence"), check("scan"),
+                        check("scan", conclusion: nil),
+                    ]
+                )
+            )
+        }
+    }
+    @Test func `wave-mode profile still rejects an entirely empty check collection`() {
+        #expect(throws: PRTransaction.Error.missing("fixtures")) {
+            try PRTransaction.review(fixture(verification: wave, checks: []))
+        }
+    }
+
+    // Positive controls: adding the reviewOnly and waveMechanical profiles
+    // must not weaken the package or control profiles — each still refuses
+    // an entirely empty exact-head check collection exactly as before.
     @Test func `package profile still rejects an entirely empty check collection`() {
         #expect(throws: PRTransaction.Error.missingCI) {
             try PRTransaction.review(fixture(checks: []))
