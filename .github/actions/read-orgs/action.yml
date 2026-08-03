@@ -11,6 +11,74 @@
 # action directory. Adding an ecosystem org is an edit to that one file
 # rather than to N orchestrators.
 #
+# PEER-INSTITUTE CONSUMPTION (#212). The manifest SOURCE is parameterizable
+# so a peer institute (e.g. rule-institute) can consume the public reusable
+# workflows with ITS OWN org population and ITS OWN GitHub App credentials.
+# Precedence: `manifest-path` (a file already on the runner) beats
+# `manifest-repository` (owner/repo whose default-branch root orgs.yaml is
+# fetched via the API) beats the in-action default. Both new inputs default
+# empty, so every existing caller resolves the in-action manifest exactly
+# as before — byte-identical behavior absent the new inputs.
+#
+# This parameterizes CONSUMPTION of the workflows, not enrollment: the
+# 2026-07-28 ruling in orgs.yaml stands — rule orgs never enter the
+# swift-institute manifest and swift-institute-bot is never installed on
+# rule orgs. swift-institute's own automation scope is unchanged: no
+# swift-institute workflow passes either new input.
+#
+# Peer thin-caller pattern (drivers stay institute-local; the composite and
+# the per-org reusables are the shared surface). A peer writes its own
+# cron/dispatch driver in <peer>/.github, enumerates via this composite
+# with its own manifest, and fans out into the per-org reusable with its
+# own App credentials mapped onto the declared secret slots:
+#
+#   jobs:
+#     config:
+#       runs-on: ubuntu-latest
+#       outputs:
+#         orgs: ${steps.read.outputs.orgs}
+#       steps:
+#         - id: read
+#           uses: swift-institute/.github/.github/actions/read-orgs@main
+#           with:
+#             manifest-repository: rule-institute/.github
+#             filter: 'select(.status=="active") | .name'
+#     sweep:
+#       needs: config
+#       strategy:
+#         matrix:
+#           org: ${fromJSON(needs.config.outputs.orgs)}
+#       permissions:
+#         contents: read
+#       uses: swift-institute/.github/.github/workflows/sync-metadata.yml@main
+#       with:
+#         org: ${matrix.org}
+#       secrets:
+#         SWIFT_INSTITUTE_BOT_APP_CLIENT_ID: ${secrets.RULE_INSTITUTE_BOT_APP_CLIENT_ID}
+#         SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY: ${secrets.RULE_INSTITUTE_BOT_APP_PRIVATE_KEY}
+#
+# (Single-brace ${...} above stands for the GitHub ${{ ... }} expression
+# syntax, matching this header's existing spelling style.)
+#
+# STATUS-FILTER NOTE for peer manifests: the automatic
+# `select(.status!="archived")` pre-filter encodes THIS manifest's status
+# vocabulary (active | archived). A peer manifest with a different
+# vocabulary (rule-institute uses active | reserved | frozen) is NOT
+# narrowed by it — measured 2026-08-03: the default filter passed
+# reserved and frozen rule orgs through. A peer therefore passes an
+# explicit filter such as `select(.status=="active") | .name`, as in the
+# example above.
+#
+# The secret
+# SLOT names are the callee's binding names, not an assertion about whose
+# App is used — `secrets: inherit` does not cross the org boundary, so a
+# peer maps its own App credentials onto the declared slots explicitly.
+# Reusable workflows accepting these slots: sync-metadata.yml,
+# validate-branch-pins.yml, validate-sub-org-wrappers.yml (and swift-ci.yml
+# / swift-docs.yml, which declared them before #212). validate-branch-pins
+# and validate-sub-org-wrappers also accept `manifest-repository` directly
+# and thread it to their internal read-orgs calls end to end.
+#
 # Filter is a per-record jq expression (operates on one record at a time;
 # composite handles iteration and array-wrapping). Use `select(...)` to
 # narrow records and a final `.name` (or other field) to project the
@@ -31,9 +99,11 @@
 
 name: 'Read orgs manifest'
 description: >
-  Read the canonical Swift Institute ecosystem orgs manifest at
-  ${github.action_path}/orgs.yaml and emit a JSON array of matching
-  org names suitable for matrix:org via fromJSON.
+  Read an ecosystem orgs manifest and emit a JSON array of matching org
+  names suitable for matrix:org via fromJSON. Default source is the
+  canonical Swift Institute manifest in the action directory; a peer
+  institute may point `manifest-path` or `manifest-repository` at its
+  own manifest instead.
 
 inputs:
   filter:
@@ -52,11 +122,47 @@ inputs:
       `select(.status!="archived")` pre-filter).
     required: false
     default: 'false'
+  manifest-path:
+    description: >
+      Path to an orgs manifest file already present on the runner (for
+      example from a prior checkout step). When non-empty, that file is
+      read INSTEAD of the in-action orgs.yaml. Takes precedence over
+      `manifest-repository`. Default empty: the in-action manifest,
+      byte-identical to pre-parameterization behavior.
+    required: false
+    default: ''
+  manifest-repository:
+    description: >
+      GitHub repository (`owner/repo`) whose default-branch root
+      `orgs.yaml` is fetched via the API and read INSTEAD of the
+      in-action manifest. Ignored when `manifest-path` is set. Default
+      empty: the in-action manifest. This parameterizes peer-institute
+      CONSUMPTION of the workflows; it does not enroll any org in the
+      swift-institute manifest (the 2026-07-28 ruling in orgs.yaml
+      stands).
+    required: false
+    default: ''
+  token:
+    description: >
+      Token used to fetch `manifest-repository` contents via the GitHub
+      API. Defaults to the workflow's `github.token`, which can read the
+      calling repository — the common case where a peer manifest lives
+      in the caller's own `.github` repository. Unused when
+      `manifest-repository` is empty.
+    required: false
+    default: ${{ github.token }}
 
 outputs:
   orgs:
     description: 'JSON array of matching org names. Suitable for fromJSON in matrix:org.'
     value: ${{ steps.read.outputs.orgs }}
+  manifest-file:
+    description: >
+      Runner-local path of the manifest file the composite actually read
+      (the in-action orgs.yaml, the `manifest-path` file, or the
+      temporary file fetched from `manifest-repository`). Lets a caller
+      hand the SAME manifest to a downstream consumer.
+    value: ${{ steps.read.outputs.manifest-file }}
 
 runs:
   using: 'composite'
@@ -77,8 +183,43 @@ runs:
         FILTER: ${{ inputs.filter }}
         INCLUDE_ARCHIVED: ${{ inputs.include-archived }}
         ACTION_PATH: ${{ github.action_path }}
+        MANIFEST_PATH: ${{ inputs.manifest-path }}
+        MANIFEST_REPOSITORY: ${{ inputs.manifest-repository }}
+        MANIFEST_TOKEN: ${{ inputs.token }}
       run: |
         set -euo pipefail
+        # Resolve the manifest source (#212). Default — both inputs empty,
+        # every pre-existing caller — is the in-action manifest, exactly
+        # as before parameterization.
+        if [[ -n "$MANIFEST_PATH" ]]; then
+          if [[ ! -f "$MANIFEST_PATH" ]]; then
+            echo "::error::read-orgs: manifest-path '$MANIFEST_PATH' does not exist on the runner."
+            exit 1
+          fi
+          MANIFEST="$MANIFEST_PATH"
+        elif [[ -n "$MANIFEST_REPOSITORY" ]]; then
+          # Shape guard: owner/repo only — the value is interpolated into
+          # an API URL, so reject anything with path or query characters.
+          if [[ ! "$MANIFEST_REPOSITORY" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
+            echo "::error::read-orgs: manifest-repository must be 'owner/repo', got '$MANIFEST_REPOSITORY'."
+            exit 1
+          fi
+          MANIFEST=$(mktemp "${RUNNER_TEMP:-/tmp}/read-orgs-manifest.XXXXXX")
+          auth_args=()
+          if [[ -n "$MANIFEST_TOKEN" ]]; then
+            auth_args=(-H "Authorization: Bearer ${MANIFEST_TOKEN}")
+          fi
+          if ! curl -fsSL "${auth_args[@]}" \
+              -H "Accept: application/vnd.github.raw+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/repos/${MANIFEST_REPOSITORY}/contents/orgs.yaml" \
+              -o "$MANIFEST"; then
+            echo "::error::read-orgs: failed to fetch orgs.yaml from the root of ${MANIFEST_REPOSITORY}'s default branch. Check the repository name and the token's read access."
+            exit 1
+          fi
+        else
+          MANIFEST="${ACTION_PATH}/orgs.yaml"
+        fi
         # Install yq to /usr/local/bin/yq specifically (not "wherever").
         # Path-specific gate is load-bearing: ubuntu-latest pre-installs
         # yq in /usr/bin/, which `command -v yq` would find — but the
@@ -113,7 +254,8 @@ runs:
         else
           status_prefilter='select(.status!="archived") |'
         fi
-        result=$("$YQ" -o=json -I=0 "${ACTION_PATH}/orgs.yaml" \
+        result=$("$YQ" -o=json -I=0 "$MANIFEST" \
           | jq -c "[ .[] | ${status_prefilter} ${FILTER} ]")
         echo "orgs=${result}" >> "$GITHUB_OUTPUT"
-        echo "Resolved orgs: ${result}"
+        echo "manifest-file=${MANIFEST}" >> "$GITHUB_OUTPUT"
+        echo "Resolved orgs from ${MANIFEST}: ${result}"
