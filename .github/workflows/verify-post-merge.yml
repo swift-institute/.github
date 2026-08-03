@@ -1,0 +1,235 @@
+# verify-post-merge.yml — mandatory post-merge full-tier verification for a
+# wave-mode (waveMechanical) drained repository (swift-institute/.github#211).
+#
+# The wave-mode profile in review-pr-transaction.yml deliberately admits no
+# full-tier requirement at PR-tier time — that is the entire point of the
+# mechanical-remediation fast lane. This workflow is the deferred gate: after
+# a repository's wave-mode PRs have merged (batchable — one dispatch per
+# repository after its drain completes, not per PR), dispatch invokes the
+# drained repository's own full-tier CI (the `workflow_dispatch` run of its
+# `CI.yml` thin caller — the same run the Swift verification in
+# PR.Transaction+Verification.swift synthesizes as a `full-tier` check for
+# the `package` profile) against the exact expected main head, waits for its
+# conclusion, and on anything other than a clean `success` files a Bug on the
+# drained repository naming the run.
+#
+# SCOPE-DOWN (first landing, swift-institute/.github#211): outcome item 4
+# asks for a revert PR of the drained commits in addition to the Bug. Full
+# auto-revert-PR generation is NOT implemented here — see the PR body for
+# the open question (this workflow's two inputs, repository + expected head,
+# carry no baseline/pre-wave commit coordinate, so there is no input from
+# which to compute "the drained commits" without inventing a third input
+# the outcome text does not specify). This first landing files the Bug and
+# reports a clear manual-revert instruction instead of silently dropping the
+# auto-revert requirement; a follow-up Task extends it once the baseline
+# coordinate question is resolved.
+#
+# DESIGN NOTE — no Swift step: the decision this workflow makes (is the
+# dispatched run's own terminal conclusion "success") is a single
+# GitHub-native field read, not new verification/decision logic — unlike the
+# wave-mode profile's admission predicate (the actual new decision logic,
+# which lives in Swift per the engine's existing shape), this workflow's
+# gate is trivial glue and stays in gh/jq per the existing thin-caller
+# pattern (e.g. notify-linter-republish.yml's cross-repo dispatch, and
+# apply-rulesets-fleet.yml's per-leg conclusion aggregation).
+#
+# Credential: swift-institute-bot App, minted per-job and downscoped to the
+# single drained repository (actions:write to dispatch/read the full-tier
+# run, contents:read to read its default-branch head, issues:write to file
+# the Bug on red) — the same App used by review-pr-transaction.yml and
+# notify-linter-republish.yml.
+
+name: verify-post-merge
+
+on:
+  workflow_dispatch:
+    inputs:
+      repository:
+        description: 'Exact drained Institute repository in owner/name form.'
+        required: true
+        type: string
+      expected-head:
+        description: 'Exact 40-hex commit the drained repository''s default branch must be at before dispatching its full-tier CI.'
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  verify:
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    # A full-tier matrix can queue behind fleet-wide macOS-runner-pool
+    # saturation (measured 2026-08-03: up to 7h41m under saturation) before
+    # its longest leg even starts; 360 is the GitHub-hosted per-job ceiling.
+    timeout-minutes: 360
+    permissions:
+      contents: read
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Resolve exact drained repository
+        id: target
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_REPOSITORY: ${{ inputs.repository }}
+          EXPECTED_HEAD: ${{ inputs.expected-head }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$TARGET_REPOSITORY" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9._-]+$ ]]; then
+            echo "::error::'repository' must be one exact owner/name coordinate."
+            exit 1
+          fi
+          if [[ ! "$EXPECTED_HEAD" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::'expected-head' must be one exact 40-hex commit."
+            exit 1
+          fi
+          visibility=$(gh api "repos/${TARGET_REPOSITORY}" --jq '.visibility // ""')
+          if [[ "$visibility" != "public" ]]; then
+            echo "::error::${TARGET_REPOSITORY} is not a public repository (visibility=${visibility:-unknown}); this workflow verifies public Institute repositories only."
+            exit 1
+          fi
+          echo "repository=${TARGET_REPOSITORY}" >> "$GITHUB_OUTPUT"
+          echo "owner=${TARGET_REPOSITORY%/*}" >> "$GITHUB_OUTPUT"
+          echo "name=${TARGET_REPOSITORY#*/}" >> "$GITHUB_OUTPUT"
+          echo "expected-head=${EXPECTED_HEAD}" >> "$GITHUB_OUTPUT"
+
+      - name: Mint narrowed drain-verification token
+        id: token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: ${{ steps.target.outputs.owner }}
+          repositories: ${{ steps.target.outputs.name }}
+          permission-contents: read
+          permission-actions: write
+          permission-issues: write
+
+      - name: Dispatch and await the drained repository's full tier
+        id: dispatch
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          TARGET_REPOSITORY: ${{ steps.target.outputs.repository }}
+          EXPECTED_HEAD: ${{ steps.target.outputs.expected-head }}
+        run: |
+          set -euo pipefail
+          repository="$TARGET_REPOSITORY"
+          default_branch=$(gh api "repos/${repository}" --jq '.default_branch')
+          current=$(gh api "repos/${repository}/commits/${default_branch}" --jq '.sha')
+          if [[ "$current" != "$EXPECTED_HEAD" ]]; then
+            echo "::error::${repository}@${default_branch} is ${current}, not the expected drained head ${EXPECTED_HEAD}. Something landed on the default branch since the wave drained; re-dispatch with the exact current head to verify it instead."
+            exit 1
+          fi
+
+          # The full tier is the workflow_dispatch run of the fleet thin
+          # caller, which every package repository names `CI` — the exact
+          # same convention PR.Transaction.Snapshot.Source.swift relies on
+          # to synthesize the `full-tier` check for the `package` profile.
+          gh workflow run CI.yml --repo "$repository" --ref "$default_branch"
+
+          run_id=""
+          for _ in $(seq 1 30); do
+            sleep 10
+            run_id=$(gh run list --repo "$repository" --workflow CI.yml \
+              --commit "$EXPECTED_HEAD" --event workflow_dispatch \
+              --json databaseId --jq '.[0].databaseId // empty' --limit 5)
+            [[ -n "$run_id" ]] && break
+          done
+          if [[ -z "$run_id" ]]; then
+            echo "::error::No workflow_dispatch run of ${repository}'s CI.yml at ${EXPECTED_HEAD} appeared within the poll window."
+            exit 1
+          fi
+          echo "Dispatched run: https://github.com/${repository}/actions/runs/${run_id}"
+
+          status=""
+          for _ in $(seq 1 2000); do
+            status=$(gh run view "$run_id" --repo "$repository" --json status --jq '.status')
+            [[ "$status" == "completed" ]] && break
+            sleep 60
+          done
+          if [[ "$status" != "completed" ]]; then
+            echo "::error::Run ${run_id} did not reach a terminal status within the job timeout."
+            exit 1
+          fi
+
+          conclusion=$(gh run view "$run_id" --repo "$repository" --json conclusion --jq '.conclusion')
+          run_url=$(gh run view "$run_id" --repo "$repository" --json url --jq '.url')
+          echo "run-id=${run_id}" >> "$GITHUB_OUTPUT"
+          echo "run-url=${run_url}" >> "$GITHUB_OUTPUT"
+          echo "conclusion=${conclusion}" >> "$GITHUB_OUTPUT"
+
+      - name: Report a green post-merge full tier
+        if: steps.dispatch.outputs.conclusion == 'success'
+        shell: bash
+        env:
+          TARGET_REPOSITORY: ${{ steps.target.outputs.repository }}
+          EXPECTED_HEAD: ${{ steps.target.outputs.expected-head }}
+          RUN_URL: ${{ steps.dispatch.outputs.run-url }}
+        run: |
+          {
+            echo "## verify-post-merge: GREEN"
+            echo ""
+            echo "- repository: ${TARGET_REPOSITORY}"
+            echo "- expected head: ${EXPECTED_HEAD}"
+            echo "- run: ${RUN_URL}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: File a Bug and report a manual-revert instruction on red
+        if: steps.dispatch.outputs.conclusion != 'success' && steps.dispatch.outputs.conclusion != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          TARGET_REPOSITORY: ${{ steps.target.outputs.repository }}
+          EXPECTED_HEAD: ${{ steps.target.outputs.expected-head }}
+          RUN_URL: ${{ steps.dispatch.outputs.run-url }}
+          CONCLUSION: ${{ steps.dispatch.outputs.conclusion }}
+        run: |
+          set -euo pipefail
+          repository="$TARGET_REPOSITORY"
+          short="${EXPECTED_HEAD:0:12}"
+          body_file=$(mktemp)
+          cat > "$body_file" <<EOF
+          ### Observed behavior
+
+          The mandatory post-merge full-tier verification (workflow_dispatch of \`CI.yml\` on \`${repository}\`'s default branch at the wave-mode drained head \`${EXPECTED_HEAD}\`) concluded \`${CONCLUSION}\`, not \`success\`. Run: ${RUN_URL}
+
+          ### Expected behavior
+
+          A wave-mode PR-tier landing (swift-institute/.github#211) requires the mandatory post-merge full tier to be green at the exact drained head. This run is red, so \`${repository}\`'s default branch at \`${EXPECTED_HEAD}\` has not been confirmed by the full-tier matrix the wave-mode profile deferred from PR-tier review.
+
+          ### Minimal reproduction
+
+          \`\`\`swift
+          gh workflow run CI.yml --repo ${repository} --ref <default-branch-at-${short}>
+          \`\`\`
+
+          ### Swift version
+
+          N/A — filed automatically by verify-post-merge.yml from the run's own conclusion.
+
+          ### Platform
+
+          N/A — see the failing leg(s) in the run linked above for the exact platform/job that went red.
+
+          ### Additional context
+
+          **Manual revert required.** Full auto-revert-PR generation is not implemented in this first landing of swift-institute/.github#211 (see that Task and its landing PR for the open question on the baseline commit coordinate needed to compute "the drained commits" automatically). To revert by hand: identify the commit(s) that landed on \`${repository}\`'s default branch as part of this wave drain, then on a new branch run \`git revert --no-commit <oldest-drained-commit>^..${EXPECTED_HEAD}\`, push the branch normally, and open a revert pull request through the normal review path. Never force-push and never push directly to the default branch.
+          EOF
+          gh issue create --repo "$repository" --type Bug \
+            --title "Post-merge full tier ${CONCLUSION} at ${short} (wave-mode drain)" \
+            --body-file "$body_file"
+          {
+            echo "## verify-post-merge: RED"
+            echo ""
+            echo "- repository: ${repository}"
+            echo "- expected head: ${EXPECTED_HEAD}"
+            echo "- run: ${RUN_URL} (conclusion: ${CONCLUSION})"
+            echo "- Bug filed on ${repository} with a manual-revert instruction — auto-revert-PR generation is not yet implemented (swift-institute/.github#211 first landing)."
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 1

@@ -15,5 +15,16 @@ extension PRTransaction.Snapshot {
         /// fails it closed, since that would be an uncited check standing in
         /// for a review this profile does not admit.
         case reviewOnly
+
+        /// The mechanical-remediation fast lane (swift-institute/.github#211).
+        /// Requires every named repository-native check to succeed at the
+        /// exact head, exactly like `control` — deliberately without a
+        /// synthesized `full-tier` requirement, since the mandatory
+        /// post-merge full tier (verify-post-merge.yml) is the deferred
+        /// gate this profile exists to move off the review path. Admissible
+        /// only when `mechanical` attests the mechanical-remediation class;
+        /// a plan selecting this profile without that attestation fails
+        /// closed exactly as an absent or malformed check list does.
+        case waveMechanical(checks: [String], mechanical: Bool)
     }
 }

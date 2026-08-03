@@ -10,6 +10,9 @@ extension PRTransaction.Transaction {
         private var control: PRTransaction.Snapshot.Verification {
             .control(checks: ["fixtures", "correspondence", "scan"])
         }
+        private var wave: PRTransaction.Snapshot.Verification {
+            .waveMechanical(checks: ["fixtures", "correspondence", "scan"], mechanical: true)
+        }
 
         @Test func `package plan survives producer JSON and CLI validation`() throws {
             let output = try produce("package-source")
@@ -63,6 +66,40 @@ extension PRTransaction.Transaction {
                 try PRTransaction.Command.run(["review", output.path])
                     == "pr-transaction: ready-for-bot-review head=\(head)"
             )
+        }
+
+        // Positive: a valid mechanical-remediation wave plan — named checks
+        // green at the exact head, no full-tier check present, mechanical
+        // class explicitly attested — produces a passing waveMechanical
+        // transaction end to end through the producer and CLI
+        // (swift-institute/.github#211).
+        @Test func `wave-mode plan survives producer JSON and CLI validation`() throws {
+            let output = try produce("wave-mechanical-source")
+            defer { try? FileManager.default.removeItem(at: output) }
+
+            let snapshot = try decode(output)
+            #expect(snapshot.plan.task == snapshot.owningTask)
+            #expect(snapshot.plan.verification == wave)
+            #expect(snapshot.plan.payload.verification == wave)
+            #expect(!snapshot.checks.contains { $0.name == "full-tier" })
+            #expect(
+                try PRTransaction.Command.run(["review", output.path])
+                    == "pr-transaction: ready-for-bot-review head=\(head)"
+            )
+        }
+
+        // Negative: a wave-mode plan whose `mechanical` attestation is
+        // false is rejected even though its named checks are otherwise
+        // exactly as green as the accepted case above — the class
+        // attestation is an independent gate from choosing the profile
+        // (swift-institute/.github#211).
+        @Test func `wave-mode plan on a non-mechanical declaration is rejected`() throws {
+            let output = try produce("wave-non-mechanical-source")
+            defer { try? FileManager.default.removeItem(at: output) }
+
+            #expect(throws: PRTransaction.Error.profile) {
+                try PRTransaction.Command.run(["review", output.path])
+            }
         }
 
         @Test func `CLI rejects a stale producer plan`() throws {
