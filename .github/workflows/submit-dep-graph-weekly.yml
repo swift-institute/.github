@@ -50,6 +50,16 @@ on:
         type: boolean
         required: false
         default: false
+      visibility:
+        description: 'Filter targets by visibility: public | private | internal | all. Default public — swift-institute''s own fleet is public; a peer institute with a private fleet (#244) supplies its own value.'
+        type: string
+        required: false
+        default: 'public'
+      exclude-archived:
+        description: 'Exclude archived repos from org-mode enumeration. Default true. A peer''s archived-repo posture need not match ours (#244).'
+        type: boolean
+        required: false
+        default: true
 
 jobs:
   config:
@@ -137,8 +147,15 @@ jobs:
         uses: swift-institute/.github/.github/actions/enumerate-org-public-repos@main
         with:
           org: ${{ matrix.org }}
-          visibility: 'public'
+          visibility: ${{ inputs.visibility || 'public' }}
           exclude-forks: 'true'
+          # `!= false` (not `||`) — this workflow's schedule trigger leaves
+          # `inputs` entirely unset, and `inputs.exclude-archived || true`
+          # would wrongly force `true` even for an explicit manual-dispatch
+          # `exclude-archived: false`. `!= false` treats unset (schedule,
+          # default true) and explicit true identically, while still
+          # honouring an explicit false.
+          exclude-archived: ${{ inputs.exclude-archived != false }}
           gh-token: ${{ steps.token.outputs.token }}
 
       - name: Sweep org
@@ -148,6 +165,7 @@ jobs:
           ORG: ${{ matrix.org }}
           DRY_RUN: ${{ inputs.dry-run || 'false' }}
           ENUM_REPOS: ${{ steps.enum.outputs.repos }}
+          INPUT_VISIBILITY: ${{ inputs.visibility || 'public' }}
         run: |
           set -euo pipefail
           # Read repos from composite output; drop any blank lines defensively.
@@ -156,6 +174,16 @@ jobs:
             [[ -n "$line" ]] && targets+=("$line")
           done <<< "$ENUM_REPOS"
           echo "Targets enumerated: ${#targets[@]}"
+          # Loud-empty-reach (#244): a warning, not a hard failure — an org
+          # can legitimately have zero non-fork/non-archived repos matching
+          # the requested visibility, and this job runs once per org via the
+          # matrix, so failing here would redden legs that reached exactly
+          # what they were scoped to reach.
+          zero_reach=0
+          if [[ "${#targets[@]}" -eq 0 ]]; then
+            zero_reach=1
+            echo "::warning::submit-dep-graph-weekly reached 0 repos for org '${ORG}' (visibility=${INPUT_VISIBILITY}). This leg will report success, but it submitted nothing."
+          fi
           successes=0
           failures=0
           skipped=0
@@ -216,6 +244,12 @@ jobs:
           done
           {
             echo "## Org $ORG — dep-graph submission (γ-2b)"
+            if [[ $zero_reach -eq 1 ]]; then
+              echo ""
+              echo "> [!WARNING]"
+              echo "> 0 repos enumerated for org \`${ORG}\` (visibility=${INPUT_VISIBILITY}). This leg reports success, but it reached nothing."
+              echo ""
+            fi
             echo "- Targets:    ${#targets[@]}"
             echo "- Successes:  $successes"
             echo "- Skipped:    $skipped (no Package.swift)"

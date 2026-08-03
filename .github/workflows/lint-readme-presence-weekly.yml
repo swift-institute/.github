@@ -33,6 +33,11 @@ on:
         type: boolean
         required: false
         default: false
+      visibility:
+        description: 'Filter targets by visibility: public | private | internal | all. Default public — swift-institute''s own fleet is public; a peer institute with a private fleet (#244) supplies its own value.'
+        type: string
+        required: false
+        default: 'public'
 
 jobs:
   # Org population from the canonical read-orgs manifest (#43 item 7) —
@@ -70,7 +75,7 @@ jobs:
     with:
       org: ${{ matrix.org }}
       dry-run: ${{ inputs.dry-run || false }}
-      visibility: public
+      visibility: ${{ inputs.visibility || 'public' }}
     secrets: inherit
 
   report:

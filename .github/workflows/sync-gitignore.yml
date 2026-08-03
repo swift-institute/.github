@@ -54,6 +54,16 @@ on:
         type: boolean
         required: false
         default: true
+      visibility:
+        description: 'Filter targets by visibility: public | private | internal | all. Default public — swift-institute''s own fleet is public; a peer institute with a private fleet (#244) supplies its own value.'
+        type: string
+        required: false
+        default: 'public'
+      exclude-archived:
+        description: 'Exclude archived repos from org-mode enumeration. Default true. A peer''s archived-repo posture need not match ours (#244).'
+        type: boolean
+        required: false
+        default: true
     outputs:
       repos-changed:
         description: 'Number of repos whose .gitignore diverged from canon.'
@@ -74,6 +84,16 @@ on:
         required: false
       dry-run:
         description: 'Render and diff without pushing.'
+        type: boolean
+        required: false
+        default: true
+      visibility:
+        description: 'Filter targets by visibility: public | private | internal | all.'
+        type: string
+        required: false
+        default: 'public'
+      exclude-archived:
+        description: 'Exclude archived repos from org-mode enumeration.'
         type: boolean
         required: false
         default: true
@@ -145,17 +165,36 @@ jobs:
           GH_TOKEN: ${{ steps.mint-token.outputs.token }}
           INPUT_REPO: ${{ inputs.repo }}
           INPUT_ORG: ${{ inputs.org }}
+          INPUT_VISIBILITY: ${{ inputs.visibility }}
+          INPUT_EXCLUDE_ARCHIVED: ${{ inputs.exclude-archived }}
         run: |
           set -euo pipefail
           if [ -n "$INPUT_REPO" ]; then
             echo "$INPUT_REPO" > /tmp/targets.txt
           else
             : "${INPUT_ORG:?org or repo input required}"
-            gh repo list "$INPUT_ORG" --no-archived --limit 1000 \
-              --visibility public --json nameWithOwner --jq '.[].nameWithOwner' \
+            viz_flag=()
+            case "$INPUT_VISIBILITY" in
+              public|private|internal) viz_flag=(--visibility "$INPUT_VISIBILITY") ;;
+              all|"") ;;
+              *) echo "::error::Unknown visibility '${INPUT_VISIBILITY}' (expected: public, private, internal, all)"; exit 1 ;;
+            esac
+            archived_flag=()
+            [ "$INPUT_EXCLUDE_ARCHIVED" = "false" ] || archived_flag=(--no-archived)
+            gh repo list "$INPUT_ORG" "${archived_flag[@]}" --limit 1000 \
+              "${viz_flag[@]}" --json nameWithOwner --jq '.[].nameWithOwner' \
               > /tmp/targets.txt
           fi
-          echo "resolved $(wc -l < /tmp/targets.txt) target(s)"
+          resolved=$(wc -l < /tmp/targets.txt)
+          echo "resolved ${resolved} target(s)"
+          echo "resolved=${resolved}" >> "$GITHUB_OUTPUT"
+          # Loud-empty-reach (#244): org-mode reaching zero targets is
+          # flagged distinctly from a genuine zero-diff run — a warning, not
+          # a hard failure, since an org can legitimately have zero repos
+          # matching the requested visibility/archived filter.
+          if [ -z "$INPUT_REPO" ] && [ "$resolved" -eq 0 ]; then
+            echo "::warning::sync-gitignore reached 0 repos for org '${INPUT_ORG}' (visibility=${INPUT_VISIBILITY:-public}, exclude-archived=${INPUT_EXCLUDE_ARCHIVED:-true}). This run will report success, but it converged nothing — verify scope before treating a green run as evidence of convergence."
+          fi
 
       - name: Render and propagate
         id: propagate
@@ -164,6 +203,10 @@ jobs:
           CANON: ${{ github.workspace }}/institute-github/canon/gitignore-package.txt
           RENDERER: ${{ github.workspace }}/institute-github/.github/scripts/render-gitignore.py
           DRY_RUN: ${{ inputs.dry-run }}
+          INPUT_REPO: ${{ inputs.repo }}
+          INPUT_ORG: ${{ inputs.org }}
+          INPUT_VISIBILITY: ${{ inputs.visibility }}
+          RESOLVED_COUNT: ${{ steps.targets.outputs.resolved }}
         run: |
           set -euo pipefail
           changed=0; pushed=0; skipped=0; failed=0
@@ -226,6 +269,11 @@ jobs:
           {
             echo "## sync-gitignore"
             echo
+            if [ -z "${INPUT_REPO:-}" ] && [ "${RESOLVED_COUNT:-0}" -eq 0 ]; then
+              echo "> [!WARNING]"
+              echo "> 0 repos enumerated for org \`${INPUT_ORG}\` (visibility=${INPUT_VISIBILITY:-public}). This run reports success, but it reached nothing — do not read it as a converged fleet."
+              echo
+            fi
             echo "| outcome | count |"
             echo "|---|---:|"
             echo "| diverged from canon | $changed |"
