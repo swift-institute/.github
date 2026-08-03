@@ -272,6 +272,15 @@ validators:
     rule-id-regex: '^API-NAME-009'
     migrate-to-base: yes
 
+  - rule-id: BRANCH-PIN-001
+    validator-script: .github/scripts/validate-branch-pins.py
+    workflow-file: .github/workflows/validate-branch-pins.yml
+    status: active
+    self-firing: deferred
+    discovery-mode: per-package-org-sweep
+    rule-id-regex: '^BRANCH-PIN-001'
+    migrate-to-base: 'no (per-package-org-sweep deferred to B-2)'
+
   - rule-id: DOC-CATALOG
     validator-script: .github/scripts/validate-docc-structure.py
     workflow-file: ''
@@ -280,6 +289,24 @@ validators:
     discovery-mode: single-target
     rule-id-regex: '^DOC-'
     migrate-to-base: yes
+
+  - rule-id: GH-IGNORE-001
+    validator-script: .github/scripts/validate-gitignore.py
+    workflow-file: .github/workflows/validate-gitignore.yml
+    status: active
+    self-firing: deferred
+    discovery-mode: per-package-org-sweep
+    rule-id-regex: '^GH-IGNORE-001'
+    migrate-to-base: 'no (per-package-org-sweep deferred to B-2)'
+
+  - rule-id: GH-IGNORE-002
+    validator-script: .github/scripts/validate-gitignore.py
+    workflow-file: .github/workflows/validate-gitignore.yml
+    status: active
+    self-firing: deferred
+    discovery-mode: per-package-org-sweep
+    rule-id-regex: '^GH-IGNORE-002'
+    migrate-to-base: 'no (per-package-org-sweep deferred to B-2)'
 
   - rule-id: GH-REPO-METADATA
     validator-script: .github/scripts/validate-github-metadata.py
@@ -446,6 +473,22 @@ validators:
     discovery-mode: per-package-org-sweep
     rule-id-regex: '^TARGET-IMPORT-EDGE'
     migrate-to-base: 'no (needs dump-package + local dep-manifest resolution; CI form joins the B-2 sweep design)'
+
+  # swift-institute/.github#219 (principal ruling, comment 5164746902,
+  # 2026-08-03): synthetic-fixture-only self-check against this repo's own
+  # canonical .swiftlint.yml (never an arbitrary target repo), so it has no
+  # dedicated scan workflow — it is exercised entirely through
+  # lint-validator-fixtures.yml's fixture suite. self-firing: active because
+  # that workflow carries push + pull_request triggers over
+  # .github/scripts/validate-*.py (this script included).
+  - rule-id: SWIFTLINT-WITNESS-EXEMPTION
+    validator-script: .github/scripts/validate-swiftlint-witness-exemption.py
+    workflow-file: .github/workflows/lint-validator-fixtures.yml
+    status: active
+    self-firing: active
+    discovery-mode: single-target
+    rule-id-regex: '^SWIFTLINT-WITNESS-EXEMPTION'
+    migrate-to-base: 'n/a (self-test only against this repo''s own canonical config; no scan job of its own)'
 
   # ─── Skill corpus publication hygiene ──────────────────────────────
   #

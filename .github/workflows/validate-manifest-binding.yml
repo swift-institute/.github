@@ -165,6 +165,14 @@ jobs:
               }' /tmp/findings.tsv
             fi
           } > "$GITHUB_STEP_SUMMARY"
+          # Also to stdout — $GITHUB_STEP_SUMMARY is unreachable from the run
+          # list and the API (output.summary is null on the check run), so the
+          # log is the only place a red is classifiable through the API.
+          # Mirrors validate-branch-pins.yml / validate-gitignore.yml.
+          echo "validate-manifest-binding: ${violations} violation(s)"
+          if [ "$violations" -gt 0 ]; then
+            awk -F'\t' '$2 == "CI-MANIFEST-BINDING" { printf("  %s\t%s\t%s\n", $1, $2, $3) }' /tmp/findings.tsv
+          fi
           if [ "$violations" -gt 0 ] && [ "$DRY_RUN" != "true" ]; then
             exit 1
           fi
