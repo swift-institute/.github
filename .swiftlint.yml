@@ -144,7 +144,7 @@ function_parameter_count:
 custom_rules:
   typed_throws_required:
     name: "Typed Throws Required ([API-ERR-001])"
-    regex: '(?<!\bfunc provideScope\([^{}]{0,500})(?<!\bfunc encode\(to encoder:\s{0,100}(?:any\s{1,100})?Encoder\)\s{0,100})(?<!\binit\(from decoder:\s{0,100}(?:any\s{1,100})?Decoder\)\s{0,100})(?<!\bfunc expansion\([^{}]{0,500}\bin context:\s{0,100}(?:some|any)\s{1,100}MacroExpansionContext\s{0,100}\)\s{0,100})\bthrows\b\s*(?![\(:])'
+    regex: '(?<!\bfunc provideScope\([^{}]{0,500})(?<!\bfunc encode\(to encoder:\s{0,100}(?:any\s{1,100})?Encoder\)\s{0,100})(?<!\binit\(from decoder:\s{0,100}(?:any\s{1,100})?Decoder\)\s{0,100})(?<!\bfunc expansion\([^{}]{0,500}\bin context:\s{0,100}(?:some|any)\s{1,100}MacroExpansionContext\s{0,100}\)\s{0,100})(?<!:\s{0,10}\([^()]{0,200}\)\s{0,10}(?:async\s{0,10})?)(?<!:\s{0,10}\([^()]{0,200}\)\s{0,10}(?:async\s{0,10})?throws\s{0,10}->\s{0,10}[A-Za-z_][A-Za-z0-9_]{0,60}\s{0,20}\)\s{0,10}(?:async\s{0,10})?)\bthrows\b\s*(?![\(:])'
     message: "Throwing functions/methods/inits MUST use typed throws ([API-ERR-001]). Use 'throws(SomeError)' rather than untyped 'throws'."
     severity: warning
     match_kinds:
@@ -196,6 +196,64 @@ custom_rules:
     # and the rule still fires, which is the discriminator [#219] rules
     # on: ordinary `any <Protocol>`/untyped-`throws` API surface (e.g.
     # swift-ietf/swift-rfc-3987's `URL+IRI.swift`) is unaffected.
+    #
+    # swift-institute/.github#260 (coordinator ruling, comment
+    # 5169948783, 2026-08-03) extends the same bounded-lookbehind family
+    # to the closure-passthrough rethrow shape: a `throws` function whose
+    # ONLY untyped-throws source is rethrowing a generic closure
+    # parameter's error alongside the function's own failures. Swift
+    # typed throws has no error-union type — `throws(E | F)` is
+    # inexpressible — so a function that must independently surface its
+    # own typed failures (e.g. `PoolError.timeout`) AND transparently
+    # propagate whatever a caller-supplied closure throws cannot express
+    # both under one `throws(E)` clause without an API-breaking wrapper
+    # error type. The stdlib itself uses untyped throws for exactly this
+    # shape (`withThrowingTaskGroup`, `withCheckedThrowingContinuation`).
+    # Witness: swift-foundations/swift-resource-pool `ResourcePool.
+    # withResource(timeout:_:)` (head 8ca28f8) —
+    #   public func withResource<T: Sendable>(
+    #     timeout: Duration = .seconds(30),
+    #     _ operation: (Resource) async throws -> T
+    #   ) async throws -> T
+    # Two lookbehinds cover the two `throws` occurrences this shape
+    # produces:
+    #   1. The closure PARAMETER's own declared `throws` (its function-
+    #      type annotation, e.g. `(Resource) async throws -> T`) is
+    #      always exempt when it is a labeled parameter's function type —
+    #      that `throws` describes what the closure TYPE accepts, not
+    #      the enclosing declaration's own error contract, and a caller-
+    #      supplied closure's error type is unconstrained by definition.
+    #      Anchor: `:` then a bounded `(...)` closure-parameter type then
+    #      optional `async`, immediately before `throws`.
+    #   2. The ENCLOSING function's own trailing `throws` (e.g. the
+    #      `) async throws -> T {` after the full parameter list) is
+    #      exempt ONLY when that same closure-parameter shape is the
+    #      LAST parameter in the list, i.e. immediately (modulo
+    #      whitespace) followed by the parameter list's closing `)` and
+    #      the function's own `async throws`. This is the conservative,
+    #      mechanically recognizable proxy for "the function's sole
+    #      untyped-throws source is the passthrough closure": if another
+    #      parameter follows the closure, or the closure is not
+    #      immediately adjacent to the outer `)`, the second lookbehind
+    #      does not match and the rule still fires (per-site
+    #      disable+REASON remains available for shapes this proxy
+    #      misses — under-matching is preferred to over-matching).
+    # Known limitation (documented, not hidden): this is a structural/
+    # textual match, not a data-flow analysis — a function whose last
+    # parameter happens to be a stored-not-called throwing closure (never
+    # actually invoked to produce the rethrow) matches the same shape and
+    # is also exempted. This mirrors the #219 precedent, which is
+    # likewise a signature-shape match, not a semantic one; the fleet
+    # surface this could over-match is a function accepting a trailing
+    # throwing closure it does not call, which is itself an unusual and
+    # narrow shape.
+    # Ruling conditions: an exempted declaration must document its error
+    # contract in its doc comment (which typed failures it throws itself,
+    # and that the closure's error is rethrown transparently) — the
+    # pattern already on `withResource` at resource-pool head 8ca28f8.
+    # Revisit trigger: this exemption is reviewed the day Swift ships an
+    # error-union or typed-rethrows capability; it exists because of the
+    # expressiveness gap, not despite it.
     excluded:
       - 'Tests/.*'
   no_xctest_import:
