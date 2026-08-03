@@ -79,6 +79,15 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # validate-swiftlint-witness-exemption.py's fixtures shell out to the real
+  # swiftlint binary (the only faithful arbiter of the ICU/NSRegularExpression
+  # regex behavior swift-institute/.github#219's exemption depends on).
+  # Mirrors swift-ci.yml's SWIFTLINT_VERSION/SWIFTLINT_SHA256 pin; re-lock
+  # both together on any version bump.
+  SWIFTLINT_VERSION: "0.63.3"
+  SWIFTLINT_SHA256: "26db741d43f2f2dc26c0cf16911100a3e186c3d1dbb59e55ad3ac87b0de4538f"
+
 jobs:
   fixtures:
     if: ${{ !github.event.repository.private }}
@@ -105,6 +114,36 @@ jobs:
         run: |
           set -euo pipefail
           python3 -c 'import yaml; print("PyYAML", yaml.__version__)'
+
+      - name: Cache SwiftLint binary
+        id: cache-swiftlint
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: /usr/local/bin/swiftlint
+          key: ${{ runner.os }}-swiftlint-${{ env.SWIFTLINT_VERSION }}
+
+      # swiftlint-witness-exemption fixtures need the real binary; the
+      # validator exits 2 (environment defect, not a finding) when it is
+      # absent, which run.sh's fail/ fixtures would otherwise misreport as
+      # the exemption predicate itself being broken.
+      - name: Install SwiftLint ${{ env.SWIFTLINT_VERSION }}
+        if: steps.cache-swiftlint.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/swiftlint.zip \
+            "https://github.com/realm/SwiftLint/releases/download/${{ env.SWIFTLINT_VERSION }}/swiftlint_linux_amd64.zip"
+          # [CI-082] verify against pinned SHA-256 before unpack/install. Fails
+          # closed on digest mismatch (no `|| true` swallow).
+          echo "${SWIFTLINT_SHA256}  /tmp/swiftlint.zip" | sha256sum -c -
+          unzip -q /tmp/swiftlint.zip -d /tmp/swiftlint_extracted
+          sudo mv /tmp/swiftlint_extracted/swiftlint /usr/local/bin/
+          sudo chmod +x /usr/local/bin/swiftlint
+          rm -rf /tmp/swiftlint.zip /tmp/swiftlint_extracted
+
+      - name: Assert swiftlint is available
+        shell: bash
+        run: swiftlint --version
 
       - name: Run fixture suite
         shell: bash
