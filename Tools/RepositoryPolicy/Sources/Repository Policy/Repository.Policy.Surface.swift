@@ -176,9 +176,29 @@ extension RepositoryPolicy {
 
     public struct SurfaceSweepReport: Codable, Equatable, Sendable {
         public let reports: [SurfaceReport]
+        /// Repository full name to the typed reason it was not scanned.
+        ///
+        /// A silent `continue` cannot be told apart from a clean result, so
+        /// an unscanned repository is named with its reason rather than
+        /// vanishing (the swift-institute/.github#160 convention, as already
+        /// applied to the reconcile receipt).
+        ///
+        /// This is also where an **archived** repository lands, which is the
+        /// deliberate answer to unfixable-by-construction findings
+        /// (swift-institute/.github#247). An archived repository is
+        /// read-only: its machine-local paths cannot be remediated by
+        /// anyone, so listing them among the actionable advisories would
+        /// mean a permanent, unclearable residue — and a report that can
+        /// never reach zero trains its readers to ignore it. Naming the
+        /// repository and the reason preserves the fact that it was seen and
+        /// why it is not actionable, without polluting the list of findings
+        /// someone is expected to act on. Unarchiving moves it back into the
+        /// scanned set with no policy change.
+        public let excluded: [String: String]
 
-        public init(reports: [SurfaceReport]) {
+        public init(reports: [SurfaceReport], excluded: [String: String] = [:]) {
             self.reports = reports.sorted { $0.repository < $1.repository }
+            self.excluded = excluded
         }
 
         public var passed: Bool {

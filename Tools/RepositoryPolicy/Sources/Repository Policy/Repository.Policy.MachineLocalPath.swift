@@ -43,6 +43,25 @@ import Foundation
 //      different repository and is unresolvable without it. That
 //      ascent-then-descent distinction is the whole test.
 //
+// Enumeration, not matching, is where this class of predicate actually
+// fails, so the manifest scan is a character stream over the whole file with
+// `.package(...)` membership tracked by paren depth, never a line-oriented
+// match on `.package(path:`. That is what lets it see all of:
+//
+//   - the two-argument `.package(name:path:)` form;
+//   - a wrapped argument list, with `path:` and its literal on different
+//     lines;
+//   - a dependency inside `#if`, which is lawful and conditionally compiled.
+//
+// STATED NON-GOAL: a **computed** path — one built from a variable, a
+// constant, or string interpolation — is invisible to any text predicate,
+// including this one. It is out of scope, and `machineLocalPathCannotSeeA
+// ComputedPath` is a *negative* control that encodes the blind spot as a
+// test. This matters because the completion criterion for a remediation
+// sweep must never be "re-run the same predicate and see zero": any form the
+// predicate cannot see reports converged. A clean report from this rule means
+// "no literal machine-local path", not "no machine-local path".
+//
 // Convergent prior art: `.github/scripts/validate-skill-hygiene.py` carries a
 // `skill-machine-path` check over published Skill corpora, and independently
 // arrived at the same hosted-runner exemption. That check is narrower in
@@ -249,6 +268,9 @@ extension RepositoryPolicy {
             var arguments = [PathArgument]()
             let label = Array("path:")
             let packageCall = Array(".package(")
+            let lineComment = Array("//")
+            let blockCommentOpen = Array("/*")
+            let blockCommentClose = Array("*/")
             var packageCallDepths = [Int]()
             var depth = 0
             var index = 0
@@ -271,6 +293,31 @@ extension RepositoryPolicy {
                     index += 1
                     continue
                 }
+                // Comments are skipped before paren counting, because a
+                // stray `)` in a comment would unbalance the depth and
+                // silently drop every `.package(...)` after it — a
+                // fail-toward-not-firing bug, the exact failure this rule
+                // exists to prevent.
+                if matches(lineComment, characters: characters, at: index) {
+                    while index < characters.count, characters[index] != "\n" { index += 1 }
+                    continue
+                }
+                if matches(blockCommentOpen, characters: characters, at: index) {
+                    var nesting = 1
+                    index += blockCommentOpen.count
+                    while index < characters.count, nesting > 0 {
+                        if matches(blockCommentOpen, characters: characters, at: index) {
+                            nesting += 1
+                            index += blockCommentOpen.count
+                        } else if matches(blockCommentClose, characters: characters, at: index) {
+                            nesting -= 1
+                            index += blockCommentClose.count
+                        } else {
+                            index += 1
+                        }
+                    }
+                    continue
+                }
                 if character == "(" {
                     depth += 1
                     index += 1
@@ -291,8 +338,14 @@ extension RepositoryPolicy {
                 if matches(label, characters: characters, at: index),
                     index == 0 || !isIdentifierCharacter(characters[index - 1])
                 {
+                    // Whitespace, not spaces: the argument list may be
+                    // wrapped, putting the literal on the line after its
+                    // label. A single-line reading is blind to that, which
+                    // is how the peer's census predicate missed a shape.
                     var cursor = index + label.count
-                    while cursor < characters.count, characters[cursor] == " " { cursor += 1 }
+                    while cursor < characters.count, characters[cursor].isWhitespace {
+                        cursor += 1
+                    }
                     if cursor < characters.count, characters[cursor] == "\"",
                         let value = stringLiteral(characters: characters, openingQuote: cursor)
                     {
