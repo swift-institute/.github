@@ -13,7 +13,7 @@ extension PRTransaction.PostMerge.Outcome {
         /// cancellation (an unhandled error in the dispatch/poll script).
         case watchFailed = "watch-failed"
 
-        /// No `workflow_dispatch` run of the drained repository's `CI.yml`
+        /// No `workflow_dispatch` run of the drained repository's `ci.yml`
         /// at the exact expected head was discovered within the discovery
         /// window — including the dispatch/discovery race where a run
         /// lands at a newer commit than the one this watch expected.
