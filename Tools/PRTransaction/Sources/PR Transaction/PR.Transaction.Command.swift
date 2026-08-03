@@ -16,6 +16,12 @@ extension PRTransaction {
                 encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
                 return String(decoding: try encoder.encode(source.snapshot()), as: UTF8.self)
             }
+            if operation == "post-merge" {
+                let watch = try JSONDecoder().decode(PostMerge.Watch.self, from: data)
+                let encoder = JSONEncoder()
+                encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+                return String(decoding: try encoder.encode(PostMerge.report(for: watch)), as: UTF8.self)
+            }
             let snapshot = try JSONDecoder().decode(Snapshot.self, from: data)
             let verdict: Verdict
             switch operation {
