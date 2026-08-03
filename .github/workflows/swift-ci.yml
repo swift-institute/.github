@@ -575,7 +575,7 @@ jobs:
           repository: ${{ inputs.target-repo || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name) || github.repository }}
           ref: ${{ inputs.ref || (github.event_name == 'pull_request' && github.event.pull_request.head.sha) || github.sha }}
 
-      - uses: swift-institute/.github/.github/actions/configure-private-repos@5cc13635cfc295c1cb69dd87b17016218483e618  # main 2026-07-31, advanced ahead of the weekly pin-advance cadence for #139 (client-id fix)
+      - uses: swift-institute/.github/.github/actions/configure-private-repos@d1af72d05bf8262fb3918a2f1607b82fafcafdf9  # main 2026-08-03, pin-advance to main HEAD (dependabot #224 via #232); no functional change to this action in range
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
           app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
@@ -634,7 +634,7 @@ jobs:
           repository: ${{ inputs.target-repo || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name) || github.repository }}
           ref: ${{ inputs.ref || (github.event_name == 'pull_request' && github.event.pull_request.head.sha) || github.sha }}
 
-      - uses: swift-institute/.github/.github/actions/configure-private-repos@5cc13635cfc295c1cb69dd87b17016218483e618  # main 2026-07-31, advanced ahead of the weekly pin-advance cadence for #139 (client-id fix)
+      - uses: swift-institute/.github/.github/actions/configure-private-repos@d1af72d05bf8262fb3918a2f1607b82fafcafdf9  # main 2026-08-03, pin-advance to main HEAD (dependabot #224 via #232); no functional change to this action in range
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
           app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
@@ -642,7 +642,7 @@ jobs:
           app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
           enabled: ${{ inputs.enable-private-repos }}
 
-      - uses: swift-institute/.github/.github/actions/install-system-deps@21712e687fcaddad8703e2b4669b83c555925fc8  # main 2026-08-01, derives nested-test graph packages; pin does not cover apt-fetched packages
+      - uses: swift-institute/.github/.github/actions/install-system-deps@d1af72d05bf8262fb3918a2f1607b82fafcafdf9  # main 2026-08-03, pin-advance to main HEAD (dependabot #224 via #232); no functional change to this action in range; pin does not cover apt-fetched packages
 
       - name: Print toolchain info
         run: |
@@ -702,7 +702,7 @@ jobs:
           repository: ${{ inputs.target-repo || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name) || github.repository }}
           ref: ${{ inputs.ref || (github.event_name == 'pull_request' && github.event.pull_request.head.sha) || github.sha }}
 
-      - uses: swift-institute/.github/.github/actions/configure-private-repos@5cc13635cfc295c1cb69dd87b17016218483e618  # main 2026-07-31, advanced ahead of the weekly pin-advance cadence for #139 (client-id fix)
+      - uses: swift-institute/.github/.github/actions/configure-private-repos@d1af72d05bf8262fb3918a2f1607b82fafcafdf9  # main 2026-08-03, pin-advance to main HEAD (dependabot #224 via #232); no functional change to this action in range
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
           app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
@@ -710,7 +710,7 @@ jobs:
           app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
           enabled: ${{ inputs.enable-private-repos }}
 
-      - uses: swift-institute/.github/.github/actions/install-system-deps@21712e687fcaddad8703e2b4669b83c555925fc8  # main 2026-08-01, derives nested-test graph packages; pin does not cover apt-fetched packages
+      - uses: swift-institute/.github/.github/actions/install-system-deps@d1af72d05bf8262fb3918a2f1607b82fafcafdf9  # main 2026-08-03, pin-advance to main HEAD (dependabot #224 via #232); no functional change to this action in range; pin does not cover apt-fetched packages
 
       - name: Print toolchain info
         run: |
@@ -796,7 +796,7 @@ jobs:
           repository: ${{ inputs.target-repo || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name) || github.repository }}
           ref: ${{ inputs.ref || (github.event_name == 'pull_request' && github.event.pull_request.head.sha) || github.sha }}
 
-      - uses: swift-institute/.github/.github/actions/configure-private-repos@5cc13635cfc295c1cb69dd87b17016218483e618  # main 2026-07-31, advanced ahead of the weekly pin-advance cadence for #139 (client-id fix)
+      - uses: swift-institute/.github/.github/actions/configure-private-repos@d1af72d05bf8262fb3918a2f1607b82fafcafdf9  # main 2026-08-03, pin-advance to main HEAD (dependabot #224 via #232); no functional change to this action in range
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
           app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
@@ -804,7 +804,7 @@ jobs:
           app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
           enabled: ${{ inputs.enable-private-repos }}
 
-      - uses: swift-institute/.github/.github/actions/install-system-deps@21712e687fcaddad8703e2b4669b83c555925fc8  # main 2026-08-01, derives nested-test graph packages; pin does not cover apt-fetched packages
+      - uses: swift-institute/.github/.github/actions/install-system-deps@d1af72d05bf8262fb3918a2f1607b82fafcafdf9  # main 2026-08-03, pin-advance to main HEAD (dependabot #224 via #232); no functional change to this action in range; pin does not cover apt-fetched packages
 
       - name: Print toolchain info
         run: |
@@ -861,7 +861,7 @@ jobs:
           repository: ${{ inputs.target-repo || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name) || github.repository }}
           ref: ${{ inputs.ref || (github.event_name == 'pull_request' && github.event.pull_request.head.sha) || github.sha }}
 
-      - uses: swift-institute/.github/.github/actions/configure-private-repos@5cc13635cfc295c1cb69dd87b17016218483e618  # main 2026-07-31, advanced ahead of the weekly pin-advance cadence for #139 (client-id fix)
+      - uses: swift-institute/.github/.github/actions/configure-private-repos@d1af72d05bf8262fb3918a2f1607b82fafcafdf9  # main 2026-08-03, pin-advance to main HEAD (dependabot #224 via #232); no functional change to this action in range
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
           app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
@@ -949,7 +949,7 @@ jobs:
           repository: ${{ inputs.target-repo || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name) || github.repository }}
           ref: ${{ inputs.ref || (github.event_name == 'pull_request' && github.event.pull_request.head.sha) || github.sha }}
 
-      - uses: swift-institute/.github/.github/actions/configure-private-repos@5cc13635cfc295c1cb69dd87b17016218483e618  # main 2026-07-31, advanced ahead of the weekly pin-advance cadence for #139 (client-id fix)
+      - uses: swift-institute/.github/.github/actions/configure-private-repos@d1af72d05bf8262fb3918a2f1607b82fafcafdf9  # main 2026-08-03, pin-advance to main HEAD (dependabot #224 via #232); no functional change to this action in range
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
           app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
@@ -1420,7 +1420,7 @@ jobs:
           fi
 
       - name: Configure private-dep access
-        uses: swift-institute/.github/.github/actions/configure-private-repos@5cc13635cfc295c1cb69dd87b17016218483e618  # main 2026-07-31, advanced ahead of the weekly pin-advance cadence for #139 (client-id fix)
+        uses: swift-institute/.github/.github/actions/configure-private-repos@d1af72d05bf8262fb3918a2f1607b82fafcafdf9  # main 2026-08-03, pin-advance to main HEAD (dependabot #224 via #232); no functional change to this action in range
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
           app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
