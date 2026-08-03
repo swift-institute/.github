@@ -70,6 +70,8 @@ validator_for() {
             echo "$SCRIPTS_DIR/validate-swiftlint-rules.py" ;;
         swiftlint-witness-exemption)
             echo "$SCRIPTS_DIR/validate-swiftlint-witness-exemption.py" ;;
+        swiftlint-bitpattern-comment)
+            echo "$SCRIPTS_DIR/validate-swiftlint-bitpattern-comment.py" ;;
         ci-102)
             echo "$SCRIPTS_DIR/validate-composite-action-descriptions.py" ;;
         ci-103)
@@ -138,6 +140,7 @@ prefix_for() {
         ci-097)          echo "CI-097" ;;
         ci-100)          echo "CI-100" ;;
         swiftlint-witness-exemption) echo "SWIFTLINT-WITNESS-EXEMPTION" ;;
+        swiftlint-bitpattern-comment) echo "SWIFTLINT-BITPATTERN-COMMENT" ;;
         ci-102)          echo "CI-102" ;;
         ci-032)          echo "CI-032" ;;
         ci-040)          echo "CI-040" ;;

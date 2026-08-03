@@ -427,7 +427,15 @@ custom_rules:
     # since that's where Int(bitPattern:) legitimately lives per
     # [IMPL-010]. Same-package internal use is also excluded via path —
     # this rule fires at *consumer* call sites.
-    regex: 'Int\(bitPattern:\s*\w+(\.\w+)*\)\s*[+\-*/]'
+    #
+    # The trailing whitespace before the operator is INTRA-LINE only
+    # (`[ \t]*`, not `\s*`) and the `/` alternative excludes a following
+    # `/` or `*` (`(?![/*])`) — #218 (swift-tensors witness): `\s*` spans
+    # newlines, so a statement-ending call followed by a blank line and a
+    # `//` comment, or by a same-line `// trailing` comment, matched the
+    # comment's opening slash as division. True division (`/` not opening
+    # a comment) still matches; `+`, `-`, `*` are unambiguous and unchanged.
+    regex: 'Int\(bitPattern:\s*\w+(\.\w+)*\)[ \t]*(?:[+\-*]|/(?![/*]))'
     message: "Arithmetic on Int(bitPattern:) defeats type safety. Use typed operators on primitives types; convert at the boundary, not in the middle of expressions ([CONV-010], [IMPL-010])."
     severity: warning
     excluded:
