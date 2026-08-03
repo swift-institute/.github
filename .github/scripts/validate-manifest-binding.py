@@ -1,36 +1,19 @@
 #!/usr/bin/env python3
-"""validate-manifest-binding.py — verify [CI-MANIFEST-BINDING] full-scope binding.
+"""validate-manifest-binding.py — verify [CI-MANIFEST-BINDING] internal-consistency binding.
 
-Phase B-2 follow-up of CI-REVIEW-PHASE-B-DESIGN-2026-05-14 §3 — Option α
-adjudication 2026-05-14 (cross-repo Skills checkout). Full scope: checks
-1 + 2 + 3 + 4. Check 5 added 2026-05-14 (Step 3 post-arc closure) to
-catch the named-targets-not-state-targets gap surfaced by the CI-090/
-CI-097 self-firing flip → uncomment cascade.
+Phase B-1 of CI-REVIEW-PHASE-B-DESIGN-2026-05-14 §3 (checks 2 + 4);
+check 5 added 2026-05-14 (Step 3 post-arc closure) to catch the
+named-targets-not-state-targets gap surfaced by the CI-090/CI-097
+self-firing flip → uncomment cascade.
 
-Rule checked: [CI-MANIFEST-BINDING] — bidirectional binding between
-.github/scripts/validators-manifest.yaml and the ci-cd-workflows skill's
-hub-and-companion corpus.
+Rule checked: [CI-MANIFEST-BINDING] — internal consistency of
+.github/scripts/validators-manifest.yaml (the single source-of-truth
+for rule-ID ↔ validator-script ↔ workflow-file binding).
 
 Checks:
-  1. Every `[VERIFICATION: WF <script>.py (...)]` annotation in the
-     Skills/ci-cd-workflows skill — SKILL.md AND its companion files —
-     cites a `<script>.py` whose basename appears in some manifest entry's
-     `validator-script` field. Catches the skill citing renamed/removed
-     validators (skill-side drift). Companion files are in scope because
-     SKILL.md is a navigation hub carrying NO citations at all: all 23 live
-     in six siblings, so reading the hub alone made this check vacuous.
-     Scoped to a directory named `ci-cd-workflows` so hermetic fixtures,
-     which drop a synthetic SKILL.md beside unrelated README.md files,
-     keep single-file behaviour. See skill_citation_corpus().
   2. Every validate-*.py file existing on disk under .github/scripts/ is
      referenced by ≥1 manifest entry (non-empty validator-script). Catches
      orphan validators (script added without manifest update).
-  3. For every manifest entry with `status: active` whose `rule-id`
-     matches the ci-cd-workflows numeric shape `^CI-\\d+[a-z]?$` (e.g.,
-     CI-040, CI-004b), the rule-id MUST appear in SKILL.md or one of its
-     companion files as `[<rule-id>]`. Hubs route by topic and do not
-     duplicate every companion-defined identifier. Catches manifest
-     entries for rules absent from the skill corpus (manifest-side drift).
   4. Every entry with `status: deprecated` has empty `validator-script`
      AND empty `workflow-file`. Catches ghost lint (deprecated entry left
      referencing a retired script).
@@ -47,38 +30,26 @@ Checks:
 Plus schema sanity: every entry is a dict with the required keys; status
 is in the valid enum.
 
-Scope decision for check 3
---------------------------
-Check 3 fires only for rule-ids matching `^CI-\\d+[a-z]?$`. Aggregate
-labels (`CI-MANIFEST-BINDING`, `GH-REPO-METADATA`, `PACKAGE-STRUCTURE`,
-`README-PRESENCE`, `DOC-CATALOG`, `PATTERN-001`) and other-skill rules
-(`GH-REPO-074`, `API-IMPL-006`, `API-NAME-009`, `PLAT-ARCH-008`, etc.)
-are exempt because they would not be expected to appear in the
-ci-cd-workflows corpus. Their skill cross-checks belong to other skills'
-future validator instances (out of scope for this binding validator).
+Retired: Phase B-2 (checks 1 + 3 — cross-reference against the
+Skills/ci-cd-workflows skill's `[VERIFICATION: WF ...]` and `[CI-XXX]`
+bracket citations, plus the SKILL.md discovery and cross-repo Skills
+checkout that fed them). Retired by principal ruling on
+swift-institute/.github#229 (comment 5166115277, 2026-08-03): the
+2026-07-28 Skills-corpus rebuild ("Rebuild the skill corpus as nine flat
+skills") deliberately dropped every bracket-form citation the corpus
+carried, so a check enforcing that convention is dead weight — and the
+empirically confirmed alternative (pointing SKILL.md discovery at the
+corpus's new location) would flip ~18 active CI-* manifest entries
+permanently red, since none can ever be cited under the new prose-only
+corpus. Any future workflow↔skill cross-reference validation is a fresh
+design with its own record, not a revival of this shape.
 
-SKILL.md discovery
-------------------
-Three-step resolution, first match wins:
-
-  1. CLI 3rd positional arg (`<skills_skill_md_path>`) — used by the
-     workflow .yml after Skills checkout.
-  2. `<repo_root>/SKILL.md` — used by hermetic fixtures (each fixture
-     drops its own synthetic SKILL.md).
-  3. `<repo_root>/../Skills/ci-cd-workflows/SKILL.md` — used by local
-     workspace invocations from `swift-institute/.github`.
-
-If none resolve, checks 1 + 3 are silently skipped (no findings emitted
-on missing SKILL.md). This preserves backwards-compatibility with the
-B-1 fixtures (which carry no SKILL.md) and lets developers run the
-validator without a Skills checkout for partial verification.
-
-Companion to validate-manifest-binding.yml (standalone workflow — the
-only validator that does NOT thin-call validate-base.yml; reason: needs
-a second cross-repo checkout for Skills). Pilot-shaped per [PROMOTE-006].
+Companion to validate-manifest-binding.yml. The workflow's Skills
+checkout, App-token scope, and SKILLS_SKILL_MD plumbing were removed in
+the same change as this retirement — nothing in this script reads a
+Skills checkout anymore.
 """
 from __future__ import annotations
-import re
 import sys
 from pathlib import Path
 
@@ -96,26 +67,6 @@ REQUIRED_KEYS = {
 VALID_STATUSES = {"active", "deferred", "deprecated"}
 
 RULE = "CI-MANIFEST-BINDING"
-
-# `[VERIFICATION: ... ]` block content extractor; inner `WF <script>.py`
-# citations are then pulled per-block. Allows multi-citation forms like
-# `[VERIFICATION: WF foo.py + WF bar.py axis 3]`.
-VERIFICATION_BLOCK_RE = re.compile(r"\[VERIFICATION:([^\]]+)\]")
-SCRIPT_REF_RE = re.compile(r"\bWF\s+(validate-[\w-]+\.py)\b")
-
-# Rule-id citation pattern in the skill corpus; matches `[CI-001]`,
-# `[CI-004b]`, etc.
-# Conservative: only checks the bracket-form citation (the canonical
-# cross-reference shape across all swift-institute skills). Allows
-# trailing lowercase letter ([CI-004b], [PATTERN-005a]) per the skill
-# corpus's naming convention; leading char MUST be uppercase to exclude
-# Markdown link text like `[Title](url)`.
-RULE_ID_CITATION_RE = re.compile(r"\[([A-Z][A-Z0-9a-z-]+)\]")
-
-# ci-cd-workflows skill's natural rule shape: `CI-<digits>[a-z]?`. Excludes
-# aggregate/meta labels like CI-MANIFEST-BINDING and rules from sibling
-# skills (GH-REPO-*, API-*, MOD-*, PLAT-ARCH-*, PATTERN-*, etc.).
-CI_CD_RULE_ID_RE = re.compile(r"^CI-\d+[a-z]?$")
 
 
 def workflow_on_trigger_keys(wf_data: dict) -> set[str]:
@@ -146,75 +97,8 @@ def workflow_on_trigger_keys(wf_data: dict) -> set[str]:
     return set()
 
 
-def discover_skill_md(repo_root: Path, override: str | None) -> Path | None:
-    """Resolve Skills/ci-cd-workflows/SKILL.md per the three-step order.
-
-    See module docstring §"SKILL.md discovery" for the resolution rules.
-    Returns the first existing path, or None if none resolve.
-    """
-    if override:
-        p = Path(override)
-        return p if p.is_file() else None
-    fixture_local = repo_root / "SKILL.md"
-    if fixture_local.is_file():
-        return fixture_local
-    workspace_local = repo_root.parent / "Skills" / "ci-cd-workflows" / "SKILL.md"
-    if workspace_local.is_file():
-        return workspace_local
-    return None
-
-
-def cited_script_basenames(skill_md_text: str) -> set[str]:
-    """Extract every `validate-*.py` basename cited inside `[VERIFICATION:]` blocks."""
-    cited: set[str] = set()
-    for m in VERIFICATION_BLOCK_RE.finditer(skill_md_text):
-        block = m.group(1)
-        for sm in SCRIPT_REF_RE.finditer(block):
-            cited.add(sm.group(1))
-    return cited
-
-
-def cited_rule_ids(skill_md_text: str) -> set[str]:
-    """Extract every `[<RULE-ID>]` citation present in skill Markdown."""
-    return set(RULE_ID_CITATION_RE.findall(skill_md_text))
-
-
-def skill_citation_corpus(skill_md_path: Path) -> tuple[str, list[str]]:
-    """Concatenate SKILL.md with its companion files for checks 1 and 3.
-
-    Check 1 must see every `[VERIFICATION: WF ...]` citation the skill makes,
-    and in the ci-cd-workflows corpus those live in the companion files rather
-    than in SKILL.md: the hub is 174 lines of navigation and carries ZERO
-    citations of any kind, while 23 sit in six siblings. Reading SKILL.md
-    alone therefore extracted citations from an empty set, so check 1 passed
-    vacuously for its entire life.
-
-    Widening is scoped to a real skill directory (parent named
-    `ci-cd-workflows`). The hermetic fixtures drop a synthetic
-    `<repo_root>/SKILL.md` beside unrelated README.md files -- three of which
-    carry VERIFICATION citations -- so an unscoped glob would feed fixture
-    prose into check 1 and change fixture outcomes.
-
-    Check 3 uses the same corpus. The hub routes readers to companions and
-    does not duplicate every companion-defined identifier, so hub-only rule
-    discovery would falsely report every mechanically bound companion rule.
-    """
-    texts = [skill_md_path.read_text(encoding="utf-8")]
-    names = [skill_md_path.name]
-    if skill_md_path.parent.name == "ci-cd-workflows":
-        for sibling in sorted(skill_md_path.parent.glob("*.md")):
-            if sibling == skill_md_path:
-                continue
-            try:
-                texts.append(sibling.read_text(encoding="utf-8"))
-            except OSError:
-                continue
-            names.append(sibling.name)
-    return "\n".join(texts), names
-
-
-def main(repo: str, repo_root: str, skills_skill_md: str | None = None) -> int:
-    """Validate validators-manifest.yaml + (optionally) SKILL.md cross-references.
+def main(repo: str, repo_root: str) -> int:
+    """Validate validators-manifest.yaml's internal consistency.
 
     Returns count of findings emitted.
     """
@@ -248,10 +132,10 @@ def main(repo: str, repo_root: str, skills_skill_md: str | None = None) -> int:
 
     findings = 0
     referenced_scripts: set[str] = set()
-    active_ci_rule_ids: set[str] = set()
 
-    # Schema sanity + check 4 (deprecated entries empty) + collect referenced
-    # scripts (for check 2) + collect active CI-numeric rule-ids (for check 3).
+    # Schema sanity + check 4 (deprecated entries empty) + check 5 (self-firing
+    # active entries resolve to a triggering workflow) + collect referenced
+    # scripts (for check 2).
     for idx, entry in enumerate(entries):
         if not isinstance(entry, dict):
             emit(repo, RULE, f"entry #{idx}: not a mapping (got {type(entry).__name__}).")
@@ -360,10 +244,6 @@ def main(repo: str, repo_root: str, skills_skill_md: str | None = None) -> int:
         if script:
             referenced_scripts.add(script)
 
-        # Collect active ci-cd-workflows numeric rule-ids for check 3.
-        if status == "active" and CI_CD_RULE_ID_RE.match(rule_id):
-            active_ci_rule_ids.add(rule_id)
-
     # Check 2: every .github/scripts/validate-*.py existing on disk is referenced.
     scripts_dir = root / ".github" / "scripts"
     if scripts_dir.is_dir():
@@ -380,84 +260,14 @@ def main(repo: str, repo_root: str, skills_skill_md: str | None = None) -> int:
                 )
                 findings += 1
 
-    # Checks 1 + 3: cross-reference against Skills/ci-cd-workflows/SKILL.md.
-    # Discovery per docstring §"SKILL.md discovery"; silent skip if no SKILL.md.
-    skill_md_path = discover_skill_md(root, skills_skill_md)
-    if skill_md_path is None:
-        return findings
-
-    # Arg-3 sanity: an explicit override pointing at some OTHER skill's SKILL.md
-    # makes check 3 report every active CI rule-id as un-promoted, because none
-    # of them are cited there. That produced 12 spurious findings for one caller.
-    # Emit ONE attributable finding and skip checks 1 + 3 rather than a cascade
-    # of misleading ones. This must stay a finding, not a bare non-zero exit:
-    # the calling workflow runs the validator under `|| true`, so an exit code
-    # with no finding would be swallowed and the gate would pass green on a
-    # misconfigured run. Only the explicit-override path is checked; discovery
-    # steps 2 and 3 resolve by construction, and the hermetic fixtures pass no
-    # third argument at all.
-    if skills_skill_md and skill_md_path.parent.name != "ci-cd-workflows":
-        emit(
-            repo,
-            RULE,
-            f"arg 3 ({skills_skill_md!r}) does not look like the ci-cd-workflows "
-            f"SKILL.md — its parent directory is {skill_md_path.parent.name!r}, not "
-            f"'ci-cd-workflows'. Checks 1 and 3 are skipped rather than reporting "
-            f"every active CI rule-id as un-promoted against the wrong skill. Pass "
-            f"Skills/ci-cd-workflows/SKILL.md, or omit arg 3 to use discovery.",
-        )
-        return findings + 1
-
-    try:
-        skill_md_text = skill_md_path.read_text(encoding="utf-8")
-    except OSError as e:
-        emit(repo, RULE, f"SKILL.md read failed at {skill_md_path}: {e}")
-        return findings + 1
-
-    # Check 1: every `WF <script>.py` citation in the skill (SKILL.md AND its
-    # companion files -- see skill_citation_corpus) must appear in the
-    # manifest's referenced_scripts (basename match).
-    citation_text, citation_files = skill_citation_corpus(skill_md_path)
-    manifest_basenames = {Path(p).name for p in referenced_scripts}
-    for script_basename in sorted(cited_script_basenames(citation_text)):
-        if script_basename not in manifest_basenames:
-            emit(
-                repo,
-                RULE,
-                f"the ci-cd-workflows skill ({', '.join(citation_files)}) cites "
-                f"`[VERIFICATION: WF {script_basename} ...]` but no "
-                f"manifest entry has validator-script with basename {script_basename!r} "
-                f"— per [CI-MANIFEST-BINDING] check 1, every Skills-side WF citation "
-                f"MUST resolve to a manifest entry (prevents skill-side drift after "
-                f"validator rename/removal).",
-            )
-            findings += 1
-
-    # Check 3: every active ci-cd-workflows rule-id must appear in the skill
-    # corpus as `[<rule-id>]`. Scope: rule-ids matching CI_CD_RULE_ID_RE.
-    skill_rule_ids = cited_rule_ids(citation_text)
-    for rule_id in sorted(active_ci_rule_ids):
-        if rule_id not in skill_rule_ids:
-            emit(
-                repo,
-                RULE,
-                f"manifest entry {rule_id!r} has status=active but rule-id is not "
-                f"cited in the skill corpus as `[{rule_id}]` — per "
-                f"[CI-MANIFEST-BINDING] "
-                f"check 3, every active ci-cd-workflows rule MUST be promoted into "
-                f"the skill (prevents manifest-side drift / orphaned validators).",
-            )
-            findings += 1
-
     return findings
 
 
 if __name__ == "__main__":
     if len(sys.argv) < 3:
         sys.exit(
-            "usage: validate-manifest-binding.py <owner/name> <repo_root> "
-            "[skills_skill_md_path]  # checks CI-MANIFEST-BINDING full scope "
-            "(B-1 internal-consistency 2 + 4; B-2 Skills cross-refs 1 + 3)"
+            "usage: validate-manifest-binding.py <owner/name> <repo_root>  # "
+            "checks CI-MANIFEST-BINDING internal consistency (2 + 4 + 5); "
+            "Phase B-2 Skills cross-refs (1 + 3) retired per #229"
         )
-    skills_arg = sys.argv[3] if len(sys.argv) >= 4 else None
-    main(sys.argv[1], sys.argv[2], skills_arg)
+    main(sys.argv[1], sys.argv[2])
