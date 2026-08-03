@@ -162,6 +162,18 @@ extension RepositoryPolicy {
         }
     }
 
+    /// Why a file present in the repository was not scanned for content.
+    ///
+    /// These are failures to *measure*, not scope decisions. A file excluded
+    /// by declared scope — a build product, a binary extension — is absent by
+    /// policy and is not recorded here; a file the scanner could not read is
+    /// a hole in the measurement and is.
+    public enum SurfaceSkip: String, Codable, Equatable, Sendable {
+        case tooLarge = "too-large"
+        case notUTF8 = "not-utf8"
+        case unreadable
+    }
+
     public struct SurfaceReport: Codable, Equatable, Sendable {
         public let repository: String
         public let repositoryClass: RepositoryClass
@@ -170,6 +182,16 @@ extension RepositoryPolicy {
         public let exemptionsApplied: Int
         public let violations: [SurfaceViolation]
         public let advisories: [SurfaceViolation]
+        /// Path to the typed reason its contents were never read.
+        ///
+        /// A skipped file and a clean file must not look the same. This is
+        /// the same argument that `SurfaceSweepReport.excluded` makes at
+        /// repository granularity, applied at file granularity — the
+        /// scanner's `if let` cascade previously dropped an unreadable file
+        /// silently, so a 3 MiB script or a latin-1 file carrying a
+        /// machine-local path produced zero output and appeared nowhere
+        /// (swift-institute/.github#247 review).
+        public let skipped: [String: SurfaceSkip]
 
         public var passed: Bool { violations.isEmpty }
     }
@@ -194,9 +216,9 @@ extension RepositoryPolicy {
         /// why it is not actionable, without polluting the list of findings
         /// someone is expected to act on. Unarchiving moves it back into the
         /// scanned set with no policy change.
-        public let excluded: [String: String]
+        public let excluded: [String: Exclusion]
 
-        public init(reports: [SurfaceReport], excluded: [String: String] = [:]) {
+        public init(reports: [SurfaceReport], excluded: [String: Exclusion] = [:]) {
             self.reports = reports.sorted { $0.repository < $1.repository }
             self.excluded = excluded
         }
@@ -409,7 +431,8 @@ extension RepositoryPolicy {
                 if $0.path != $1.path { return $0.path < $1.path }
                 if $0.identifier != $1.identifier { return $0.identifier < $1.identifier }
                 return $0.message < $1.message
-            }
+            },
+            skipped: snapshot.skipped
         )
     }
 }
@@ -576,6 +599,9 @@ private struct SurfaceSnapshot {
     /// appears in manifests, shell scripts, workflow defaults, and
     /// configuration alike, so there is no principled subset to scope it to.
     let textFiles: [TextFile]
+    /// Files present but never read, with the reason. See
+    /// `SurfaceReport.skipped`.
+    let skipped: [String: RepositoryPolicy.SurfaceSkip]
 
     init(root: URL) throws {
         let manager = FileManager.default
@@ -595,6 +621,7 @@ private struct SurfaceSnapshot {
         var doccMarkdownFiles = [TextFile]()
         var readmeContents: String?
         var textFiles = [TextFile]()
+        var skipped = [String: RepositoryPolicy.SurfaceSkip]()
         let rootPath = root.standardizedFileURL.path
         while let url = enumerator.nextObject() as? URL {
             if unscannedDirectories.contains(url.lastPathComponent) {
@@ -605,13 +632,23 @@ private struct SurfaceSnapshot {
             guard values.isRegularFile == true else { continue }
             let path = relativePath(url: url, rootPath: rootPath)
 
-            if isScannableTextPath(path),
-                let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
-                size <= maximumScannedFileSize,
-                let data = try? Data(contentsOf: url),
-                let contents = String(data: data, encoding: .utf8)
-            {
-                textFiles.append(TextFile(path: path, contents: contents))
+            // Each drop records its reason rather than falling through an
+            // `if let` cascade: a file the scanner could not read is a hole
+            // in the measurement, and a hole that reports nothing is
+            // indistinguishable from a clean file.
+            if isScannableTextPath(path) {
+                let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize
+                if let size, size > maximumScannedFileSize {
+                    skipped[path] = .tooLarge
+                } else if let data = try? Data(contentsOf: url) {
+                    if let contents = String(data: data, encoding: .utf8) {
+                        textFiles.append(TextFile(path: path, contents: contents))
+                    } else {
+                        skipped[path] = .notUTF8
+                    }
+                } else {
+                    skipped[path] = .unreadable
+                }
             }
 
             if path.hasPrefix(".github/ISSUE_TEMPLATE/") {
@@ -652,6 +689,7 @@ private struct SurfaceSnapshot {
         self.doccMarkdownFiles = doccMarkdownFiles.sorted { $0.path < $1.path }
         self.readmeContents = readmeContents
         self.textFiles = textFiles.sorted { $0.path < $1.path }
+        self.skipped = skipped
     }
 
     init(files: [String: String]) throws {
@@ -698,6 +736,8 @@ private struct SurfaceSnapshot {
             .filter { isScannableTextPath($0.key) }
             .map { TextFile(path: $0.key, contents: $0.value) }
             .sorted { $0.path < $1.path }
+        // In-memory files are decoded text by construction; nothing to skip.
+        self.skipped = [:]
     }
 }
 

@@ -167,17 +167,16 @@ extension RepositoryPolicy {
         // repository is read-only, so any finding in it is unfixable by
         // construction and must not accumulate among the actionable
         // advisories (swift-institute/.github#247, #160).
-        var excluded = [String: String]()
+        var excluded = [String: Exclusion]()
         for repository in repositories.sorted(by: { $0.fullName < $1.fullName }) {
             if let reason = staticExclusion(of: repository) {
-                excluded[repository.fullName] = reason.rawValue
+                excluded[repository.fullName] = reason
                 continue
             }
             let manifestKind = try await client.rootManifestKind(repository.fullName)
             guard manifestKind == "file" else {
                 excluded[repository.fullName] =
-                    (manifestKind == nil ? Exclusion.missingRootManifest : .rootManifestNotFile)
-                    .rawValue
+                    manifestKind == nil ? .missingRootManifest : .rootManifestNotFile
                 continue
             }
             let repositoryClass =

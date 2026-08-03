@@ -1865,6 +1865,51 @@ struct RepositoryPolicyTests {
         #expect(report.advisories.allSatisfy { $0.path == "Package.swift" })
     }
 
+    // A skipped file and a clean file must not look the same. Both files here
+    // carry a machine-local path that the predicate would certainly fire on;
+    // neither is read, one for size and one for encoding. Before `skipped`,
+    // both produced zero output and appeared nowhere in the report — the
+    // silent-`continue` defect that `SurfaceSweepReport.excluded` fixes at
+    // repository granularity, reintroduced at file granularity by the `if
+    // let` cascade in the same change (#247 review).
+    @Test
+    func unreadableFilesAreNamedAsSkippedRatherThanDroppedSilently() throws {
+        let root =
+            FileManager.default.temporaryDirectory
+            .appending(path: "repository-policy-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(
+            at: root.appending(path: "Scripts"),
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let machineLocal = "TOOLCHAIN=/Users/someone/Developer/swift-institute\n"
+
+        // Over the 2 MiB ceiling, with the path at the very top so a partial
+        // read would still have found it.
+        let large = machineLocal + String(repeating: "# padding\n", count: 250_000)
+        try Data(large.utf8).write(to: root.appending(path: "Scripts/big.sh"), options: .atomic)
+
+        // Latin-1: 0xE9 is a valid byte but not valid UTF-8, so the decode
+        // fails and the file is never scanned.
+        var latin1 = Data(machineLocal.utf8)
+        latin1.append(contentsOf: [0xE9, 0x0A])
+        try latin1.write(to: root.appending(path: "Scripts/legacy.sh"), options: .atomic)
+
+        let report = try RepositoryPolicy.validateSurface(
+            repository: "swift-foundations/swift-example",
+            repositoryClass: .package,
+            root: root,
+            policy: .init(schemaVersion: 1, actionGrants: [], exemptions: [])
+        )
+
+        // Neither file was read, so neither can produce a finding...
+        #expect(report.advisories.isEmpty)
+        // ...and that absence is now explained rather than silent.
+        #expect(report.skipped["Scripts/big.sh"] == .tooLarge)
+        #expect(report.skipped["Scripts/legacy.sh"] == .notUTF8)
+    }
+
     // Unfixable-by-construction findings. The peer fleet contains an archived
     // repository carrying 15 path dependencies including an absolute machine
     // path. Archived means read-only, so it is inside any naive census and
@@ -1890,10 +1935,12 @@ struct RepositoryPolicyTests {
 
         let sweep = RepositoryPolicy.SurfaceSweepReport(
             reports: [],
-            excluded: [archived.fullName: RepositoryPolicy.Exclusion.archived.rawValue]
+            excluded: [archived.fullName: .archived]
         )
 
-        #expect(sweep.excluded[archived.fullName] == "archived")
+        #expect(sweep.excluded[archived.fullName] == .archived)
+        // Typed, but identical JSON to the prior stringly-typed shape.
+        #expect(RepositoryPolicy.Exclusion.archived.rawValue == "archived")
         #expect(sweep.reports.isEmpty)
         // Excluding it does not make the sweep look failed, and does not put
         // an unclearable finding in front of anyone.
