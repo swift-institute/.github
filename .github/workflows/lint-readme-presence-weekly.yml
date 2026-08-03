@@ -20,12 +20,53 @@
 
 name: lint-readme-presence-weekly
 
-# [CI-090] Deny-all floor; per-job blocks below declare the actual grants.
-permissions: {}
+# [CI-090] deny-all floor lived at workflow level while this file was
+# schedule/workflow_dispatch only. #244 blocker 3 adds a `workflow_call`
+# trigger below, and a `workflow_call` workflow must NOT declare
+# workflow-level `permissions: {}` — the reusable-call intersection would
+# cap every caller at zero regardless of what its jobs request. Every job
+# below already declares its own least-privilege `permissions:` block, so
+# dropping the workflow-level floor changes nothing about what actually
+# runs.
 
 on:
   schedule:
     - cron: '0 6 * * 1'   # weekly Monday 06:00 UTC (mirrors link-check-weekly cadence)
+  # workflow_call (#244 blocker 3, "fork trap"): without this, a peer
+  # institute's only path to running this sweep against its own fleet was
+  # forking the file and editing the workflow_dispatch `visibility`
+  # default — which does nothing, because `inputs` is entirely unpopulated
+  # on a `schedule`-triggered run regardless of any declared default, and
+  # this file's own schedule leg falls back to a hardcoded 'public' literal
+  # (see the `sweep` job below). A peer instead calls this workflow
+  # directly from their own scheduled wrapper with an explicit `visibility`
+  # — no fork, no edited default, no silent reproduction of #244 through
+  # its own fix. See swift-institute/.github#251 for the trap itself.
+  workflow_call:
+    inputs:
+      dry-run:
+        description: 'Run checks but skip aggregated issue create/update.'
+        type: boolean
+        required: false
+        default: false
+      visibility:
+        description: 'Filter targets by visibility: public | private | internal | all. Default public — swift-institute''s own fleet is public; a peer institute with a private fleet (#244) supplies its own value.'
+        type: string
+        required: false
+        default: 'public'
+    secrets:
+      SWIFT_INSTITUTE_BOT_APP_CLIENT_ID:
+        required: false
+        description: |
+          GitHub App client ID used to mint the installation token the
+          `report` job uses to file/update the aggregated tracking issue.
+          Same-org callers pass it via `secrets: inherit`; a peer institute
+          maps its own App's client ID onto this slot (#212 pattern).
+      SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY:
+        required: false
+        description: |
+          GitHub App private key; counterpart of
+          SWIFT_INSTITUTE_BOT_APP_CLIENT_ID.
   workflow_dispatch:
     inputs:
       dry-run:
@@ -43,6 +84,7 @@ jobs:
   # Org population from the canonical read-orgs manifest (#43 item 7) —
   # a new org propagates here without editing this orchestrator.
   config:
+    if: ${{ !github.event.repository.private }}     # [CI-032]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -82,7 +124,7 @@ jobs:
     needs: sweep
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    if: always() && needs.sweep.result != 'skipped'
+    if: always() && needs.sweep.result != 'skipped' && !github.event.repository.private     # [CI-032]
     permissions:
       contents: read
     steps:

@@ -250,19 +250,28 @@ jobs:
 
           echo "Targets: ${#targets[@]} repos"
 
-          # Loud-empty-reach (#244): the composite already logs a plain log
-          # line when enumeration returns zero, which a green run gives no
-          # reason to read. Org-mode reaching zero targets is distinguished
-          # here from a genuine zero-diff convergence, both as a warning
-          # annotation (visible on the run summary page without opening
-          # logs) and as its own callout in the step summary below. Not a
-          # hard failure: an org can legitimately have zero repos matching
-          # the requested visibility/archived filter, and this workflow is
-          # dispatched per-org so failing here would redden a sweep that
-          # converged everything it was actually asked to reach.
+          # Loud-empty-reach (#244), three-rule discriminator per review:
+          #   1. Caller explicitly scoped a non-default visibility and this
+          #      org reached zero -> HARD FAILURE. Nobody passes
+          #      visibility: private to an org they believe has none; no
+          #      benign reading exists, so fail this run immediately.
+          #   2. Default-public (this workflow's own value) reaching zero
+          #      -> warning, both as an annotation and a step-summary
+          #      callout below. This workflow is dispatched per-org, so a
+          #      hard failure here would redden a run that converged
+          #      everything it was actually scoped to reach.
+          #   3. Aggregate zero across every org in a fleet-wide sweep is
+          #      NOT decidable here — this job only ever sees one org per
+          #      invocation. That rule lives in whichever caller fans this
+          #      workflow out across the fleet (sync-metadata-nightly.yml),
+          #      which is out of this PR's file scope.
           zero_reach=0
           if [[ -z "$SINGLE_REPO" && "${#targets[@]}" -eq 0 ]]; then
             zero_reach=1
+            if [[ "$INPUT_VISIBILITY" != "public" ]]; then
+              echo "::error::sync-metadata reached 0 repos for org '${INPUT_ORG}' with explicitly-scoped visibility='${INPUT_VISIBILITY}'. No benign reading — the caller asked for this visibility and it matched nothing."
+              exit 1
+            fi
             echo "::warning::sync-metadata reached 0 repos for org '${INPUT_ORG}' (visibility=${INPUT_VISIBILITY}). This run will report success, but it converged nothing — verify visibility/exclude-archived scope before treating a green run as evidence of convergence."
           fi
 
@@ -626,10 +635,14 @@ jobs:
             while IFS= read -r target; do [[ -n "$target" ]] && targets+=("$target"); done <<< "$ENUM_REPOS"
           fi
           echo "Targets: ${#targets[@]} repos"
-          # Loud-empty-reach (#244): see the `sync` job's identical rationale
-          # — a warning, not a hard failure, since a legitimately empty org
-          # is possible and this job is dispatched per-org.
+          # Loud-empty-reach (#244): see the `sync` job's identical
+          # three-rule rationale (rule 3 lives in the fleet-wide caller,
+          # out of this PR's scope).
           if [[ -z "$SINGLE_REPO" && "${#targets[@]}" -eq 0 ]]; then
+            if [[ "$INPUT_VISIBILITY" != "public" ]]; then
+              echo "::error::sync-metadata rulesets convergence reached 0 repos for org '${INPUT_ORG}' with explicitly-scoped visibility='${INPUT_VISIBILITY}'. No benign reading — the caller asked for this visibility and it matched nothing."
+              exit 1
+            fi
             echo "::warning::sync-metadata rulesets convergence reached 0 repos for org '${INPUT_ORG}' (visibility=${INPUT_VISIBILITY}). This run will report success, but it converged nothing."
           fi
           for target in "${targets[@]}"; do

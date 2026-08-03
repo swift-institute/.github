@@ -30,8 +30,14 @@
 
 name: submit-dep-graph-weekly
 
-# [CI-090] Deny-all floor; per-job blocks below declare the actual grants.
-permissions: {}
+# [CI-090] deny-all floor lived at workflow level while this file was
+# schedule/workflow_dispatch only. #244 blocker 3 adds a `workflow_call`
+# trigger below, and a `workflow_call` workflow must NOT declare
+# workflow-level `permissions: {}` — the reusable-call intersection would
+# cap every caller at zero regardless of what its jobs request. Every job
+# below already declares its own least-privilege `permissions:` block, so
+# dropping the workflow-level floor changes nothing about what actually
+# runs.
 
 # [CI-082] sha256sum -c pin for the gh CLI apt-keyring fetched from
 # cli.github.com. The keyring is the trust root for downstream `apt-get
@@ -43,6 +49,45 @@ env:
 on:
   schedule:
     - cron: '50 6 * * 1'   # weekly Monday 06:50 UTC
+  # workflow_call (#244 blocker 3, "fork trap"): forking this file and
+  # editing the workflow_dispatch `visibility`/`exclude-archived` defaults
+  # does nothing for the peer's own cron — `inputs` is entirely unpopulated
+  # on a `schedule`-triggered run, and the `sweep` job's schedule leg
+  # resolves through a hardcoded 'public'/true fallback regardless of any
+  # edited default (see the "Resolve visibility/exclude-archived defaults"
+  # step below). A peer calls this workflow directly from their own
+  # scheduled wrapper with explicit inputs instead. See
+  # swift-institute/.github#251 for the trap itself.
+  workflow_call:
+    inputs:
+      dry-run:
+        description: 'Build snapshots but skip POSTing them.'
+        type: boolean
+        required: false
+        default: false
+      visibility:
+        description: 'Filter targets by visibility: public | private | internal | all. Default public — swift-institute''s own fleet is public; a peer institute with a private fleet (#244) supplies its own value.'
+        type: string
+        required: false
+        default: 'public'
+      exclude-archived:
+        description: 'Exclude archived repos from org-mode enumeration. Default true. A peer''s archived-repo posture need not match ours (#244).'
+        type: boolean
+        required: false
+        default: true
+    secrets:
+      SWIFT_INSTITUTE_BOT_APP_CLIENT_ID:
+        required: false
+        description: |
+          GitHub App client ID used to mint per-org installation tokens for
+          both the `sweep` and `report` jobs. Same-org callers pass it via
+          `secrets: inherit`; a peer institute maps its own App's client ID
+          onto this slot (#212 pattern).
+      SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY:
+        required: false
+        description: |
+          GitHub App private key; counterpart of
+          SWIFT_INSTITUTE_BOT_APP_CLIENT_ID.
   workflow_dispatch:
     inputs:
       dry-run:
@@ -63,6 +108,7 @@ on:
 
 jobs:
   config:
+    if: ${{ !github.event.repository.private }}     # [CI-032]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -85,6 +131,7 @@ jobs:
 
   sweep:
     needs: config
+    if: ${{ !github.event.repository.private }}     # [CI-032]
     strategy:
       fail-fast: false
       matrix:
@@ -142,20 +189,39 @@ jobs:
           sparse-checkout: .github/scripts/build-dep-graph-snapshot.py
           sparse-checkout-cone-mode: false
 
+      - name: Resolve visibility/exclude-archived defaults
+        # GitHub Actions expression comparison against a boolean literal
+        # (`inputs.exclude-archived != false`) coerces the other operand to
+        # boolean first — and coerces an unset/null `inputs.exclude-archived`
+        # (this workflow's `schedule` trigger leaves the whole `inputs`
+        # context unpopulated) to `false`, not to the input's declared
+        # `default: true`. `false != false` is `false`, so the schedule path
+        # silently flipped to including archived repos — a live regression
+        # against the 17-org nightly this workflow already runs, caught in
+        # review before landing. Resolving in bash instead: an empty string
+        # compares as itself, not as a coerced boolean, so "unset" and
+        # "explicitly false" are distinguishable exactly once, here.
+        id: defaults
+        shell: bash
+        env:
+          INPUT_VISIBILITY: ${{ inputs.visibility }}
+          INPUT_EXCLUDE_ARCHIVED: ${{ inputs.exclude-archived }}
+        run: |
+          set -euo pipefail
+          visibility="${INPUT_VISIBILITY:-public}"
+          exclude_archived=true
+          [ "$INPUT_EXCLUDE_ARCHIVED" = "false" ] && exclude_archived=false
+          echo "visibility=${visibility}" >> "$GITHUB_OUTPUT"
+          echo "exclude-archived=${exclude_archived}" >> "$GITHUB_OUTPUT"
+
       - name: Enumerate org repos
         id: enum
         uses: swift-institute/.github/.github/actions/enumerate-org-public-repos@main
         with:
           org: ${{ matrix.org }}
-          visibility: ${{ inputs.visibility || 'public' }}
+          visibility: ${{ steps.defaults.outputs.visibility }}
           exclude-forks: 'true'
-          # `!= false` (not `||`) — this workflow's schedule trigger leaves
-          # `inputs` entirely unset, and `inputs.exclude-archived || true`
-          # would wrongly force `true` even for an explicit manual-dispatch
-          # `exclude-archived: false`. `!= false` treats unset (schedule,
-          # default true) and explicit true identically, while still
-          # honouring an explicit false.
-          exclude-archived: ${{ inputs.exclude-archived != false }}
+          exclude-archived: ${{ steps.defaults.outputs.exclude-archived }}
           gh-token: ${{ steps.token.outputs.token }}
 
       - name: Sweep org
@@ -165,7 +231,7 @@ jobs:
           ORG: ${{ matrix.org }}
           DRY_RUN: ${{ inputs.dry-run || 'false' }}
           ENUM_REPOS: ${{ steps.enum.outputs.repos }}
-          INPUT_VISIBILITY: ${{ inputs.visibility || 'public' }}
+          INPUT_VISIBILITY: ${{ steps.defaults.outputs.visibility }}
         run: |
           set -euo pipefail
           # Read repos from composite output; drop any blank lines defensively.
@@ -174,14 +240,23 @@ jobs:
             [[ -n "$line" ]] && targets+=("$line")
           done <<< "$ENUM_REPOS"
           echo "Targets enumerated: ${#targets[@]}"
-          # Loud-empty-reach (#244): a warning, not a hard failure — an org
-          # can legitimately have zero non-fork/non-archived repos matching
-          # the requested visibility, and this job runs once per org via the
-          # matrix, so failing here would redden legs that reached exactly
-          # what they were scoped to reach.
+          # Loud-empty-reach (#244), three-rule discriminator per review:
+          #   1. Caller explicitly scoped a non-default visibility and this
+          #      org reached zero -> HARD FAILURE. Nobody passes
+          #      visibility: private to an org they believe has none; there
+          #      is no benign reading, so fail this leg immediately.
+          #   2. Default-public (our own fleet's own value) reaching zero
+          #      for ONE org -> warning only, tracked below for rule 3.
+          #   3. Aggregate zero across every org in this sweep -> HARD
+          #      FAILURE, decided in the `report` job once every leg's
+          #      count is in (this job only sees its own org).
           zero_reach=0
           if [[ "${#targets[@]}" -eq 0 ]]; then
             zero_reach=1
+            if [[ "$INPUT_VISIBILITY" != "public" ]]; then
+              echo "::error::submit-dep-graph-weekly reached 0 repos for org '${ORG}' with explicitly-scoped visibility='${INPUT_VISIBILITY}'. No benign reading — the caller asked for this visibility and it matched nothing."
+              exit 1
+            fi
             echo "::warning::submit-dep-graph-weekly reached 0 repos for org '${ORG}' (visibility=${INPUT_VISIBILITY}). This leg will report success, but it submitted nothing."
           fi
           successes=0
@@ -275,7 +350,7 @@ jobs:
     needs: sweep
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    if: always() && needs.sweep.result != 'skipped'
+    if: always() && needs.sweep.result != 'skipped' && !github.event.repository.private     # [CI-032]
     permissions:
       contents: read
     steps:
@@ -302,6 +377,7 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
           DRY_RUN: ${{ inputs.dry-run || 'false' }}
+          INPUT_VISIBILITY: ${{ inputs.visibility || 'public' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -309,6 +385,7 @@ jobs:
           total_s=0
           total_f=0
           total_skip=0
+          org_legs=0
           per_org=()
           all_failures=""
           # Layout-agnostic per Path A: download-artifact@v8 flattens to
@@ -319,6 +396,7 @@ jobs:
             [[ -z "$f" ]] && continue
             org=$(basename "$f" | sed 's/-counts\.txt$//')
             IFS=',' read -r s fl sk < "$f"
+            org_legs=$((org_legs + 1))
             total_s=$((total_s + s))
             total_f=$((total_f + fl))
             total_skip=$((total_skip + sk))
@@ -328,6 +406,20 @@ jobs:
             [[ -z "$f" ]] && continue
             [[ -s "$f" ]] && all_failures="${all_failures}$(cat "$f")"$'\n'
           done < <(find /tmp/counts -type f -name '*-failures.txt' 2>/dev/null)
+          # Loud-empty-reach (#244) rule 3: aggregate zero across every org
+          # in the sweep is a hard failure. This is the case that covers our
+          # own fleet — default-public by construction, so it can never
+          # trip rule 1 (which only fires on an explicitly-scoped
+          # visibility) — a token-scope or org-rename regression that
+          # zeroes every leg must not stay warning-only forever. Every leg
+          # here already succeeded (rule 1 would have failed the job
+          # otherwise), so `total_s+total_f+total_skip == 0` means every
+          # org genuinely enumerated nothing, not that some orgs failed.
+          total_targets=$((total_s + total_f + total_skip))
+          if [[ "$org_legs" -gt 0 && "$total_targets" -eq 0 ]]; then
+            echo "::error::submit-dep-graph-weekly reached 0 repos across all ${org_legs} org(s) swept (visibility=${INPUT_VISIBILITY}). Every leg reported success individually, but the aggregate sweep converged nothing — this is the class defect #244 was filed about, at fleet scope."
+            exit 1
+          fi
           if [[ "$total_f" -eq 0 ]]; then
             echo "Dep-graph submission clean across all orgs — no tracking issue."
             echo "FILE_ISSUE=false" >> "$GITHUB_ENV"

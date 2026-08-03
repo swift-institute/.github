@@ -188,12 +188,20 @@ jobs:
           resolved=$(wc -l < /tmp/targets.txt)
           echo "resolved ${resolved} target(s)"
           echo "resolved=${resolved}" >> "$GITHUB_OUTPUT"
-          # Loud-empty-reach (#244): org-mode reaching zero targets is
-          # flagged distinctly from a genuine zero-diff run — a warning, not
-          # a hard failure, since an org can legitimately have zero repos
-          # matching the requested visibility/archived filter.
+          # Loud-empty-reach (#244), three-rule discriminator per review
+          # (rule 3 — aggregate zero across a fleet-wide sweep — has no
+          # caller for this workflow yet in this repo, so it is not
+          # implementable here; see the PR description):
+          #   1. Caller explicitly scoped a non-default visibility and
+          #      reached zero -> HARD FAILURE. No benign reading.
+          #   2. Default-public reaching zero -> warning only.
+          effective_visibility="${INPUT_VISIBILITY:-public}"
           if [ -z "$INPUT_REPO" ] && [ "$resolved" -eq 0 ]; then
-            echo "::warning::sync-gitignore reached 0 repos for org '${INPUT_ORG}' (visibility=${INPUT_VISIBILITY:-public}, exclude-archived=${INPUT_EXCLUDE_ARCHIVED:-true}). This run will report success, but it converged nothing — verify scope before treating a green run as evidence of convergence."
+            if [ "$effective_visibility" != "public" ]; then
+              echo "::error::sync-gitignore reached 0 repos for org '${INPUT_ORG}' with explicitly-scoped visibility='${effective_visibility}'. No benign reading — the caller asked for this visibility and it matched nothing."
+              exit 1
+            fi
+            echo "::warning::sync-gitignore reached 0 repos for org '${INPUT_ORG}' (visibility=${effective_visibility}, exclude-archived=${INPUT_EXCLUDE_ARCHIVED:-true}). This run will report success, but it converged nothing — verify scope before treating a green run as evidence of convergence."
           fi
 
       - name: Render and propagate
