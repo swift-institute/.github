@@ -1510,6 +1510,256 @@ struct RepositoryPolicyTests {
         }
     }
 
+    // MARK: - REPO-PATH-001 / REPO-PATH-002 (machine-local absolute paths)
+    //
+    // swift-institute/.github#247. Fixtures run in both directions, because a
+    // rule with no failing fixture is not known to work and a path-shaped
+    // predicate that fails toward *not* firing suppresses exactly what it
+    // exists to surface. Every "must fire" case below is a positive control:
+    // if a future edit narrows the predicate into silence, these go red.
+
+    // Positive control, the census shape: a manifest dependency on an
+    // absolute path into one machine's home directory.
+    @Test
+    func machineLocalPathFiresOnAHomeRootedManifestDependency() {
+        let findings = RepositoryPolicy.MachineLocalPath.findings(
+            path: "Package.swift",
+            contents: """
+            // swift-tools-version: 6.3
+            import PackageDescription
+
+            let package = Package(
+                name: "example",
+                dependencies: [
+                    .package(path: "/Users/someone/Developer/swift-other")
+                ]
+            )
+            """
+        )
+
+        #expect(findings.map(\.identifier) == ["REPO-PATH-001"])
+        #expect(findings.first?.line == 7)
+    }
+
+    // Positive control, the non-manifest shape: the committed shell script
+    // found during the census, defaulting to an absolute path into another
+    // institute's checkout. The predicate is not manifest-only.
+    @Test
+    func machineLocalPathFiresOnACommittedShellScript() {
+        let findings = RepositoryPolicy.MachineLocalPath.findings(
+            path: "Scripts/patch-umbrella-symbol-graph.sh",
+            contents: """
+            #!/usr/bin/env bash
+            set -euo pipefail
+            PATCH_SCRIPT="${PATCH_SCRIPT:-/Users/someone/Developer/swift-institute/Scripts/patch.py}"
+            exec "$PATCH_SCRIPT" "$@"
+            """
+        )
+
+        #expect(findings.map(\.identifier) == ["REPO-PATH-001"])
+        #expect(findings.first?.line == 3)
+    }
+
+    // Positive control, the Linux home root, in workflow YAML.
+    @Test
+    func machineLocalPathFiresOnALinuxHomeRootInWorkflowYAML() {
+        let findings = RepositoryPolicy.MachineLocalPath.findings(
+            path: ".github/workflows/ci.yml",
+            contents: """
+            on: [push]
+            jobs:
+              build:
+                runs-on: ubuntu-latest
+                steps:
+                  - run: /home/someone/toolchains/swift/usr/bin/swift build
+            """
+        )
+
+        #expect(findings.map(\.identifier) == ["REPO-PATH-001"])
+        #expect(findings.first?.line == 6)
+    }
+
+    // Near-miss that must still fire: an ascent that then *descends* names a
+    // sibling checkout. This is one character away from the lawful `../..`
+    // below, and is the case a careless "any `..` is a nested package"
+    // predicate would silence.
+    @Test
+    func machineLocalPathFiresOnASiblingCheckoutDependency() {
+        let findings = RepositoryPolicy.MachineLocalPath.findings(
+            path: "Package.swift",
+            contents: """
+            let package = Package(
+                name: "example",
+                dependencies: [
+                    .package(path: "../../swift-other")
+                ]
+            )
+            """
+        )
+
+        #expect(findings.map(\.identifier) == ["REPO-PATH-002"])
+        #expect(findings.first?.line == 4)
+    }
+
+    // Near-miss that must still fire: `runner` is exempted by *exact*
+    // component match, so a home that merely starts with it is not exempt.
+    @Test
+    func machineLocalPathFiresOnAHomeThatOnlyResemblesTheHostedRunner() {
+        let findings = RepositoryPolicy.MachineLocalPath.findings(
+            path: "Scripts/build.sh",
+            contents: "export TOOLCHAIN=/Users/runnerx/toolchains/swift\n"
+        )
+
+        #expect(findings.map(\.identifier) == ["REPO-PATH-001"])
+    }
+
+    // Near-miss that must still fire: an absolute manifest path that is not
+    // home-rooted at all. REPO-PATH-001 cannot see it; REPO-PATH-002 must.
+    @Test
+    func machineLocalPathFiresOnANonHomeAbsoluteManifestDependency() {
+        let findings = RepositoryPolicy.MachineLocalPath.findings(
+            path: "Package.swift",
+            contents: """
+            let package = Package(
+                name: "example",
+                dependencies: [
+                    .package(path: "/opt/checkouts/swift-other")
+                ]
+            )
+            """
+        )
+
+        #expect(findings.map(\.identifier) == ["REPO-PATH-002"])
+    }
+
+    // Lawful shape 1 (issue trap 1): `path:` on a target declaration is an
+    // ordinary in-repository layout. A naive match on `path:` corrupts target
+    // layouts and would fire on a large fraction of the fleet.
+    @Test
+    func machineLocalPathIsSilentOnTargetDeclarationPaths() {
+        let findings = RepositoryPolicy.MachineLocalPath.findings(
+            path: "Package.swift",
+            contents: """
+            let package = Package(
+                name: "example",
+                targets: [
+                    .target(name: "Example", path: "Sources/Example"),
+                    .testTarget(name: "Example Tests", path: "Tests/Example Tests"),
+                    .target(name: "Legacy", path: "Sources/../Sources/Legacy")
+                ]
+            )
+            """
+        )
+
+        #expect(findings.isEmpty)
+    }
+
+    // Lawful shape 2 (issue trap 2): a nested test package referencing its
+    // own parent. A pure ascent names an ancestor directory this package is
+    // already inside, so it must be preserved and never normalized away.
+    @Test
+    func machineLocalPathIsSilentOnANestedPackageReferencingItsParent() {
+        let findings = RepositoryPolicy.MachineLocalPath.findings(
+            path: "Tests/Integration/Package.swift",
+            contents: """
+            let package = Package(
+                name: "integration",
+                dependencies: [
+                    .package(path: "../.."),
+                    .package(path: "..")
+                ]
+            )
+            """
+        )
+
+        #expect(findings.isEmpty)
+    }
+
+    // Machine-*independent* absolutes: the hosted-runner homes are fixed by
+    // the platform and identical for every caller, and system paths name no
+    // account at all.
+    @Test
+    func machineLocalPathIsSilentOnHostedRunnerAndSystemPaths() {
+        let findings = RepositoryPolicy.MachineLocalPath.findings(
+            path: ".github/workflows/ci.yml",
+            contents: """
+            on: [push]
+            jobs:
+              build:
+                steps:
+                  - run: /usr/bin/env swift build --scratch-path /home/runner/work/scratch
+                  - run: /opt/homebrew/bin/swiftlint
+                  - run: cp /Users/runner/hostedtoolcache/swift .
+            """
+        )
+
+        #expect(findings.isEmpty)
+    }
+
+    // A URL that happens to contain `/home/` is a remote resource, and a
+    // templated component names no machine.
+    @Test
+    func machineLocalPathIsSilentOnURLsAndTemplatedComponents() {
+        let findings = RepositoryPolicy.MachineLocalPath.findings(
+            path: "README.md",
+            contents: """
+            See <https://example.com/home/pages/index.html> for the guide.
+            Install into `/Users/$USER/.local/bin`, or `/home/${USER}/.local/bin`.
+            Documentation writes this as /Users/<user>/Developer/swift-example,
+            or elides the account entirely as /Users/.../Developer/swift-example.
+            """
+        )
+
+        #expect(findings.isEmpty)
+    }
+
+    // Report-only end to end: the findings reach `advisories`, never
+    // `violations`, so a repository carrying the class still passes. This is
+    // what makes the rule landable ahead of remediation.
+    @Test
+    func machineLocalPathReportsThroughTheAdvisoryChannelOnly() throws {
+        let report = try RepositoryPolicy.validateSurface(
+            repository: "swift-foundations/swift-example",
+            repositoryClass: .package,
+            files: [
+                "Package.swift": """
+                let package = Package(
+                    name: "example",
+                    dependencies: [
+                        .package(path: "/Users/someone/Developer/swift-other"),
+                        .package(path: "../../swift-sibling"),
+                        .package(path: "../..")
+                    ],
+                    targets: [.target(name: "Example", path: "Sources/Example")]
+                )
+                """
+            ],
+            policy: .init(schemaVersion: 1, actionGrants: [], exemptions: [])
+        )
+
+        #expect(report.violations.isEmpty)
+        #expect(report.passed)
+        #expect(report.advisories.map(\.identifier) == ["REPO-PATH-001", "REPO-PATH-002"])
+        #expect(report.advisories.allSatisfy { $0.path == "Package.swift" })
+    }
+
+    // Build products are excluded from the text scan: `.build` is full of
+    // absolute paths by design and is not committed source.
+    @Test
+    func machineLocalPathDoesNotScanBuildProducts() throws {
+        let report = try RepositoryPolicy.validateSurface(
+            repository: "swift-foundations/swift-example",
+            repositoryClass: .package,
+            files: [
+                ".build/checkouts/other/Package.swift":
+                    ".package(path: \"/Users/someone/Developer/swift-other\")"
+            ],
+            policy: .init(schemaVersion: 1, actionGrants: [], exemptions: [])
+        )
+
+        #expect(report.advisories.isEmpty)
+    }
+
     private func repositoryFixture(files: [String: String]) throws -> URL {
         let root =
             FileManager.default.temporaryDirectory

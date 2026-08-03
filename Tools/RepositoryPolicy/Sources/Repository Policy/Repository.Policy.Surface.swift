@@ -320,6 +320,22 @@ extension RepositoryPolicy {
 
         var advisories = [SurfaceViolation]()
 
+        // REPO-PATH-001 / REPO-PATH-002 (swift-institute/.github#247).
+        // Report-only: routed to `advisories`, which does not affect
+        // `passed`. A deny on a class with 1,056 known instances in one peer
+        // fleet is unlandable before remediation exists.
+        for file in snapshot.textFiles {
+            for finding in MachineLocalPath.findings(path: file.path, contents: file.contents) {
+                advisories.append(
+                    .init(
+                        identifier: finding.identifier,
+                        path: file.path,
+                        message: "line \(finding.line): \(finding.message)"
+                    )
+                )
+            }
+        }
+
         if snapshot.hasSPIYML {
             for file in snapshot.doccMarkdownFiles
             where file.contents.contains(doccPlaceholderMarker) {
@@ -486,9 +502,38 @@ private func normalized(path: String) -> String {
     path.split(separator: "/", omittingEmptySubsequences: true).joined(separator: "/")
 }
 
-private struct DoccMarkdownFile {
+private struct TextFile {
     let path: String
     let contents: String
+}
+
+/// Directory names never scanned for committed text: version-control
+/// internals and build products are not committed source, and `.build` in
+/// particular is full of absolute paths by design.
+private let unscannedDirectories: Set<String> = [
+    ".git", ".build", ".swiftpm", "node_modules", ".venv", "DerivedData",
+]
+
+/// Extensions whose contents are not committed prose or code. Everything not
+/// listed here is offered to the UTF-8 decoder, which rejects the rest —
+/// extension is a fast path, decoding is the actual test.
+private let unscannedExtensions: Set<String> = [
+    "png", "jpg", "jpeg", "gif", "ico", "pdf", "zip", "gz", "tar", "mp4", "mov",
+    "woff", "woff2", "ttf", "otf", "dylib", "so", "a", "o", "xcframework",
+]
+
+/// Files above this size are not committed source in any shape this predicate
+/// is about, and scanning them is unbounded work.
+private let maximumScannedFileSize = 2 << 20
+
+private func isScannableTextPath(_ path: String) -> Bool {
+    let components = path.split(separator: "/", omittingEmptySubsequences: true)
+    guard !components.dropLast().contains(where: { unscannedDirectories.contains(String($0)) })
+    else { return false }
+    guard let name = components.last else { return false }
+    let parts = name.split(separator: ".", omittingEmptySubsequences: true)
+    guard parts.count >= 2 else { return true }
+    return !unscannedExtensions.contains(String(parts[parts.count - 1]).lowercased())
 }
 
 /// `**/*.docc/**/*.md`: an `.md` file with some path component before it
@@ -504,8 +549,13 @@ private struct SurfaceSnapshot {
     let actions: [ActionFile]
     let issueForms: [String]
     let hasSPIYML: Bool
-    let doccMarkdownFiles: [DoccMarkdownFile]
+    let doccMarkdownFiles: [TextFile]
     let readmeContents: String?
+    /// Every committed text file, for predicates that are not scoped to one
+    /// surface. The machine-local-path class (swift-institute/.github#247)
+    /// appears in manifests, shell scripts, workflow defaults, and
+    /// configuration alike, so there is no principled subset to scope it to.
+    let textFiles: [TextFile]
 
     init(root: URL) throws {
         let manager = FileManager.default
@@ -522,13 +572,27 @@ private struct SurfaceSnapshot {
         var actions = [ActionFile]()
         var issueForms = [String]()
         var hasSPIYML = false
-        var doccMarkdownFiles = [DoccMarkdownFile]()
+        var doccMarkdownFiles = [TextFile]()
         var readmeContents: String?
+        var textFiles = [TextFile]()
         let rootPath = root.standardizedFileURL.path
         while let url = enumerator.nextObject() as? URL {
+            if unscannedDirectories.contains(url.lastPathComponent) {
+                enumerator.skipDescendants()
+                continue
+            }
             let values = try url.resourceValues(forKeys: [.isRegularFileKey])
             guard values.isRegularFile == true else { continue }
             let path = relativePath(url: url, rootPath: rootPath)
+
+            if isScannableTextPath(path),
+                let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+                size <= maximumScannedFileSize,
+                let data = try? Data(contentsOf: url),
+                let contents = String(data: data, encoding: .utf8)
+            {
+                textFiles.append(TextFile(path: path, contents: contents))
+            }
 
             if path.hasPrefix(".github/ISSUE_TEMPLATE/") {
                 issueForms.append(path)
@@ -542,7 +606,7 @@ private struct SurfaceSnapshot {
             }
             if isDoccMarkdownPath(path) {
                 let contents = try String(contentsOf: url, encoding: .utf8)
-                doccMarkdownFiles.append(DoccMarkdownFile(path: path, contents: contents))
+                doccMarkdownFiles.append(TextFile(path: path, contents: contents))
             }
 
             let isWorkflow =
@@ -567,13 +631,14 @@ private struct SurfaceSnapshot {
         self.hasSPIYML = hasSPIYML
         self.doccMarkdownFiles = doccMarkdownFiles.sorted { $0.path < $1.path }
         self.readmeContents = readmeContents
+        self.textFiles = textFiles.sorted { $0.path < $1.path }
     }
 
     init(files: [String: String]) throws {
         var actions = [ActionFile]()
         var issueForms = [String]()
         var hasSPIYML = false
-        var doccMarkdownFiles = [DoccMarkdownFile]()
+        var doccMarkdownFiles = [TextFile]()
         var readmeContents: String?
         for (path, source) in files {
             if path.hasPrefix(".github/ISSUE_TEMPLATE/") {
@@ -586,7 +651,7 @@ private struct SurfaceSnapshot {
                 readmeContents = source
             }
             if isDoccMarkdownPath(path) {
-                doccMarkdownFiles.append(DoccMarkdownFile(path: path, contents: source))
+                doccMarkdownFiles.append(TextFile(path: path, contents: source))
             }
             let isWorkflow =
                 path.hasPrefix(".github/workflows/")
@@ -609,6 +674,10 @@ private struct SurfaceSnapshot {
         self.hasSPIYML = hasSPIYML
         self.doccMarkdownFiles = doccMarkdownFiles.sorted { $0.path < $1.path }
         self.readmeContents = readmeContents
+        self.textFiles = files
+            .filter { isScannableTextPath($0.key) }
+            .map { TextFile(path: $0.key, contents: $0.value) }
+            .sorted { $0.path < $1.path }
     }
 }
 
