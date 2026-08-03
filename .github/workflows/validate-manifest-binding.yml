@@ -20,6 +20,19 @@
 # Per [CI-090] this is a workflow_call reusable so NO top-level `permissions:`
 # block — per-job permissions (contents: read) provide the floor; the caller's
 # permissions cap the intersection.
+#
+# What a green asserts (#256): when the run targets the host repository
+# itself — pull_request and push events on swift-institute/.github, or any
+# invocation from within it with no foreign `repo` input — the scan validates
+# the job's own checkout, which actions/checkout resolves to the event
+# revision (the PR merge ref on pull_request, the pushed commit on push). A
+# PR-leg green therefore asserts that the revision under review satisfies
+# checks 2 + 4 + 5. Before this, the PR leg cloned the target's default
+# branch, so it could never catch an orphan introduced by the PR under
+# review (#256; instances #226, #242). Cross-repo sweeps — workflow_call or
+# workflow_dispatch naming a different repository in `repo` — still clone
+# that target's default branch; a sweep green asserts only default-branch
+# state, as before.
 
 name: validate-manifest-binding
 
@@ -118,20 +131,32 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.mint-token.outputs.token }}
           VALIDATOR: ${{ github.workspace }}/institute-github/.github/scripts/validate-manifest-binding.py
+          HOST_CHECKOUT: ${{ github.workspace }}/institute-github
+          INPUT_REPO: ${{ inputs.repo }}
         run: |
           set -euo pipefail
           : > /tmp/findings.tsv
           repo="$(cat /tmp/target.txt)"
-          workdir=$(mktemp -d)
-          (
-            cd "$workdir"
-            if ! gh repo clone "$repo" . -- --depth 1 --quiet 2>/dev/null; then
-              echo "$repo	clone-failed	-" >> /tmp/findings.tsv
-              exit 0
-            fi
-            python3 "$VALIDATOR" "$repo" "$workdir" >> /tmp/findings.tsv || true
-          )
-          rm -rf "$workdir"
+          if [ -z "$INPUT_REPO" ] && [ "${GITHUB_REPOSITORY:-}" = "swift-institute/.github" ]; then
+            # Self-validation: no foreign target requested and the run is
+            # hosted by the repo the checkout contains, so the checkout is at
+            # the event revision — validate it directly. Cloning here would
+            # validate the default branch and miss the revision under review
+            # (#256).
+            python3 "$VALIDATOR" "$repo" "$HOST_CHECKOUT" >> /tmp/findings.tsv || true
+          else
+            # Cross-repo sweep: clone the requested target's default branch.
+            workdir=$(mktemp -d)
+            (
+              cd "$workdir"
+              if ! gh repo clone "$repo" . -- --depth 1 --quiet 2>/dev/null; then
+                echo "$repo	clone-failed	-" >> /tmp/findings.tsv
+                exit 0
+              fi
+              python3 "$VALIDATOR" "$repo" "$workdir" >> /tmp/findings.tsv || true
+            )
+            rm -rf "$workdir"
+          fi
 
       - name: Aggregate findings
         id: aggregate
