@@ -36,12 +36,67 @@
 
 name: ci-sweep
 
-# [CI-090] standalone workflow: deny-all floor; per-job grants below.
-permissions: {}
+# [CI-090] deny-all floor lived at workflow level while this file was
+# schedule/workflow_dispatch only. #244 blocker 3 adds a `workflow_call`
+# trigger below, and a `workflow_call` workflow must NOT declare
+# workflow-level `permissions: {}` — the reusable-call intersection would
+# cap every caller at zero regardless of what its jobs request. Every job
+# below already declares its own least-privilege `permissions:` block, so
+# dropping the workflow-level floor changes nothing about what actually
+# runs; it only removes the combination GitHub Actions would otherwise
+# silently neuter.
 
 on:
   schedule:
     - cron: '11 0 * * *'   # nightly 00:11 UTC — interim measure (#168): 2h earlier than 02:11 to move the observed 05:17-05:44 UTC delayed start to ~03:17 UTC, clear of the 04:00 UTC metadata-sync cron cluster
+  # workflow_call (#244 blocker 3, "fork trap"): forking this file and
+  # editing the workflow_dispatch `visibility`/`exclude-archived` defaults
+  # does nothing for the peer's own cron — `inputs` is entirely unpopulated
+  # on a `schedule`-triggered run, and the `select` job's schedule leg
+  # resolves through a hardcoded 'public'/true fallback regardless of any
+  # edited default. A peer calls this workflow directly from their own
+  # scheduled wrapper with explicit inputs instead. Note the `report` job
+  # still files its tracking issue in swift-institute/.github unconditionally
+  # (`owner: swift-institute, repositories: .github`) — that is a
+  # pre-existing, unrelated hardcode this PR does not attempt to
+  # generalize; a peer caller gets loud enumeration but an issue-filing
+  # step scoped to us, not them. See swift-institute/.github#251 for the
+  # trap itself.
+  workflow_call:
+    inputs:
+      repos:
+        description: "Space/comma-separated owner/name list to sweep (canary or manual re-verify). Empty = tonight's rotation slice."
+        type: string
+        required: false
+        default: ""
+      slices:
+        description: "Number of rotation buckets the fleet is partitioned into (default 7 → weekly full coverage)."
+        type: string
+        required: false
+        default: "7"
+      visibility:
+        description: 'Filter fleet enumeration by visibility: public | private | internal | all. Default public — swift-institute''s own fleet is public; a peer institute with a private fleet (#244) supplies its own value.'
+        type: string
+        required: false
+        default: 'public'
+      exclude-archived:
+        description: 'Exclude archived repos from fleet enumeration. Default true. A peer''s archived-repo posture need not match ours (#244).'
+        type: boolean
+        required: false
+        default: true
+    secrets:
+      SWIFT_INSTITUTE_BOT_APP_CLIENT_ID:
+        required: false
+        description: |
+          GitHub App client ID used by the `report` job to mint an
+          installation token. Same-org callers pass it via
+          `secrets: inherit`; a peer institute maps its own App's client
+          ID onto this slot (#212 pattern).
+      SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY:
+        required: false
+        description: |
+          GitHub App private key; counterpart of
+          SWIFT_INSTITUTE_BOT_APP_CLIENT_ID.
   workflow_dispatch:
     inputs:
       repos:
@@ -54,9 +109,20 @@ on:
         type: string
         required: false
         default: "7"
+      visibility:
+        description: 'Filter fleet enumeration by visibility: public | private | internal | all. Default public — swift-institute''s own fleet is public; a peer institute with a private fleet (#244) supplies its own value.'
+        type: string
+        required: false
+        default: 'public'
+      exclude-archived:
+        description: 'Exclude archived repos from fleet enumeration. Default true. A peer''s archived-repo posture need not match ours (#244).'
+        type: boolean
+        required: false
+        default: true
 
 jobs:
   select:
+    if: ${{ !github.event.repository.private }}     # [CI-032]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -83,6 +149,8 @@ jobs:
           ORGS_JSON: ${{ steps.orgs.outputs.orgs }}
           REPOS_OVERRIDE: ${{ inputs.repos }}
           SLICES: ${{ inputs.slices || '7' }}
+          INPUT_VISIBILITY: ${{ inputs.visibility || 'public' }}
+          INPUT_EXCLUDE_ARCHIVED: ${{ inputs.exclude-archived }}
         run: |
           set -euo pipefail
           if [ -n "$REPOS_OVERRIDE" ]; then
@@ -91,16 +159,60 @@ jobs:
             selected="$fleet"
             echo "Override list: $(wc -l <<<"$selected") repos."
           else
+            viz_flag=()
+            case "$INPUT_VISIBILITY" in
+              public|private|internal) viz_flag=(--visibility "$INPUT_VISIBILITY") ;;
+              all|"") ;;
+              *) echo "::error::Unknown visibility '${INPUT_VISIBILITY}' (expected: public, private, internal, all)"; exit 1 ;;
+            esac
+            archive_predicate=".isArchived==false"
+            [ "$INPUT_EXCLUDE_ARCHIVED" = "false" ] && archive_predicate="true"
             fleet=""
+            zero_orgs=0
+            org_count=0
             while IFS= read -r org; do
-              # Public-repo listing needs no elevated token.
-              repos=$(gh repo list "$org" --limit 2000 --visibility public \
+              org_count=$((org_count+1))
+              # Elevated token not needed for public listing; visibility=private
+              # or internal relies on github.token's own org read access.
+              repos=$(gh repo list "$org" --limit 2000 "${viz_flag[@]}" \
                 --json nameWithOwner,isArchived,isFork \
-                --jq '.[] | select(.isArchived==false and .isFork==false) | .nameWithOwner')
+                --jq ".[] | select(${archive_predicate} and .isFork==false) | .nameWithOwner")
+              repo_count=$(printf '%s\n' "$repos" | grep -c '^.' || true)
+              # Loud-empty-reach (#244), three-rule discriminator per review:
+              #   1. Caller explicitly scoped a non-default visibility and
+              #      this org reached zero -> HARD FAILURE immediately.
+              #      Nobody passes visibility: private to an org they
+              #      believe has none — there is no benign reading.
+              #   2. Default-public reaching zero for ONE org -> warning
+              #      only, tallied below for rule 3.
+              #   3. Aggregate zero across every org in the manifest ->
+              #      HARD FAILURE (checked after the loop). This is the
+              #      rule that covers our own fleet: default-public by
+              #      construction, so it can never trip rule 1.
+              if [ "$repo_count" -eq 0 ]; then
+                if [ "$INPUT_VISIBILITY" != "public" ]; then
+                  echo "::error::ci-sweep enumerated 0 repos from org '${org}' with explicitly-scoped visibility='${INPUT_VISIBILITY}'. No benign reading — the caller asked for this visibility and it matched nothing."
+                  exit 1
+                fi
+                zero_orgs=$((zero_orgs+1))
+                echo "::warning::ci-sweep enumerated 0 repos from org '${org}' (visibility=${INPUT_VISIBILITY}, exclude-archived=${INPUT_EXCLUDE_ARCHIVED:-true})."
+              fi
               fleet="${fleet}${repos}"$'\n'
             done < <(jq -r '.[]' <<<"$ORGS_JSON")
             fleet=$(sed '/^$/d' <<<"$fleet" | sort -u)
             total=$(wc -l <<<"$fleet" | tr -d ' ')
+            [ -z "$fleet" ] && total=0
+            # Rule 3: every org in the manifest enumerated zero. Only
+            # reachable here in the default-public branch — rule 1 above
+            # already exits on the first zero-repo org whenever visibility
+            # was explicitly scoped, so this loop only runs to completion
+            # when every org used the default. A token-scope or org-rename
+            # regression that zeroes our own 17-org nightly must not stay
+            # warning-only forever.
+            if [ "$org_count" -gt 0 ] && [ "$zero_orgs" -eq "$org_count" ]; then
+              echo "::error::ci-sweep reached 0 repos across all ${org_count} org(s) in the manifest (visibility=${INPUT_VISIBILITY}, exclude-archived=${INPUT_EXCLUDE_ARCHIVED:-true}). Every org reported success individually, but the aggregate sweep converged nothing — this is the class defect #244 was filed about, at fleet scope."
+              exit 1
+            fi
             bucket=$(( $(date -u +%j | sed 's/^0*//') % SLICES ))
             selected=$(awk -v s="$SLICES" -v b="$bucket" '
               { h=0; for (i=1; i<=length($0); i++) h=(h*31+index("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_/.", substr($0,i,1)))%1000003 }
@@ -179,7 +291,7 @@ jobs:
 
   report:
     needs: [select, sweep, docs-sweep]
-    if: ${{ always() && needs.select.result == 'success' }}
+    if: ${{ always() && needs.select.result == 'success' && !github.event.repository.private }}     # [CI-032]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -221,7 +333,17 @@ jobs:
               fail_count=$((fail_count+1))
             fi
           done < <(jq -r '.[]' <<<"$SWEPT_REPOS")
-          if [ "$fail_count" -eq 0 ]; then
+          swept_count=$(jq 'length' <<<"$SWEPT_REPOS")
+          # Loud-empty-reach (#244): 0 repos swept and 0 failures look
+          # identical in the loop above — both leave fail_count at 0. Without
+          # this branch a fully empty rotation slice reports "all swept
+          # repos green", which is exactly the false-convergence signal the
+          # class defect is about. Distinguish "reached and converged
+          # nothing to sweep" from "swept N repos and all passed".
+          if [ "$swept_count" -eq 0 ]; then
+            echo "| _none_ | 0 repos swept this run — not a convergence signal |" >> "$RUNNER_TEMP/body.md"
+            echo "::warning::ci-sweep swept 0 repos this run (empty rotation slice or 0-repo fleet). The run reports success, but nothing was verified."
+          elif [ "$fail_count" -eq 0 ]; then
             echo "| _none_ | all swept repos green |" >> "$RUNNER_TEMP/body.md"
           fi
           echo "FAIL_COUNT=$fail_count" >> "$GITHUB_ENV"
