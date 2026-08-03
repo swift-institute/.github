@@ -144,7 +144,7 @@ function_parameter_count:
 custom_rules:
   typed_throws_required:
     name: "Typed Throws Required ([API-ERR-001])"
-    regex: '(?<!\bfunc provideScope\([^{}]{0,500})\bthrows\b\s*(?![\(:])'
+    regex: '(?<!\bfunc provideScope\([^{}]{0,500})(?<!\bfunc encode\(to encoder:\s{0,100}(?:any\s{1,100})?Encoder\)\s{0,100})(?<!\binit\(from decoder:\s{0,100}(?:any\s{1,100})?Decoder\)\s{0,100})(?<!\bfunc expansion\([^{}]{0,500}\bin context:\s{0,100}(?:some|any)\s{1,100}MacroExpansionContext\s{0,100}\)\s{0,100})\bthrows\b\s*(?![\(:])'
     message: "Throwing functions/methods/inits MUST use typed throws ([API-ERR-001]). Use 'throws(SomeError)' rather than untyped 'throws'."
     severity: warning
     match_kinds:
@@ -164,6 +164,38 @@ custom_rules:
     # Does NOT cover non-`func` shapes (e.g. a stored `_provideScope`
     # closure property or an init parameter named `provideScope`) — those
     # still require a per-site shield.
+    #
+    # swift-institute/.github#219 (principal ruling, comment 5164746902,
+    # 2026-08-03) extends the same bounded-lookbehind technique to three
+    # more protocol-witness shapes whose untyped `throws` is dictated by
+    # a stdlib/SwiftSyntaxMacros protocol requirement, not by the
+    # conforming author: a `throws(E)` witness here must catch-and-wrap
+    # errors from the untyped container/macro-expansion APIs, and no
+    # caller can ever observe the typed error because the protocol
+    # erases it — ceremony, not a fix.
+    #   - stdlib `Encodable.encode(to:)`: `func encode(to encoder: Encoder)`
+    #     / `func encode(to encoder: any Encoder)` (both spellings are
+    #     live in the fleet — swift-standards/swift-domain-standard and
+    #     swift-standards/swift-emailaddress-standard use `any Encoder`;
+    #     swift-standards/swift-locale-standard and
+    #     swift-iso/swift-iso-15924 predate `any` and omit it).
+    #   - stdlib `Decodable.init(from:)`: `init(from decoder: Decoder)` /
+    #     `init(from decoder: any Decoder)` (same two spellings).
+    #   - SwiftSyntaxMacros witnesses (`MemberMacro`, `ExtensionMacro`,
+    #     `MemberAttributeMacro`, `AccessorMacro`, and siblings): every
+    #     role protocol names its requirement `static func expansion(...)`
+    #     and ends the parameter list `in context: some MacroExpansionContext`
+    #     (verified against swift-foundations/swift-copy-on-write's
+    #     `CoWMacro.swift`, the #219 red-A evidence) immediately before
+    #     the untyped `throws`.
+    # Each lookbehind anchors on the parameter's INTERNAL name
+    # (`encoder`/`decoder`/`context`) AND its stdlib/SwiftSyntaxMacros
+    # type, not just the external label — a same-named parameter typed
+    # against a DIFFERENT protocol (e.g. `to encoder: any Writable`,
+    # `from decoder: any JSONSource`) does not match the lookbehind text
+    # and the rule still fires, which is the discriminator [#219] rules
+    # on: ordinary `any <Protocol>`/untyped-`throws` API surface (e.g.
+    # swift-ietf/swift-rfc-3987's `URL+IRI.swift`) is unaffected.
     excluded:
       - 'Tests/.*'
   no_xctest_import:
@@ -292,7 +324,31 @@ custom_rules:
     # legitimately says "any <Word>" (e.g. swift-manifest-primitives
     # Manifest.swift:31 "…or any L2/L3 type"); exclusion sidesteps the
     # keyword-inclusion breakage above while keeping the regex unchanged.
-    regex: '\bany\s+[A-Z][A-Za-z0-9_]*'
+    #
+    # swift-institute/.github#219 (principal ruling, comment 5164746902,
+    # 2026-08-03): `any Encoder` / `any Decoder` in the exact stdlib
+    # `Encodable.encode(to:)` / `Decodable.init(from:)` witness parameter
+    # position are STRICTLY unavoidable — Swift does not permit a generic
+    # method to witness an existential-parameter protocol requirement, so
+    # there is no rewrite that removes the existential without breaking
+    # the conformance. Because the flagged text ("any Encoder"/"any
+    # Decoder") sits AHEAD of the match position rather than behind it,
+    # the exemption cannot be a plain bounded negative lookbehind (as
+    # `typed_throws_required` uses above); each exemption is instead one
+    # negative lookahead containing a nested bounded lookbehind — `(?!
+    # (?<=to encoder: )any Encoder\))` reads "fail the match iff this
+    # position is both preceded by the witness's parameter label AND
+    # immediately followed by its exact stdlib type + closing paren".
+    # Anchoring on the parameter's internal name AND its literal type
+    # means a same-named parameter typed against a different protocol
+    # (`to encoder: any Writable`, `from decoder: any JSONSource`) does
+    # not match either half and the rule still fires — required per
+    # [#219]'s near-miss discriminator. The SwiftSyntaxMacros witness
+    # class (#219 red-A evidence, verified against swift-foundations/
+    # swift-copy-on-write's `CoWMacro.swift`) uses `some
+    # MacroExpansionContext`, never `any`, so it needs no entry here —
+    # only `typed_throws_required` is extended for that class.
+    regex: '(?!(?<=\bto encoder:\s{0,100})any\s{1,100}Encoder\))(?!(?<=\bfrom decoder:\s{0,100})any\s{1,100}Decoder\))\bany\s+[A-Z][A-Za-z0-9_]*'
     excluded_match_kinds:
       - comment
       - comment.mark
