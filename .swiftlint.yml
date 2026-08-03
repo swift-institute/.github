@@ -247,6 +247,13 @@ custom_rules:
     # surface this could over-match is a function accepting a trailing
     # throwing closure it does not call, which is itself an unusual and
     # narrow shape.
+    # Ruling conditions: an exempted declaration must document its error
+    # contract in its doc comment (which typed failures it throws itself,
+    # and that the closure's error is rethrown transparently) — the
+    # pattern already on `withResource` at resource-pool head 8ca28f8.
+    # Revisit trigger: this exemption is reviewed the day Swift ships an
+    # error-union or typed-rethrows capability; it exists because of the
+    # expressiveness gap, not despite it.
     excluded:
       - 'Tests/.*'
   no_xctest_import:
