@@ -490,6 +490,21 @@ validators:
     rule-id-regex: '^SWIFTLINT-WITNESS-EXEMPTION'
     migrate-to-base: 'n/a (self-test only against this repo''s own canonical config; no scan job of its own)'
 
+  # swift-institute/.github#242: same synthetic-fixture-only self-check
+  # posture as SWIFTLINT-WITNESS-EXEMPTION above — verifies the
+  # no_int_bitpattern_arithmetic newline-into-comment fix against this
+  # repo's own canonical .swiftlint.yml, exercised entirely through
+  # lint-validator-fixtures.yml (push + pull_request triggers over
+  # .github/scripts/validate-*.py include this script).
+  - rule-id: SWIFTLINT-BITPATTERN-COMMENT
+    validator-script: .github/scripts/validate-swiftlint-bitpattern-comment.py
+    workflow-file: .github/workflows/lint-validator-fixtures.yml
+    status: active
+    self-firing: active
+    discovery-mode: single-target
+    rule-id-regex: '^SWIFTLINT-BITPATTERN-COMMENT'
+    migrate-to-base: 'n/a (self-test only against this repo''s own canonical config; no scan job of its own)'
+
   # ─── Skill corpus publication hygiene ──────────────────────────────
   #
   # One aggregate entry per the "representative entry per script"
