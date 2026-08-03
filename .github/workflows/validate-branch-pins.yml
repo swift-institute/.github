@@ -24,6 +24,15 @@
 #
 # Pattern mirrors validate-package-structure.yml. Authentication uses the
 # swift-institute-bot GitHub App.
+#
+# Peer-institute consumption (#212): `manifest-repository` swaps the org
+# manifest end to end — whole-fleet enumeration AND the validator's
+# Institute-dependency recognition (`--orgs-file`) both read the peer
+# manifest — and the declared workflow_call secrets let a cross-org caller
+# supply its own App credentials (`secrets: inherit` does not cross the
+# org boundary). Defaults are inert: absent both, behavior is identical to
+# pre-#212 and swift-institute's own automation scope is unchanged. See
+# the PEER-INSTITUTE CONSUMPTION section in actions/read-orgs/action.yml.
 
 name: validate-branch-pins
 
@@ -50,6 +59,24 @@ on:
         type: string
         required: false
         default: 'public'
+      manifest-repository:
+        description: 'Peer-institute owner/repo whose root orgs.yaml replaces the canonical org manifest (#212). Empty default: the canonical swift-institute manifest.'
+        type: string
+        required: false
+        default: ''
+    secrets:
+      SWIFT_INSTITUTE_BOT_APP_CLIENT_ID:
+        required: false
+        description: |
+          GitHub App client ID used to mint per-org installation tokens.
+          Same-org callers pass it via `secrets: inherit`; a peer
+          institute maps its own App's client ID onto this slot (#212).
+      SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY:
+        required: false
+        description: |
+          GitHub App private key; counterpart of
+          SWIFT_INSTITUTE_BOT_APP_CLIENT_ID. Same inherit/peer-mapping
+          split as the client ID (#212).
     outputs:
       repos-scanned:
         description: 'Number of repos scanned.'
@@ -81,6 +108,10 @@ on:
         type: string
         required: false
         default: 'public'
+      manifest-repository:
+        description: 'Peer-institute owner/repo whose root orgs.yaml replaces the canonical org manifest (#212, optional).'
+        type: string
+        required: false
 
 jobs:
   scan:
@@ -116,9 +147,13 @@ jobs:
 
       # Whole-fleet enumeration (dispatch with no repo and no org) reads
       # the canonical read-orgs manifest rather than a second inline copy.
+      # `manifest-repository` (empty for every swift-institute path) swaps
+      # in a peer institute's manifest (#212).
       - name: Read Institute orgs
         id: orgs
         uses: swift-institute/.github/.github/actions/read-orgs@main
+        with:
+          manifest-repository: ${{ inputs.manifest-repository }}
 
       - name: Resolve target repos
         id: targets
@@ -171,7 +206,11 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.mint-token.outputs.token }}
           VALIDATOR_SCRIPT: ${{ github.workspace }}/.github-shared/.github/scripts/validate-branch-pins.py
-          ORGS_FILE: ${{ github.workspace }}/.github-shared/.github/actions/read-orgs/orgs.yaml
+          # Default: the workflow_sha-pinned checkout copy, exactly as
+          # before #212. With `manifest-repository` set, the SAME fetched
+          # peer manifest the enumeration used (read-orgs' manifest-file
+          # output), so recognition and enumeration cannot diverge.
+          ORGS_FILE: ${{ inputs.manifest-repository != '' && steps.orgs.outputs.manifest-file || format('{0}/.github-shared/.github/actions/read-orgs/orgs.yaml', github.workspace) }}
           BASELINE_FILE: ${{ github.workspace }}/.github-shared/.github/scripts/.branch-pin-baseline
         run: |
           set -euo pipefail

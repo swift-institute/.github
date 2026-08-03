@@ -57,6 +57,15 @@
 # peer institute in public Institute prose is exactly the cross-institute
 # reference it exists to surface. That watch is unaffected by this ruling
 # and must not be narrowed to match it. Different purposes, different scopes.
+#
+# PEER CONSUMPTION IS NOT ENROLLMENT (#212): a peer institute consumes the
+# reusable workflows with its OWN manifest (its `.github` repo, root
+# orgs.yaml, same schema as this file) via the read-orgs composite's
+# `manifest-repository` / `manifest-path` inputs, and its own GitHub App
+# credentials mapped onto the reusable workflows' declared secret slots.
+# That path never adds an org here and never installs swift-institute-bot
+# anywhere new — the ruling above stands. Pattern documented in
+# action.yml's PEER-INSTITUTE CONSUMPTION section.
 
 - name: swift-primitives
   layer: L1

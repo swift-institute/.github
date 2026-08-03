@@ -1,6 +1,17 @@
 # validate-sub-org-wrappers.yml — verify [CI-004b] sub-org wrapper absence.
 #
 # Pilot 28 of `/promote-rule` (2026-05-14).
+#
+# Peer-institute consumption (#212): `manifest-repository` swaps the org
+# manifest feeding the sub-org matrix, and the declared workflow_call
+# secrets let a cross-org caller supply its own App credentials
+# (`secrets: inherit` does not cross the org boundary). Defaults are
+# inert: absent both, behavior is identical to pre-#212 and
+# swift-institute's own automation scope is unchanged. The family-root
+# exclusion filter below names swift-institute orgs; records in a peer
+# manifest simply pass it, so every peer org is scanned as a sub-org.
+# See the PEER-INSTITUTE CONSUMPTION section in
+# actions/read-orgs/action.yml.
 
 name: validate-sub-org-wrappers
 
@@ -17,6 +28,24 @@ on:
         type: boolean
         required: false
         default: false
+      manifest-repository:
+        description: 'Peer-institute owner/repo whose root orgs.yaml replaces the canonical org manifest (#212). Empty default: the canonical swift-institute manifest.'
+        type: string
+        required: false
+        default: ''
+    secrets:
+      SWIFT_INSTITUTE_BOT_APP_CLIENT_ID:
+        required: false
+        description: |
+          GitHub App client ID used to mint per-org installation tokens.
+          Same-org callers pass it via `secrets: inherit`; a peer
+          institute maps its own App's client ID onto this slot (#212).
+      SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY:
+        required: false
+        description: |
+          GitHub App private key; counterpart of
+          SWIFT_INSTITUTE_BOT_APP_CLIENT_ID. Same inherit/peer-mapping
+          split as the client ID (#212).
     outputs:
       total-violations:
         value: ${{ jobs.scan.outputs.total-violations }}
@@ -29,6 +58,10 @@ on:
         type: boolean
         required: false
         default: false
+      manifest-repository:
+        description: 'Peer-institute owner/repo whose root orgs.yaml replaces the canonical org manifest (#212, optional).'
+        type: string
+        required: false
 
 # Top-level `permissions:` OMITTED per [CI-090] — this is a combined
 # (workflow_call + schedule + workflow_dispatch) workflow, treated as
@@ -58,6 +91,9 @@ jobs:
         uses: swift-institute/.github/.github/actions/read-orgs@main
         with:
           filter: 'select((.name == "swift-primitives" or .name == "swift-standards" or .name == "swift-foundations" or .name == "swift-institute") | not) | .name'
+          # Empty for every swift-institute path; a peer institute's
+          # manifest swaps in here (#212).
+          manifest-repository: ${{ inputs.manifest-repository }}
 
   scan:
     needs: config

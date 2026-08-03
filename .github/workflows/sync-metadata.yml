@@ -28,6 +28,17 @@
 # Authentication: swift-institute-bot GitHub App (per Skills/github-repository
 # [GH-REPO-073]). App secrets SWIFT_INSTITUTE_BOT_APP_CLIENT_ID + SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY at
 # org level on swift-institute/.github.
+#
+# Peer-institute consumption (#212): the workflow_call secrets below are
+# DECLARED so a cross-org thin caller can supply its own App credentials
+# explicitly (`secrets: inherit` does not cross the org boundary; a peer
+# maps e.g. rule-institute-bot's credentials onto these slots). Same-org
+# callers keep `secrets: inherit` unchanged, and absent any explicit
+# mapping behavior is identical to pre-#212 — swift-institute's own
+# automation scope is unchanged. A peer's fleet driver enumerates its own
+# orgs via the read-orgs composite's `manifest-repository` input and fans
+# out into this workflow per org; see the PEER-INSTITUTE CONSUMPTION
+# section in actions/read-orgs/action.yml.
 
 name: sync-metadata
 
@@ -66,6 +77,19 @@ on:
       diffs-found:
         description: 'Number of fields divergent (whether or not applied).'
         value: ${{ jobs.sync.outputs.diffs-found }}
+    secrets:
+      SWIFT_INSTITUTE_BOT_APP_CLIENT_ID:
+        required: false
+        description: |
+          GitHub App client ID used to mint per-org installation tokens.
+          Same-org callers pass it via `secrets: inherit`; a peer
+          institute maps its own App's client ID onto this slot (#212).
+      SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY:
+        required: false
+        description: |
+          GitHub App private key; counterpart of
+          SWIFT_INSTITUTE_BOT_APP_CLIENT_ID. Same inherit/peer-mapping
+          split as the client ID (#212).
 
   workflow_dispatch:
     inputs:
