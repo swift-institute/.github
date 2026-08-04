@@ -136,12 +136,24 @@ function_parameter_count:
   error: 8
 
 # inclusive_language (swift-institute/.github#268, principal ruling
-# recommendation (a), 2026-08-04): `inclusive_language` is not itself a
-# Tier 1 opt_in_rules member — it is enabled per-repo, e.g. by
-# swift-ietf/swift-rfc-8446's own `.swiftlint.yml` — but a repo that opts
-# in inherits this rule's config from the Tier 1 parent_config chain, so
-# the narrowest fleet-wide fix is a term allowlist here rather than a
-# per-repo severity override or a blanket `disabled_rules` entry.
+# recommendation (a), 2026-08-04; corrected per review 4850697512): `
+# inclusive_language` is not itself a Tier 1 opt_in_rules member — it is
+# enabled per-repo, e.g. by swift-ietf/swift-rfc-8446's own
+# `.swiftlint.yml` — but a repo that opts in inherits this rule's config
+# from the Tier 1 parent_config chain, so the narrowest fleet-wide fix is
+# a term allowlist here rather than a per-repo severity override or a
+# blanket `disabled_rules` entry.
+#
+# SwiftLint 0.63.3's `inclusive_language` rule has NO `allowed_terms` key
+# — that key is silently ignored (does not error, does not apply). The
+# real key is `override_allowed_terms`, and it REPLACES the rule's
+# built-in default allowed-terms set rather than extending it, so the
+# built-in default (`mastercard` — upstream's own false-positive
+# exemption for "master" as a payment-network substring, SwiftLint#3415)
+# must be re-listed here alongside the RFC 8446 family or it is silently
+# dropped fleet-wide. Matching is lowercased range-overlap, so the
+# camelCase spec identifiers below work as-is against SwiftLint's
+# lowercased flagged-term scan.
 #
 # swift-rfc-8446 mirrors RFC 8446's own normative key-schedule
 # terminology: `masterSecret`, `resumptionMasterSecret`,
@@ -156,7 +168,8 @@ function_parameter_count:
 # swift-ietf repos wholesale: any non-spec-mirroring use of a flagged term
 # elsewhere in the fleet, including other swift-ietf repos, still fires.
 inclusive_language:
-  allowed_terms:
+  override_allowed_terms:
+    - mastercard
     - masterSecret
     - resumptionMasterSecret
     - exporterMasterSecret
