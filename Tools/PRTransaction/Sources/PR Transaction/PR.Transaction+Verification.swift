@@ -2,9 +2,18 @@ extension PRTransaction {
     static func verify(_ snapshot: Snapshot) throws {
         switch snapshot.plan.verification {
         case .package:
-            // Check-run names are caller-path-prefixed: the thin caller's `ci`
-            // job renders the universal aggregate as `ci / ci-ok`.
-            let ci = snapshot.checks.filter { $0.name == "ci / ci-ok" }
+            // Check-run names are caller-path-prefixed. Renamed
+            // swift-institute/.github#276 Task 3-01: the thin caller's `ci`
+            // job used to render a layer wrapper's now-temporary
+            // compatibility aggregate as `ci / ci-ok`; the required context
+            // is now the universal chain's own aggregate, `ci / matrix /
+            // ci-ok`, rendered through the wrapper's `matrix` job. This is
+            // the PUBLIC package contract only — a private package's
+            // required context is `verification / workspace` (Task
+            // 2-01/2-02, #253) and is verified through the `.control`
+            // profile with that name declared explicitly, not through this
+            // case.
+            let ci = snapshot.checks.filter { $0.name == "ci / matrix / ci-ok" }
             guard !ci.isEmpty else { throw Error.missingCI }
             guard ci.allSatisfy({ terminal($0.conclusion) }) else { throw Error.staleCI }
             let currentCI = ci.filter { $0.head == snapshot.head }

@@ -202,7 +202,7 @@ extension PRTransaction.Transaction {
             #expect(first.count == 100)
             let source = source(
                 verification: .package,
-                checks: pages([[check("ci / ci-ok")]]),
+                checks: pages([[check("ci / matrix / ci-ok")]]),
                 runs: pages([first, [run("CI", conclusion: "failure")]])
             )
 
@@ -216,7 +216,7 @@ extension PRTransaction.Transaction {
             #expect(first.count == 100)
             let source = source(
                 verification: .package,
-                checks: pages([[check("ci / ci-ok")]]),
+                checks: pages([[check("ci / matrix / ci-ok")]]),
                 runs: pages([first, [run("CI", conclusion: nil)]])
             )
 
@@ -231,7 +231,7 @@ extension PRTransaction.Transaction {
             #expect(first.count == 100)
             let source = source(
                 verification: .package,
-                checks: pages([[check("ci / ci-ok")]]),
+                checks: pages([[check("ci / matrix / ci-ok")]]),
                 runs: pages([first, [run("CI")]])
             )
 
@@ -243,7 +243,7 @@ extension PRTransaction.Transaction {
             // `swift-ci` name must synthesize no full-tier evidence.
             let source = source(
                 verification: .package,
-                checks: pages([[check("ci / ci-ok")]]),
+                checks: pages([[check("ci / matrix / ci-ok")]]),
                 runs: pages([[run("swift-ci")]])
             )
 
@@ -258,7 +258,7 @@ extension PRTransaction.Transaction {
             // workflow is a lower tier and must not stand in for it.
             let source = source(
                 verification: .package,
-                checks: pages([[check("ci / ci-ok")]]),
+                checks: pages([[check("ci / matrix / ci-ok")]]),
                 runs: pages([[run("CI", event: "pull_request")]])
             )
 
@@ -270,7 +270,7 @@ extension PRTransaction.Transaction {
         @Test func `producer rejects an incomplete check-run collection`() {
             let source = source(
                 verification: .package,
-                checks: pages([[check("ci / ci-ok")]], total: 2)
+                checks: pages([[check("ci / matrix / ci-ok")]], total: 2)
             )
 
             #expect(throws: PRTransaction.Error.incomplete("check-runs")) {
@@ -281,7 +281,7 @@ extension PRTransaction.Transaction {
         @Test func `producer rejects an incomplete workflow-run collection`() {
             let source = source(
                 verification: .package,
-                checks: pages([[check("ci / ci-ok")]]),
+                checks: pages([[check("ci / matrix / ci-ok")]]),
                 runs: pages([[run("CI")]], total: 2)
             )
 

@@ -146,12 +146,27 @@ enum Main {
     private static func ruleset(_ arguments: RulesetArguments) throws {
         let url = URL(filePath: arguments.policy)
         let payload: Data
-        switch arguments.repositoryClass {
-        case .package:
+        switch (arguments.repositoryClass, arguments.visibility, arguments.compatibility) {
+        case (.package, .public, false):
             payload = try RepositoryPolicy.Ruleset.protectedMainPayload(from: url)
-        case .controlPlane:
+        case (.package, .public, true):
+            payload = try RepositoryPolicy.Ruleset.protectedMainPublicCompatibilityPayload(
+                from: url
+            )
+        case (.package, .private, false):
+            payload = try RepositoryPolicy.Ruleset.protectedMainPrivatePayload(from: url)
+        case (.package, .private, true):
+            // No compatibility variant exists for private repositories: no
+            // producer preceded `verification / workspace` (Phase 2 is
+            // itself what first gives private repositories any CI
+            // attestation). Requesting compatibility for a private target
+            // is a caller error, not a silently-downgraded final payload.
+            throw RepositoryPolicy.ConfigurationError(
+                "ruleset --visibility private admits no --compatibility variant"
+            )
+        case (.controlPlane, _, _):
             payload = try RepositoryPolicy.Ruleset.protectedMainControlPayload(from: url)
-        case .tool:
+        case (.tool, _, _):
             throw RepositoryPolicy.ConfigurationError(
                 "ruleset --class must be package or control-plane"
             )
@@ -322,8 +337,21 @@ enum Main {
     }
 
     private struct RulesetArguments {
+        /// Repository visibility, read live from GitHub
+        /// (`GET /repos/{full_name}` → `.visibility`) by the caller — this
+        /// type never has a default case and the CLI never infers it, so an
+        /// unreadable visibility must fail closed one level up (the caller
+        /// shell/workflow step, `UNMEASURED`, never silently defaulted to
+        /// either value; swift-institute/.github#276 Task 3-01).
+        enum Visibility: String {
+            case `public`
+            case `private`
+        }
+
         let policy: String
         let repositoryClass: RepositoryPolicy.RepositoryClass
+        let visibility: Visibility
+        let compatibility: Bool
 
         init(_ arguments: [String]) throws {
             var values = [String: String]()
@@ -356,6 +384,23 @@ enum Main {
                     "--class must be package or control-plane"
                 )
             }
+            // Defaults to `public` so every caller predating Task 3-01 (the
+            // control-plane class, and every existing public-package
+            // invocation) keeps its prior behavior unchanged. A
+            // control-plane target ignores this value entirely — it selects
+            // no required-check context either way.
+            let visibilityValue = values.removeValue(forKey: "--visibility") ?? Visibility.public.rawValue
+            guard let visibility = Visibility(rawValue: visibilityValue) else {
+                throw RepositoryPolicy.ConfigurationError(
+                    "--visibility must be public or private"
+                )
+            }
+            let compatibilityValue = values.removeValue(forKey: "--compatibility") ?? "false"
+            guard let compatibility = Bool(compatibilityValue) else {
+                throw RepositoryPolicy.ConfigurationError(
+                    "--compatibility must be true or false"
+                )
+            }
             guard values.isEmpty else {
                 throw RepositoryPolicy.ConfigurationError(
                     "unknown argument \(values.keys.sorted().joined(separator: ", "))"
@@ -363,6 +408,8 @@ enum Main {
             }
             self.policy = policy
             self.repositoryClass = repositoryClass
+            self.visibility = visibility
+            self.compatibility = compatibility
         }
     }
 

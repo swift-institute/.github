@@ -70,8 +70,10 @@ struct RepositoryPolicyTests {
         #expect(review["require_last_push_approval"] as? Bool == true)
         #expect(review["dismiss_stale_reviews_on_push"] as? Bool == true)
         // GitHub's PR gate rejects unresolved conversations and a non-current
-        // check; the caller-path-prefixed `ci / ci-ok` aggregate is the one
-        // required current-head status, as rendered on live package PR heads.
+        // check; the caller-path-prefixed `ci / matrix / ci-ok` aggregate is
+        // the one required current-head status, as rendered on live package
+        // PR heads (renamed from `ci / ci-ok` — swift-institute/.github#276
+        // Task 3-01).
         #expect(review["required_review_thread_resolution"] as? Bool == true)
         // GitHub server-canonicalizes allowed_merge_methods,
         // dismissal_restriction, and required_reviewers onto every
@@ -90,21 +92,27 @@ struct RepositoryPolicyTests {
         #expect(checks["strict_required_status_checks_policy"] as? Bool == true)
         let required = try #require(checks["required_status_checks"] as? [[String: Any]])
         #expect(required.count == 1)
-        #expect(required.first?["context"] as? String == "ci / ci-ok")
+        #expect(required.first?["context"] as? String == "ci / matrix / ci-ok")
     }
 
-    // Positive control: the retired bare `ci-ok` context is a name no caller
-    // path renders, so a payload requiring it would gate main on a check that
-    // can never report. The validator must refuse it.
+    // Positive control: the now-retired temporary compatibility context
+    // `ci / ci-ok` is no longer, alone, the target public contract — a
+    // payload requiring only it would gate main on a layer wrapper's
+    // temporary aggregate that Task 3-02 step 7 deletes. The validator must
+    // refuse it (swift-institute/.github#276 Task 3-01, renamed from the
+    // bare-legacy-name positive control this replaces).
     @Test
-    func protectedMainPayloadRejectsTheBareLegacyContext() throws {
+    func protectedMainPayloadRejectsTheRetiredCompatibilityContextAlone() throws {
         let canonical = URL(filePath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .appending(path: "Policy/protected-main-ruleset.json")
         let legacy = try String(contentsOf: canonical, encoding: .utf8)
-            .replacingOccurrences(of: "\"context\": \"ci / ci-ok\"", with: "\"context\": \"ci-ok\"")
+            .replacingOccurrences(
+                of: "\"context\": \"ci / matrix / ci-ok\"",
+                with: "\"context\": \"ci / ci-ok\""
+            )
         let url = FileManager.default.temporaryDirectory
             .appending(path: "protected-main-ruleset-\(UUID().uuidString).json")
         try Data(legacy.utf8).write(to: url)
@@ -112,6 +120,167 @@ struct RepositoryPolicyTests {
 
         #expect(throws: RepositoryPolicy.ConfigurationError.self) {
             try RepositoryPolicy.Ruleset.protectedMainPayload(from: url)
+        }
+    }
+
+    // Positive control: the retired bare `ci-ok` context (no caller-path
+    // prefix at all) is a name no caller path has ever rendered, so a
+    // payload requiring it would gate main on a check that can never
+    // report. The validator must refuse it.
+    @Test
+    func protectedMainPayloadRejectsTheBareUnprefixedContext() throws {
+        let canonical = URL(filePath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appending(path: "Policy/protected-main-ruleset.json")
+        let legacy = try String(contentsOf: canonical, encoding: .utf8)
+            .replacingOccurrences(
+                of: "\"context\": \"ci / matrix / ci-ok\"",
+                with: "\"context\": \"ci-ok\""
+            )
+        let url = FileManager.default.temporaryDirectory
+            .appending(path: "protected-main-ruleset-\(UUID().uuidString).json")
+        try Data(legacy.utf8).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        #expect(throws: RepositoryPolicy.ConfigurationError.self) {
+            try RepositoryPolicy.Ruleset.protectedMainPayload(from: url)
+        }
+    }
+
+    // MARK: - Public compatibility ruleset contract (Task 3-01/3-02)
+
+    // Positive control: the compatibility fixture requires BOTH the layer
+    // wrapper's temporary `ci / ci-ok` aggregate and the universal chain's
+    // own `ci / matrix / ci-ok` aggregate — a wave stays reversible while
+    // both producers exist because both always report during the overlap
+    // window.
+    @Test
+    func protectedMainPublicCompatibilityPayloadFixtureRequiresBothContexts() throws {
+        let url = URL(filePath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appending(path: "Policy/protected-main-public-compatibility-ruleset.json")
+        let payload = try RepositoryPolicy.Ruleset.protectedMainPublicCompatibilityPayload(
+            from: url
+        )
+        let object = try #require(try JSONSerialization.jsonObject(with: payload) as? [String: Any])
+        let rules = try #require(object["rules"] as? [[String: Any]])
+        let checks = try #require(
+            rules.first(where: { $0["type"] as? String == "required_status_checks" })?[
+                "parameters"
+            ] as? [String: Any]
+        )
+        let required = try #require(checks["required_status_checks"] as? [[String: Any]])
+        #expect(Set(required.compactMap { $0["context"] as? String }) == ["ci / ci-ok", "ci / matrix / ci-ok"])
+        #expect(required.count == 2)
+    }
+
+    // Discriminating negative: the ONE-SIDED public-final validator must
+    // refuse the two-context compatibility payload (wrong cardinality), and
+    // vice versa — proving a one-sided Swift/JSON pairing edit fails rather
+    // than silently degrading to whichever side changed.
+    @Test
+    func protectedMainPayloadAndCompatibilityPayloadRejectEachOthersFixture() throws {
+        let compat = URL(filePath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appending(path: "Policy/protected-main-public-compatibility-ruleset.json")
+        let final = URL(filePath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appending(path: "Policy/protected-main-ruleset.json")
+        #expect(throws: RepositoryPolicy.ConfigurationError.self) {
+            try RepositoryPolicy.Ruleset.protectedMainPayload(from: compat)
+        }
+        #expect(throws: RepositoryPolicy.ConfigurationError.self) {
+            try RepositoryPolicy.Ruleset.protectedMainPublicCompatibilityPayload(from: final)
+        }
+    }
+
+    // MARK: - Private ruleset contract (Task 2-01/2-02, #253; Task 3-01)
+
+    // Positive control: the private fixture requires exactly `verification /
+    // workspace` — the trusted control-plane receipt — and nothing else. No
+    // compatibility variant exists: no producer preceded it.
+    @Test
+    func protectedMainPrivatePayloadFixtureRequiresWorkspaceVerification() throws {
+        let url = URL(filePath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appending(path: "Policy/protected-main-private-ruleset.json")
+        let payload = try RepositoryPolicy.Ruleset.protectedMainPrivatePayload(from: url)
+        let object = try #require(try JSONSerialization.jsonObject(with: payload) as? [String: Any])
+        let rules = try #require(object["rules"] as? [[String: Any]])
+        let checks = try #require(
+            rules.first(where: { $0["type"] as? String == "required_status_checks" })?[
+                "parameters"
+            ] as? [String: Any]
+        )
+        let required = try #require(checks["required_status_checks"] as? [[String: Any]])
+        #expect(required.count == 1)
+        #expect(required.first?["context"] as? String == "verification / workspace")
+    }
+
+    // Discriminating negative: the private validator must refuse the public
+    // final fixture (wrong context), and the public final validator must
+    // refuse the private fixture — visibility selects a genuinely different
+    // required context, not an interchangeable label.
+    @Test
+    func protectedMainPrivateAndPublicPayloadsRejectEachOthersFixture() throws {
+        let publicFixture = URL(filePath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appending(path: "Policy/protected-main-ruleset.json")
+        let privateFixture = URL(filePath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appending(path: "Policy/protected-main-private-ruleset.json")
+        #expect(throws: RepositoryPolicy.ConfigurationError.self) {
+            try RepositoryPolicy.Ruleset.protectedMainPrivatePayload(from: publicFixture)
+        }
+        #expect(throws: RepositoryPolicy.ConfigurationError.self) {
+            try RepositoryPolicy.Ruleset.protectedMainPayload(from: privateFixture)
+        }
+    }
+
+    // Positive control: a payload carrying a required-status-checks rule
+    // missing entirely is refused by every package-class validator alike —
+    // isolates the shared rule-completeness check from the per-variant
+    // context-set check.
+    @Test
+    func everyPackageVariantRejectsAPayloadMissingTheRequiredStatusChecksRule() throws {
+        let canonical = URL(filePath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appending(path: "Policy/protected-main-ruleset.json")
+        var object = try #require(
+            try JSONSerialization.jsonObject(with: Data(contentsOf: canonical)) as? [String: Any]
+        )
+        var rules = try #require(object["rules"] as? [[String: Any]])
+        rules.removeAll { $0["type"] as? String == "required_status_checks" }
+        object["rules"] = rules
+        let url = FileManager.default.temporaryDirectory
+            .appending(path: "protected-main-ruleset-\(UUID().uuidString).json")
+        try JSONSerialization.data(withJSONObject: object).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        #expect(throws: RepositoryPolicy.ConfigurationError.self) {
+            try RepositoryPolicy.Ruleset.protectedMainPayload(from: url)
+        }
+        #expect(throws: RepositoryPolicy.ConfigurationError.self) {
+            try RepositoryPolicy.Ruleset.protectedMainPublicCompatibilityPayload(from: url)
+        }
+        #expect(throws: RepositoryPolicy.ConfigurationError.self) {
+            try RepositoryPolicy.Ruleset.protectedMainPrivatePayload(from: url)
         }
     }
 
@@ -472,6 +641,71 @@ struct RepositoryPolicyTests {
         let onBlock = try #require(workflow.range(of: "\non:\n", range: workflow.startIndex..<rulesets.lowerBound))
         let inputsText = workflow[onBlock.upperBound..<rulesets.lowerBound]
         #expect(inputsText.components(separatedBy: "heal-rulesets:").count - 1 == 2)
+    }
+
+    // MARK: - Visibility-aware required-check payload selection (Task 3-01)
+
+    // Positive control: the `rulesets` job reads a target's visibility live
+    // from GitHub rather than consulting any declared policy file, computes
+    // all three package-adjacent payloads, and fails closed (`::error::` +
+    // `exit 1`, never a silent default) when visibility is neither `public`
+    // nor `private`.
+    @Test
+    func rulesetsJobReadsVisibilityLiveAndFailsClosedOnAnUnrecognizedValue() throws {
+        let url = URL(filePath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appending(path: ".github/workflows/sync-metadata.yml")
+        let workflow = try String(contentsOf: url, encoding: .utf8)
+        let rulesets = try #require(workflow.range(of: "\n  rulesets:\n"))
+        let surfaces = try #require(
+            workflow.range(of: "\n  surfaces:\n", range: rulesets.upperBound..<workflow.endIndex)
+        )
+        let rulesetsJob = workflow[rulesets.upperBound..<surfaces.lowerBound]
+
+        // Live read, not a declared list.
+        #expect(rulesetsJob.contains(#"gh api "repos/$target" --jq '.visibility'"#))
+        // The three package-adjacent payloads are all computed up front.
+        #expect(rulesetsJob.contains("desired_package_public="))
+        #expect(rulesetsJob.contains("desired_package_public_compat="))
+        #expect(rulesetsJob.contains("desired_package_private="))
+        // Fail-closed branch: neither public nor private is UNMEASURED, not
+        // a default.
+        #expect(rulesetsJob.contains("*)"))
+        #expect(
+            rulesetsJob.contains(
+                "UNMEASURED — visibility '${target_visibility}' is neither 'public' nor 'private'"
+            )
+        )
+        // Compat requested against a private target is refused rather than
+        // silently downgraded to the (nonexistent) final private payload.
+        #expect(
+            rulesetsJob.contains(
+                "ruleset-compat requested for a private target"
+            )
+        )
+    }
+
+    // Both input blocks declare ruleset-compat, defaulted false so an
+    // existing dispatch keeps converging straight to the target contract
+    // unless a wave explicitly opts into the migration-window overlap.
+    @Test
+    func bothInputBlocksDeclareRulesetCompatDefaultedFalse() throws {
+        let url = URL(filePath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appending(path: ".github/workflows/sync-metadata.yml")
+        let workflow = try String(contentsOf: url, encoding: .utf8)
+        let rulesets = try #require(workflow.range(of: "\n  rulesets:\n"))
+        let onBlock = try #require(workflow.range(of: "\non:\n", range: workflow.startIndex..<rulesets.lowerBound))
+        let inputsText = workflow[onBlock.upperBound..<rulesets.lowerBound]
+        #expect(inputsText.components(separatedBy: "ruleset-compat:").count - 1 == 2)
     }
 
     @Test

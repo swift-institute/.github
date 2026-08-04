@@ -46,7 +46,7 @@
       "total": 1,
       "values": [
         {
-          "name": "ci / ci-ok",
+          "name": "ci / matrix / ci-ok",
           "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           "conclusion": "success"
         }
