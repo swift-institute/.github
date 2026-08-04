@@ -82,6 +82,7 @@ on:
       - lint-validator-fixtures
       - lint-validators-weekly
       - pin-advance
+      - private-verification-sweep
       - reconcile-project-invariants
       - startup-failure-probe-weekly
       - submit-dep-graph-weekly

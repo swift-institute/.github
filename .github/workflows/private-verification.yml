@@ -1,0 +1,568 @@
+# private-verification.yml — trusted read-only verifier + trusted publisher
+# for one private-repository subject (Task 2-02, swift-institute/.github#276
+# Phase 2, work object #253). Stages B and C of the three-stage trusted path;
+# Stage A is private-verification-sweep.yml, which dispatches this workflow.
+#
+# WHY THIS EXISTS. A private repository produces no CI attestation at all
+# (swift-ci.yml's 18 `!github.event.repository.private` guards, deliberately
+# — see swift-institute/.github#253). Task 2-01 gave Workspace a typed
+# `workspace verification seal`/`check` pair that performs the same
+# Swift-owned build/test/lint gates locally and seals a content-addressed
+# receipt. This workflow is the trusted control-plane path that runs that
+# instrument against a private subject's exact head from PUBLIC control-plane
+# minutes, and — because this repository's Actions run metadata and logs are
+# PUBLIC — never lets private repository names, refs, source paths, compiler
+# diagnostics, dependency URLs, test names, or raw receipts reach a public
+# run name, job name, log, summary, or artifact.
+#
+# THREAT MODEL. The `verify` job executes subject-controlled build/test code
+# (an adversarial `Package.swift` can run arbitrary Swift at build time). It
+# therefore:
+#   - mints only a READ-ONLY App token (contents: read) scoped to the ONE
+#     subject repository — never checks/statuses: write;
+#   - never receives or forwards the publisher's write-capable token;
+#   - unsets every GitHub command-file variable before running subject code,
+#     so subject code cannot forge a workflow command by writing to
+#     GITHUB_ENV/GITHUB_OUTPUT/GITHUB_PATH/GITHUB_STEP_SUMMARY;
+#   - registers every private coordinate as a `::add-mask::` before it can
+#     appear in any log line;
+#   - redirects every subject-code stream to an ephemeral file under
+#     RUNNER_TEMP, never to stdout;
+#   - derives a PUBLIC-SAFE ENVELOPE containing no repository name, ref,
+#     source path, dependency URL, test name, or raw diagnostic, and deletes
+#     the raw receipt and logs before the job ends (`trap ... EXIT`), so even
+#     a compromised `verify` job cannot leave private content on the runner
+#     past its own lifetime;
+#   - cannot forge a passing check on its own: it never holds checks/statuses
+#     write, so the worst a compromised `verify` job can do is produce a
+#     dishonest ENVELOPE, which `publish` independently re-validates against
+#     the run's own trusted event payload before minting any write token.
+#
+# The `publish` job (Stage C) never checks out the subject and never
+# executes repository-supplied code. It downloads only the safe envelope
+# artifact, verifies its digest and its nonce-based binding to THIS run's
+# own `github.event.client_payload` (repository, head, policy digest,
+# nonce — never trusted from the artifact alone), and mints a write-capable
+# token only after every check passes. This is what makes "replay this
+# envelope against a different repository or SHA" fail: the nonce is fresh
+# per dispatch (Stage A), and the digest binds it to the exact
+# (repository, head, policyDigest) tuple this run was dispatched for.
+#
+# WORKSPACE REVISION. `workspace-revision` is a pinned Workspace commit SHA,
+# never `main` — the trusted verifier must run a fixed, auditable Workspace
+# build, not whatever `main` happens to be when the dispatch fires. Stage A
+# resolves and supplies it; this workflow never re-resolves it.
+
+name: private-verification
+run-name: "private-verification · ${{ github.event.client_payload.requestId }}"
+
+permissions: {}
+
+on:
+  repository_dispatch:
+    types: [private-verification]
+
+jobs:
+  verify:
+    if: ${{ github.event.client_payload.requestId != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    outputs:
+      artifact-name: ${{ steps.envelope.outputs.artifact-name }}
+      artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
+      outcome: ${{ steps.envelope.outputs.outcome }}
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Register private-subject masks before any value can be logged
+        id: masks
+        shell: bash
+        env:
+          SUBJECT_REPOSITORY: ${{ github.event.client_payload.repository }}
+          SUBJECT_HEAD: ${{ github.event.client_payload.head }}
+          SUBJECT_DEFAULT_BRANCH: ${{ github.event.client_payload.defaultBranch }}
+        run: |
+          set -euo pipefail
+          # Every private coordinate this job will ever hold is masked here,
+          # before the first step that could touch it — including the owner
+          # and name halves separately, since GitHub masks exact substrings
+          # only.
+          echo "::add-mask::${SUBJECT_REPOSITORY}"
+          echo "::add-mask::${SUBJECT_REPOSITORY%%/*}"
+          echo "::add-mask::${SUBJECT_REPOSITORY#*/}"
+          echo "::add-mask::${SUBJECT_HEAD}"
+          echo "::add-mask::${SUBJECT_DEFAULT_BRANCH}"
+          echo "::add-mask::https://github.com/${SUBJECT_REPOSITORY}"
+          echo "::add-mask::https://github.com/${SUBJECT_REPOSITORY}.git"
+          echo "::add-mask::git@github.com:${SUBJECT_REPOSITORY}.git"
+          {
+            echo "repository=${SUBJECT_REPOSITORY}"
+            echo "owner=${SUBJECT_REPOSITORY%%/*}"
+            echo "name=${SUBJECT_REPOSITORY#*/}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Checkout the trusted verifier script set (this repository, public)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: Select Swift 6.3
+        uses: SwiftyLab/setup-swift@38f54a76b70d989321de9dc7c840618c08cf56e9 # v1.14.0
+        with:
+          swift-version: '6.3'
+
+      - name: Mint a read-only App token scoped to the one subject repository
+        id: token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: ${{ steps.masks.outputs.owner }}
+          repositories: ${{ steps.masks.outputs.name }}
+          permission-contents: read
+
+      - name: Fetch the subject at its claimed head — typed, silent, no actions/checkout
+        id: fetch
+        shell: bash
+        env:
+          GH_APP_TOKEN: ${{ steps.token.outputs.token }}
+          SUBJECT_OWNER: ${{ steps.masks.outputs.owner }}
+          SUBJECT_NAME: ${{ steps.masks.outputs.name }}
+          SUBJECT_HEAD: ${{ github.event.client_payload.head }}
+        run: |
+          set -euo pipefail
+          set +x
+          # actions/checkout's ordinary log line ("Syncing repository:
+          # owner/name") is disallowed in a public run — no fixture on this
+          # toolchain has proven a version that omits it, so this workflow
+          # never uses actions/checkout for the subject. A typed, silent
+          # `git` fetch instead: the credential rides one transient HTTP
+          # header on the fetch invocation only, never a stored remote URL,
+          # and is never echoed.
+          subject_dir="${RUNNER_TEMP}/subject"
+          mkdir -p "$subject_dir"
+          git -C "$subject_dir" init --quiet
+          auth_header="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_APP_TOKEN" | base64 | tr -d '\n')"
+          git -C "$subject_dir" -c http.extraheader="$auth_header" fetch --quiet --depth 1 \
+            "https://github.com/${SUBJECT_OWNER}/${SUBJECT_NAME}.git" "$SUBJECT_HEAD"
+          git -C "$subject_dir" checkout --quiet FETCH_HEAD
+          # Remove every credential trace from the on-disk checkout — no
+          # stored remote URL, no leftover header — before subject-supplied
+          # build tooling can run.
+          git -C "$subject_dir" remote remove origin 2>/dev/null || true
+          unset GH_APP_TOKEN auth_header
+          observed_head=$(git -C "$subject_dir" rev-parse HEAD)
+          test "$observed_head" = "$SUBJECT_HEAD"
+          echo "subject-dir=${subject_dir}" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve and build Workspace at its pinned, control-plane-supplied revision
+        id: workspace
+        shell: bash
+        env:
+          WORKSPACE_REVISION: ${{ github.event.client_payload.workspaceRevision }}
+        run: |
+          set -euo pipefail
+          test -n "$WORKSPACE_REVISION"
+          workspace_dir="${RUNNER_TEMP}/workspace-src"
+          git clone --quiet https://github.com/swift-institute/Workspace.git "$workspace_dir"
+          git -C "$workspace_dir" checkout --quiet "$WORKSPACE_REVISION"
+          observed=$(git -C "$workspace_dir" rev-parse HEAD)
+          test "$observed" = "$WORKSPACE_REVISION"
+          # Build the exact `workspace` executable product this revision
+          # defines — never the caller's own `workspace` install, so the
+          # trusted verifier always runs the pinned revision's own code,
+          # never whatever happens to be on the runner's PATH.
+          swift build --package-path "${workspace_dir}/Application" -c release --product workspace
+          test -x "${workspace_dir}/Application/.build/release/workspace"
+          echo "workspace-dir=${workspace_dir}" >> "$GITHUB_OUTPUT"
+          echo "workspace-bin=${workspace_dir}/Application/.build/release/workspace" >> "$GITHUB_OUTPUT"
+
+      - name: Run Workspace verification seal — subject code, fully contained
+        id: run
+        shell: bash
+        env:
+          SUBJECT_DIR: ${{ steps.fetch.outputs.subject-dir }}
+          WORKSPACE_DIR: ${{ steps.workspace.outputs.workspace-dir }}
+          SUBJECT_HEAD: ${{ github.event.client_payload.head }}
+          SUBJECT_DEFAULT_BRANCH: ${{ github.event.client_payload.defaultBranch }}
+          SUBJECT_VISIBILITY: ${{ github.event.client_payload.visibility }}
+          SUBJECT_LAYER: ${{ github.event.client_payload.layer }}
+          INVENTORY_DIGEST: ${{ github.event.client_payload.inventoryDigest }}
+          WORKSPACE_REVISION: ${{ github.event.client_payload.workspaceRevision }}
+          POLICY_REVISION: ${{ github.event.client_payload.policyRevision }}
+        run: |
+          set -euo pipefail
+          set +x
+          receipt_path="${RUNNER_TEMP}/receipt-$(head -c16 /dev/urandom | od -An -tx1 | tr -d ' \n').json"
+          run_log="${RUNNER_TEMP}/run.log"
+
+          cleanup() {
+            # Deletes raw logs and the full receipt before the job can end,
+            # on every exit path — success, subject-code failure, or this
+            # step's own failure. This is the confidentiality backstop, not
+            # only the happy path.
+            rm -f "$run_log" "$receipt_path" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          # Never let subject code intercept a workflow command: unset every
+          # GitHub command-file variable and disable tracing before it runs.
+          set +x
+          run_status=0
+          env -u GITHUB_ENV -u GITHUB_OUTPUT -u GITHUB_PATH -u GITHUB_STEP_SUMMARY -u ACTIONS_STEP_DEBUG \
+            "${WORKSPACE_DIR}/Application/.build/release/workspace" verification seal \
+              --package-path "$SUBJECT_DIR" \
+              --claimed-head "$SUBJECT_HEAD" \
+              --default-branch "$SUBJECT_DEFAULT_BRANCH" \
+              --visibility "$SUBJECT_VISIBILITY" \
+              --layer "$SUBJECT_LAYER" \
+              --inventory-digest "$INVENTORY_DIGEST" \
+              --workspace-revision "$WORKSPACE_REVISION" \
+              --policy-revision "$POLICY_REVISION" \
+              --step build --step test --step nested-tests --step lint \
+              --receipt "$receipt_path" \
+              > "$run_log" 2>&1 \
+            || run_status=$?
+
+          if [[ ! -s "$receipt_path" ]]; then
+            echo "outcome=unavailable" >> "$GITHUB_OUTPUT"
+            echo "reason=noReceiptProduced" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Independent local validation before this run trusts its own
+          # producer output — Task 2-01's validator, re-parsing and
+          # re-digesting from bytes on disk.
+          check_status=0
+          env -u GITHUB_ENV -u GITHUB_OUTPUT -u GITHUB_PATH -u GITHUB_STEP_SUMMARY \
+            "${WORKSPACE_DIR}/Application/.build/release/workspace" verification check \
+              --receipt "$receipt_path" \
+              > "${RUNNER_TEMP}/check.log" 2>&1 \
+            || check_status=$?
+          rm -f "${RUNNER_TEMP}/check.log"
+
+          echo "receipt-path=${receipt_path}" >> "$GITHUB_OUTPUT"
+          echo "run-status=${run_status}" >> "$GITHUB_OUTPUT"
+          echo "check-status=${check_status}" >> "$GITHUB_OUTPUT"
+          # `receipt_path` is intentionally NOT deleted here — the next step
+          # reads it to build the safe envelope. `cleanup` above still fires
+          # when this step exits, but the trap is step-scoped in bash; the
+          # receipt survives to the next step only because GITHUB_ENV/PATH
+          # propagation is unaffected by the unset applied to the subject
+          # subprocess above (that `env -u` only touched the one child
+          # process). The receipt is deleted for real at the end of the next
+          # step instead.
+
+      - name: Derive the public-safe envelope and delete raw evidence
+        id: envelope
+        shell: bash
+        env:
+          RECEIPT_PATH: ${{ steps.run.outputs.receipt-path }}
+          RUN_STATUS: ${{ steps.run.outputs.run-status }}
+          CHECK_STATUS: ${{ steps.run.outputs.check-status }}
+          REQUEST_ID: ${{ github.event.client_payload.requestId }}
+          NONCE: ${{ github.event.client_payload.nonce }}
+          SUBJECT_REPOSITORY: ${{ github.event.client_payload.repository }}
+          SUBJECT_HEAD: ${{ github.event.client_payload.head }}
+          POLICY_REVISION: ${{ github.event.client_payload.policyRevision }}
+        run: |
+          set -euo pipefail
+          set +x
+          envelope_path="${RUNNER_TEMP}/envelope.json"
+
+          if [[ -z "${RECEIPT_PATH:-}" || ! -s "$RECEIPT_PATH" ]]; then
+            jq -n --arg requestId "$REQUEST_ID" --arg reason "noReceiptProduced" '
+              { schemaVersion: 1, requestId: $requestId, outcome: "unavailable", reason: $reason }
+            ' > "$envelope_path"
+            echo "outcome=unavailable" >> "$GITHUB_OUTPUT"
+          else
+            # Binds this envelope to exactly (repository, head, policy
+            # digest, nonce) — the trusted publisher recomputes this same
+            # digest from ITS OWN copy of github.event.client_payload and
+            # refuses any envelope whose binding does not match, which is
+            # what makes replaying this envelope at a different repository
+            # or SHA fail (a different run has a different nonce).
+            binding=$(printf '%s' "${NONCE}${SUBJECT_REPOSITORY}${SUBJECT_HEAD}${POLICY_REVISION}" \
+              | shasum -a 256 | cut -d' ' -f1)
+
+            # Every field below is chosen because it is NOT a repository
+            # name, ref, source path, dependency URL, test name, or raw
+            # diagnostic. `jq` reads only the typed, already-structured
+            # receipt fields it needs — it never greps or forwards
+            # compileEvidence/findings text.
+            jq -c \
+              --arg requestId "$REQUEST_ID" \
+              --arg binding "$binding" \
+              --argjson runStatus "${RUN_STATUS:-1}" \
+              --argjson checkStatus "${CHECK_STATUS:-1}" \
+              '
+              {
+                schemaVersion: 1,
+                requestId: $requestId,
+                binding: $binding,
+                outcome: (
+                  if $checkStatus != 0 then "invalid"
+                  elif .verdict.state == "verified" then "verified"
+                  else "unverified"
+                  end
+                ),
+                verdictReason: (if .verdict.state == "unverified" then "requestedOperationDidNotSatisfy" else null end),
+                version: .version,
+                layer: .layer,
+                workspaceRevision: .workspaceRevision,
+                policyRevision: .policyRevision,
+                environment: {
+                  swift: .environment.swift,
+                  xcode: .environment.xcode,
+                  sdk: .environment.sdk,
+                  os: .environment.os,
+                  architecture: .environment.architecture
+                },
+                platform: .platform,
+                requestedOperations: .requestedOperations,
+                operations: [
+                  .operations[] | {
+                    operation: .operation,
+                    outcome: .outcome.state,
+                    durationSeconds: .durationSeconds,
+                    provenance: .provenance
+                  }
+                ],
+                requiredGates: [ .requiredGates[] | { name, satisfied } ],
+                inventoryDigest: .inventoryDigest
+              }
+              ' "$RECEIPT_PATH" > "$envelope_path"
+            echo "outcome=$(jq -r '.outcome' "$envelope_path")" >> "$GITHUB_OUTPUT"
+          fi
+
+          # Confidentiality backstop, restated: the raw receipt and every
+          # subject-derived log this job wrote are removed now, before the
+          # job can complete — never uploaded, never left on the runner.
+          rm -f "$RECEIPT_PATH" "${RUNNER_TEMP}/run.log" 2>/dev/null || true
+          rm -rf "${RUNNER_TEMP}/subject" "${RUNNER_TEMP}/workspace-src" 2>/dev/null || true
+
+          echo "artifact-name=envelope-${REQUEST_ID}" >> "$GITHUB_OUTPUT"
+          echo "envelope-path=${envelope_path}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload the safe envelope — the only artifact this job produces
+        id: upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ steps.envelope.outputs.artifact-name }}
+          path: ${{ steps.envelope.outputs.envelope-path }}
+          retention-days: 7
+          if-no-files-found: error
+
+  publish:
+    needs: verify
+    if: ${{ always() && github.event.client_payload.requestId != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions: {}
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Register private-subject masks before any value can be logged
+        id: masks
+        shell: bash
+        env:
+          SUBJECT_REPOSITORY: ${{ github.event.client_payload.repository }}
+          SUBJECT_HEAD: ${{ github.event.client_payload.head }}
+        run: |
+          set -euo pipefail
+          echo "::add-mask::${SUBJECT_REPOSITORY}"
+          echo "::add-mask::${SUBJECT_REPOSITORY%%/*}"
+          echo "::add-mask::${SUBJECT_REPOSITORY#*/}"
+          echo "::add-mask::${SUBJECT_HEAD}"
+          {
+            echo "repository=${SUBJECT_REPOSITORY}"
+            echo "owner=${SUBJECT_REPOSITORY%%/*}"
+            echo "name=${SUBJECT_REPOSITORY#*/}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Download the safe envelope artifact
+        id: download
+        if: ${{ needs.verify.result == 'success' || needs.verify.result == 'failure' }}
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        continue-on-error: true
+        with:
+          name: envelope-${{ github.event.client_payload.requestId }}
+          path: ${{ runner.temp }}/envelope
+
+      - name: Verify the envelope, bind it to this run, and decide the verdict
+        id: verdict
+        shell: bash
+        env:
+          NONCE: ${{ github.event.client_payload.nonce }}
+          REQUEST_ID: ${{ github.event.client_payload.requestId }}
+          SUBJECT_REPOSITORY: ${{ github.event.client_payload.repository }}
+          SUBJECT_HEAD: ${{ github.event.client_payload.head }}
+          POLICY_REVISION: ${{ github.event.client_payload.policyRevision }}
+          VERIFY_RESULT: ${{ needs.verify.result }}
+          DOWNLOAD_OUTCOME: ${{ steps.download.outcome }}
+        run: |
+          set -euo pipefail
+          envelope_path="${{ runner.temp }}/envelope/envelope-${REQUEST_ID}.json"
+
+          if [[ "$VERIFY_RESULT" == "cancelled" ]]; then
+            echo "state=cancelled" >> "$GITHUB_OUTPUT"
+            echo "summary=verifier job was cancelled" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ "$DOWNLOAD_OUTCOME" != "success" || ! -s "$envelope_path" ]]; then
+            echo "state=neutral" >> "$GITHUB_OUTPUT"
+            echo "summary=no safe envelope artifact was produced (verifier job ${VERIFY_RESULT})" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if ! jq -e 'type == "object" and .schemaVersion == 1 and (.requestId | type == "string")' \
+            "$envelope_path" >/dev/null 2>&1
+          then
+            echo "state=failure" >> "$GITHUB_OUTPUT"
+            echo "summary=envelope failed schema validation" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          envelope_request_id=$(jq -r '.requestId' "$envelope_path")
+          if [[ "$envelope_request_id" != "$REQUEST_ID" ]]; then
+            echo "state=failure" >> "$GITHUB_OUTPUT"
+            echo "summary=envelope requestId does not match this run's dispatch" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          outcome=$(jq -r '.outcome' "$envelope_path")
+          if [[ "$outcome" == "unavailable" || "$outcome" == "invalid" ]]; then
+            reason=$(jq -r '.reason // .verdictReason // "unspecified"' "$envelope_path")
+            echo "state=neutral" >> "$GITHUB_OUTPUT"
+            echo "summary=verifier reported ${outcome}: ${reason}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Recompute the expected binding from THIS run's own trusted
+          # event payload — never from the artifact — and require it to
+          # match exactly. This is the replay defense: an envelope minted
+          # for a different (repository, head, policy digest) or by a
+          # different (differently-nonced) dispatch cannot produce this
+          # digest.
+          expected_binding=$(printf '%s' "${NONCE}${SUBJECT_REPOSITORY}${SUBJECT_HEAD}${POLICY_REVISION}" \
+            | shasum -a 256 | cut -d' ' -f1)
+          envelope_binding=$(jq -r '.binding // ""' "$envelope_path")
+          if [[ -z "$envelope_binding" || "$envelope_binding" != "$expected_binding" ]]; then
+            echo "state=failure" >> "$GITHUB_OUTPUT"
+            echo "summary=envelope binding does not match this run's (repository, head, policy) — refusing as a possible replay" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          required_gates_unsatisfied=$(jq '[.requiredGates[] | select(.satisfied != true)] | length' "$envelope_path")
+          zero_operations=$(jq '(.operations // []) | length == 0' "$envelope_path")
+          if [[ "$zero_operations" == "true" ]]; then
+            echo "state=failure" >> "$GITHUB_OUTPUT"
+            echo "summary=envelope records zero operations — never treated as a pass" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ "$outcome" == "verified" && "$required_gates_unsatisfied" == "0" ]]; then
+            echo "state=success" >> "$GITHUB_OUTPUT"
+            echo "summary=verified: all required gates satisfied at exact head" >> "$GITHUB_OUTPUT"
+          else
+            echo "state=failure" >> "$GITHUB_OUTPUT"
+            echo "summary=unverified: one or more required gates did not pass" >> "$GITHUB_OUTPUT"
+          fi
+          cp "$envelope_path" "${{ runner.temp }}/envelope-for-audit.json"
+
+      - name: Mint the write-capable App token — only now, only if a verdict was reached
+        id: token
+        if: ${{ steps.verdict.outputs.state != '' }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: ${{ steps.masks.outputs.owner }}
+          repositories: ${{ steps.masks.outputs.name }}
+          permission-checks: write
+
+      - name: Update the trusted check run on the private subject
+        if: ${{ steps.token.outputs.token != '' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          SUBJECT_OWNER: ${{ steps.masks.outputs.owner }}
+          SUBJECT_NAME: ${{ steps.masks.outputs.name }}
+          SUBJECT_HEAD: ${{ github.event.client_payload.head }}
+          REQUEST_ID: ${{ github.event.client_payload.requestId }}
+          STATE: ${{ steps.verdict.outputs.state }}
+          SUMMARY: ${{ steps.verdict.outputs.summary }}
+          CENTRAL_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          case "$STATE" in
+            success) conclusion=success ;;
+            failure) conclusion=failure ;;
+            cancelled) conclusion=cancelled ;;
+            *) conclusion=neutral ;;
+          esac
+
+          # The full audit-safe receipt fields live in the check run's own
+          # `output` on the PRIVATE subject repository — visible only to
+          # readers authorized on that repository — never in this public
+          # repository's run. Only opaque IDs/digests (requestId, the
+          # central run ID) ever appear on the public side.
+          text=""
+          if [[ -s "${{ runner.temp }}/envelope-for-audit.json" ]]; then
+            text=$(jq -r '
+              "Provenance:\n" +
+              "- central run: swift-institute/.github#" + (env.CENTRAL_RUN_ID) + "\n" +
+              "- request: " + .requestId + "\n" +
+              "- workspaceRevision: " + .workspaceRevision + "\n" +
+              "- policyRevision: " + .policyRevision + "\n" +
+              "- inventoryDigest: " + .inventoryDigest + "\n" +
+              "- layer: " + .layer + "\n" +
+              "- environment: swift " + .environment.swift + ", " + .environment.os + "/" + .environment.architecture + "\n" +
+              "- requiredGates: " + ([.requiredGates[] | .name + "=" + (.satisfied | tostring)] | join(", "))
+            ' "${{ runner.temp }}/envelope-for-audit.json")
+          fi
+
+          existing=$(gh api "repos/${SUBJECT_OWNER}/${SUBJECT_NAME}/commits/${SUBJECT_HEAD}/check-runs?per_page=100" \
+            --jq '[.check_runs[] | select(.external_id == env.REQUEST_ID)] | first.id // empty')
+
+          payload=$(jq -n \
+            --arg name "verification / workspace" \
+            --arg head "$SUBJECT_HEAD" \
+            --arg externalId "$REQUEST_ID" \
+            --arg conclusion "$conclusion" \
+            --arg summary "$SUMMARY" \
+            --arg text "$text" \
+            '{
+              name: $name,
+              head_sha: $head,
+              external_id: $externalId,
+              status: "completed",
+              conclusion: $conclusion,
+              output: { title: "Trusted private verification", summary: $summary, text: $text }
+            }')
+
+          if [[ -n "$existing" ]]; then
+            gh api --method PATCH "repos/${SUBJECT_OWNER}/${SUBJECT_NAME}/check-runs/${existing}" \
+              --input - <<<"$payload" >/dev/null
+          else
+            gh api --method POST "repos/${SUBJECT_OWNER}/${SUBJECT_NAME}/check-runs" \
+              --input - <<<"$payload" >/dev/null
+          fi
+
+      - name: Fail this run's own conclusion when the verdict was not success
+        if: ${{ steps.verdict.outputs.state != 'success' }}
+        shell: bash
+        env:
+          STATE: ${{ steps.verdict.outputs.state }}
+          SUMMARY: ${{ steps.verdict.outputs.summary }}
+        run: |
+          echo "::error::private-verification did not reach success (state=${STATE:-none}): ${SUMMARY:-no summary}"
+          exit 1
