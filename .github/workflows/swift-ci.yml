@@ -2786,6 +2786,7 @@ jobs:
           sparse-checkout: |
             .github/workflows/swift-ci.yml
             .github/scripts/extract-action-coordinates.py
+            .github/scripts/compute-referenced-workflows.py
           sparse-checkout-cone-mode: false
 
       # The structured effective-runtime receipt. Reads THIS run's own run/
@@ -2839,11 +2840,21 @@ jobs:
           # (`path` embeds `@main` or an exact internal SHA) and GitHub's
           # own resolved SHA. Unexpectedly empty is UNMEASURED, never a
           # silent substitution of current main.
-          REF_WORKFLOWS_COUNT=$(jq '.referenced_workflows | length' "$work/run.json")
-          if [ "$REF_WORKFLOWS_COUNT" -eq 0 ]; then
-            REFERENCED_WORKFLOWS=$(jq -n '{status: "UNMEASURED", reason: "run object reported zero referenced_workflows", entries: []}')
+          #
+          # This decision is extracted into compute-referenced-workflows.py
+          # (checked out alongside extract-action-coordinates.py above, at
+          # this exact job.workflow_sha) rather than left as inline
+          # shell/jq: the inline form had no independent test, so a future
+          # edit that started returning a measured-looking value for the
+          # empty case, or silently dropped the field, would have shipped
+          # unnoticed. test-compute-referenced-workflows.py exercises this
+          # exact script, both directions (empty -> UNMEASURED, non-empty ->
+          # measured), and is proven to fail against a broken variant of it.
+          COMPUTE_REF_WORKFLOWS=".receipt-workflow/.github/scripts/compute-referenced-workflows.py"
+          if [ -f "$COMPUTE_REF_WORKFLOWS" ]; then
+            REFERENCED_WORKFLOWS=$(python3 "$COMPUTE_REF_WORKFLOWS" "$work/run.json")
           else
-            REFERENCED_WORKFLOWS=$(jq '{status: "measured", reason: null, entries: .referenced_workflows}' "$work/run.json")
+            REFERENCED_WORKFLOWS=$(jq -n '{status: "UNMEASURED", reason: "could not check out this workflow revision (or its compute-referenced-workflows.py script) from swift-institute/.github at job.workflow_sha", entries: []}')
           fi
 
           # 5: linter installer identity — already verified (checksum,
