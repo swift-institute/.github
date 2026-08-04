@@ -645,6 +645,17 @@ jobs:
             fi
             echo "::warning::sync-metadata rulesets convergence reached 0 repos for org '${INPUT_ORG}' (visibility=${INPUT_VISIBILITY}). This run will report success, but it converged nothing."
           fi
+          # Declared per-repo class overrides (swift-institute/.github#266):
+          # the mechanical Package.swift-presence probe below is right for
+          # the fleet's general case but wrong for a repo whose CI structure
+          # can never satisfy the package class's required status check
+          # regardless of manifest presence. Overrides are a config file
+          # under source control, converged the same way as every other
+          # target — never a hand-mutation of live ruleset state. See
+          # Tools/RepositoryPolicy/Policy/ruleset-class-overrides.json for
+          # the current override list and each entry's cited rationale.
+          override_repos=$(jq -r '.controlPlaneOverrides[].repo' institute-ci/Tools/RepositoryPolicy/Policy/ruleset-class-overrides.json)
+
           for target in "${targets[@]}"; do
             # Classify mechanically: a root Package.swift present at the
             # default branch means the package contract (the repo emits
@@ -663,17 +674,25 @@ jobs:
             # 200) — those must stop the run rather than silently
             # misclassify the repo as control-plane and deploy the weaker
             # contract on what may be a package repository.
-            manifest_error="$RUNNER_TEMP/manifest-kind-error-$$.txt"
-            if manifest_type=$(gh api "repos/$target/contents/Package.swift" --jq '.type' 2>"$manifest_error"); then
-              :
-            elif grep -q '(HTTP 404)' "$manifest_error"; then
-              manifest_type=""
+            #
+            # A declared override (above) wins over the mechanical probe:
+            # some repos have a root Package.swift but structurally cannot
+            # emit the package class's required check (#266).
+            if grep -qxF "$target" <<< "$override_repos"; then
+              manifest_type="__control-override__"
             else
-              echo "::error::$target: could not determine whether a root Package.swift exists: $(cat "$manifest_error")"
+              manifest_error="$RUNNER_TEMP/manifest-kind-error-$$.txt"
+              if manifest_type=$(gh api "repos/$target/contents/Package.swift" --jq '.type' 2>"$manifest_error"); then
+                :
+              elif grep -q '(HTTP 404)' "$manifest_error"; then
+                manifest_type=""
+              else
+                echo "::error::$target: could not determine whether a root Package.swift exists: $(cat "$manifest_error")"
+                rm -f "$manifest_error"
+                exit 1
+              fi
               rm -f "$manifest_error"
-              exit 1
             fi
-            rm -f "$manifest_error"
 
             package_name="Institute protected main"
             control_name="Institute protected main (control)"
