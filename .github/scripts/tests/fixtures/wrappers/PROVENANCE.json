@@ -8,7 +8,7 @@
       "commit_sha": "f0cd3a8b56e1dfe77aee1a187e4134e13f982631",
       "blob_sha256": "e6bdbad1cacdfdbc274b046a50fd38db9b79d10360d7662c24bbd1a9d0c9c1be",
       "fetched": "2026-08-04",
-      "pull_request": "swift-primitives/.github#14"
+      "pull_request": "swift-primitives/.github#17"
     },
     "standards": {
       "repository": "swift-standards/.github",
@@ -17,7 +17,7 @@
       "commit_sha": "a4bd01c2bedab5b1a0e818e04ddf4de3aeeecc3a",
       "blob_sha256": "0e548a2e0233d588e8f5fdca5c60a5b592be1ab9c95ad52777ae6599a2c3b48a",
       "fetched": "2026-08-04",
-      "pull_request": "swift-standards/.github#10"
+      "pull_request": "swift-standards/.github#11"
     },
     "foundations": {
       "repository": "swift-foundations/.github",
@@ -26,7 +26,7 @@
       "commit_sha": "8812a06381defbe6cac6e5cd5bfbe1e6712b8fba",
       "blob_sha256": "dfe37ba078b33114d7cc338712de5bc31e1a41e39e2521246c768a19c0554f49",
       "fetched": "2026-08-04",
-      "pull_request": "swift-foundations/.github#9"
+      "pull_request": "swift-foundations/.github#10"
     }
   }
 }
