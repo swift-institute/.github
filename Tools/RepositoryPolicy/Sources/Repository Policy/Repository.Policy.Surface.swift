@@ -16,6 +16,24 @@ extension RepositoryPolicy {
         case thinCaller = "thin-caller"
         case toolWorkflow = "tool-workflow"
         case toolAction = "tool-action"
+        // swift-institute/.github#266 (control-plane surface reachability
+        // follow-up, 2026-08-04): a `control-plane`-class repository's own
+        // top-level CI workflow legitimately composes bespoke steps (e.g. a
+        // matrix-enumeration job) alongside calls into a centralized
+        // reusable — the exact shape swift-institute/Issues' ci.yml uses
+        // (an `enumerate-issues` job with its own steps, feeding a
+        // `per-issue` matrix job that calls the universal swift-ci.yml
+        // reusable). Kind-inference (`ActionFile.init` below) has no
+        // `workflow_call` trigger to key off for this shape, so the
+        // inferred `action.kind` is `.thinCaller` regardless of grant; a
+        // `.bespoke` grant is exempted from the `grant.kind != action.kind`
+        // mismatch check (REPO-ACTIONS-002) and from the thin-caller
+        // shape constraint (REPO-ACTIONS-005 only fires for
+        // `grant.kind == .thinCaller`), while REPO-ACTIONS-003
+        // (triggers) and REPO-ACTIONS-004 (direct `uses`) — the actual
+        // security-relevant enforcement — remain fully in force against
+        // the grant's explicit allowlists.
+        case bespoke = "bespoke"
     }
 
     public struct ActionGrant: Codable, Equatable, Sendable {
@@ -248,7 +266,7 @@ extension RepositoryPolicy {
                 continue
             }
 
-            if grant.kind != action.kind {
+            if grant.kind != action.kind, grant.kind != .bespoke {
                 violations.append(
                     .init(
                         identifier: "REPO-ACTIONS-002",
