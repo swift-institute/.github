@@ -419,6 +419,14 @@ jobs:
           SUBJECT_SHA: ${{ steps.resolve-subject.outputs.subject-sha }}
         run: |
           set -euo pipefail
+          # Job-level `container:` steps execute via a fresh `docker exec`
+          # per step, so a bare shell `git` call sees the checkout owned by
+          # the runner's host UID and refuses it as dubious ownership
+          # (2.35.2+) — unlike actions/checkout's own internal git calls two
+          # steps up, which already registered the path for themselves. A
+          # no-op on bare macOS/Windows runners; trusts nothing beyond what
+          # actions/checkout just placed in this same job.
+          git config --global --add safe.directory '*'
           ACTUAL="$(git rev-parse HEAD)"
           if [ "$ACTUAL" != "$SUBJECT_SHA" ]; then
             echo "::error::checked-out HEAD '$ACTUAL' does not match Plan's resolved CI subject SHA '$SUBJECT_SHA'. Refusing to proceed against an unverified checkout."
@@ -681,6 +689,14 @@ jobs:
           SUBJECT_SHA: ${{ needs.plan.outputs.subject-sha }}
         run: |
           set -euo pipefail
+          # Job-level `container:` steps execute via a fresh `docker exec`
+          # per step, so a bare shell `git` call sees the checkout owned by
+          # the runner's host UID and refuses it as dubious ownership
+          # (2.35.2+) — unlike actions/checkout's own internal git calls two
+          # steps up, which already registered the path for themselves. A
+          # no-op on bare macOS/Windows runners; trusts nothing beyond what
+          # actions/checkout just placed in this same job.
+          git config --global --add safe.directory '*'
           ACTUAL="$(git rev-parse HEAD)"
           if [ "$ACTUAL" != "$SUBJECT_SHA" ]; then
             echo "::error::checked-out HEAD '$ACTUAL' does not match Plan's resolved CI subject SHA '$SUBJECT_SHA'. Refusing to proceed against an unverified checkout."
@@ -752,6 +768,14 @@ jobs:
           SUBJECT_SHA: ${{ needs.plan.outputs.subject-sha }}
         run: |
           set -euo pipefail
+          # Job-level `container:` steps execute via a fresh `docker exec`
+          # per step, so a bare shell `git` call sees the checkout owned by
+          # the runner's host UID and refuses it as dubious ownership
+          # (2.35.2+) — unlike actions/checkout's own internal git calls two
+          # steps up, which already registered the path for themselves. A
+          # no-op on bare macOS/Windows runners; trusts nothing beyond what
+          # actions/checkout just placed in this same job.
+          git config --global --add safe.directory '*'
           ACTUAL="$(git rev-parse HEAD)"
           if [ "$ACTUAL" != "$SUBJECT_SHA" ]; then
             echo "::error::checked-out HEAD '$ACTUAL' does not match Plan's resolved CI subject SHA '$SUBJECT_SHA'. Refusing to proceed against an unverified checkout."
@@ -832,6 +856,14 @@ jobs:
           SUBJECT_SHA: ${{ needs.plan.outputs.subject-sha }}
         run: |
           set -euo pipefail
+          # Job-level `container:` steps execute via a fresh `docker exec`
+          # per step, so a bare shell `git` call sees the checkout owned by
+          # the runner's host UID and refuses it as dubious ownership
+          # (2.35.2+) — unlike actions/checkout's own internal git calls two
+          # steps up, which already registered the path for themselves. A
+          # no-op on bare macOS/Windows runners; trusts nothing beyond what
+          # actions/checkout just placed in this same job.
+          git config --global --add safe.directory '*'
           ACTUAL="$(git rev-parse HEAD)"
           if [ "$ACTUAL" != "$SUBJECT_SHA" ]; then
             echo "::error::checked-out HEAD '$ACTUAL' does not match Plan's resolved CI subject SHA '$SUBJECT_SHA'. Refusing to proceed against an unverified checkout."
@@ -938,6 +970,14 @@ jobs:
           SUBJECT_SHA: ${{ needs.plan.outputs.subject-sha }}
         run: |
           set -euo pipefail
+          # Job-level `container:` steps execute via a fresh `docker exec`
+          # per step, so a bare shell `git` call sees the checkout owned by
+          # the runner's host UID and refuses it as dubious ownership
+          # (2.35.2+) — unlike actions/checkout's own internal git calls two
+          # steps up, which already registered the path for themselves. A
+          # no-op on bare macOS/Windows runners; trusts nothing beyond what
+          # actions/checkout just placed in this same job.
+          git config --global --add safe.directory '*'
           ACTUAL="$(git rev-parse HEAD)"
           if [ "$ACTUAL" != "$SUBJECT_SHA" ]; then
             echo "::error::checked-out HEAD '$ACTUAL' does not match Plan's resolved CI subject SHA '$SUBJECT_SHA'. Refusing to proceed against an unverified checkout."
@@ -1015,6 +1055,14 @@ jobs:
           SUBJECT_SHA: ${{ needs.plan.outputs.subject-sha }}
         run: |
           set -euo pipefail
+          # Job-level `container:` steps execute via a fresh `docker exec`
+          # per step, so a bare shell `git` call sees the checkout owned by
+          # the runner's host UID and refuses it as dubious ownership
+          # (2.35.2+) — unlike actions/checkout's own internal git calls two
+          # steps up, which already registered the path for themselves. A
+          # no-op on bare macOS/Windows runners; trusts nothing beyond what
+          # actions/checkout just placed in this same job.
+          git config --global --add safe.directory '*'
           ACTUAL="$(git rev-parse HEAD)"
           if [ "$ACTUAL" != "$SUBJECT_SHA" ]; then
             echo "::error::checked-out HEAD '$ACTUAL' does not match Plan's resolved CI subject SHA '$SUBJECT_SHA'. Refusing to proceed against an unverified checkout."
@@ -1115,6 +1163,14 @@ jobs:
           SUBJECT_SHA: ${{ needs.plan.outputs.subject-sha }}
         run: |
           set -euo pipefail
+          # Job-level `container:` steps execute via a fresh `docker exec`
+          # per step, so a bare shell `git` call sees the checkout owned by
+          # the runner's host UID and refuses it as dubious ownership
+          # (2.35.2+) — unlike actions/checkout's own internal git calls two
+          # steps up, which already registered the path for themselves. A
+          # no-op on bare macOS/Windows runners; trusts nothing beyond what
+          # actions/checkout just placed in this same job.
+          git config --global --add safe.directory '*'
           ACTUAL="$(git rev-parse HEAD)"
           if [ "$ACTUAL" != "$SUBJECT_SHA" ]; then
             echo "::error::checked-out HEAD '$ACTUAL' does not match Plan's resolved CI subject SHA '$SUBJECT_SHA'. Refusing to proceed against an unverified checkout."
@@ -1211,6 +1267,14 @@ jobs:
           SUBJECT_SHA: ${{ needs.plan.outputs.subject-sha }}
         run: |
           set -euo pipefail
+          # Job-level `container:` steps execute via a fresh `docker exec`
+          # per step, so a bare shell `git` call sees the checkout owned by
+          # the runner's host UID and refuses it as dubious ownership
+          # (2.35.2+) — unlike actions/checkout's own internal git calls two
+          # steps up, which already registered the path for themselves. A
+          # no-op on bare macOS/Windows runners; trusts nothing beyond what
+          # actions/checkout just placed in this same job.
+          git config --global --add safe.directory '*'
           ACTUAL="$(git rev-parse HEAD)"
           if [ "$ACTUAL" != "$SUBJECT_SHA" ]; then
             echo "::error::checked-out HEAD '$ACTUAL' does not match Plan's resolved CI subject SHA '$SUBJECT_SHA'. Refusing to proceed against an unverified checkout."
@@ -1269,6 +1333,14 @@ jobs:
           SUBJECT_SHA: ${{ needs.plan.outputs.subject-sha }}
         run: |
           set -euo pipefail
+          # Job-level `container:` steps execute via a fresh `docker exec`
+          # per step, so a bare shell `git` call sees the checkout owned by
+          # the runner's host UID and refuses it as dubious ownership
+          # (2.35.2+) — unlike actions/checkout's own internal git calls two
+          # steps up, which already registered the path for themselves. A
+          # no-op on bare macOS/Windows runners; trusts nothing beyond what
+          # actions/checkout just placed in this same job.
+          git config --global --add safe.directory '*'
           ACTUAL="$(git rev-parse HEAD)"
           if [ "$ACTUAL" != "$SUBJECT_SHA" ]; then
             echo "::error::checked-out HEAD '$ACTUAL' does not match Plan's resolved CI subject SHA '$SUBJECT_SHA'. Refusing to proceed against an unverified checkout."
@@ -1526,6 +1598,14 @@ jobs:
           SUBJECT_SHA: ${{ needs.plan.outputs.subject-sha }}
         run: |
           set -euo pipefail
+          # Job-level `container:` steps execute via a fresh `docker exec`
+          # per step, so a bare shell `git` call sees the checkout owned by
+          # the runner's host UID and refuses it as dubious ownership
+          # (2.35.2+) — unlike actions/checkout's own internal git calls two
+          # steps up, which already registered the path for themselves. A
+          # no-op on bare macOS/Windows runners; trusts nothing beyond what
+          # actions/checkout just placed in this same job.
+          git config --global --add safe.directory '*'
           ACTUAL="$(git -C consumer rev-parse HEAD)"
           if [ "$ACTUAL" != "$SUBJECT_SHA" ]; then
             echo "::error::checked-out HEAD '$ACTUAL' does not match Plan's resolved CI subject SHA '$SUBJECT_SHA'. Refusing to proceed against an unverified checkout."
