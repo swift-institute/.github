@@ -61,7 +61,7 @@ jobs:
           egress-policy: audit
 
       - id: read
-        uses: swift-institute/.github/.github/actions/read-orgs@main
+        uses: swift-institute/.github/.github/actions/read-orgs@6f73c2ebff00e4f05375794905926bdd7a0ca14b  # main 2026-08-04, identity-pin to main HEAD (swift-institute/.github#286); no functional change to this action in range
         with:
           filter: 'select(.name=="swift-primitives" or .name=="swift-institute") | .name'
 

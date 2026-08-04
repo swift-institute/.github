@@ -191,7 +191,7 @@ jobs:
           echo "body-file=${body}" >> "$GITHUB_OUTPUT"
 
       - name: Upsert tracking issue
-        uses: swift-institute/.github/.github/actions/upsert-tracking-issue@main
+        uses: swift-institute/.github/.github/actions/upsert-tracking-issue@6f73c2ebff00e4f05375794905926bdd7a0ca14b  # main 2026-08-04, identity-pin to main HEAD (swift-institute/.github#286); no functional change to this action in range
         with:
           repo: swift-institute/.github
           title: 'Scheduled workflow failing: ${{ github.event.workflow_run.name }}'
