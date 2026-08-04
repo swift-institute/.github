@@ -24,6 +24,17 @@
 # the audit trail whenever it is the one that admitted the transaction.
 # The target App token is scoped to one selected repository. Minting fails when
 # that owner/repository is outside the App's existing Institute installations.
+#
+# The "Validate the guarded transaction" step never lets `set -e` fail a
+# predicate silently (swift-institute/.github#288 Defect B): every gate
+# evaluates its predicates independently and prints which one rejected the
+# plan, and why, before exiting. The task-binding gate additionally admits an
+# owning Issue whose `issueType` is `Goal`, not only `Task`/`Bug`/`Feature`
+# (swift-institute/.github#288 Defect A) — a PR that founds a Goal (e.g. its
+# governing programme document) legitimately has no narrower child issue to
+# cite yet. This does not touch the `reviewOnly` security property itself:
+# PR.Transaction+Verification.swift still fails closed the instant any check
+# run is cited at the exact head, unconditionally of the owning Issue's type.
 
 name: review-pr-transaction
 
@@ -124,13 +135,19 @@ jobs:
           ACCEPTED_PLAN: ${{ inputs.accepted-plan }}
         run: |
           set -euo pipefail
+          # Every rejection below prints which predicate rejected and why
+          # before exiting, instead of relying on `set -e` to stop the
+          # script silently (swift-institute/.github#288 Defect B). Each
+          # gate below evaluates its predicates independently (never inside
+          # a `select` chain) so a false result cannot be swallowed.
           repository="$TARGET_REPOSITORY"
-          plan=$(jq -ce '
+
+          plan_check=$(jq -c '
             def nonempty_strings:
               type == "array" and length > 0 and all(.[]; type == "string" and length > 0);
             def exact_revision:
               type == "string" and test("^[0-9a-f]{40}$");
-            def verification:
+            def verification_ok:
               (keys == ["package"] and .package == {}) or
               (
                 keys == ["control"] and
@@ -146,40 +163,69 @@ jobs:
                 (.waveMechanical.checks | unique | length) == (.waveMechanical.checks | length) and
                 (.waveMechanical.mechanical == true)
               );
-            select(type == "object")
-            | select(.accepted == true)
-            | select(.repository | type == "string" and length > 0)
-            | select(.pull | type == "number" and . > 0 and floor == .)
-            | select(.base | exact_revision)
-            | select(.head | exact_revision)
-            | select(
-                (.task | type == "object") and
-                (.task.repository | type == "string" and length > 0) and
-                (.task.number | type == "number" and . > 0 and floor == .) and
-                .task.state == "OPEN"
-              )
-            | select(.verification | verification)
-            | select(.paths | nonempty_strings)
-            | select(
-                (.evidence | type == "array" and length > 0) and
-                all(
-                  .evidence[];
-                  (.command | type == "string" and length > 0) and
-                  .result == "success" and
-                  (.head | exact_revision)
-                )
-              )
-            | select(.payloadPreflighted == true)
-            | select(.nextOwner == "swift-institute-bot[bot]")
+            if type != "object" then
+              { ok: false, reasons: ["accepted-plan: top-level payload is not a JSON object"] }
+            else
+              ([
+                { name: "accepted",           ok: (.accepted == true) },
+                { name: "repository",         ok: (.repository | type == "string" and length > 0) },
+                { name: "pull",               ok: (.pull | type == "number" and . > 0 and floor == .) },
+                { name: "base",               ok: (.base | exact_revision) },
+                { name: "head",               ok: (.head | exact_revision) },
+                { name: "task",               ok: (
+                                                 (.task | type == "object") and
+                                                 (.task.repository | type == "string" and length > 0) and
+                                                 (.task.number | type == "number" and . > 0 and floor == .) and
+                                                 (.task.state == "OPEN")
+                                               ) },
+                { name: "verification",       ok: (.verification | verification_ok) },
+                { name: "paths",              ok: (.paths | nonempty_strings) },
+                { name: "evidence",           ok: (
+                                                 (.evidence | type == "array" and length > 0) and
+                                                 all(.evidence[]; (.command | type == "string" and length > 0) and .result == "success" and (.head | exact_revision))
+                                               ) },
+                { name: "payloadPreflighted", ok: (.payloadPreflighted == true) },
+                { name: "nextOwner",          ok: (.nextOwner == "swift-institute-bot[bot]") }
+              ]) as $predicates
+              | {
+                  ok: ([$predicates[].ok] | all),
+                  reasons: [$predicates[] | select(.ok | not) | "accepted-plan: predicate \"\(.name)\" failed"],
+                  plan: .
+                }
+            end
           ' <<<"$ACCEPTED_PLAN")
+          if [[ "$(jq -r '.ok' <<<"$plan_check")" != "true" ]]; then
+            jq -r '.reasons[] | "::error::" + .' <<<"$plan_check"
+            exit 1
+          fi
+          plan=$(jq -c '.plan' <<<"$plan_check")
+
           pull=$(gh api "repos/${repository}/pulls/${PULL}")
           head=$(jq -er '.head.sha' <<<"$pull")
           base=$(jq -er '.base.sha' <<<"$pull")
           fixer=$(jq -er '.user.login' <<<"$pull")
-          test "$(jq -r '.state' <<<"$pull")" = open
-          test "$(jq -r '.draft' <<<"$pull")" = false
-          test "$(jq -r '.repository' <<<"$plan")" = "$repository"
-          test "$(jq -r '.pull' <<<"$plan")" = "$PULL"
+
+          pr_state=$(jq -r '.state' <<<"$pull")
+          if [[ "$pr_state" != "open" ]]; then
+            echo "::error::pull request ${repository}#${PULL} state is '${pr_state}', not open."
+            exit 1
+          fi
+          pr_draft=$(jq -r '.draft' <<<"$pull")
+          if [[ "$pr_draft" != "false" ]]; then
+            echo "::error::pull request ${repository}#${PULL} is a draft."
+            exit 1
+          fi
+          plan_repository=$(jq -r '.repository' <<<"$plan")
+          if [[ "$plan_repository" != "$repository" ]]; then
+            echo "::error::accepted-plan repository '${plan_repository}' does not match target repository '${repository}'."
+            exit 1
+          fi
+          plan_pull=$(jq -r '.pull' <<<"$plan")
+          if [[ "$plan_pull" != "$PULL" ]]; then
+            echo "::error::accepted-plan pull '${plan_pull}' does not match target pull '${PULL}'."
+            exit 1
+          fi
+
           task_repository=$(jq -er '.task.repository' <<<"$plan")
           task_number=$(jq -er '.task.number' <<<"$plan")
           if [[ ! "$task_repository" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9._-]+$ ]]; then
@@ -190,13 +236,19 @@ jobs:
           task_name="${task_repository#*/}"
           target_owner="${repository%/*}"
           target_name="${repository#*/}"
-          owning_task=$(
-            gh api "repos/${task_repository}/issues/${task_number}" |
-              jq -ce --arg repository "$task_repository" --argjson number "$task_number" '
-                select(.number == $number and .state == "open" and (has("pull_request") | not))
-                | { repository: $repository, number, state: "OPEN" }
-              '
-          )
+
+          task_issue_json=$(gh api "repos/${task_repository}/issues/${task_number}")
+          owning_task=$(jq -ce --arg repository "$task_repository" --argjson number "$task_number" '
+            select(.number == $number and .state == "open" and (has("pull_request") | not))
+            | { repository: $repository, number, state: "OPEN" }
+          ' <<<"$task_issue_json") || {
+            actual_number=$(jq -r '.number // "null"' <<<"$task_issue_json")
+            actual_state=$(jq -r '.state // "null"' <<<"$task_issue_json")
+            is_pull=$(jq -r 'has("pull_request")' <<<"$task_issue_json")
+            echo "::error::task issue ${task_repository}#${task_number} is not an admissible owning task (number=${actual_number}, state=${actual_state}, isPullRequest=${is_pull})."
+            exit 1
+          }
+
           gh api --paginate --slurp \
             "repos/${repository}/pulls/${PULL}/reviews?per_page=100" \
             > "$RUNNER_TEMP/review-pages.json"
@@ -264,42 +316,65 @@ jobs:
                 }
               }
             }' > "$RUNNER_TEMP/graph.json"
-          jq -e '
-            .data.target != null and
-            .data.target.pullRequest != null and
-            .data.taskRepository.issue != null and
-            .data.taskRepository.issue.timelineItems.pageInfo.hasNextPage == false and
-            .data.target.pullRequest.reviewThreads.pageInfo.hasNextPage == false and
-            .data.target.pullRequest.timelineItems.pageInfo.hasNextPage == false and
-            .data.taskRepository.issue.repository.nameWithOwner == $taskRepository and
-            .data.taskRepository.issue.number == $task and
-            .data.taskRepository.issue.state == "OPEN" and
-            (
-              .data.taskRepository.issue.issueType.name == "Task" or
-              .data.taskRepository.issue.issueType.name == "Bug" or
-              .data.taskRepository.issue.issueType.name == "Feature"
-            ) and
-            (
-              ([
-                .data.taskRepository.issue.timelineItems.nodes[].source
-                | select(
-                    .__typename == "PullRequest" and
-                    .repository.nameWithOwner == $repository and
-                    .number == $number
-                  )
-              ] | length > 0) or
-              ([
-                .data.target.pullRequest.timelineItems.nodes[].source
-                | select(
-                    .__typename == "Issue" and
-                    .repository.nameWithOwner == $taskRepository and
-                    .number == $task
-                  )
-              ] | length > 0)
-            )
+
+          graph_check=$(jq -c '
+            (.data.target != null) as $targetExists
+            | (.data.target.pullRequest != null) as $prExists
+            | (.data.taskRepository.issue != null) as $issueExists
+            | [
+              { name: "target-repository", ok: $targetExists,
+                message: "target repository \"\($repository)\" not found or inaccessible" },
+              { name: "target-pull-request", ok: (if $targetExists then $prExists else true end),
+                message: "pull request \($repository)#\($number) not found" },
+              { name: "task-issue", ok: $issueExists,
+                message: "task issue \($taskRepository)#\($task) not found" },
+              { name: "task-issue-timeline-page",
+                ok: (if $issueExists then (.data.taskRepository.issue.timelineItems.pageInfo.hasNextPage == false) else true end),
+                message: "task issue \($taskRepository)#\($task) has more than 100 cross-referenced timeline items" },
+              { name: "pr-review-threads-page",
+                ok: (if $prExists then (.data.target.pullRequest.reviewThreads.pageInfo.hasNextPage == false) else true end),
+                message: "pull request \($repository)#\($number) has more than 100 review threads" },
+              { name: "pr-timeline-page",
+                ok: (if $prExists then (.data.target.pullRequest.timelineItems.pageInfo.hasNextPage == false) else true end),
+                message: "pull request \($repository)#\($number) has more than 100 cross-referenced timeline items" },
+              { name: "task-issue-repository",
+                ok: (if $issueExists then (.data.taskRepository.issue.repository.nameWithOwner == $taskRepository) else true end),
+                message: "task issue repository \"\(.data.taskRepository.issue.repository.nameWithOwner // "null")\" does not match declared task repository \"\($taskRepository)\"" },
+              { name: "task-issue-number",
+                ok: (if $issueExists then (.data.taskRepository.issue.number == $task) else true end),
+                message: "task issue number \(.data.taskRepository.issue.number // "null") does not match declared task number \($task)" },
+              { name: "task-issue-open",
+                ok: (if $issueExists then (.data.taskRepository.issue.state == "OPEN") else true end),
+                message: "task issue \($taskRepository)#\($task) state is \"\(.data.taskRepository.issue.state // "null")\", not OPEN" },
+              { name: "task-issue-type",
+                # Goal is admissible alongside Task/Bug/Feature: a PR that
+                # establishes a Goal itself (e.g. its founding programme
+                # document) legitimately has no narrower child issue to cite
+                # yet (swift-institute/.github#288 Defect A).
+                ok: (if $issueExists then (.data.taskRepository.issue.issueType.name as $t | ($t == "Task" or $t == "Bug" or $t == "Feature" or $t == "Goal")) else true end),
+                message: "task issue \($taskRepository)#\($task) issueType is \"\(.data.taskRepository.issue.issueType.name // "unset")\"; must be Task, Bug, Feature, or Goal" },
+              { name: "task-pull-cross-reference",
+                ok: (if ($issueExists and $prExists) then (
+                  ([ (.data.taskRepository.issue.timelineItems.nodes // [])[].source
+                     | select(.__typename == "PullRequest" and .repository.nameWithOwner == $repository and .number == $number) ] | length > 0)
+                  or
+                  ([ (.data.target.pullRequest.timelineItems.nodes // [])[].source
+                     | select(.__typename == "Issue" and .repository.nameWithOwner == $taskRepository and .number == $task) ] | length > 0)
+                ) else true end),
+                message: "neither task issue \($taskRepository)#\($task) nor pull request \($repository)#\($number) cross-references the other" }
+            ] as $predicates
+            | {
+                ok: ([$predicates[].ok] | all),
+                reasons: [$predicates[] | select(.ok | not) | "task/PR binding: " + .message]
+              }
           ' --arg repository "$repository" --arg taskRepository "$task_repository" \
             --argjson task "$task_number" --argjson number "$PULL" \
-            "$RUNNER_TEMP/graph.json" >/dev/null
+            "$RUNNER_TEMP/graph.json")
+          if [[ "$(jq -r '.ok' <<<"$graph_check")" != "true" ]]; then
+            jq -r '.reasons[] | "::error::" + .' <<<"$graph_check"
+            exit 1
+          fi
+
           jq -n \
             --arg repository "$repository" \
             --argjson target "$TARGET" \
