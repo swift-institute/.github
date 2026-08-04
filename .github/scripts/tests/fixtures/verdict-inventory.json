@@ -15,7 +15,8 @@
       "embedded",
       "embedded-wasm-sdk",
       "android-build",
-      "static-linux-musl-build"
+      "static-linux-musl-build",
+      "docs"
     ],
     "aggregate": {
       "advisory_summary_needs": [
@@ -32,7 +33,8 @@
         "embedded",
         "embedded-wasm-sdk",
         "android-build",
-        "static-linux-musl-build"
+        "static-linux-musl-build",
+        "docs"
       ],
       "ci_ok_needs": [
         "plan",
@@ -64,7 +66,7 @@
       "lint",
       "swift-linter"
     ],
-    "job_count": 22,
+    "job_count": 23,
     "jobs": {
       "advisory-summary": {
         "continue_on_error": true,
@@ -85,7 +87,8 @@
           "embedded",
           "embedded-wasm-sdk",
           "android-build",
-          "static-linux-musl-build"
+          "static-linux-musl-build",
+          "docs"
         ],
         "nested_test_detection": false,
         "permissions": {
@@ -189,6 +192,24 @@
           "Upload effective-runtime receipt"
         ],
         "wave": 2
+      },
+      "docs": {
+        "continue_on_error": false,
+        "has_matrix": false,
+        "if": "${{ !cancelled() && !github.event.repository.private && inputs.integrated-docs == true\n    && (inputs.job == 'docs' || (inputs.job == '' && (\n          startsWith(github.ref, 'refs/tags/')\n          || github.event_name == 'workflow_dispatch'\n          || github.event_name == 'schedule'\n          || contains(github.event.head_commit.message, '[ci docs]')\n        ))) }}",
+        "matrix_axes": {},
+        "needs": [
+          "plan"
+        ],
+        "nested_test_detection": false,
+        "permissions": {
+          "contents": "read"
+        },
+        "posture": "advisory",
+        "private_guarded": true,
+        "runner": "swift-institute/.github/.github/workflows/swift-docs.yml@main",
+        "step_names": [],
+        "wave": 1
       },
       "embedded": {
         "continue_on_error": true,
@@ -624,7 +645,7 @@
       "skipped"
     ],
     "required_check_context": "ci / ci-ok",
-    "source_sha256": "8c42118fcdd7d09aa5c0f2cd3b6ae57730757eb85e0af9be550908568af51c36"
+    "source_sha256": "952a959c4a43b3715aedc533fd81ba6be4a9fe3ac24e41a6c0daefa46e806b2e"
   },
   "wrappers": {
     "foundations": {
@@ -646,31 +667,16 @@
       },
       "layer": "foundations",
       "layer_required_jobs_outside_universal_verdict": [],
-      "source_sha256": "0b6d61ba6660d1cf73028184087ba7e42be7785f43f9aea853491dd0e4125310"
+      "source_sha256": "dfe37ba078b33114d7cc338712de5bc31e1a41e39e2521246c768a19c0554f49"
     },
     "primitives": {
       "ci_ok_needs": [
         "matrix"
       ],
-      "job_count": 6,
+      "job_count": 2,
       "jobs": {
-        "android-build": {
-          "continue_on_error": true,
-          "in_ci_ok_needs": false,
-          "runner": "ubuntu-latest"
-        },
         "ci-ok": {
           "continue_on_error": false,
-          "in_ci_ok_needs": false,
-          "runner": "ubuntu-latest"
-        },
-        "embedded": {
-          "continue_on_error": true,
-          "in_ci_ok_needs": false,
-          "runner": "ubuntu-latest"
-        },
-        "embedded-wasm-sdk": {
-          "continue_on_error": true,
           "in_ci_ok_needs": false,
           "runner": "ubuntu-latest"
         },
@@ -678,21 +684,11 @@
           "continue_on_error": false,
           "in_ci_ok_needs": true,
           "runner": "swift-institute/.github/.github/workflows/swift-ci.yml@main"
-        },
-        "static-linux-musl-build": {
-          "continue_on_error": true,
-          "in_ci_ok_needs": false,
-          "runner": "ubuntu-latest"
         }
       },
       "layer": "primitives",
-      "layer_required_jobs_outside_universal_verdict": [
-        "embedded",
-        "embedded-wasm-sdk",
-        "android-build",
-        "static-linux-musl-build"
-      ],
-      "source_sha256": "3fa01ff2467b9a417ca16b64e48c9d0167349fdd858de38f35cc871cd2be9271"
+      "layer_required_jobs_outside_universal_verdict": [],
+      "source_sha256": "e6bdbad1cacdfdbc274b046a50fd38db9b79d10360d7662c24bbd1a9d0c9c1be"
     },
     "standards": {
       "ci_ok_needs": [
@@ -713,7 +709,7 @@
       },
       "layer": "standards",
       "layer_required_jobs_outside_universal_verdict": [],
-      "source_sha256": "583f64dfdf0a4759bd2978bb34199337c3458a73e2b6289ebb317dca5575b52d"
+      "source_sha256": "0e548a2e0233d588e8f5fdca5c60a5b592be1ab9c95ad52777ae6599a2c3b48a"
     }
   }
 }

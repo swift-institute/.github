@@ -2,32 +2,23 @@ name: Swift CI (primitives layer)
 
 # Layer wrapper for swift-institute/.github/.github/workflows/swift-ci.yml.
 #
-# Encodes the L1 layer invariants that swift-institute's universal reusable
-# does not (and should not) carry. Currently:
-#   - Embedded build verification: every primitives package MUST be
-#     buildable under `-enable-experimental-feature Embedded` against the
-#     Swift main nightly Linux container. This is the CI manifestation
-#     of [PRIM-FOUND-001] (Foundation-free) extended into freestanding-
-#     buildability per swift-package-build [PKG-BUILD-007]/[PKG-BUILD-008].
-#     A package that cannot satisfy this invariant is, by that fact, not
-#     a primitive — it belongs at L2 or L3.
+# Reduced to its stable `workflow_call` interface, fixed `lint-bundle`,
+# pass-through typed inputs, closed secret forwarding, and one universal
+# call (CI/CD refactor programme Task 1-04, swift-institute/.github#276).
 #
-#     This invariant is verified on TWO deliberately different axes, and
-#     neither leg subsumes the other:
-#       - `embedded` — Embedded-mode restrictions on the HOST triple
-#         (x86_64-unknown-linux-gnu) at the Swift main NIGHTLY toolchain.
-#         What it attests: the package's sources satisfy Embedded-mode
-#         language restrictions under the compiler Swift main will ship.
-#         It is not, and never was, an embedded-TARGET build.
-#       - `embedded-wasm-sdk` — a genuine embedded target
-#         (wasm32-unknown-wasip1 via the Embedded Wasm SDK) at the STABLE
-#         floor. What it attests: embedded-target code generation.
-#     The job names below say exactly which of the two each one is; do not
-#     collapse them, and do not let either name imply the other's coverage.
-#
-# The embedded job runs with continue-on-error: true (matches linux-nightly
-# precedent; the embedded job uses the nightly container and inherits its
-# instability profile while Swift main is in active development).
+# The L1 layer invariants this wrapper used to enforce with its own job
+# copies — Foundation-free per [PRIM-FOUND-001], extended into
+# freestanding-buildability per [PKG-BUILD-007]/[PKG-BUILD-008] — are now
+# enforced inside the universal reusable itself, selected by
+# `lint-bundle: primitives` (Task 1-03, swift-institute/.github#302): the
+# `embedded`, `embedded-wasm-sdk`, `android-build`, and
+# `static-linux-musl-build` jobs there are this wrapper's former job
+# copies, relocated verbatim and kept in their prior non-gating,
+# `continue-on-error: true` posture. See that workflow's own comments for
+# the full invariant description (including the two-deliberately-different-
+# axes rationale for `embedded` vs `embedded-wasm-sdk`) and the soak/flip
+# criteria for the still-advisory legs. This wrapper carries no duplicate
+# copy of that documentation or those jobs.
 #
 # Consume from a caller package's .github/workflows/ci.yml via:
 #
@@ -52,7 +43,9 @@ name: Swift CI (primitives layer)
 # `enable-embedded-check` is intentionally NOT exposed as an input — embedded
 # buildability is a layer invariant for L1 primitives, not a per-package opt-in.
 # `embedded-target` narrows only the build root for a package whose default trait
-# selects a non-Embedded surface; it does not disable the invariant.
+# selects a non-Embedded surface; it does not disable the invariant. It is
+# forwarded verbatim to the universal reusable, which is the sole consumer
+# of it now.
 
 on:
   workflow_call:
@@ -72,11 +65,50 @@ on:
       platform-support:
         type: string
         default: ""
-        description: "Per-package CI platform-support declaration, passed through verbatim to the universal matrix. Empty default (every existing caller) = full matrix, bit-identical to before this input existed. Non-empty = comma-separated subset of `apple,linux,windows` (lowercase, no spaces). Declare ONLY platform-identity exclusions — a package whose specification or identity excludes a platform; NOT a cost knob and NOT derived from Package.swift `platforms:`. The L1-specific cross-compile legs in THIS wrapper (embedded / wasm / android / musl) are layer invariants and deliberately do NOT consult it. Full semantics: the universal reusable's `platform-support` input doc (swift-institute/.github/.github/workflows/swift-ci.yml)."
+        description: "Per-package CI platform-support declaration, passed through verbatim to the universal matrix. Empty default (every existing caller) = full matrix, bit-identical to before this input existed. Non-empty = comma-separated subset of `apple,linux,windows` (lowercase, no spaces). Declare ONLY platform-identity exclusions — a package whose specification or identity excludes a platform; NOT a cost knob and NOT derived from Package.swift `platforms:`. The L1-specific cross-compile legs (embedded / wasm / android / musl) are layer invariants enforced inside the universal reusable and deliberately do NOT consult it. Full semantics: the universal reusable's `platform-support` input doc (swift-institute/.github/.github/workflows/swift-ci.yml)."
       embedded-target:
         type: string
         default: ""
-        description: "Optional target to build for Embedded with default traits disabled. Empty preserves the full-package Embedded build."
+        description: "Optional target to build for Embedded with default traits disabled. Empty preserves the full-package Embedded build. Forwarded to the universal reusable's own `embedded-target` input, consulted only by its `embedded` job (`lint-bundle == 'primitives'`)."
+      # ─── TEMPORARY MIGRATION-ONLY INPUT [temp-integrated-docs-4-01] ─────
+      # CI/CD refactor programme Task 4-01 (swift-institute/.github#276,
+      # swift-primitives/.github#13). Pure pass-through to the universal
+      # reusable's own `integrated-docs` input — see that input's
+      # description (swift-institute/.github/.github/workflows/swift-ci.yml)
+      # for the full contract. NOT a package-owned policy knob: a caller's
+      # `ci:` job may carry this in `with:` ONLY with the exact
+      # bot-generated literal `true` during the migration window
+      # (validate-thin-callers.py's INTEGRATED-DOCS-ADMISSION check).
+      # Deleted at Task 5-03 once fleet convergence proves zero remaining
+      # false/default callers.
+      integrated-docs:
+        type: boolean
+        default: false
+        description: "TEMPORARY migration-only compatibility pass-through [temp-integrated-docs-4-01] (swift-institute/.github#276 Task 4-01, swift-primitives/.github#13). Forwarded verbatim to the universal reusable; see its own `integrated-docs` input for the full contract."
+      docs-umbrella-module:
+        type: string
+        default: ""
+        description: "Pass-through override forwarded to the universal reusable's `docs-umbrella-module` input; consulted only when `integrated-docs` is true."
+      docs-umbrella-display-name:
+        type: string
+        default: ""
+        description: "Pass-through override forwarded to the universal reusable's `docs-umbrella-display-name` input; consulted only when `integrated-docs` is true."
+      docs-umbrella-bundle-id:
+        type: string
+        default: ""
+        description: "Pass-through override forwarded to the universal reusable's `docs-umbrella-bundle-id` input; consulted only when `integrated-docs` is true."
+      docs-umbrella-docc-path:
+        type: string
+        default: ""
+        description: "Pass-through override forwarded to the universal reusable's `docs-umbrella-docc-path` input; consulted only when `integrated-docs` is true."
+      docs-exclude-modules:
+        type: string
+        default: ""
+        description: "Pass-through override forwarded to the universal reusable's `docs-exclude-modules` input; consulted only when `integrated-docs` is true."
+      docs-swift-version:
+        type: string
+        default: "6.3"
+        description: "Pass-through override forwarded to the universal reusable's `docs-swift-version` input; consulted only when `integrated-docs` is true."
     secrets:
       PRIVATE_REPO_TOKEN:
         required: false
@@ -104,267 +136,14 @@ on:
           swift-institute-bot App private key (org-level secret).
           Counterpart of SWIFT_INSTITUTE_BOT_APP_CLIENT_ID.
 
-# No workflow-level `env:` block. This wrapper carried
-# `XCODE_VERSION: "26.4"` until 2026-07-28; it was inert and is deliberately
-# NOT replaced with a synced value. Two reasons, either sufficient:
-#
-#   1. Every job this wrapper defines itself is `runs-on: ubuntu-latest`
-#      (embedded, embedded-wasm-sdk, android-build, static-linux-musl-build).
-#      None of them invokes Xcode.
-#   2. A caller's workflow-level `env:` does NOT cross into a called reusable
-#      workflow, so it never reached the universal's macOS legs either. Proof:
-#      swift-primitives/swift-array-primitives job 86475550287 routed through
-#      this wrapper and selected `/Applications/Xcode_26.6.app` — the
-#      universal's own pin — not 26.4.
-#
-# The Xcode pin is fleet-wide and lives in exactly one place:
-# `swift-institute/.github/.github/workflows/swift-ci.yml`. Re-adding it here
-# would recreate a second source of truth that looks authoritative and does
-# nothing. The sibling wrappers (swift-foundations, swift-standards) have
-# never carried one; this wrapper now matches them.
-
 jobs:
-  # L1 invariant: Foundation-free per [PRIM-FOUND-001] +
-  # freestanding-buildable per [PKG-BUILD-007]/[PKG-BUILD-008].
-  # Declared first so it appears alongside the universal-matrix builds
-  # in the consumer's CI sidebar (rather than orphaned at the bottom).
-  embedded:
-    # NAME (swift-institute/.github#161, 2026-07-31): this leg was called
-    # "Ubuntu (Swift main nightly, Embedded build)", which read as an
-    # embedded-target build. It is not one — `swift build` here targets the
-    # host triple x86_64-unknown-linux-gnu with the Embedded feature flag on.
-    # The name now says the predicate the leg actually tests. Embedded-TARGET
-    # attestation is `embedded-wasm-sdk`, below.
-    name: Ubuntu (Swift main nightly, Embedded mode on host triple)
-    if: ${{ !github.event.repository.private }}
-    runs-on: ubuntu-latest
-    container: swiftlang/swift:nightly-main-jammy
-    continue-on-error: true
-    timeout-minutes: 45
-    permissions:
-      contents: read
-    steps:
-      - name: Harden runner (audit-mode egress logging)
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
-        with:
-          egress-policy: audit
-
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          # Check out the immutable caller subject, including fork PR heads.
-          repository: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name || github.repository }}
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-
-      - uses: swift-institute/.github/.github/actions/configure-private-repos@1862f98d955f31a11addc7d41d2a3a6cdd87533c  # main 2026-07-30, advanced by pin-advance (swift-institute/.github#43)
-        with:
-          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
-          app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
-          app-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
-          app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
-          enabled: ${{ inputs.enable-private-repos }}
-
-      - name: Print Swift version
-        run: swift --version
-
-      # NO `.build` CACHE HERE, EVER (swift-institute/.github#161, [CI-040]).
-      # This job used to restore ~84MB of `.build` keyed on
-      # `linux-embedded-<prefix>-<hashFiles(Package.swift)>`. Measured on three
-      # swift-primitives/swift-array-primitives runs: cache hit, then "Build
-      # complete!" in ~10s with ZERO `Compiling` lines. The green attested a
-      # cache restore, not a compile, and the whole nightly-Embedded column was
-      # void as evidence fleet-wide.
-      #
-      # Re-keying does not fix this and must not be attempted. The key hashes
-      # only the manifests, so it is blind to (a) the nightly toolchain — a
-      # `.build` produced under 6.3 satisfied a job running 6.5-dev — and
-      # (b) branch-pinned dependency contents, which move without any manifest
-      # edit. Commit c1c1eaf bumped the key v1 -> v2 for exactly that poisoning
-      # and the leg went green-without-compiling again immediately after.
-      # Under gitignored `Package.resolved` + branch pins, no key can prove the
-      # cache represents the resolved graph. Cold build is the only honest one.
-
-      - name: Build (Embedded)
-        if: ${{ inputs.embedded-target == '' }}
-        run: swift build -Xswiftc -enable-experimental-feature -Xswiftc Embedded
-
-      - name: Build target (Embedded, default traits disabled)
-        if: ${{ inputs.embedded-target != '' }}
-        env:
-          EMBEDDED_TARGET: ${{ inputs.embedded-target }}
-        run: swift build --target "$EMBEDDED_TARGET" --disable-default-traits -Xswiftc -enable-experimental-feature -Xswiftc Embedded
-
-  # γ-3 advisory — Embedded Wasm SDK build verification on stable Swift 6.3
-  # (per swiftlang/swift-syntax precedent: stable, not nightly). 4-week
-  # classified soak per research §3.4.6 with five-class failure tracking
-  # (package-actionable / toolchain / SDK install / workflow / known-unsupported).
-  # Flip on "no package-actionable failures + no toolchain instability for 2
-  # consecutive weekly sweeps."
-  embedded-wasm-sdk:
-    name: Ubuntu (Swift 6.3, Embedded Wasm SDK build)
-    if: ${{ !github.event.repository.private }}
-    runs-on: ubuntu-latest
-    container: swift:${{ inputs.swift-version }}
-    continue-on-error: true     # γ-3 advisory; classified soak. Drop after flip.
-    timeout-minutes: 30
-    permissions:
-      contents: read
-    steps:
-      - name: Harden runner (audit-mode egress logging)
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
-        with:
-          egress-policy: audit
-
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          # Check out the immutable caller subject, including fork PR heads.
-          repository: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name || github.repository }}
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-
-      - uses: swift-institute/.github/.github/actions/configure-private-repos@1862f98d955f31a11addc7d41d2a3a6cdd87533c  # main 2026-07-30, advanced by pin-advance (swift-institute/.github#43)
-        with:
-          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
-          app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
-          app-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
-          app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
-          enabled: ${{ inputs.enable-private-repos }}
-
-      - name: Print Swift version
-        run: swift --version
-
-      # Dynamic resolution per Research/wasm-ci-strategy-and-sdk-toolchain-coupling.md
-      # v1.0.0 §Q4 Option α — eliminates soak-taxonomy class C.2 by construction.
-      # The composite action handles container-Swift detection, releases.json
-      # lookup, URL construction, swift sdk install, and GITHUB_ENV write.
-      - name: Install Embedded Wasm SDK matching container Swift
-        uses: swift-institute/.github/.github/actions/install-swift-sdk@1862f98d955f31a11addc7d41d2a3a6cdd87533c  # main 2026-07-30, advanced by pin-advance (swift-institute/.github#43); pin does not cover the releases.json runtime resolve (expected-tag pins that, adopted at the #67 bump)
-        with:
-          platform: wasm-sdk
-          bundle-suffix: wasm
-          sdk-id: ${TAG}_wasm-embedded
-          output-env-var: WASM_SDK_ID
-
-      - name: Build (Embedded Wasm)
-        run: swift build --swift-sdk "${WASM_SDK_ID}"
-
-  # Advisory — Android cross-compile build verification on stable Swift 6.3
-  # via the official swift.org Android SDK. Same dynamic-resolution pattern
-  # as embedded-wasm-sdk: the SDK is paired to the container's Swift
-  # toolchain at run-time. Targets aarch64-android by default (the SDK
-  # bundle's single variant). Same 4-week classified soak as γ-3 with
-  # five-class failure tracking. Flip to gating on "no package-actionable
-  # failures for 2 consecutive weekly sweeps."
-  android-build:
-    name: Ubuntu (Swift 6.3, Android SDK build)
-    if: ${{ !github.event.repository.private }}
-    runs-on: ubuntu-latest
-    container: swift:${{ inputs.swift-version }}
-    continue-on-error: true     # advisory; classified soak. Drop after flip.
-    timeout-minutes: 30
-    permissions:
-      contents: read
-    steps:
-      - name: Harden runner (audit-mode egress logging)
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
-        with:
-          egress-policy: audit
-
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          # Check out the immutable caller subject, including fork PR heads.
-          repository: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name || github.repository }}
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-
-      - uses: swift-institute/.github/.github/actions/configure-private-repos@1862f98d955f31a11addc7d41d2a3a6cdd87533c  # main 2026-07-30, advanced by pin-advance (swift-institute/.github#43)
-        with:
-          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
-          app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
-          app-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
-          app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
-          enabled: ${{ inputs.enable-private-repos }}
-
-      - name: Print Swift version
-        run: swift --version
-
-      # Bundle exposes one swiftSDK variant: ${TAG}_android (verified via
-      # info.json inspection of the 6.3.1 bundle). Same ABI-pairing
-      # constraint as the Wasm SDK.
-      - name: Install Android SDK matching container Swift
-        uses: swift-institute/.github/.github/actions/install-swift-sdk@1862f98d955f31a11addc7d41d2a3a6cdd87533c  # main 2026-07-30, advanced by pin-advance (swift-institute/.github#43); pin does not cover the releases.json runtime resolve (expected-tag pins that, adopted at the #67 bump)
-        with:
-          platform: android-sdk
-          bundle-suffix: android
-          sdk-id: ${TAG}_android
-          output-env-var: ANDROID_SDK_ID
-
-      - name: Build (Android)
-        run: swift build --swift-sdk "${ANDROID_SDK_ID}"
-
-  # γ-3b advisory — Static Linux musl build verification on stable Swift 6.3
-  # via the official swift.org Static Linux SDK. Tests a different invariant
-  # than embedded: "no glibc dynamic linkage" — the resulting binary links
-  # only musl statically and runs on any Linux distribution. Per research
-  # §3.4.6 may stay advisory permanently (different value-class than the
-  # gate-on-flip Wasm/Android jobs).
-  # Bundle URL convention includes the SDK version (currently 0.1.0)
-  # exposed in releases.json as the static-sdk platform's `version` field.
-  static-linux-musl-build:
-    name: Ubuntu (Swift 6.3, Static Linux musl build)
-    if: ${{ !github.event.repository.private }}
-    runs-on: ubuntu-latest
-    container: swift:${{ inputs.swift-version }}
-    continue-on-error: true     # γ-3b advisory; may remain permanently.
-    timeout-minutes: 30
-    permissions:
-      contents: read
-    steps:
-      - name: Harden runner (audit-mode egress logging)
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
-        with:
-          egress-policy: audit
-
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          # Check out the immutable caller subject, including fork PR heads.
-          repository: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name || github.repository }}
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-
-      - uses: swift-institute/.github/.github/actions/configure-private-repos@1862f98d955f31a11addc7d41d2a3a6cdd87533c  # main 2026-07-30, advanced by pin-advance (swift-institute/.github#43)
-        with:
-          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
-          app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
-          app-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
-          app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
-          enabled: ${{ inputs.enable-private-repos }}
-
-      - name: Print Swift version
-        run: swift --version
-
-      # Bundle URL pattern includes the SDK's own version (the platform
-      # entry's `version` field in releases.json — currently 0.1.0).
-      # SDK ID is triple-based (x86_64-swift-linux-musl); composite's
-      # ${TAG}-substitution leaves it unchanged. The Build step below
-      # uses the literal triple directly, so output-env-var is omitted.
-      - name: Install Static Linux SDK matching container Swift
-        uses: swift-institute/.github/.github/actions/install-swift-sdk@1862f98d955f31a11addc7d41d2a3a6cdd87533c  # main 2026-07-30, advanced by pin-advance (swift-institute/.github#43); pin does not cover the releases.json runtime resolve (expected-tag pins that, adopted at the #67 bump)
-        with:
-          platform: static-sdk
-          bundle-suffix: static-linux
-          use-platform-version: 'true'
-          sdk-id: x86_64-swift-linux-musl
-
-      - name: Build (Static Linux musl, x86_64)
-        run: swift build --swift-sdk x86_64-swift-linux-musl
-
-  # apple-simulator-build was consolidated into the ecosystem-wide universal
-  # matrix (swift-institute/.github swift-ci.yml) on 2026-06-08 per [CI-002]
-  # (Apple-platform shipping is ecosystem-wide, not L1-specific). Consumers
-  # now receive the iOS/tvOS/watchOS/visionOS Simulator legs from the
-  # universal reusable below; the L1-specific cross-compile legs (embedded /
-  # wasm / android / musl) remain here.
-
-  # Universal matrix delegated to the ecosystem-wide reusable. Declared
-  # after `embedded` so the layer-specific build groups visually with
-  # the matrix builds (macOS/Ubuntu/Windows) in the consumer's CI sidebar.
+  # Universal matrix delegated to the ecosystem-wide reusable. This is now
+  # this wrapper's ONLY job besides the temporary `ci-ok` compatibility
+  # aggregate below (CI/CD refactor programme Task 1-04): every job this
+  # wrapper used to define itself (embedded, embedded-wasm-sdk,
+  # android-build, static-linux-musl-build) now lives there, selected by
+  # `lint-bundle: primitives` and kept in the same non-gating,
+  # `continue-on-error: true` posture (Task 1-03, swift-institute/.github#302).
   matrix:
     if: ${{ !github.event.repository.private }}
     uses: swift-institute/.github/.github/workflows/swift-ci.yml@main
@@ -373,6 +152,16 @@ jobs:
       enable-private-repos: ${{ inputs.enable-private-repos }}
       macos-runner: ${{ inputs.macos-runner }}
       platform-support: ${{ inputs.platform-support }}
+      embedded-target: ${{ inputs.embedded-target }}
+      # [temp-integrated-docs-4-01] pure pass-through, Task 4-01. Deleted
+      # alongside the input declarations above at Task 5-03.
+      integrated-docs: ${{ inputs.integrated-docs }}
+      docs-umbrella-module: ${{ inputs.docs-umbrella-module }}
+      docs-umbrella-display-name: ${{ inputs.docs-umbrella-display-name }}
+      docs-umbrella-bundle-id: ${{ inputs.docs-umbrella-bundle-id }}
+      docs-umbrella-docc-path: ${{ inputs.docs-umbrella-docc-path }}
+      docs-exclude-modules: ${{ inputs.docs-exclude-modules }}
+      docs-swift-version: ${{ inputs.docs-swift-version }}
       # The rule bundle an UNCONFIGURED consumer (no root `Lint.swift`) is
       # linted against. A literal, not an input: the wrapper IS the layer, so a
       # package cannot elect a weaker set for itself. `universal` is a subset of
@@ -380,6 +169,8 @@ jobs:
       # what keeps an unconfigured package measured against exactly what its
       # configured peers here already activate. Consumers carrying a
       # `Lint.swift` never read this. See swift-institute/Workspace#54.
+      # Also the ONE layer-selection channel that gates the four relocated
+      # cross-compile legs above (Task 1-03).
       lint-bundle: primitives
       # This wrapper is the subject boundary. Propagate the exact PR head
       # repository/SHA (including a fork) or exact push SHA to every package
@@ -400,12 +191,12 @@ jobs:
   # success aggregate — universal's ci-ok ensures macos-release / linux-release
   # / windows-release / format / lint all passed before matrix succeeds).
   #
-  # Excluded from needs: by design:
-  #   - embedded (continue-on-error: true; nightly toolchain instability)
-  #   - embedded-wasm-sdk, android-build, static-linux-musl-build
-  #     (all continue-on-error: true; advisory soak)
-  #
-  # Branch-protection consumers require `ci-ok` only.
+  # TEMPORARY, compatibility-only (CI/CD refactor programme Task 1-04,
+  # swift-institute/.github#276): this aggregate exists solely to keep
+  # producing the `ci / ci-ok` required-status-check name consumer
+  # rulesets already reference, until Phase 3 converges required contexts
+  # to `ci / matrix / ci-ok` and deletes it. No new logic belongs here.
+  # Deletion tracked at swift-primitives/.github#12.
   ci-ok:
     if: ${{ always() && !github.event.repository.private }}
     needs:

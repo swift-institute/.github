@@ -272,5 +272,110 @@ jobs:
         self.assertTrue(any("[cross-org-extra-names]" in l for l in lines), lines)
 
 
+class IntegratedDocsAdmissionTests(unittest.TestCase):
+    """Task 4-01 (swift-institute/.github#276, #284): the
+    INTEGRATED-DOCS-ADMISSION check. `ci:` job `with: integrated-docs:`
+    admits only the exact bot-generated literal `true`; absence is the
+    pre-migration shape and is never a finding."""
+
+    def run_validator(self, workflow: str, repo: str = "swift-primitives/fixture") -> list[str]:
+        import tempfile
+        from pathlib import Path as _Path
+
+        with tempfile.TemporaryDirectory() as raw:
+            root = _Path(raw)
+            (root / "Package.swift").write_text(
+                "// swift-tools-version: 6.3\n", encoding="utf-8"
+            )
+            workflows = root / ".github" / "workflows"
+            workflows.mkdir(parents=True)
+            (workflows / "ci.yml").write_text(workflow, encoding="utf-8")
+            output = StringIO()
+            with redirect_stdout(output):
+                module.main(repo, str(root))
+        return [
+            line
+            for line in output.getvalue().splitlines()
+            if "\tINTEGRATED-DOCS-ADMISSION\t" in line
+        ]
+
+    def test_absence_is_not_a_finding(self) -> None:
+        """The current, pre-migration shape of every real caller — no
+        `integrated-docs` key at all — must produce zero findings."""
+        workflow = """name: CI
+on: [push]
+jobs:
+  ci:
+    uses: swift-primitives/.github/.github/workflows/swift-ci.yml@main
+    secrets: inherit
+"""
+        self.assertEqual(self.run_validator(workflow), [])
+
+    def test_bot_generated_true_is_admitted(self) -> None:
+        workflow = """name: CI
+on: [push]
+jobs:
+  ci:
+    uses: swift-primitives/.github/.github/workflows/swift-ci.yml@main
+    with:
+      integrated-docs: true
+    secrets: inherit
+"""
+        self.assertEqual(self.run_validator(workflow), [])
+
+    def test_explicit_false_fires(self) -> None:
+        """Positive control: false is redundant with the default and is
+        never a value the migration bot writes — it must fire."""
+        workflow = """name: CI
+on: [push]
+jobs:
+  ci:
+    uses: swift-primitives/.github/.github/workflows/swift-ci.yml@main
+    with:
+      integrated-docs: false
+    secrets: inherit
+"""
+        lines = self.run_validator(workflow)
+        self.assertEqual(len(lines), 1, lines)
+        self.assertIn("integrated-docs: false", lines[0])
+
+    def test_dynamic_expression_fires(self) -> None:
+        """Positive control: an expression is not a literal the bot emits."""
+        workflow = """name: CI
+on: [push]
+jobs:
+  ci:
+    uses: swift-primitives/.github/.github/workflows/swift-ci.yml@main
+    with:
+      integrated-docs: ${{ vars.SOME_FLAG }}
+    secrets: inherit
+"""
+        lines = self.run_validator(workflow)
+        self.assertEqual(len(lines), 1, lines)
+
+    def test_docs_job_with_block_is_not_consulted(self) -> None:
+        """Only the `ci:` job's `with:` block is in scope — a LEGACY
+        caller's separate `docs:` job (still calling swift-docs.yml
+        directly, unrelated to this input) must never be misread as the
+        `ci:` job's block by the indentation-tracked scanner."""
+        workflow = """name: CI
+on: [push]
+jobs:
+  ci:
+    uses: swift-primitives/.github/.github/workflows/swift-ci.yml@main
+    secrets: inherit
+
+  docs:
+    uses: swift-primitives/.github/.github/workflows/swift-docs.yml@main
+    with:
+      integrated-docs: false
+    secrets: inherit
+"""
+        # `integrated-docs` is not a real swift-docs.yml input at all; this
+        # fixture exists only to prove the scanner is job-scoped to `ci:`
+        # and does not leak a sibling job's `with:` block into its result.
+        self.assertEqual(self.run_validator(workflow), [])
+
+
 if __name__ == "__main__":
     unittest.main()
