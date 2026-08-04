@@ -787,6 +787,10 @@ jobs:
   # Deliberately NOT a dependency of `sync` — see the note under `jobs:`.
   # This job still fails loudly on REPO-ACTIONS violations, which fails the
   # workflow; it just no longer takes settings convergence down with it.
+  # The single step below runs BOTH predicates (surface-policy validation,
+  # then vulnerability-reporting reconciliation) unconditionally and fails
+  # closed if either diverged; it does not let one gate the other
+  # (swift-institute/.github#278, #222).
   surfaces:
     if: ${{ !github.event.repository.private }}     # [CI-032]
     runs-on: ubuntu-latest
@@ -852,7 +856,7 @@ jobs:
           permission-contents: read
           permission-metadata: read
 
-      - name: Reconcile private vulnerability reporting
+      - name: Validate repository surfaces and reconcile private vulnerability reporting
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
           INPUT_REPO: ${{ inputs.repo }}

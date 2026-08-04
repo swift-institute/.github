@@ -74,14 +74,31 @@ enum Main {
         let policy = try RepositoryPolicy.SurfacePolicy.load(
             from: URL(filePath: arguments.surfacePolicy)
         )
-        let report = try await RepositoryPolicy.validateSurfaces(
-            client: .init(token: token, baseURL: baseURL),
+        let client = RepositoryPolicy.GitHubClient(token: token, baseURL: baseURL)
+
+        // Surface-policy validation and private-vulnerability-reporting
+        // reconciliation are unrelated concerns over the same scope and must
+        // each fail on their own merits — the same rule that already governs
+        // this reusable workflow's top-level `sync` vs `surfaces` job split
+        // (see the note above `jobs:` in sync-metadata.yml, swift-institute/
+        // .github#160). That split did not reach one level deeper: inside
+        // this single step, an org-scope surface-policy violation in ONE
+        // repository unconditionally threw before `RepositoryPolicy.run`
+        // ever started, silently skipping vulnerability-reporting
+        // reconciliation for every OTHER, fully-conforming repository in
+        // that org on every scheduled sweep (swift-institute/.github#278,
+        // diagnosed via #222: the step's name and its actual predicate had
+        // diverged). Run both predicates unconditionally, report both, and
+        // fail closed at the end if either failed — never let one predicate
+        // suppress the other's execution.
+        let surfaceReport = try await RepositoryPolicy.validateSurfaces(
+            client: client,
             scope: scope,
             policy: policy
         )
-        try write(report, to: arguments.surfaceReport)
-        guard report.passed else {
-            for repository in report.reports {
+        try write(surfaceReport, to: arguments.surfaceReport)
+        if !surfaceReport.passed {
+            for repository in surfaceReport.reports {
                 for violation in repository.violations {
                     FileHandle.standardError.write(
                         Data(
@@ -91,12 +108,10 @@ enum Main {
                     )
                 }
             }
-            throw RepositoryPolicy.ConfigurationError(
-                "repository surface policy rejected the selected scope"
-            )
         }
+
         let receipt = try await RepositoryPolicy.run(
-            client: .init(token: token, baseURL: baseURL),
+            client: client,
             configuration: .init(
                 scope: scope,
                 dryRun: arguments.dryRun,
@@ -119,6 +134,13 @@ enum Main {
                 + "converged=\(receipt.converged) enabled=\(receipt.enabled) "
                 + "would-enable=\(receipt.wouldEnable)"
         )
+
+        guard surfaceReport.passed else {
+            throw RepositoryPolicy.ConfigurationError(
+                "repository surface policy rejected the selected scope "
+                    + "(vulnerability-reporting reconciliation above still ran to completion)"
+            )
+        }
     }
 
     private static func ruleset(_ arguments: RulesetArguments) throws {
