@@ -22,7 +22,12 @@ on:
   workflow_call:
     inputs:
       repo:
-        description: 'Owner/name of the target repo to validate (default: this repo).'
+        description: 'Owner/name of a single repo to validate (default: this repo). Takes precedence over org.'
+        type: string
+        required: false
+        default: ''
+      org:
+        description: 'Org to sweep via paginated repo enumeration (ignored if repo is set). Task 0B-01: replaces the orchestrator''s repository-wide resolve-targets matrix.'
         type: string
         required: false
         default: ''
@@ -31,6 +36,11 @@ on:
         type: boolean
         required: false
         default: false
+      visibility:
+        description: 'Repo visibility filter when org is set (public | private | internal | all).'
+        type: string
+        required: false
+        default: 'public'
     outputs:
       total-violations:
         description: 'Total count of individual violations.'
@@ -38,7 +48,11 @@ on:
   workflow_dispatch:
     inputs:
       repo:
-        description: 'Owner/name of the target repo to validate (optional).'
+        description: 'Owner/name of a single repo to validate (optional). Takes precedence over org.'
+        type: string
+        required: false
+      org:
+        description: 'Org to sweep via paginated repo enumeration (optional; ignored if repo is set).'
         type: string
         required: false
       dry-run:
@@ -46,6 +60,11 @@ on:
         type: boolean
         required: false
         default: false
+      visibility:
+        description: 'Repo visibility filter when org is set (public | private | internal | all).'
+        type: string
+        required: false
+        default: 'public'
 
 jobs:
   scan:
@@ -53,7 +72,22 @@ jobs:
     with:
       validator-script: .github/scripts/validate-layer-deps.py
       rule-id-regex: '^PLAT-ARCH-008'
-      discovery-mode: single-target
+      # single-target when repo is explicitly set (manual dispatch, or the
+      # push/pull_request self-test triggers above where inputs.repo/org are
+      # both empty and this falls through to single-target's own default-to-
+      # caller-repo behavior); per-package-org-sweep when org is set instead.
+      # Task 0B-01 (swift-institute/.github#280): replaces this validator's
+      # dependency on the orchestrator's repository-wide 2D (organization,
+      # repository) resolve-targets matrix.
+      discovery-mode: ${{ inputs.org != '' && inputs.repo == '' && 'per-package-org-sweep' || 'single-target' }}
       target-repo: ${{ inputs.repo }}
+      target-org: ${{ inputs.org }}
+      visibility: ${{ inputs.visibility || 'public' }}
+      # This validator's script returns 1 (via sys.exit(main(argv))) to mean
+      # "findings present" and 2 for a usage error — not the "always 0
+      # unless a real crash" convention validate-base.yml originally assumed
+      # for every caller. Without this, every real finding from the org
+      # sweep would also be misfiled as validator-crashed.
+      crash-exit-min: 2
       dry-run: ${{ inputs.dry-run == true }}
     secrets: inherit

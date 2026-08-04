@@ -26,8 +26,12 @@
 #   - self-firing        (enum)   — active | deferred | deprecated.
 #   - discovery-mode     (string) — single-target |
 #                                   wrapper-host-multi-file |
-#                                   per-package-org-sweep | (empty for
-#                                   non-base-eligible).
+#                                   per-package-org-sweep |
+#                                   hybrid (single-target self-test +
+#                                   per-package-org-sweep weekly, both via
+#                                   validate-base.yml; landed Task 0B-01,
+#                                   swift-institute/.github#280) | (empty
+#                                   for non-base-eligible).
 #   - rule-id-regex      (string) — awk-compatible regex matching
 #                                   column 2 of /tmp/findings.tsv.
 #                                   Empty for deprecated entries.
@@ -340,7 +344,7 @@ validators:
     workflow-file: .github/workflows/validate-platform-architecture.yml
     status: active
     self-firing: active
-    discovery-mode: single-target
+    discovery-mode: 'hybrid (single-target self-test + per-package-org-sweep weekly; Task 0B-01, swift-institute/.github#280)'
     rule-id-regex: '^PLAT-ARCH-'
     migrate-to-base: yes
 
@@ -349,7 +353,7 @@ validators:
     workflow-file: ''
     status: active
     self-firing: active
-    discovery-mode: single-target
+    discovery-mode: 'hybrid (single-target self-test + per-package-org-sweep weekly; Task 0B-01, swift-institute/.github#280)'
     rule-id-regex: '^PLAT-ARCH-008'
     migrate-to-base: yes
 
@@ -358,7 +362,7 @@ validators:
     workflow-file: ''
     status: active
     self-firing: active
-    discovery-mode: single-target
+    discovery-mode: 'hybrid (single-target self-test + per-package-org-sweep weekly; Task 0B-01, swift-institute/.github#280)'
     rule-id-regex: '^README-'
     migrate-to-base: yes
 
