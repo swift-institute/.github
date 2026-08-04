@@ -1,29 +1,32 @@
 {
-  "_comment": "Vendored snapshots of the three layer wrappers' .github/workflows/swift-ci.yml, byte-for-byte as fetched from each repository's default branch at the commit below. Task 1-01 (swift-institute/.github#276, #281) characterizes the wrapper/universal relationship, which requires reading all three wrappers at exact heads (programme precondition) even though this repository's own CI cannot check out sibling repositories. These are point-in-time evidence, not a live sync: test-verdict-inventory.py builds the committed verdict-inventory.json from these bytes plus this repository's own live swift-ci.yml, and a drift test catches the LOCAL file changing out from under the committed inventory. A wrapper edit in its own repository does not retrigger this repository's CI; re-vending these three files (and re-running the builder) is a manual step the next lane touching this area must perform, exactly like re-deriving any other moving head in the programme.",
+  "_comment": "Vendored snapshots of the three layer wrappers' .github/workflows/swift-ci.yml, byte-for-byte as fetched from each repository at the commit below. Task 1-01 (swift-institute/.github#276, #281) characterizes the wrapper/universal relationship, which requires reading all three wrappers at exact heads (programme precondition) even though this repository's own CI cannot check out sibling repositories. These are point-in-time evidence, not a live sync: test-verdict-inventory.py builds the committed verdict-inventory.json from these bytes plus this repository's own live swift-ci.yml, and a drift test catches the LOCAL file changing out from under the committed inventory. A wrapper edit in its own repository does not retrigger this repository's CI; re-vending these three files (and re-running the builder) is a manual step the next lane touching this area must perform, exactly like re-deriving any other moving head in the programme. Task 4-01 (swift-institute/.github#276, #284) re-vended all three from their OPEN task-4-01-integrated-docs-compat PR branches (not yet main — R6 honesty: `ref` names the actual fetched branch, not main, until each PR merges) after adding the integrated-docs pass-through; the next lane to touch this area should re-vend from main once those PRs land.",
   "wrappers": {
     "primitives": {
       "repository": "swift-primitives/.github",
       "path": ".github/workflows/swift-ci.yml",
-      "ref": "main",
-      "commit_sha": "ba21f2b5e2f1a2e2b2c10ebe44561808d8c100d3",
-      "blob_sha256": "3fa01ff2467b9a417ca16b64e48c9d0167349fdd858de38f35cc871cd2be9271",
-      "fetched": "2026-08-04"
+      "ref": "task-4-01-integrated-docs-compat",
+      "commit_sha": "f0cd3a8b56e1dfe77aee1a187e4134e13f982631",
+      "blob_sha256": "e6bdbad1cacdfdbc274b046a50fd38db9b79d10360d7662c24bbd1a9d0c9c1be",
+      "fetched": "2026-08-04",
+      "pull_request": "swift-primitives/.github#14"
     },
     "standards": {
       "repository": "swift-standards/.github",
       "path": ".github/workflows/swift-ci.yml",
-      "ref": "main",
-      "commit_sha": "6d74d64e4de10b5f083d8e4723e0a6d9353dccd8",
-      "blob_sha256": "583f64dfdf0a4759bd2978bb34199337c3458a73e2b6289ebb317dca5575b52d",
-      "fetched": "2026-08-04"
+      "ref": "task-4-01-integrated-docs-compat",
+      "commit_sha": "a4bd01c2bedab5b1a0e818e04ddf4de3aeeecc3a",
+      "blob_sha256": "0e548a2e0233d588e8f5fdca5c60a5b592be1ab9c95ad52777ae6599a2c3b48a",
+      "fetched": "2026-08-04",
+      "pull_request": "swift-standards/.github#10"
     },
     "foundations": {
       "repository": "swift-foundations/.github",
       "path": ".github/workflows/swift-ci.yml",
-      "ref": "main",
-      "commit_sha": "f34a9c7be7906c96dc22dd8873306bb7adfb770e",
-      "blob_sha256": "0b6d61ba6660d1cf73028184087ba7e42be7785f43f9aea853491dd0e4125310",
-      "fetched": "2026-08-04"
+      "ref": "task-4-01-integrated-docs-compat",
+      "commit_sha": "8812a06381defbe6cac6e5cd5bfbe1e6712b8fba",
+      "blob_sha256": "dfe37ba078b33114d7cc338712de5bc31e1a41e39e2521246c768a19c0554f49",
+      "fetched": "2026-08-04",
+      "pull_request": "swift-foundations/.github#9"
     }
   }
 }

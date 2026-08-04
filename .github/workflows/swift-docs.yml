@@ -83,6 +83,21 @@ name: Swift DocC (reusable)
 # parity preserved — Linux DocC is the same toolchain DocC, just
 # without the xcrun front-end.
 #
+# ─── Integrated-chain caller (TEMPORARY compatibility) ──────────────────
+# CI/CD refactor programme Task 4-01 (swift-institute/.github#276, #284)
+# added a SECOND caller of this workflow: swift-ci.yml's own `docs` job
+# (this same repository), gated on its TEMPORARY `integrated-docs` input
+# [temp-integrated-docs-4-01]. That job reproduces this file's own
+# SCHEDULING guard below (tag/dispatch/schedule/'[ci docs]' token) one
+# level up rather than relying on this file's `target-repo != ''` disjunct
+# — the integrated caller always passes a resolved target-repo/ref for
+# subject-pinning, so treating that as the scheduling signal here would
+# run docs on every push. The two guards are independent evaluations of
+# the same inherited event context and never disagree. This file's own
+# behavior, inputs, and failure posture are UNCHANGED by that caller's
+# existence; see swift-ci.yml's `docs` job for the migration-input shape
+# and its Task 5-03 deletion predicate.
+#
 # Consume via YOUR LAYER ORG's swift-docs.yml wrapper, NOT this workflow
 # directly. Org-secret delivery across an org boundary requires explicit
 # forwarding — `secrets: inherit` on a cross-org call delivers no org

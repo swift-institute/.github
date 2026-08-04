@@ -157,6 +157,55 @@ on:
         type: string
         default: ""
         description: "Optional target to build for Embedded with default traits disabled, consulted only by the `embedded` job (`lint-bundle == 'primitives'`). Empty preserves the full-package Embedded build. Relocated verbatim from the Primitives layer wrapper (swift-institute/.github#276 Task 1-03) so an existing consumer's `with: { embedded-target: ... }` keeps meaning the same thing after the wrapper forwards it here; every other layer/consumer never sets it and is unaffected."
+      # ─── TEMPORARY MIGRATION-ONLY INPUT [temp-integrated-docs-4-01] ─────
+      # CI/CD refactor programme Task 4-01 (swift-institute/.github#276,
+      # #284). NOT a package-owned policy knob — a caller's `ci:` job may
+      # carry this in `with:` ONLY with the exact bot-generated literal
+      # `true` during the migration window (enforced by
+      # validate-thin-callers.py's INTEGRATED-DOCS-ADMISSION check); hand-
+      # authoring any other value is refused. `false` (the default) is the
+      # legacy state and is never written explicitly by the migration bot
+      # — it is simply what an unconverted caller omits.
+      #
+      # DELETION PREDICATE (Task 5-03, mechanical, not a judgement call):
+      # once a live census shows every accessible ordinary caller has
+      # either migrated (this input `true`, no separate package `docs:`
+      # job) or is a typed exception, delete this input, the `docs` job's
+      # `inputs.integrated-docs == true` guard (folding the job's
+      # remaining scheduling guard into an unconditional one), every layer
+      # wrapper's forwarding copy, and the legacy layer `swift-docs.yml`
+      # wrappers themselves. `validate-integrated-docs-compat.py` carries
+      # the marker grep and the layer-docs-wrapper-reference predicate
+      # Task 5-03 runs against the fleet census to prove the "zero
+      # remaining legacy callers" precondition.
+      integrated-docs:
+        type: boolean
+        default: false
+        description: "TEMPORARY migration-only compatibility input [temp-integrated-docs-4-01] (swift-institute/.github#276 Task 4-01/#284). false (default, legacy): the `docs` job below never runs; the caller's separate package `docs:` job (-> layer swift-docs.yml wrapper) remains authoritative. true (migrated, bot-generated only): the `docs` job runs DocC validation once inside this chain via the full-coordinate call to this repository's OWN swift-docs.yml, and the caller MUST have removed its separate package docs job to avoid duplicate execution. Deleted at Task 5-03 once fleet convergence proves zero remaining false/default callers."
+      docs-umbrella-module:
+        type: string
+        default: ""
+        description: "Pass-through override forwarded to the nested swift-docs.yml call's `umbrella-module` input; consulted only when `integrated-docs` is true. See swift-docs.yml for the discovery default this overrides."
+      docs-umbrella-display-name:
+        type: string
+        default: ""
+        description: "Pass-through override forwarded to the nested swift-docs.yml call's `umbrella-display-name` input; consulted only when `integrated-docs` is true."
+      docs-umbrella-bundle-id:
+        type: string
+        default: ""
+        description: "Pass-through override forwarded to the nested swift-docs.yml call's `umbrella-bundle-id` input; consulted only when `integrated-docs` is true."
+      docs-umbrella-docc-path:
+        type: string
+        default: ""
+        description: "Pass-through override forwarded to the nested swift-docs.yml call's `umbrella-docc-path` input; consulted only when `integrated-docs` is true."
+      docs-exclude-modules:
+        type: string
+        default: ""
+        description: "Pass-through override forwarded to the nested swift-docs.yml call's `exclude-modules` input; consulted only when `integrated-docs` is true."
+      docs-swift-version:
+        type: string
+        default: "6.3"
+        description: "Swift toolchain version for the nested swift-docs.yml call's DocC build container; consulted only when `integrated-docs` is true. Independent of this workflow's own `swift-version` input (a Linux-container axis for the release/nightly legs) — mirrors swift-docs.yml's own default so an integrated caller that never overrides either stays in lockstep with the standalone wrapper path."
     secrets:
       PRIVATE_REPO_TOKEN:
         required: false
@@ -2400,6 +2449,89 @@ jobs:
   # .github fires Monday 06:50 UTC and submits dep-graphs for all public
   # consumer repos via `gh api -X POST /repos/<target>/dependency-graph/snapshots`.
 
+  # ─── Integrated DocC validation (TEMPORARY compatibility) ─────────────────
+  # CI/CD refactor programme Task 4-01 (swift-institute/.github#276, #284).
+  # Invokes THIS repository's own swift-docs.yml through the FULL COORDINATE
+  # (never a relative `./` ref, per the task's Change item 1) so a package
+  # migrated onto `integrated-docs: true` gets DocC validation once inside
+  # this chain instead of through its own separate `docs:` job. Depth
+  # arithmetic: package ci.yml (1) -> layer swift-ci.yml wrapper (2) ->
+  # this workflow (3) -> swift-docs.yml (4) — exactly the workflow_call
+  # nesting ceiling the layer's own swift-docs.yml wrapper already
+  # documents ("within the workflow_call 4-level limit"); there is no
+  # remaining headroom for a further hop in this path.
+  #
+  # Gate: [temp-integrated-docs-4-01] `inputs.integrated-docs == true` PLUS
+  # the identical scheduling predicate swift-docs.yml's own `docs` job
+  # enforces (see that file's SCHEDULING header comment for the measurement
+  # and the ruling this reproduces) — tag ref, workflow_dispatch, schedule,
+  # or the '[ci docs]' commit token. Reproduced here rather than inferred
+  # from `target-repo != ''`, because this job ALWAYS passes a resolved
+  # target-repo/ref for subject-pinning (below); using that presence as the
+  # schedule signal here would run docs on every push, weakening the exact
+  # cadence Change item 2 requires preserving. The two guards are
+  # deliberately redundant once this job's gate is satisfied — swift-docs.yml
+  # re-evaluates the same four disjuncts against the same inherited event
+  # context (workflow_call inherits the triggering event unchanged through
+  # the chain) and finds one of them true either way; they never disagree.
+  #
+  # Advisory posture (Change item 5 — preserve the characterized contract:
+  # verified live 2026-08-04, no consumer repository's branch-protection
+  # ruleset requires the standalone `docs` check today, e.g.
+  # swift-primitives/swift-percent-primitives's ruleset requires only
+  # `ci / ci-ok`): excluded from `ci-ok`'s needs, included in
+  # `advisory-summary`'s needs below — exactly like lint-api-breakage /
+  # lint-pr-title, event-gated jobs already carried there despite their own
+  # `if:` being independent of the tier/legs system. A job with a job-level
+  # `uses:` cannot itself carry `continue-on-error:` ([CI-cd] reusable-job
+  # trap) — advisory posture here means "excluded from ci-ok", not "failure
+  # is caught": a real DocC break still shows red on this job's own check,
+  # matching the current standalone docs job's failure visibility.
+  #
+  # Subject: needs.plan.outputs.subject-repository/subject-sha, never
+  # re-derived (swift-institute/.github#179 regression class / R7) — the
+  # same single subject-resolution contract every build/test/lint/docs
+  # checkout in this file already consumes. subject-sha is a validated
+  # 40-character commit SHA (Plan's "Resolve CI subject" step refuses to
+  # emit anything else), satisfying swift-docs.yml's `ref:` checkout input.
+  docs:
+    name: DocC archive (integrated)
+    needs: plan
+    if: >-
+      ${{ !cancelled() && !github.event.repository.private && inputs.integrated-docs == true
+          && (inputs.job == 'docs' || (inputs.job == '' && (
+                startsWith(github.ref, 'refs/tags/')
+                || github.event_name == 'workflow_dispatch'
+                || github.event_name == 'schedule'
+                || contains(github.event.head_commit.message, '[ci docs]')
+              ))) }}
+    uses: swift-institute/.github/.github/workflows/swift-docs.yml@main
+    # Explicit call-site ceiling (house convention for every non-local
+    # `uses:` job in this file — see test-verdict-inventory.py's
+    # TokenBoundaryTests): grants exactly the read-only floor
+    # swift-docs.yml's own jobs need, no more. A local (`./`) reusable
+    # call is the only class exempt from declaring this.
+    permissions:
+      contents: read
+    with:
+      umbrella-module: ${{ inputs.docs-umbrella-module }}
+      umbrella-display-name: ${{ inputs.docs-umbrella-display-name }}
+      umbrella-bundle-id: ${{ inputs.docs-umbrella-bundle-id }}
+      umbrella-docc-path: ${{ inputs.docs-umbrella-docc-path }}
+      exclude-modules: ${{ inputs.docs-exclude-modules }}
+      enable-private-repos: ${{ inputs.enable-private-repos }}
+      swift-version: ${{ inputs.docs-swift-version }}
+      # Full coordinate stays same-repo (swift-institute/.github calling
+      # its own swift-docs.yml); target-repo/ref bind the DOCUMENTED
+      # package's checkout, not this hop's own identity.
+      target-repo: ${{ needs.plan.outputs.subject-repository }}
+      ref: ${{ needs.plan.outputs.subject-sha }}
+    secrets:
+      PRIVATE_REPO_TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }}
+      SWIFT_INSTITUTE_BOT_APP_CLIENT_ID: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+      SWIFT_INSTITUTE_BOT_APP_ID: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
+      SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+
   # ─── Advisory results surface (informational, non-gating) ─────────────────
   # Renders one row per advisory leg (leg name + result) to the run summary so
   # advisory red is legible in ONE place, instead of scattered across the job
@@ -2440,6 +2572,13 @@ jobs:
       - embedded-wasm-sdk
       - android-build
       - static-linux-musl-build
+      # Task 4-01 (swift-institute/.github#276, #284): `docs` has its OWN
+      # independent scheduling guard (tag/dispatch/schedule/token — not the
+      # tier/legs system), so this entry reports `skipped` on every run
+      # this job's own gate doesn't select, same shape as any other
+      # advisory leg a given run doesn't select. Deleted alongside `docs`
+      # at Task 5-03 [temp-integrated-docs-4-01].
+      - docs
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:

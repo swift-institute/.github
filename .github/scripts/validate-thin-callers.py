@@ -79,6 +79,21 @@ Rules checked:
                 owner exercise the sub-org branch (same convention family as
                 validate-sub-org-wrappers' `.github-as-sub-org` marker).
 
+  INTEGRATED-DOCS-ADMISSION (Task 4-01, swift-institute/.github#276, #284;
+                not a numbered [CI-NNN] rule — no /promote-rule pilot slot
+                claimed by this task):
+
+                During the docs-integration migration window, a caller's
+                `ci:` job MAY carry `integrated-docs` in its `with:` block,
+                but ONLY the exact bot-generated literal `true`. `false`
+                (redundant with the universal/wrapper default) and any
+                other literal or expression fire — the compatibility input
+                is not a package-owned policy knob a maintainer hand-tunes;
+                Task 5-02's migration bot is the only writer. A caller that
+                omits the key entirely (the pre-migration, and current,
+                shape of every caller) is unaffected — absence is not a
+                finding.
+
 Both CI-030 and CI-059 inherit the GH-REPO-074 file-level carve-out: workflows
 that are themselves reusables (`on: workflow_call:`) are exempt — the rules
 constrain *callers* to centralized reusables, not the reusables themselves.
@@ -268,6 +283,60 @@ def _forwarded_secret_names(job_body: str) -> list[str]:
         if re.match(r"^\s+secrets:\s*(#.*)?$", line):
             block_indent = len(line) - len(line.lstrip())
     return names
+
+
+def _with_block_value(job_body: str, key: str) -> str | None:
+    """Value of `key` inside the job's block-form `with:` mapping, as raw
+    (unquoted-if-bare) text, or None if `with:` or the key is absent.
+
+    Same indentation-tracked scan as `_forwarded_secret_names`, generalized
+    to any key rather than only `secrets:`'s children.
+    """
+    block_indent: int | None = None
+    for line in job_body.split("\n"):
+        stripped = line.strip()
+        if block_indent is not None:
+            if not stripped or stripped.startswith("#"):
+                continue
+            indent = len(line) - len(line.lstrip())
+            if indent > block_indent:
+                m = re.match(rf"{re.escape(key)}:\s*(.+?)\s*(#.*)?$", stripped)
+                if m:
+                    return m.group(1).strip()
+                continue
+            block_indent = None
+        if re.match(r"^\s+with:\s*(#.*)?$", line):
+            block_indent = len(line) - len(line.lstrip())
+    return None
+
+
+def check_integrated_docs_admission(repo: str, text: str) -> int:
+    """INTEGRATED-DOCS-ADMISSION (Task 4-01, swift-institute/.github#276,
+    #284): a caller's `ci:` job may carry `integrated-docs` in `with:`
+    ONLY with the exact bot-generated literal `true`. See the module
+    docstring's INTEGRATED-DOCS-ADMISSION section for the full rule.
+    """
+    findings = 0
+    for job_name, job_body in iter_jobs(text):
+        if job_name != "ci":
+            continue
+        value = _with_block_value(job_body, "integrated-docs")
+        if value is None:
+            continue  # absence is the pre-migration shape — not a finding
+        if value != "true":
+            emit(
+                repo,
+                "INTEGRATED-DOCS-ADMISSION",
+                f".github/workflows/ci.yml 'ci' job `with: integrated-docs: {value}` "
+                f"— during the migration window this TEMPORARY compatibility "
+                f"input [temp-integrated-docs-4-01] (swift-institute/.github#276 "
+                f"Task 4-01/5-02) admits only the exact bot-generated value "
+                f"`true`. `false` is redundant with the default and any other "
+                f"literal or expression is not a value the migration bot "
+                f"emits; hand-authoring this input is not permitted.",
+            )
+            findings += 1
+    return findings
 
 
 def is_workflow_call(text: str) -> bool:
@@ -618,6 +687,7 @@ def check_ci_yml(repo: str, ci_path: Path) -> int:
         findings += 1
     findings += check_ci_030(repo, text)
     findings += check_ci_059(repo, text, owner)
+    findings += check_integrated_docs_admission(repo, text)
     return findings
 
 

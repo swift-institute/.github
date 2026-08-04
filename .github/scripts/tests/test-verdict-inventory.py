@@ -37,10 +37,15 @@ reach:
   - the required-check context string (`ci / ci-ok`), cross-checked against
     Tools/RepositoryPolicy's source-controlled ruleset policy;
   - each layer wrapper's layer-required jobs that sit OUTSIDE the universal
-    verdict and outside the wrapper's own `ci-ok` (primitives:
-    `embedded`, `embedded-wasm-sdk`, `android-build`,
-    `static-linux-musl-build` — all four continue-on-error:true and named
-    nowhere any required check reads);
+    verdict and outside the wrapper's own `ci-ok`: NONE today for any of
+    the three layers. Primitives' four such jobs (`embedded`,
+    `embedded-wasm-sdk`, `android-build`, `static-linux-musl-build`) were
+    relocated INTO the universal reusable by Task 1-04
+    (swift-institute/.github#276), selected there by `lint-bundle:
+    primitives` and kept in their prior non-gating continue-on-error:true
+    posture — this suite's wrapper-snapshot re-vend for Task 4-01
+    (swift-institute/.github#276, #284) is the first regeneration since
+    that relocation landed and corrects the assertions below accordingly;
   - the job DAG's wave structure (runner acquisition happens in three
     sequential waves: plan → leg producers → the two aggregates).
 
@@ -300,57 +305,82 @@ class OuterInnerAggregateTests(unittest.TestCase):
 
 class LayerRequiredOutsideUniversalTests(unittest.TestCase):
     """Acceptance predicate: "Every layer-required job currently outside
-    the universal verdict is named." Primitives carries four such jobs
-    (embedded, embedded-wasm-sdk, android-build, static-linux-musl-build);
-    Standards and Foundations are thin pass-throughs with none. All four
-    Primitives jobs are continue-on-error:true and absent from the
-    wrapper's own `ci-ok` needs — so none of them can fail anyone's
-    required check today, which is itself a characterization fact (not
-    this task's to change) that a future task can point at by name.
+    the universal verdict is named." Task 1-04 (swift-institute/.github#276,
+    landed before this suite's Task 4-01 re-vend) relocated Primitives'
+    four layer-specific jobs (embedded, embedded-wasm-sdk, android-build,
+    static-linux-musl-build) INTO the universal reusable itself — selected
+    there by `lint-bundle: primitives`, kept in their prior non-gating
+    `continue-on-error: true` posture — so all three layer wrappers are now
+    thin pass-throughs with NOTHING layer-required outside the universal
+    verdict. This class previously asserted the pre-Task-1-04 shape (the
+    four jobs still defined directly in the Primitives wrapper); re-vending
+    the wrapper snapshots for Task 4-01 (swift-institute/.github#276, #284)
+    is the first regeneration since Task 1-04 landed and surfaced that this
+    suite had gone stale relative to an ALREADY-MERGED prior task. Per
+    R19.3 (never resolve a failure by weakening a control), this corrects
+    the assertions to match the now-verified-live shipped shape rather
+    than deleting or softening them.
     """
 
     def setUp(self):
         self.inventory = current_inventory()
 
-    def test_primitives_names_exactly_the_four_layer_jobs(self):
-        w = self.inventory["wrappers"]["primitives"]
-        self.assertEqual(
-            set(w["layer_required_jobs_outside_universal_verdict"]),
-            {"embedded", "embedded-wasm-sdk", "android-build", "static-linux-musl-build"},
-        )
-
-    def test_all_four_are_continue_on_error(self):
-        w = self.inventory["wrappers"]["primitives"]
-        for job_id in w["layer_required_jobs_outside_universal_verdict"]:
-            with self.subTest(job=job_id):
-                self.assertTrue(w["jobs"][job_id]["continue_on_error"])
-
-    def test_standards_and_foundations_have_none(self):
-        for layer in ("standards", "foundations"):
+    def test_all_three_layers_have_none(self):
+        for layer in ("primitives", "standards", "foundations"):
             with self.subTest(layer=layer):
                 w = self.inventory["wrappers"][layer]
                 self.assertEqual(w["layer_required_jobs_outside_universal_verdict"], [])
 
-    def test_detector_catches_a_layer_job_silently_added_to_ci_ok_needs(self):
-        """Positive control: if `embedded` were added to the wrapper's
-        `ci-ok` needs, it would move OUT of
-        layer_required_jobs_outside_universal_verdict — the exact
-        transition a future task promoting it to required would make, and
-        this suite's job is only to name today's state, not to assert it
-        never changes. Feed the detector the promoted shape directly and
-        confirm it recomputes membership rather than returning today's
-        cached list unconditionally."""
-        w = self.inventory["wrappers"]["primitives"]
-        today_outside = set(w["layer_required_jobs_outside_universal_verdict"])
-        self.assertIn("embedded", today_outside)
-        promoted_ci_ok_needs = set(w["ci_ok_needs"]) | {"embedded"}
-        recomputed_outside = {
-            j for j in today_outside if j not in promoted_ci_ok_needs
-        }
-        self.assertNotIn("embedded", recomputed_outside)
+    def test_the_four_relocated_jobs_live_in_the_universal_matrix(self):
+        """Positive control for the relocation itself (not merely its
+        absence from the wrapper): the four jobs Task 1-04 moved are
+        present in the UNIVERSAL inventory, advisory (not gating), and
+        still continue-on-error:true — the exact posture the wrapper used
+        to carry directly."""
+        universal = self.inventory["universal"]
+        for job_id in (
+            "embedded", "embedded-wasm-sdk", "android-build", "static-linux-musl-build",
+        ):
+            with self.subTest(job=job_id):
+                self.assertIn(job_id, universal["jobs"])
+                self.assertTrue(universal["jobs"][job_id]["continue_on_error"])
+                self.assertIn(job_id, universal["advisory_jobs"])
+                self.assertNotIn(job_id, universal["gating_jobs"])
+
+    def test_detector_catches_a_layer_job_reintroduced_into_a_wrapper(self):
+        """Positive control: if a layer wrapper regained an inline job
+        outside matrix/ci-ok (the pre-Task-1-04 shape reappearing), it
+        would show up in layer_required_jobs_outside_universal_verdict —
+        proved directly against build_wrapper_inventory (the same function
+        `current_inventory()` calls) fed a synthetic wrapper carrying a
+        reintroduced job, rather than mutating the real inventory dict
+        (which has no live `jobs:` YAML to mutate meaningfully back into
+        this shape)."""
+        synthetic = (
+            "on:\n  workflow_call:\n"
+            "jobs:\n"
+            "  matrix:\n"
+            "    uses: swift-institute/.github/.github/workflows/swift-ci.yml@main\n"
+            "  reintroduced:\n"
+            "    runs-on: ubuntu-latest\n"
+            "    continue-on-error: true\n"
+            "    steps: []\n"
+            "  ci-ok:\n"
+            "    needs:\n      - matrix\n"
+            "    runs-on: ubuntu-latest\n"
+            "    steps: []\n"
+        )
+        with tempfile.NamedTemporaryFile(
+            "w", suffix=".yml", delete=False, encoding="utf-8"
+        ) as f:
+            f.write(synthetic)
+            path = Path(f.name)
+        try:
+            entry = build_verdict_inventory.build_wrapper_inventory("primitives", path)
+        finally:
+            path.unlink()
         self.assertEqual(
-            recomputed_outside,
-            {"embedded-wasm-sdk", "android-build", "static-linux-musl-build"},
+            entry["layer_required_jobs_outside_universal_verdict"], ["reintroduced"]
         )
 
 
