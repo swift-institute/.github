@@ -130,99 +130,26 @@ jobs:
           # validate-X.yml's gh repo list call (default: public).
           filter: '.name'
 
-  # Phase D Wave B (2026-05-15): resolve-targets enumerates (org, repo)
-  # pairs across all 17 active orgs for the 6 single-target validators
-  # whose org-sweep loops were dropped during Phase B-2's migration to
-  # validate-base.yml's single-target mode. Wave B restores cross-org
-  # coverage by dispatching each validator per (org, repo) pair from
-  # the orchestrator's 2D matrix.
-  resolve-targets:
-    needs: config
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: read
-    outputs:
-      targets: ${{ steps.gen.outputs.targets }}
-      count: ${{ steps.gen.outputs.count }}
-    steps:
-      - name: Harden runner (audit-mode egress logging)
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
-        with:
-          egress-policy: audit
-
-      - name: Enumerate (org, repo) pairs across all 17 active orgs
-        id: gen
-        env:
-          GH_TOKEN: ${{ github.token }}
-          ORGS_JSON: ${{ needs.config.outputs.orgs }}
-          VISIBILITY: ${{ inputs.visibility || 'public' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          targets='[]'
-          total=0
-          for org in $(echo "$ORGS_JSON" | jq -r '.[]'); do
-            # Public API endpoint: GITHUB_TOKEN can list public repos of
-            # any org without per-org App-installation tokens. Visibility
-            # filter defaults to public per [CI-094] / [CI-095].
-            #
-            # The --jq filter emits ONE NAME PER LINE, not an array. It used
-            # to build an array, and `gh --paginate` runs the filter once per
-            # PAGE, so an org with more than 100 repos produced several
-            # concatenated JSON arrays. `jq 'length'` then returned several
-            # numbers, `$((total + count))` died on the multi-line value with
-            # "syntax error in expression", and `targets` stayed empty.
-            #
-            # Total targets: 0. Every Wave-B scan job got an empty matrix, so
-            # it produced NO JOBS AT ALL and reported `skipped`, which the
-            # report job counted as clean. Six validators — docc-structure,
-            # package-shape, platform-architecture, readme, diagnostic-format
-            # and layer-deps — were inert in this sweep for as long as any run
-            # in the retained history, while it reported on ten.
-            org_names=$(gh api "/orgs/${org}/repos?type=${VISIBILITY}&per_page=100" \
-              --paginate --jq '.[] | select(.archived | not) | .full_name' 2>/tmp/enum.err) || {
-                echo "::error::Enumerating ${org} failed: $(head -c 200 /tmp/enum.err). Refusing to continue on a partial population."
-                exit 1
-              }
-            count=$(printf '%s' "$org_names" | grep -c . || true)
-            if [ "$count" -gt 0 ]; then
-              targets=$(printf '%s\n' "$org_names" | jq -R -s -c \
-                --argjson a "$targets" --arg org "$org" \
-                '$a + (split("\n") | map(select(length > 0) | {"org": $org, "repo": .}))')
-            fi
-            total=$((total + count))
-            echo "${org}: ${count} repos"
-          done
-          echo "Total (org, repo) pairs: $total"
-          # Zero is not a small number here, it is a broken instrument. An
-          # empty matrix produces no jobs, and a job that never ran reports
-          # `skipped` — which is indistinguishable from a clean pass unless
-          # something refuses to accept it. Before believing a zero, prove the
-          # instrument can return non-zero.
-          if [ "$total" -eq 0 ]; then
-            echo "::error::Enumerated 0 (org, repo) pairs across all orgs. That is an enumeration failure, not an empty fleet: the six Wave-B scan jobs would receive an empty matrix, run nothing, and report `skipped`. Failing closed."
-            exit 1
-          fi
-          # Matrix limit per strategy is 256. Sanity check before
-          # downstream scan-* jobs explode at runtime.
-          if [ "$total" -gt 256 ]; then
-            echo "::error::Total targets ($total) exceeds GitHub Actions matrix limit (256). Wave B needs to split scan jobs by layer or org-group."
-            exit 1
-          fi
-          echo "targets=$targets" >> "$GITHUB_OUTPUT"
-          echo "count=$total" >> "$GITHUB_OUTPUT"
-
   # Each scan-* job below: 1D matrix over orgs × static uses: to its
   # respective validate-X.yml. Per [CI-106] caller's per-job grant
   # (contents: read) must be ≥ the called reusable's per-job grant; each
   # validate-X.yml's scan job either declares contents: read explicitly
   # or inherits from caller. Verified by reading each .yml's scan: block.
   #
-  # The first 4 scan-* jobs (per-package-org-sweep validators) use 1D
-  # matrix.org from config.outputs.orgs (17 legs each). The 6 Wave-B
-  # scan-* jobs use 1D matrix.target from resolve-targets.outputs.targets
-  # — each target is a {org, repo} object (~120 legs each at present).
+  # All twelve scan-* jobs below use the SAME shape: a 1D matrix.org from
+  # config.outputs.orgs (at most active-organization-count legs each — 17
+  # at last measurement, so at most 17 legs × 12 validators = at most 204
+  # jobs total across this workflow, each strategy well under GitHub's
+  # 256-job-per-matrix limit). The six validators below the first six
+  # (scan-docc-structure onward) previously depended on a repository-wide
+  # 2D (organization, repository) `resolve-targets` matrix instead —
+  # removed by Task 0B-01 (swift-institute/.github#280) because it does
+  # not scale under the 256-job limit (~478 public non-archived repos
+  # alone), and because a broken pagination fix once made it enumerate 0
+  # pairs, silently `skipped` all six, and had the report job count that
+  # as clean (see #62). Each of the six now enumerates its org's repos
+  # itself, inside the (validator, organization) job, through
+  # validate-base.yml's per-package-org-sweep discovery mode.
 
   scan-thin-callers:
     needs: config
@@ -314,93 +241,100 @@ jobs:
       visibility: ${{ inputs.visibility || 'public' }}
     secrets: inherit
 
-  # Phase D Wave B (2026-05-15): 6 single-target validators dispatched
-  # per (org, repo) pair. Each takes `repo:` input (vs. existing 4 which
-  # take `org:`). matrix.target is {org, repo} object from
-  # resolve-targets.outputs.targets.
+  # The remaining six scan-* jobs (originally Phase D Wave B, 2026-05-15)
+  # dispatch validate-*.yml callers whose scan job resolves
+  # discovery-mode to per-package-org-sweep (validate-base.yml) because
+  # `org:` is set and `repo:` is not — see Task 0B-01 comment above.
+  # Same 1D matrix.org shape as the first six scan-* jobs.
 
   scan-docc-structure:
-    needs: resolve-targets
+    needs: config
     strategy:
       fail-fast: false
       matrix:
-        target: ${{ fromJSON(needs.resolve-targets.outputs.targets) }}
+        org: ${{ fromJSON(needs.config.outputs.orgs) }}
     permissions:
       contents: read
     uses: ./.github/workflows/validate-docc-structure.yml
     with:
-      repo: ${{ matrix.target.repo }}
+      org: ${{ matrix.org }}
       dry-run: ${{ inputs.dry-run || false }}
+      visibility: ${{ inputs.visibility || 'public' }}
     secrets: inherit
 
   scan-package-shape:
-    needs: resolve-targets
+    needs: config
     strategy:
       fail-fast: false
       matrix:
-        target: ${{ fromJSON(needs.resolve-targets.outputs.targets) }}
+        org: ${{ fromJSON(needs.config.outputs.orgs) }}
     permissions:
       contents: read
     uses: ./.github/workflows/validate-package-shape.yml
     with:
-      repo: ${{ matrix.target.repo }}
+      org: ${{ matrix.org }}
       dry-run: ${{ inputs.dry-run || false }}
+      visibility: ${{ inputs.visibility || 'public' }}
     secrets: inherit
 
   scan-platform-architecture:
-    needs: resolve-targets
+    needs: config
     strategy:
       fail-fast: false
       matrix:
-        target: ${{ fromJSON(needs.resolve-targets.outputs.targets) }}
+        org: ${{ fromJSON(needs.config.outputs.orgs) }}
     permissions:
       contents: read
     uses: ./.github/workflows/validate-platform-architecture.yml
     with:
-      repo: ${{ matrix.target.repo }}
+      org: ${{ matrix.org }}
       dry-run: ${{ inputs.dry-run || false }}
+      visibility: ${{ inputs.visibility || 'public' }}
     secrets: inherit
 
   scan-readme:
-    needs: resolve-targets
+    needs: config
     strategy:
       fail-fast: false
       matrix:
-        target: ${{ fromJSON(needs.resolve-targets.outputs.targets) }}
+        org: ${{ fromJSON(needs.config.outputs.orgs) }}
     permissions:
       contents: read
     uses: ./.github/workflows/validate-readme.yml
     with:
-      repo: ${{ matrix.target.repo }}
+      org: ${{ matrix.org }}
       dry-run: ${{ inputs.dry-run || false }}
+      visibility: ${{ inputs.visibility || 'public' }}
     secrets: inherit
 
   scan-diagnostic-format:
-    needs: resolve-targets
+    needs: config
     strategy:
       fail-fast: false
       matrix:
-        target: ${{ fromJSON(needs.resolve-targets.outputs.targets) }}
+        org: ${{ fromJSON(needs.config.outputs.orgs) }}
     permissions:
       contents: read
     uses: ./.github/workflows/validate-diagnostic-format.yml
     with:
-      repo: ${{ matrix.target.repo }}
+      org: ${{ matrix.org }}
       dry-run: ${{ inputs.dry-run || false }}
+      visibility: ${{ inputs.visibility || 'public' }}
     secrets: inherit
 
   scan-layer-deps:
-    needs: resolve-targets
+    needs: config
     strategy:
       fail-fast: false
       matrix:
-        target: ${{ fromJSON(needs.resolve-targets.outputs.targets) }}
+        org: ${{ fromJSON(needs.config.outputs.orgs) }}
     permissions:
       contents: read
     uses: ./.github/workflows/validate-layer-deps.yml
     with:
-      repo: ${{ matrix.target.repo }}
+      org: ${{ matrix.org }}
       dry-run: ${{ inputs.dry-run || false }}
+      visibility: ${{ inputs.visibility || 'public' }}
     secrets: inherit
 
   report:

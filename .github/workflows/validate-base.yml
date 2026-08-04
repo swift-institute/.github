@@ -13,9 +13,28 @@
 #   wrapper-host-multi-file  — clone one repo; validator iterates files
 #                              internally (e.g., every .github/workflows/*.yml).
 #                              Workflow body identical to single-target.
-#   per-package-org-sweep    — matrix over consumer repos in target-org.
-#                              DEFERRED to Phase B-2; callers with this mode
-#                              fail-fast at the discovery-mode guard step.
+#   per-package-org-sweep    — enumerate every repo in target-org through
+#                              paginated authenticated REST (inside this one
+#                              job, not one leaf job per repo), then run the
+#                              validator once per enumerated repo. Landed
+#                              Task 0B-01 (swift-institute/.github#280),
+#                              closing the Phase B-2 deferral: six single-
+#                              target callers (validate-docc-structure.yml,
+#                              validate-package-shape.yml,
+#                              validate-platform-architecture.yml,
+#                              validate-readme.yml,
+#                              validate-diagnostic-format.yml,
+#                              validate-layer-deps.yml) previously depended
+#                              on the orchestrator's repository-wide 2D
+#                              (organization, repository) `resolve-targets`
+#                              matrix, which is capped by GitHub's 256-job
+#                              strategy-matrix limit and produced an empty
+#                              matrix (silently `skipped`, not `success`) at
+#                              least once. This mode replaces that with an
+#                              organization matrix — at most
+#                              `active-organization-count` jobs per caller
+#                              validator — and moves repository enumeration
+#                              inside each org cell.
 #
 # Chain-depth accounting per [CI-004b] (4-level workflow_call limit):
 # Phase B-1 callers (e.g., validate-cache-policy.yml) sit at L1 when
@@ -44,19 +63,39 @@ on:
         type: string
         required: true
       discovery-mode:
-        description: 'single-target | wrapper-host-multi-file | per-package-org-sweep. Phase B-1 supports the first two; per-package-org-sweep is deferred to B-2.'
+        description: 'single-target | wrapper-host-multi-file | per-package-org-sweep.'
         type: string
         required: true
       target-repo:
-        description: 'Optional override of github.repository. Empty = default to caller repo.'
+        description: 'Optional override of github.repository. Empty = default to caller repo. Used by single-target/wrapper-host-multi-file.'
         type: string
         required: false
         default: ''
       target-org:
-        description: 'Required for per-package-org-sweep (Phase B-2). Empty otherwise.'
+        description: 'Required for per-package-org-sweep. Empty otherwise.'
         type: string
         required: false
         default: ''
+      visibility:
+        description: 'Repo visibility filter for per-package-org-sweep (public | private | internal | all). Ignored by single-target/wrapper-host-multi-file.'
+        type: string
+        required: false
+        default: 'public'
+      crash-exit-min:
+        # Two incompatible per-script exit conventions already coexist among
+        # this file's callers: (a) called bare (no sys.exit) so the process
+        # always exits 0 unless an uncaught exception propagates — for THAT
+        # family, any nonzero rc unambiguously means a crash (default: 1,
+        # i.e. rc>=1); (b) called via `sys.exit(main(argv))` where main()
+        # returns 1 to mean "findings present" and 2 for a usage error — for
+        # THAT family, rc==1 is a normal finding, not a crash, and treating
+        # it as one (the validate-base.yml default before Task 0B-01)
+        # silently mislabeled every finding as an instrumentation failure.
+        # Set to 2 for a (b)-convention caller.
+        description: 'Minimum exit code from validator-script that counts as validator-crashed rather than findings-present. Default 1 (any nonzero rc is a crash) matches every pre-existing caller. Set 2 for a script whose main() returns 1 to mean "findings present" and reserves 2+ for a genuine crash/usage error.'
+        type: number
+        required: false
+        default: 1
       validator-ref:
         # Pinning the caller pins the workflow but NOT the script it runs, so
         # without this a green result cannot be attributed to a version of the
@@ -90,20 +129,13 @@ jobs:
         with:
           egress-policy: audit
 
-      - name: Reject unsupported discovery-mode (B-1 scope)
-        if: ${{ inputs.discovery-mode == 'per-package-org-sweep' }}
-        shell: bash
-        run: |
-          echo "::error::discovery-mode=per-package-org-sweep is deferred to Phase B-2 per CI-REVIEW-PHASE-B-DESIGN §1. Use single-target or wrapper-host-multi-file for now, or keep the caller inline."
-          exit 1
-
       - name: Validate discovery-mode value
-        if: ${{ inputs.discovery-mode != 'single-target' && inputs.discovery-mode != 'wrapper-host-multi-file' }}
+        if: ${{ inputs.discovery-mode != 'single-target' && inputs.discovery-mode != 'wrapper-host-multi-file' && inputs.discovery-mode != 'per-package-org-sweep' }}
         shell: bash
         env:
           MODE: ${{ inputs.discovery-mode }}
         run: |
-          echo "::error::Unknown discovery-mode: '${MODE}'. Valid values: single-target | wrapper-host-multi-file | per-package-org-sweep (deferred to B-2)."
+          echo "::error::Unknown discovery-mode: '${MODE}'. Valid values: single-target | wrapper-host-multi-file | per-package-org-sweep."
           exit 1
 
       # Dependabot and fork pull_request runs receive NO repository or
@@ -121,7 +153,15 @@ jobs:
         with:
           client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
           private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
+          # per-package-org-sweep scopes the token to the org actually being
+          # swept (matches validate-thin-callers.yml / validate-file-naming.yml
+          # precedent: `inputs.org || github.repository_owner`), so a
+          # visibility=private/internal/all sweep of a DIFFERENT org's
+          # installation can actually read it. target-org is empty for
+          # single-target/wrapper-host-multi-file, so this is a no-op for
+          # every other caller of this file (falls back to the prior
+          # unconditional github.repository_owner).
+          owner: ${{ inputs.target-org || github.repository_owner }}
 
       # Report which credential the scan will use. This is deliberately NOT
       # written to $GITHUB_STEP_SUMMARY here: the Aggregate step writes that
@@ -169,16 +209,71 @@ jobs:
 
       - name: Resolve target repo
         id: targets
+        if: ${{ inputs.discovery-mode != 'per-package-org-sweep' }}
         env:
           GH_TOKEN: ${{ steps.mint-token.outputs.token || github.token }}
           INPUT_REPO: ${{ inputs.target-repo }}
         run: |
           set -euo pipefail
           if [ -n "$INPUT_REPO" ]; then
-            echo "$INPUT_REPO" > /tmp/target.txt
+            echo "$INPUT_REPO" > /tmp/targets.txt
           else
-            echo "${GITHUB_REPOSITORY:-swift-institute/.github}" > /tmp/target.txt
+            echo "${GITHUB_REPOSITORY:-swift-institute/.github}" > /tmp/targets.txt
           fi
+          # Uniform accounting surface with the org-sweep branch below (Task
+          # 0B-01 change item 7): single-target/wrapper-host-multi-file always
+          # enumerate exactly the one named/defaulted repo and exclude none.
+          echo "enumerated=1" >> "$GITHUB_OUTPUT"
+          echo "excluded-archived=0" >> "$GITHUB_OUTPUT"
+
+      # per-package-org-sweep (Task 0B-01, swift-institute/.github#280).
+      # Enumerates every repo in target-org through paginated authenticated
+      # REST — NOT `gh repo list`, which is a known-broken instrument
+      # (owner-filtered repository listings have returned zero for
+      # swift-foundations; see the programme's §3 known-broken-instruments
+      # list). Mirrors the fixed pagination shape the orchestrator's retired
+      # `resolve-targets` job used: `--jq` runs once PER PAGE under
+      # `--paginate`, so the filter must emit one row per repo — never build
+      # an array — or a multi-page org silently loses every page but the
+      # last (the exact defect that left this discovery mode's six callers
+      # dispatching against an empty matrix).
+      - name: Resolve org-sweep targets
+        id: org-sweep-targets
+        if: ${{ inputs.discovery-mode == 'per-package-org-sweep' }}
+        env:
+          GH_TOKEN: ${{ steps.mint-token.outputs.token || github.token }}
+          TARGET_ORG: ${{ inputs.target-org }}
+          VISIBILITY: ${{ inputs.visibility || 'public' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${TARGET_ORG:?target-org is required when discovery-mode=per-package-org-sweep}"
+
+          if ! gh api "/orgs/${TARGET_ORG}/repos?type=${VISIBILITY}&per_page=100" \
+                 --paginate --jq '.[] | [.full_name, (.archived | tostring)] | @tsv' \
+                 > /tmp/org-repos.tsv 2>/tmp/org-enum.err; then
+            echo "::error::Enumerating ${TARGET_ORG} (visibility=${VISIBILITY}) failed: $(head -c 200 /tmp/org-enum.err). Refusing to continue on a partial population — this is an instrumentation failure, not an empty org."
+            exit 1
+          fi
+
+          enumerated=$(wc -l < /tmp/org-repos.tsv | tr -d ' ')
+          # Zero is not a small number here, it is a broken instrument (or a
+          # mis-scoped active org that belongs in orgs.yaml as `status:
+          # archived`, not silently swept as if it had nothing to say).
+          # Positive control: a synthetic organization with no accessible
+          # repos must land here, not fall through as a clean 0-finding pass.
+          if [ "$enumerated" -eq 0 ]; then
+            echo "::error::Enumerated 0 repos in ${TARGET_ORG} (visibility=${VISIBILITY}). That is an enumeration failure or a mis-scoped active org, not a clean empty sweep. Failing closed."
+            exit 1
+          fi
+
+          excluded_archived=$(awk -F'\t' '$2 == "true"' /tmp/org-repos.tsv | wc -l | tr -d ' ')
+          awk -F'\t' '$2 != "true" { print $1 }' /tmp/org-repos.tsv > /tmp/targets.txt
+          included=$(wc -l < /tmp/targets.txt | tr -d ' ')
+
+          echo "${TARGET_ORG}: enumerated=${enumerated} excluded-archived=${excluded_archived} included=${included}"
+          echo "enumerated=${enumerated}" >> "$GITHUB_OUTPUT"
+          echo "excluded-archived=${excluded_archived}" >> "$GITHUB_OUTPUT"
 
       - name: Run validator
         id: check
@@ -187,10 +282,14 @@ jobs:
           VALIDATOR: ${{ github.workspace }}/institute-github/${{ inputs.validator-script }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_REPO: ${{ github.repository }}
+          CRASH_EXIT_MIN: ${{ inputs.crash-exit-min }}
         run: |
           set -euo pipefail
           : > /tmp/findings.tsv
-          repo="$(cat /tmp/target.txt)"
+          : > /tmp/attempted.txt
+          while IFS= read -r repo; do
+          [ -z "$repo" ] && continue
+          echo "$repo" >> /tmp/attempted.txt
           workdir=$(mktemp -d)
           (
             cd "$workdir"
@@ -232,11 +331,12 @@ jobs:
             # violations: 0" → false-green, exactly the gap clone-failed closes.
             rc=0
             python3 "$VALIDATOR" "$repo" "$workdir" >> /tmp/findings.tsv || rc=$?
-            if [ "$rc" -ne 0 ]; then
+            if [ "$rc" -ge "${CRASH_EXIT_MIN:-1}" ]; then
               echo "$repo	validator-crashed	-" >> /tmp/findings.tsv
             fi
           )
           rm -rf "$workdir"
+          done < /tmp/targets.txt
 
       - name: Aggregate findings
         id: aggregate
@@ -245,6 +345,9 @@ jobs:
           DRY_RUN: ${{ inputs.dry-run }}
           VALIDATOR_SCRIPT: ${{ inputs.validator-script }}
           CREDS_PATH: ${{ steps.creds.outputs.path }}
+          DISCOVERY_MODE: ${{ inputs.discovery-mode }}
+          ENUMERATED: ${{ steps.targets.outputs.enumerated || steps.org-sweep-targets.outputs.enumerated }}
+          EXCLUDED_ARCHIVED: ${{ steps.targets.outputs.excluded-archived || steps.org-sweep-targets.outputs.excluded-archived }}
         run: |
           set -euo pipefail
           # Count findings with the SAME field-match predicate the summary
@@ -268,6 +371,41 @@ jobs:
           clone_failures=$(awk -F'\t' '$2 == "clone-failed"' /tmp/findings.tsv | wc -l | tr -d ' ')
           validator_crashes=$(awk -F'\t' '$2 == "validator-crashed" || $2 == "pr-checkout-failed"' /tmp/findings.tsv | wc -l | tr -d ' ')
           echo "total-violations=$violations" >> "$GITHUB_OUTPUT"
+
+          # Per-cell accounting (Task 0B-01 / swift-institute/.github#280,
+          # change item 7): enumerated/excluded-archived come from whichever
+          # target-resolution step actually ran; included is counted
+          # directly off targets.txt (not trusted from an upstream output)
+          # so a step-output plumbing bug cannot silently disagree with what
+          # was actually attempted. `errors`/`unmeasured` map onto the
+          # existing validator_crashes/clone_failures sentinels so this adds
+          # a reporting surface, not a second bookkeeping system.
+          included=$(wc -l < /tmp/targets.txt | tr -d ' ')
+          attempted=0
+          if [ -f /tmp/attempted.txt ]; then
+            attempted=$(wc -l < /tmp/attempted.txt | tr -d ' ')
+          fi
+          measured=$((attempted - clone_failures - validator_crashes))
+          unmeasured=$clone_failures
+          errors=$validator_crashes
+
+          # Instrumentation integrity: every included target must have been
+          # attempted exactly once. A mismatch means the scan loop exited
+          # early or targets.txt/attempted.txt disagree — an instrument
+          # defect, not a finding, and it fails even under dry-run (unlike
+          # the clone-failure/validator-crash gates below, which exist to
+          # report on the TARGETS, not on the harness that reached them).
+          if [ "$attempted" -ne "$included" ]; then
+            echo "::error::Cell unaccounted for ${VALIDATOR_SCRIPT} (${DISCOVERY_MODE}): included=${included} but attempted=${attempted}. The scan loop did not reach every enumerated target."
+            {
+              echo "## ${VALIDATOR_SCRIPT} findings"
+              echo
+              echo "> [!CAUTION]"
+              echo "> INSTRUMENTATION FAILURE: included=${included} attempted=${attempted}. Cell unaccounted for; treat this run as failed regardless of dry-run."
+            } > "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
           {
             echo "## ${VALIDATOR_SCRIPT} findings"
             echo "Total violations: $violations"
@@ -276,6 +414,8 @@ jobs:
             # earlier step wrote. Without it, a GITHUB_TOKEN-scoped run and a
             # full App-token run produce identical-looking summaries.
             echo "Scan credentials: ${CREDS_PATH:-unknown}"
+            echo "Discovery mode: ${DISCOVERY_MODE}"
+            echo "Population: enumerated=${ENUMERATED:-?} excluded-archived=${EXCLUDED_ARCHIVED:-?} included=${included} measured=${measured} findings=${violations} errors=${errors} unmeasured=${unmeasured}"
             echo
             if [ "$clone_failures" -gt 0 ]; then
               echo "> [!CAUTION]"
