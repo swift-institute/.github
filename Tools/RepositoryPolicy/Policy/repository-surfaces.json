@@ -92,6 +92,12 @@
       "repository": "swift-iso/swift-iso-32000",
       "path": ".github/workflows/no-verbatim-spec-text.yml",
       "reason": "Repo-owned legal guard rejecting verbatim paid ISO 32000-2 specification text from source; today only this repository carries it, so a typed exemption is the correct scope until a second authority-org repository needs the same guard."
+    },
+    {
+      "surface": "actions",
+      "repository": "swift-institute/swift-institute.org",
+      "path": ".github/workflows/deploy-docs.yml",
+      "reason": "Repo-owned GitHub Pages deployment for the organization's public website: checkout, Swift toolchain setup, DocC build, HTML post-processing, actions/configure-pages, actions/upload-pages-artifact, actions/deploy-pages. Standalone push/workflow_dispatch workflow (not a workflow_call reusable) and not a thin caller; the CI/CD refactor programme (swift-institute/.github#276) explicitly excludes documentation deployment from its scope, so folding this into the universal swift-docs.yml reusable is not an available repair. Retire only if deployment moves under a centralized Pages-deploy owner."
     }
   ]
 }

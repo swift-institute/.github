@@ -1101,6 +1101,7 @@ struct RepositoryPolicyTests {
                 "swift-foundations/swift-linter:.github/workflows/publish-ci-binaries.yml",
                 "swift-foundations/swift-pdf:.github/workflows/windows-6.4-proof.yml",
                 "swift-foundations/swift-pdf:.github/workflows/windows-existential-repro.yml",
+                "swift-institute/swift-institute.org:.github/workflows/deploy-docs.yml",
                 "swift-iso/swift-iso-32000:.github/workflows/no-verbatim-spec-text.yml",
             ]
         )
