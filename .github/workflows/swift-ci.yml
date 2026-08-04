@@ -1079,6 +1079,59 @@ jobs:
           repository: ${{ inputs.target-repo || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name) || github.repository }}
           ref: ${{ inputs.ref || (github.event_name == 'pull_request' && github.event.pull_request.head.sha) || github.sha }}
 
+      # Pin swiftlint config resolution to this workflow revision (#269).
+      # Root cause: every consumer's `.swiftlint.yml` declares
+      # `parent_config: https://raw.githubusercontent.com/swift-institute/
+      # .github/main/.swiftlint.yml` — a LIVE fetch of the mutable `main`
+      # ref, re-resolved at every run. Two runs against the identical
+      # consumer commit can therefore lint under two different Tier 1 rule
+      # sets purely because of WHEN each run happened to fetch `main` — a
+      # central-config change landing between them silently reclassifies
+      # pre-existing code from clean to violating (or vice versa), with the
+      # SwiftLint binary version pinned and identical throughout. Because
+      # `push` and `workflow_dispatch`/`pull_request` runs are typically
+      # staggered in time relative to a central-config PR merge, this
+      # manifested AS an apparent push-vs-dispatch scope skew (swift-
+      # domain-standard: run 30854289704 green, run 30865610398 red, same
+      # consumer commit) even though no branch in this file actually
+      # conditions lint scope on `github.event_name`.
+      #
+      # Fix: vendor this workflow's OWN revision of the central
+      # `.swiftlint.yml` (same `job.workflow_sha` trust anchor already used
+      # for the vendored `plan`-job scripts) and rewrite the checked-out
+      # consumer's `parent_config` line, if any, to point at that local,
+      # pinned copy instead of the floating URL — before swiftlint ever
+      # runs. Every event now resolves the identical Tier 1 rule set for a
+      # given workflow revision, uniformly: not narrower on push, not wider
+      # on dispatch, never a function of wall-clock fetch time.
+      - name: Checkout pinned central SwiftLint config
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: swift-institute/.github
+          ref: ${{ job.workflow_sha }}
+          path: .ci-central-swiftlint-config
+          sparse-checkout: |
+            .swiftlint.yml
+          sparse-checkout-cone-mode: false
+
+      - name: Pin parent_config to this workflow revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          pinned="${GITHUB_WORKSPACE}/.ci-central-swiftlint-config/.swiftlint.yml"
+          [ -f "$pinned" ] || { echo "::error::pinned central .swiftlint.yml did not check out"; exit 1; }
+          # Only the documented, sanctioned URL shape is rewritten (any ref,
+          # e.g. main or a tag) — a repo-local .swiftlint.yml with no
+          # parent_config, or one pointed elsewhere, is left untouched.
+          mapfile -d '' configs < <(find . -name '.swiftlint.yml' -not -path './.ci-central-swiftlint-config/*' -print0)
+          for config in "${configs[@]}"; do
+            if grep -Eq '^[[:space:]]*parent_config:[[:space:]]*https://raw\.githubusercontent\.com/swift-institute/\.github/[^/]+/\.swiftlint\.yml[[:space:]]*$' "$config"; then
+              sed -i -E "s#^([[:space:]]*parent_config:[[:space:]]*)https://raw\.githubusercontent\.com/swift-institute/\.github/[^/]+/\.swiftlint\.yml[[:space:]]*\$#\1${pinned}#" "$config"
+              echo "Pinned parent_config in $config -> $pinned (workflow revision ${{ job.workflow_sha }})"
+            fi
+          done
+          rm -rf .ci-central-swiftlint-config/.git
+
       - name: Cache SwiftLint binary
         id: cache-swiftlint
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
