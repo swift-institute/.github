@@ -1,0 +1,29 @@
+{
+  "_comment": "Vendored snapshots of the three layer wrappers' .github/workflows/swift-ci.yml, byte-for-byte as fetched from each repository's default branch at the commit below. Task 1-01 (swift-institute/.github#276, #281) characterizes the wrapper/universal relationship, which requires reading all three wrappers at exact heads (programme precondition) even though this repository's own CI cannot check out sibling repositories. These are point-in-time evidence, not a live sync: test-verdict-inventory.py builds the committed verdict-inventory.json from these bytes plus this repository's own live swift-ci.yml, and a drift test catches the LOCAL file changing out from under the committed inventory. A wrapper edit in its own repository does not retrigger this repository's CI; re-vending these three files (and re-running the builder) is a manual step the next lane touching this area must perform, exactly like re-deriving any other moving head in the programme.",
+  "wrappers": {
+    "primitives": {
+      "repository": "swift-primitives/.github",
+      "path": ".github/workflows/swift-ci.yml",
+      "ref": "main",
+      "commit_sha": "ba21f2b5e2f1a2e2b2c10ebe44561808d8c100d3",
+      "blob_sha256": "3fa01ff2467b9a417ca16b64e48c9d0167349fdd858de38f35cc871cd2be9271",
+      "fetched": "2026-08-04"
+    },
+    "standards": {
+      "repository": "swift-standards/.github",
+      "path": ".github/workflows/swift-ci.yml",
+      "ref": "main",
+      "commit_sha": "6d74d64e4de10b5f083d8e4723e0a6d9353dccd8",
+      "blob_sha256": "583f64dfdf0a4759bd2978bb34199337c3458a73e2b6289ebb317dca5575b52d",
+      "fetched": "2026-08-04"
+    },
+    "foundations": {
+      "repository": "swift-foundations/.github",
+      "path": ".github/workflows/swift-ci.yml",
+      "ref": "main",
+      "commit_sha": "f34a9c7be7906c96dc22dd8873306bb7adfb770e",
+      "blob_sha256": "0b6d61ba6660d1cf73028184087ba7e42be7785f43f9aea853491dd0e4125310",
+      "fetched": "2026-08-04"
+    }
+  }
+}

@@ -1,0 +1,599 @@
+{
+  "generated_by": "build-verdict-inventory.py",
+  "schema_version": 1,
+  "universal": {
+    "advisory_jobs": [
+      "linux-nightly",
+      "linux-6-4",
+      "apple-simulator-build",
+      "lint-yaml",
+      "lint-broken-symlink",
+      "lint-license-header",
+      "lint-test-support-spine",
+      "lint-api-breakage",
+      "lint-pr-title"
+    ],
+    "aggregate": {
+      "advisory_summary_needs": [
+        "plan",
+        "linux-nightly",
+        "linux-6-4",
+        "apple-simulator-build",
+        "lint-yaml",
+        "lint-broken-symlink",
+        "lint-license-header",
+        "lint-test-support-spine",
+        "lint-api-breakage",
+        "lint-pr-title"
+      ],
+      "ci_ok_needs": [
+        "plan",
+        "macos-release",
+        "linux-release",
+        "windows-release",
+        "format",
+        "lint",
+        "swift-linter"
+      ],
+      "ci_ok_step": "Aggregate required-job results",
+      "inner_matrix_jobs": [
+        "apple-simulator-build"
+      ]
+    },
+    "cache_steps": [
+      {
+        "job": "lint",
+        "key": "${{ runner.os }}-swiftlint-${{ env.SWIFTLINT_VERSION }}",
+        "path": "/usr/local/bin/swiftlint",
+        "step": "Cache SwiftLint binary"
+      }
+    ],
+    "gating_jobs": [
+      "macos-release",
+      "linux-release",
+      "windows-release",
+      "format",
+      "lint",
+      "swift-linter"
+    ],
+    "job_count": 18,
+    "jobs": {
+      "advisory-summary": {
+        "continue_on_error": true,
+        "has_matrix": false,
+        "if": "${{ !cancelled() && !github.event.repository.private && inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',advisory-summary,') }}",
+        "matrix_axes": {},
+        "needs": [
+          "plan",
+          "linux-nightly",
+          "linux-6-4",
+          "apple-simulator-build",
+          "lint-yaml",
+          "lint-broken-symlink",
+          "lint-license-header",
+          "lint-test-support-spine",
+          "lint-api-breakage",
+          "lint-pr-title"
+        ],
+        "nested_test_detection": false,
+        "permissions": {
+          "contents": "read"
+        },
+        "posture": "aggregate",
+        "private_guarded": true,
+        "runner": "ubuntu-latest",
+        "step_names": [
+          "Harden runner (audit-mode egress logging)",
+          "Render advisory leg results to the run summary"
+        ],
+        "wave": 2
+      },
+      "apple-simulator-build": {
+        "continue_on_error": true,
+        "has_matrix": true,
+        "if": "${{ !cancelled() && !github.event.repository.private && (inputs.job == 'apple-simulator-build' || (inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',apple-simulator-build,'))) && (inputs.platform-support == '' || contains(format(',{0},', inputs.platform-support), ',apple,')) }}",
+        "matrix_axes": {
+          "platform": [
+            "iOS",
+            "tvOS",
+            "watchOS",
+            "visionOS"
+          ]
+        },
+        "needs": [
+          "plan"
+        ],
+        "nested_test_detection": false,
+        "permissions": {
+          "contents": "read"
+        },
+        "posture": "advisory",
+        "private_guarded": true,
+        "runner": "${{ inputs.macos-runner }}",
+        "step_names": [
+          "Harden runner (audit-mode egress logging)",
+          null,
+          "Verify checked-out subject HEAD",
+          null,
+          "Select Xcode ${{ env.XCODE_VERSION }}",
+          "Print toolchain info",
+          "Discover SwiftPM-generated scheme",
+          "Build for ${{ matrix.platform }} Simulator"
+        ],
+        "wave": 1
+      },
+      "ci-ok": {
+        "continue_on_error": false,
+        "has_matrix": false,
+        "if": "${{ always() && !github.event.repository.private && inputs.job == '' }}",
+        "matrix_axes": {},
+        "needs": [
+          "plan",
+          "macos-release",
+          "linux-release",
+          "windows-release",
+          "format",
+          "lint",
+          "swift-linter"
+        ],
+        "nested_test_detection": false,
+        "permissions": {
+          "contents": "read"
+        },
+        "posture": "aggregate",
+        "private_guarded": true,
+        "runner": "ubuntu-latest",
+        "step_names": [
+          "Aggregate required-job results"
+        ],
+        "wave": 2
+      },
+      "format": {
+        "continue_on_error": false,
+        "has_matrix": false,
+        "if": "${{ !cancelled() && !github.event.repository.private && (inputs.job == 'format' || (inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',format,'))) }}",
+        "matrix_axes": {},
+        "needs": [
+          "plan"
+        ],
+        "nested_test_detection": false,
+        "permissions": {
+          "contents": "read"
+        },
+        "posture": "gating",
+        "private_guarded": true,
+        "runner": "ubuntu-latest",
+        "step_names": [
+          "Harden runner (audit-mode egress logging)",
+          null,
+          "Verify checked-out subject HEAD",
+          "Print swift-format version",
+          "Lint formatting (--strict)"
+        ],
+        "wave": 1
+      },
+      "lint": {
+        "continue_on_error": false,
+        "has_matrix": false,
+        "if": "${{ !cancelled() && !github.event.repository.private && (inputs.job == 'lint' || (inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',lint,'))) }}",
+        "matrix_axes": {},
+        "needs": [
+          "plan"
+        ],
+        "nested_test_detection": false,
+        "permissions": {
+          "contents": "read"
+        },
+        "posture": "gating",
+        "private_guarded": true,
+        "runner": "ubuntu-latest",
+        "step_names": [
+          "Harden runner (audit-mode egress logging)",
+          null,
+          "Verify checked-out subject HEAD",
+          "Checkout pinned Tier 1 SwiftLint config",
+          "Pin parent_config chain to this workflow revision",
+          "Cache SwiftLint binary",
+          "Install SwiftLint ${{ env.SWIFTLINT_VERSION }}",
+          "Print SwiftLint version",
+          "Lint"
+        ],
+        "wave": 1
+      },
+      "lint-api-breakage": {
+        "continue_on_error": false,
+        "has_matrix": false,
+        "if": "${{ github.event_name == 'pull_request' && !github.event.repository.private }}",
+        "matrix_axes": {},
+        "needs": [],
+        "nested_test_detection": false,
+        "permissions": {},
+        "posture": "advisory",
+        "private_guarded": true,
+        "runner": "./.github/workflows/lint-api-breakage.yml",
+        "step_names": [],
+        "wave": 0
+      },
+      "lint-broken-symlink": {
+        "continue_on_error": false,
+        "has_matrix": false,
+        "if": "${{ !cancelled() && !github.event.repository.private && (inputs.job == 'lint-broken-symlink' || (inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',lint-broken-symlink,'))) }}",
+        "matrix_axes": {},
+        "needs": [
+          "plan"
+        ],
+        "nested_test_detection": false,
+        "permissions": {},
+        "posture": "advisory",
+        "private_guarded": true,
+        "runner": "./.github/workflows/lint-broken-symlink.yml",
+        "step_names": [],
+        "wave": 1
+      },
+      "lint-license-header": {
+        "continue_on_error": false,
+        "has_matrix": false,
+        "if": "${{ !cancelled() && !github.event.repository.private && (inputs.job == 'lint-license-header' || (inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',lint-license-header,'))) }}",
+        "matrix_axes": {},
+        "needs": [
+          "plan"
+        ],
+        "nested_test_detection": false,
+        "permissions": {},
+        "posture": "advisory",
+        "private_guarded": true,
+        "runner": "./.github/workflows/lint-license-header.yml",
+        "step_names": [],
+        "wave": 1
+      },
+      "lint-pr-title": {
+        "continue_on_error": false,
+        "has_matrix": false,
+        "if": "${{ github.event_name == 'pull_request' && !github.event.repository.private }}",
+        "matrix_axes": {},
+        "needs": [],
+        "nested_test_detection": false,
+        "permissions": {},
+        "posture": "advisory",
+        "private_guarded": true,
+        "runner": "./.github/workflows/lint-pr-title.yml",
+        "step_names": [],
+        "wave": 0
+      },
+      "lint-test-support-spine": {
+        "continue_on_error": false,
+        "has_matrix": false,
+        "if": "${{ !cancelled() && !github.event.repository.private && (inputs.job == 'lint-test-support-spine' || (inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',lint-test-support-spine,'))) }}",
+        "matrix_axes": {},
+        "needs": [
+          "plan"
+        ],
+        "nested_test_detection": false,
+        "permissions": {},
+        "posture": "advisory",
+        "private_guarded": true,
+        "runner": "./.github/workflows/lint-test-support-spine.yml",
+        "step_names": [],
+        "wave": 1
+      },
+      "lint-yaml": {
+        "continue_on_error": false,
+        "has_matrix": false,
+        "if": "${{ !cancelled() && !github.event.repository.private && (inputs.job == 'lint-yaml' || (inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',lint-yaml,'))) }}",
+        "matrix_axes": {},
+        "needs": [
+          "plan"
+        ],
+        "nested_test_detection": false,
+        "permissions": {},
+        "posture": "advisory",
+        "private_guarded": true,
+        "runner": "./.github/workflows/lint-yaml.yml",
+        "step_names": [],
+        "wave": 1
+      },
+      "linux-6-4": {
+        "continue_on_error": true,
+        "has_matrix": false,
+        "if": "${{ !cancelled() && !github.event.repository.private && (inputs.job == 'linux-6-4' || (inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',linux-6-4,'))) && (inputs.platform-support == '' || contains(format(',{0},', inputs.platform-support), ',linux,')) }}",
+        "matrix_axes": {},
+        "needs": [
+          "plan"
+        ],
+        "nested_test_detection": true,
+        "permissions": {
+          "contents": "read"
+        },
+        "posture": "advisory",
+        "private_guarded": true,
+        "runner": "ubuntu-latest",
+        "step_names": [
+          "Harden runner (audit-mode egress logging)",
+          null,
+          "Verify checked-out subject HEAD",
+          null,
+          null,
+          "Print toolchain info",
+          "Build or test (release)"
+        ],
+        "wave": 1
+      },
+      "linux-nightly": {
+        "continue_on_error": true,
+        "has_matrix": false,
+        "if": "${{ !cancelled() && !github.event.repository.private && (inputs.job == 'linux-nightly' || (inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',linux-nightly,'))) && (inputs.platform-support == '' || contains(format(',{0},', inputs.platform-support), ',linux,')) }}",
+        "matrix_axes": {},
+        "needs": [
+          "plan"
+        ],
+        "nested_test_detection": true,
+        "permissions": {
+          "contents": "read"
+        },
+        "posture": "advisory",
+        "private_guarded": true,
+        "runner": "ubuntu-latest",
+        "step_names": [
+          "Harden runner (audit-mode egress logging)",
+          null,
+          "Verify checked-out subject HEAD",
+          null,
+          null,
+          "Print toolchain info",
+          "Test (release)"
+        ],
+        "wave": 1
+      },
+      "linux-release": {
+        "continue_on_error": false,
+        "has_matrix": false,
+        "if": "${{ !cancelled() && !github.event.repository.private && (inputs.job == 'linux-release' || (inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',linux-release,'))) && (inputs.platform-support == '' || contains(format(',{0},', inputs.platform-support), ',linux,')) }}",
+        "matrix_axes": {},
+        "needs": [
+          "plan"
+        ],
+        "nested_test_detection": true,
+        "permissions": {
+          "contents": "read"
+        },
+        "posture": "gating",
+        "private_guarded": true,
+        "runner": "ubuntu-latest",
+        "step_names": [
+          "Harden runner (audit-mode egress logging)",
+          null,
+          "Verify checked-out subject HEAD",
+          null,
+          null,
+          "Print toolchain info",
+          "Build or test (release)"
+        ],
+        "wave": 1
+      },
+      "macos-release": {
+        "continue_on_error": false,
+        "has_matrix": false,
+        "if": "${{ !cancelled() && !github.event.repository.private && (inputs.job == 'macos-release' || (inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',macos-release,'))) && (inputs.platform-support == '' || contains(format(',{0},', inputs.platform-support), ',apple,')) }}",
+        "matrix_axes": {},
+        "needs": [
+          "plan"
+        ],
+        "nested_test_detection": true,
+        "permissions": {
+          "contents": "read"
+        },
+        "posture": "gating",
+        "private_guarded": true,
+        "runner": "${{ inputs.macos-runner }}",
+        "step_names": [
+          "Harden runner (audit-mode egress logging)",
+          null,
+          "Verify checked-out subject HEAD",
+          null,
+          "Select Xcode ${{ env.XCODE_VERSION }}",
+          "Print toolchain info",
+          "Test"
+        ],
+        "wave": 1
+      },
+      "plan": {
+        "continue_on_error": false,
+        "has_matrix": false,
+        "if": "${{ !github.event.repository.private }}",
+        "matrix_axes": {},
+        "needs": [],
+        "nested_test_detection": false,
+        "permissions": {
+          "contents": "read"
+        },
+        "posture": "plan",
+        "private_guarded": true,
+        "runner": "ubuntu-latest",
+        "step_names": [
+          "Harden runner (audit-mode egress logging)",
+          "Resolve CI subject",
+          "Checkout subject",
+          "Verify checked-out subject HEAD",
+          "Checkout CI scripts",
+          "Identity-conflict fast-check",
+          "Branch-pin guard",
+          "Classify tier"
+        ],
+        "wave": 0
+      },
+      "swift-linter": {
+        "continue_on_error": false,
+        "has_matrix": false,
+        "if": "${{ !cancelled() && !github.event.repository.private && (inputs.job == 'swift-linter' || (inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',swift-linter,'))) }}",
+        "matrix_axes": {},
+        "needs": [
+          "plan"
+        ],
+        "nested_test_detection": false,
+        "permissions": {
+          "contents": "read"
+        },
+        "posture": "gating",
+        "private_guarded": true,
+        "runner": "ubuntu-latest",
+        "step_names": [
+          "Harden runner (audit-mode egress logging)",
+          null,
+          "Verify checked-out subject HEAD",
+          "Classify consumer configuration",
+          "Install published linter binaries",
+          "Advise on ci-binaries staleness (non-gating)",
+          "Configure private-dep access",
+          "Install system libraries (libuuid)",
+          "Run swift-linter (consumer Lint.swift)",
+          "Run swift-linter (layer default bundle)"
+        ],
+        "wave": 1
+      },
+      "windows-release": {
+        "continue_on_error": false,
+        "has_matrix": false,
+        "if": "${{ !cancelled() && !github.event.repository.private && (inputs.job == 'windows-release' || (inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',windows-release,'))) && (inputs.platform-support == '' || contains(format(',{0},', inputs.platform-support), ',windows,')) }}",
+        "matrix_axes": {},
+        "needs": [
+          "plan"
+        ],
+        "nested_test_detection": true,
+        "permissions": {
+          "contents": "read"
+        },
+        "posture": "gating",
+        "private_guarded": true,
+        "runner": "windows-latest",
+        "step_names": [
+          "Harden runner (audit-mode egress logging)",
+          null,
+          "Verify checked-out subject HEAD",
+          null,
+          "Install Swift",
+          "Print toolchain info",
+          "Test"
+        ],
+        "wave": 1
+      }
+    },
+    "plan": {
+      "classify_step": "Classify tier",
+      "full_tier_legs": [
+        "format",
+        "lint",
+        "swift-linter",
+        "linux-release",
+        "macos-release",
+        "windows-release",
+        "linux-nightly",
+        "linux-6-4",
+        "apple-simulator-build",
+        "lint-yaml",
+        "lint-broken-symlink",
+        "lint-license-header",
+        "lint-test-support-spine",
+        "advisory-summary"
+      ],
+      "resolve_subject_step": "Resolve CI subject"
+    },
+    "possible_job_conclusions": [
+      "success",
+      "failure",
+      "cancelled",
+      "skipped"
+    ],
+    "required_check_context": "ci / ci-ok",
+    "source_sha256": "810870972baa81bd572eaec246ed07f42403beab1797e0985a3dc60f69744bd0"
+  },
+  "wrappers": {
+    "foundations": {
+      "ci_ok_needs": [
+        "matrix"
+      ],
+      "job_count": 2,
+      "jobs": {
+        "ci-ok": {
+          "continue_on_error": false,
+          "in_ci_ok_needs": false,
+          "runner": "ubuntu-latest"
+        },
+        "matrix": {
+          "continue_on_error": false,
+          "in_ci_ok_needs": true,
+          "runner": "swift-institute/.github/.github/workflows/swift-ci.yml@main"
+        }
+      },
+      "layer": "foundations",
+      "layer_required_jobs_outside_universal_verdict": [],
+      "source_sha256": "0b6d61ba6660d1cf73028184087ba7e42be7785f43f9aea853491dd0e4125310"
+    },
+    "primitives": {
+      "ci_ok_needs": [
+        "matrix"
+      ],
+      "job_count": 6,
+      "jobs": {
+        "android-build": {
+          "continue_on_error": true,
+          "in_ci_ok_needs": false,
+          "runner": "ubuntu-latest"
+        },
+        "ci-ok": {
+          "continue_on_error": false,
+          "in_ci_ok_needs": false,
+          "runner": "ubuntu-latest"
+        },
+        "embedded": {
+          "continue_on_error": true,
+          "in_ci_ok_needs": false,
+          "runner": "ubuntu-latest"
+        },
+        "embedded-wasm-sdk": {
+          "continue_on_error": true,
+          "in_ci_ok_needs": false,
+          "runner": "ubuntu-latest"
+        },
+        "matrix": {
+          "continue_on_error": false,
+          "in_ci_ok_needs": true,
+          "runner": "swift-institute/.github/.github/workflows/swift-ci.yml@main"
+        },
+        "static-linux-musl-build": {
+          "continue_on_error": true,
+          "in_ci_ok_needs": false,
+          "runner": "ubuntu-latest"
+        }
+      },
+      "layer": "primitives",
+      "layer_required_jobs_outside_universal_verdict": [
+        "embedded",
+        "embedded-wasm-sdk",
+        "android-build",
+        "static-linux-musl-build"
+      ],
+      "source_sha256": "3fa01ff2467b9a417ca16b64e48c9d0167349fdd858de38f35cc871cd2be9271"
+    },
+    "standards": {
+      "ci_ok_needs": [
+        "matrix"
+      ],
+      "job_count": 2,
+      "jobs": {
+        "ci-ok": {
+          "continue_on_error": false,
+          "in_ci_ok_needs": false,
+          "runner": "ubuntu-latest"
+        },
+        "matrix": {
+          "continue_on_error": false,
+          "in_ci_ok_needs": true,
+          "runner": "swift-institute/.github/.github/workflows/swift-ci.yml@main"
+        }
+      },
+      "layer": "standards",
+      "layer_required_jobs_outside_universal_verdict": [],
+      "source_sha256": "583f64dfdf0a4759bd2978bb34199337c3458a73e2b6289ebb317dca5575b52d"
+    }
+  }
+}
