@@ -136,7 +136,7 @@ on:
       lint-bundle:
         type: string
         default: "institute"
-        description: "Rule bundle the `swift-linter` job lints a consumer that carries NO root `Lint.swift` with. Consumers that DO carry one are unaffected — their file selects their rules and this input is never read. One of `primitives` | `standards` | `institute`; anything else fails the job in seconds, before any binary is provisioned. Set by the LAYER WRAPPER, not by the package: the wrapper is the layer, so the value is a literal there (swift-primitives → `primitives`, swift-standards → `standards`, swift-foundations → `institute`) and a package cannot elect a weaker rule set for itself. The default `institute` is the organization-wide bundle a direct caller (one that skips its layer wrapper, e.g. swift-institute/Issues) gets. The three bundles are a lattice — `universal ⊂ institute ⊂ primitives`, `standards = institute` minus two naming rules — so a single global default would measure primitives-layer packages against a LOOSER set than their configured peers, which is why the choice is per-layer. Mirrors Workspace's `Workspace.Lint.Bundle`, byte-for-byte the same tokens on the same `SWIFT_LINTER_BUNDLE` channel; keep the two in step. Non-empty default because an unset `SWIFT_LINTER_BUNDLE` channel is a HARD ERROR in the runner (swift-institute/.github#276 Task 1-02 removed the prior silent `Channel.read() ?? .primitives` fallback that used to mismeasure a foundations package against 96 rules instead of 93 — measured 2026-07-29, before the removal); an empty default here would trip that hard error on every foundations/standards package that skips its own `Lint.swift`."
+        description: "Rule bundle the `swift-linter` job lints a consumer that carries NO root `Lint.swift` with. Consumers that DO carry one are unaffected — their file selects their rules and this input is never read. One of `primitives` | `standards` | `institute`; anything else fails the job in seconds, before any binary is provisioned. Set by the LAYER WRAPPER, not by the package: the wrapper is the layer, so the value is a literal there (swift-primitives → `primitives`, swift-standards → `standards`, swift-foundations → `institute`) and a package cannot elect a weaker rule set for itself. The default `institute` is the organization-wide bundle a direct caller (one that skips its layer wrapper, e.g. swift-institute/Issues) gets. The three bundles are a lattice — `universal ⊂ institute ⊂ primitives`, `standards = institute` minus two naming rules — so a single global default would measure primitives-layer packages against a LOOSER set than their configured peers, which is why the choice is per-layer. Mirrors Workspace's `Workspace.Lint.Bundle`, byte-for-byte the same tokens on the same `SWIFT_LINTER_BUNDLE` channel; keep the two in step. Non-empty default because the prebuilt runner falls back to `primitives` when the channel is UNSET (measured 2026-07-29) — an empty default would silently mismeasure every foundations package."
       tier:
         type: string
         default: ""
@@ -1949,16 +1949,6 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
-    outputs:
-      # swift-institute/.github#276 Task 6-01: structured linter-identity
-      # fields for the effective-runtime receipt, sourced from "Install
-      # published linter binaries" below — the receipt reads these rather
-      # than re-deriving or re-fetching anything.
-      linter-release-url: ${{ steps.install.outputs.release-url }}
-      linter-authorities-json: ${{ steps.install.outputs.authorities-json }}
-      linter-checksums-json: ${{ steps.install.outputs.checksums-json }}
-      linter-manifest-digest: ${{ steps.install.outputs.manifest-digest }}
-      linter-verification: ${{ steps.install.outputs.verification }}
     steps:
       - name: Harden runner (audit-mode egress logging)
         uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
@@ -2075,14 +2065,12 @@ jobs:
       # unverifiable linter cannot produce a lint verdict, and a leg that
       # quietly proceeded without one would be a vacuous green.
       - name: Install published linter binaries
-        id: install
         shell: bash
         env:
           LINTER_RELEASE: https://github.com/swift-foundations/swift-linter/releases/download/ci-binaries
         run: |
           set -euo pipefail
           command -v curl >/dev/null 2>&1 || { apt-get update -qq && apt-get install -qq -y curl ca-certificates; }
-          command -v jq >/dev/null 2>&1 || { apt-get update -qq && apt-get install -qq -y jq; }
           work="$(mktemp -d)"
           for asset in SHA256SUMS MANIFEST.txt swift-linter swift-linter-runner; do
             curl --fail --silent --show-error --location --retry 2 --output "$work/$asset" "$LINTER_RELEASE/$asset"
@@ -2114,28 +2102,6 @@ jobs:
           # runs in its own shell, so the path travels via GITHUB_ENV rather
           # than a bash variable.
           echo "CI_BINARIES_MANIFEST=$work/MANIFEST.txt" >> "$GITHUB_ENV"
-
-          # swift-institute/.github#276 Task 6-01: structured outputs for the
-          # effective-runtime receipt (ci-ok reads these via
-          # needs.swift-linter.outputs.*, never re-fetches or re-derives
-          # them). The six authority SHAs, straight from the manifest this
-          # step already verified is complete; the two binary checksums
-          # (swift-linter, swift-linter-runner), straight from the
-          # SHA256SUMS this step already verified with `sha256sum --check`.
-          AUTHORITIES_JSON=$(
-            grep -E '^[a-z0-9-]+=[0-9a-f]{40}$' "$work/MANIFEST.txt" \
-              | jq -Rn '[inputs | split("=") | {(.[0]): .[1]}] | add'
-          )
-          CHECKSUMS_JSON=$(
-            grep -E '  (swift-linter|swift-linter-runner)$' "$work/SHA256SUMS" \
-              | jq -Rn '[inputs | split("  ") | {(.[1]): .[0]}] | add'
-          )
-          MANIFEST_DIGEST=$(grep -E '^digest=' "$work/MANIFEST.txt" | cut -d= -f2- || true)
-          echo "release-url=$LINTER_RELEASE" >> "$GITHUB_OUTPUT"
-          echo "authorities-json=$AUTHORITIES_JSON" >> "$GITHUB_OUTPUT"
-          echo "checksums-json=$CHECKSUMS_JSON" >> "$GITHUB_OUTPUT"
-          echo "manifest-digest=$MANIFEST_DIGEST" >> "$GITHUB_OUTPUT"
-          echo "verification=checksum-verified,manifest-complete" >> "$GITHUB_OUTPUT"
 
       # ── Advise on ci-binaries staleness (#138; non-gating) ──
       # The install step above verifies the release is CORRECT (checksum,
@@ -2304,16 +2270,12 @@ jobs:
       # Workspace drives, so a package's CI verdict and its `workspace lint`
       # verdict come from one mechanism rather than two that can drift.
       #
-      # SWIFT_LINTER_BUNDLE must be set explicitly on every invocation: an
-      # unset channel is now a HARD ERROR in the runner (swift-institute/
-      # .github#276 Task 1-02 removed the prior silent `Channel.read() ??
-      # .primitives` fallback that used to mismeasure a foundations package
-      # against 96 rules instead of 93 — measured 2026-07-29, before the
-      # removal). `inputs.lint-bundle` has a non-empty default and is
-      # validated in the classify step for exactly this reason: to make sure
-      # the channel this line sets is never empty, so that hard error never
-      # actually fires in ordinary operation. The runner also rejects an
-      # invalid (non-empty but unrecognized) value.
+      # SWIFT_LINTER_BUNDLE must be set explicitly on every invocation: the
+      # runner falls back to `primitives` when the channel is UNSET (measured
+      # 2026-07-29 — an unset channel lints a foundations package against 96
+      # rules instead of 93, silently). `inputs.lint-bundle` has a non-empty
+      # default and is validated in the classify step, so the channel is never
+      # empty here; the runner rejects an invalid value even if it were.
       #
       # ADJUDICATION. The exit status alone cannot distinguish "ran clean" from
       # "measured nothing": handed an empty directory the runner prints
@@ -2660,11 +2622,6 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
-      # swift-institute/.github#276 Task 6-01: this job now reads its OWN
-      # run object (GET /repos/.../actions/runs/{run_id}) to emit the
-      # effective-runtime receipt below. `actions: read` is the minimum
-      # scope for that; it grants no write capability anywhere.
-      actions: read
     steps:
       # The body of this step is executed verbatim, against synthetic
       # NEEDS_JSON / PLANNED_GATING pairs, by
@@ -2767,210 +2724,3 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
           exit "$RC"
-
-      # swift-institute/.github#276 Task 6-01: vendor this exact workflow
-      # revision so the receipt step below can enumerate the action/
-      # composite coordinates THIS run actually used. Same trust anchor as
-      # Plan's "Checkout CI scripts" step — `job.workflow_sha` is the exact
-      # commit of the reusable that is executing right now, not the caller's
-      # own checkout, and not a runtime fetch from an unpinned source.
-      # `if: always()` so a receipt exists whether or not the aggregate
-      # above passed.
-      - name: Checkout this workflow revision
-        if: always()
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: swift-institute/.github
-          ref: ${{ job.workflow_sha }}
-          path: .receipt-workflow
-          sparse-checkout: |
-            .github/workflows/swift-ci.yml
-            .github/scripts/extract-action-coordinates.py
-          sparse-checkout-cone-mode: false
-
-      # The structured effective-runtime receipt. Reads THIS run's own run/
-      # jobs API objects (never re-derives what a job already computed —
-      # the linter identity fields come from needs.swift-linter.outputs.*,
-      # set by "Install published linter binaries" above), canonicalizes to
-      # stable (sorted-key, no-timestamp-noise-in-the-hash) JSON, computes a
-      # digest over that canonical form, uploads the receipt as a workflow
-      # artifact, and renders a safe summary — no secrets, no authorization
-      # headers, no machine paths, no private source details. The receipt
-      # RECORDS facts about a moving `@main` chain; it does not convert any
-      # of those inputs into something pinned (LANE-PREAMBLE's permanent
-      # prohibition — no reusable-workflow SHA/tag pin, ever — is untouched
-      # by this job existing).
-      - name: Emit effective-runtime receipt
-        if: always()
-        id: receipt
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
-          RUN_ID: ${{ github.run_id }}
-          LINTER_RELEASE_URL: ${{ needs.swift-linter.outputs.linter-release-url }}
-          LINTER_AUTHORITIES_JSON: ${{ needs.swift-linter.outputs.linter-authorities-json }}
-          LINTER_CHECKSUMS_JSON: ${{ needs.swift-linter.outputs.linter-checksums-json }}
-          LINTER_MANIFEST_DIGEST: ${{ needs.swift-linter.outputs.linter-manifest-digest }}
-          LINTER_VERIFICATION: ${{ needs.swift-linter.outputs.linter-verification }}
-        run: |
-          set -euo pipefail
-          work="$(mktemp -d)"
-
-          # 1-2: root run fields, read from the run's own API object — not
-          # reconstructed from `github.*` context, which is why this needs
-          # actions:read rather than being computable for free.
-          gh api "repos/${REPOSITORY}/actions/runs/${RUN_ID}" > "$work/run.json"
-          RUN_FIELDS=$(jq '{
-            repository: $repo,
-            workflow_path: .path,
-            event: .event,
-            actor: .actor.login,
-            head_repository: .head_repository.full_name,
-            head_branch: .head_branch,
-            head_sha: .head_sha,
-            run_attempt: .run_attempt,
-            run_id: .id,
-            conclusion: .conclusion
-          }' --arg repo "$REPOSITORY" "$work/run.json")
-
-          # 3-4: referenced_workflows — every reusable-workflow hop this
-          # exact run resolved, with the source ref exactly as written
-          # (`path` embeds `@main` or an exact internal SHA) and GitHub's
-          # own resolved SHA. Unexpectedly empty is UNMEASURED, never a
-          # silent substitution of current main.
-          REF_WORKFLOWS_COUNT=$(jq '.referenced_workflows | length' "$work/run.json")
-          if [ "$REF_WORKFLOWS_COUNT" -eq 0 ]; then
-            REFERENCED_WORKFLOWS=$(jq -n '{status: "UNMEASURED", reason: "run object reported zero referenced_workflows", entries: []}')
-          else
-            REFERENCED_WORKFLOWS=$(jq '{status: "measured", reason: null, entries: .referenced_workflows}' "$work/run.json")
-          fi
-
-          # 5: linter installer identity — already verified (checksum,
-          # manifest completeness) by "Install published linter binaries";
-          # this receipt only records what that step already established.
-          if [ -n "${LINTER_RELEASE_URL:-}" ]; then
-            LINTER=$(jq -n \
-              --arg url "$LINTER_RELEASE_URL" \
-              --argjson authorities "${LINTER_AUTHORITIES_JSON:-null}" \
-              --argjson checksums "${LINTER_CHECKSUMS_JSON:-null}" \
-              --arg digest "${LINTER_MANIFEST_DIGEST:-}" \
-              --arg verification "${LINTER_VERIFICATION:-}" \
-              '{status: "measured", release_url: $url, authorities: $authorities, checksums: $checksums, manifest_digest: $digest, verification: $verification}')
-          else
-            # The build-tier plan does not always select swift-linter's full
-            # path, or a dispatched single-job run may have skipped it
-            # entirely — its outputs are then empty, not absent-by-defect.
-            LINTER=$(jq -n '{status: "UNMEASURED", reason: "swift-linter job outputs empty for this run (job skipped or did not reach the install step)"}')
-          fi
-
-          # 6 (actions/composite coordinates): every `uses:` STEP KEY in
-          # THIS exact workflow revision, classified per LANE-PREAMBLE's two
-          # permanent classes — intra-Institute reusable workflows stay on
-          # `@main` forever (never pinned), everything else (third-party
-          # actions, Institute composite actions) must already be a full
-          # 40-hex SHA. This is a classification record, not a new policy
-          # check — [CI-030]/[CI-117] and their own validators/fixtures
-          # remain the enforcement; this only states what this run's exact
-          # bytes contained.
-          #
-          # STRUCTURAL parsing (extract-action-coordinates.py, PyYAML), not
-          # grep-over-text: an earlier draft of this step regex-matched
-          # `uses:` directly against the checked-out file's raw text and
-          # caught the literal string "uses:" inside its OWN embedded
-          # script — a self-scanning false positive, caught by testing this
-          # step against real fetched data before shipping it, not by
-          # inspection. A dedicated, independently-tested script sidesteps
-          # the whole class: `run:` block contents are one opaque scalar
-          # string to a YAML parser, never walked for keys.
-          WORKFLOW_FILE=".receipt-workflow/.github/workflows/swift-ci.yml"
-          EXTRACTOR=".receipt-workflow/.github/scripts/extract-action-coordinates.py"
-          if [ -f "$WORKFLOW_FILE" ] && [ -f "$EXTRACTOR" ]; then
-            ACTIONS=$(python3 "$EXTRACTOR" "$WORKFLOW_FILE")
-            ACTIONS_RECORD=$(jq -n --argjson entries "$ACTIONS" '{status: "measured", entries: $entries}')
-          else
-            ACTIONS_RECORD=$(jq -n '{status: "UNMEASURED", reason: "could not check out this workflow revision (or its extractor script) from swift-institute/.github at job.workflow_sha"}')
-          fi
-
-          # 7 (partial — per-job runner label, straight from the Jobs API,
-          # which is already structured; this needs no per-job change to
-          # collect). OS/architecture/Swift/Xcode/SDK identity per job is
-          # NOT collected in this revision — it lives only in each job's
-          # own step-log prose ("Print toolchain info"), and turning that
-          # into structured per-job output fields would need an outputs:
-          # block added to every leg job. Recorded honestly as UNMEASURED
-          # rather than parsed out of logs or guessed from the declared
-          # inputs (which describe intent, not what actually ran).
-          JOBS_JSON=$(gh api "repos/${REPOSITORY}/actions/runs/${RUN_ID}/jobs" --paginate --jq '[.jobs[] | {name, conclusion, runner_name, runner_group_name, labels}]')
-          JOBS_RECORD=$(jq -n --argjson entries "$JOBS_JSON" '{status: "measured", entries: $entries, toolchain_identity: {status: "UNMEASURED", reason: "not collected per-job in this revision; would require a structured output on every containerized/toolchain job, not only the runner label the Jobs API already exposes"}}')
-
-          # Container digests (part of item 6): NOT collected in this
-          # revision. `container: swift:${{ inputs.swift-version }}` etc.
-          # are mutable tags resolved independently by each containerized
-          # job's own Docker daemon; ci-ok runs on a bare (non-container)
-          # runner and cannot inspect another job's resolved image digest
-          # after the fact. Recording UNMEASURED here rather than the tag
-          # itself, which would silently misrepresent a moving input as an
-          # observed one.
-          CONTAINER_DIGESTS=$(jq -n '{status: "UNMEASURED", reason: "ci-ok runs on a bare runner with no container; per-job image digest is not observable from here without a structured output on every containerized job"}')
-
-          # 8: Workspace toolchain baseline / central policy revision /
-          # fixture revision / effective inventory digest — properties of
-          # swift-institute/Workspace's own live state, not of this run's
-          # API objects, and out of Task 6-01's exact-files boundary
-          # (swift-ci.yml + its own tests only). Recorded as UNMEASURED
-          # rather than fabricated or silently omitted from the schema.
-          WORKSPACE_RECORD=$(jq -n '{status: "UNMEASURED", reason: "Workspace inventory/policy state is not queryable from within this run; out of Task 6-01'\''s exact-files boundary"}')
-
-          # 10: canonicalize (sorted keys — jq -S — so semantically
-          # identical receipts hash identically regardless of field-order
-          # drift), compute the digest, upload as an artifact.
-          jq -n -S \
-            --argjson run "$RUN_FIELDS" \
-            --argjson referenced_workflows "$REFERENCED_WORKFLOWS" \
-            --argjson linter "$LINTER" \
-            --argjson actions "$ACTIONS_RECORD" \
-            --argjson jobs "$JOBS_RECORD" \
-            --argjson container_digests "$CONTAINER_DIGESTS" \
-            --argjson workspace "$WORKSPACE_RECORD" \
-            '{
-              schema_version: 1,
-              run: $run,
-              referenced_workflows: $referenced_workflows,
-              linter: $linter,
-              actions: $actions,
-              jobs: $jobs,
-              container_digests: $container_digests,
-              workspace: $workspace
-            }' > "$work/receipt.json"
-
-          RECEIPT_DIGEST=$(sha256sum "$work/receipt.json" | cut -d' ' -f1)
-          jq -S --arg digest "$RECEIPT_DIGEST" '. + {receipt_digest: $digest}' "$work/receipt.json" > "$work/receipt-final.json"
-          mv "$work/receipt-final.json" "$work/effective-runtime-receipt.json"
-          echo "path=$work/effective-runtime-receipt.json" >> "$GITHUB_OUTPUT"
-          echo "digest=$RECEIPT_DIGEST" >> "$GITHUB_OUTPUT"
-
-          {
-            echo "## Effective-runtime receipt"
-            echo ""
-            echo "Digest: \`$RECEIPT_DIGEST\`"
-            echo ""
-            echo "| Category | Status |"
-            echo "| --- | --- |"
-            echo "| referenced_workflows | $(jq -r '.status' <<< "$REFERENCED_WORKFLOWS") |"
-            echo "| linter identity | $(jq -r '.status' <<< "$LINTER") |"
-            echo "| action coordinates | $(jq -r '.status' <<< "$ACTIONS_RECORD") |"
-            echo "| per-job runner label | $(jq -r '.status' <<< "$JOBS_RECORD") |"
-            echo "| per-job toolchain identity | UNMEASURED |"
-            echo "| container digests | UNMEASURED |"
-            echo "| Workspace baseline | UNMEASURED |"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Upload effective-runtime receipt
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: effective-runtime-receipt
-          path: ${{ steps.receipt.outputs.path }}
-          retention-days: 90
-          if-no-files-found: error
