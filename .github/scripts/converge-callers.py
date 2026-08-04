@@ -156,11 +156,20 @@ class RateLimitedGh:
         self.dry_run_reads = dry_run_reads
 
     def _run(self, args: list[str]) -> str:
+        # Retryable classes: secondary rate limit / abuse detection (quota-
+        # shaped, the reason this class exists at all) AND transient 5xx
+        # gateway errors (infrastructure-shaped, not quota-shaped, but
+        # equally NOT a reason to abandon a fleet-scale run — live-observed
+        # during this task's own census: a plain `HTTP 502` on an otherwise
+        # well-formed GraphQL call, on the very first organization queried).
+        # A 4xx (bad query, not found, auth) is never retried — retrying a
+        # deterministic failure would just burn the backoff schedule for no
+        # gain and mask a real defect as if it were transient.
         for attempt, backoff in enumerate((0,) + _SECONDARY_BACKOFF_SCHEDULE):
             if backoff:
                 jittered = backoff * (1 + random.random() * 0.25)
                 print(
-                    f"::warning::secondary rate limit hit; backing off {jittered:.0f}s "
+                    f"::warning::retryable gh failure; backing off {jittered:.0f}s "
                     f"(attempt {attempt}/{len(_SECONDARY_BACKOFF_SCHEDULE)})",
                     file=sys.stderr,
                 )
@@ -172,13 +181,18 @@ class RateLimitedGh:
             if proc.returncode == 0:
                 return proc.stdout
             stderr_lower = proc.stderr.lower()
-            if "secondary rate limit" in stderr_lower or "abuse" in stderr_lower:
+            retryable = (
+                "secondary rate limit" in stderr_lower
+                or "abuse" in stderr_lower
+                or any(f"http {code}" in stderr_lower for code in (502, 503, 504))
+            )
+            if retryable:
                 continue  # retry with backoff
             raise GhCallFailed(
                 f"gh {' '.join(args)} failed (exit {proc.returncode}): {proc.stderr.strip()}"
             )
         raise GhCallFailed(
-            f"gh {' '.join(args)} exhausted secondary-rate-limit retries"
+            f"gh {' '.join(args)} exhausted retries on a retryable failure class"
         )
 
     def api(self, path: str, *, jq: Optional[str] = None, paginate: bool = False) -> Any:
@@ -355,10 +369,37 @@ def check_rulesets_on_target(
 ) -> Precondition:
     """Task 3-02's live convergence is principal-executed (R22.2); this
     script never mutates a ruleset. It only reads the CURRENT required
-    status-check context on a small cross-org sample and reports what it
-    finds — 'established' requires every sample to already show the
-    single-context target shape (`ci / ci-ok`, per R21's own concrete
-    migration surface), not merely that 3-01/3-02's SOURCE PRs merged."""
+    status-check contexts on a small cross-org sample and reports what it
+    finds.
+
+    CORRECTED (coordinator, 2026-08-04, live-measured): the predicate is
+    NOT single-context exclusivity. The context chain, read directly
+    rather than assumed: a canonical caller's `ci:` job calls the LAYER
+    WRAPPER (`<org>/.github/.github/workflows/swift-ci.yml`), whose own
+    jobs are `matrix:` (which in turn calls the CENTRAL
+    `swift-institute/.github` `swift-ci.yml`, whose single aggregate is
+    `ci-ok`) and `ci-ok:` (the layer wrapper's own outer aggregate). One
+    canonical caller therefore legitimately emits BOTH `ci / ci-ok` (the
+    wrapper's outer aggregate) and `ci / matrix / ci-ok` (the central
+    aggregate, nested under the wrapper's `matrix` job) — verified live on
+    `swift-foundations/swift-copy-on-write` at head
+    `f1d649fc24f035e2f5dbc3fc23bb08b16cd80c42`: both names present,
+    both `success`, simultaneously, from one workflow file.
+
+    Today's migration-window convergence (Task 3-02, in flight) makes
+    `ci / matrix / ci-ok` a REQUIRED context alongside the pre-existing
+    `ci / ci-ok` — both-present is the establishing shape, not a
+    transitional one. The original version of this predicate demanded
+    single-context exclusivity, which is `ci / matrix / ci-ok`'s ABSENCE
+    — the predicate would have flipped from `reduced-pending` to
+    permanently unsatisfiable exactly when Task 3-02 succeeded (the same
+    stale-tripwire class recorded elsewhere in this programme against a
+    Task 4-01 near-deadlock). Single-context exclusivity is a LATER
+    predicate (documented as predicate 14 by the coordinator), reached
+    only after a second convergence pass that runs after this fleet run,
+    not before it — this function does not attempt to detect that later
+    state.
+    """
     observations: dict[str, Any] = {}
     for repo in sample_repos:
         try:
@@ -387,15 +428,15 @@ def check_rulesets_on_target(
             "unmeasured",
             f"could not read live rulesets for: {list(unmeasured)}",
         )
-    non_canonical = {
-        r: v for r, v in observations.items() if v != ["ci / ci-ok"]
+    missing_matrix_context = {
+        r: v for r, v in observations.items() if "ci / matrix / ci-ok" not in v
     }
-    if non_canonical:
+    if missing_matrix_context:
         return Precondition(
             "rulesets-on-target",
             "reduced-pending-Task-3-02",
-            f"sampled repositories not yet on the single `ci / ci-ok` required "
-            f"context: {non_canonical}. Task 3-02's live convergence "
+            f"sampled repositories do not yet require `ci / matrix / ci-ok`: "
+            f"{missing_matrix_context}. Task 3-02's live convergence "
             f"(principal-executed per R22.2, via sync-metadata.yml's rulesets "
             f"job) has not reached these repositories yet, or is still "
             f"in flight.",
@@ -403,8 +444,9 @@ def check_rulesets_on_target(
     return Precondition(
         "rulesets-on-target",
         "established",
-        f"all sampled repositories show the single `ci / ci-ok` required "
-        f"context: {observations}",
+        f"all sampled repositories require `ci / matrix / ci-ok` (both-present "
+        f"with `ci / ci-ok` is the migration-window target shape, not "
+        f"exclusivity): {observations}",
     )
 
 
@@ -423,7 +465,18 @@ query($q: String!, $after: String) {
         nameWithOwner
         isArchived
         isPrivate
-        defaultBranchRef { name }
+        defaultBranchRef {
+          name
+          target {
+            ... on Commit {
+              checkSuites(last: 10) {
+                nodes {
+                  checkRuns(first: 100) { nodes { name } }
+                }
+              }
+            }
+          }
+        }
         pkg: object(expression: "HEAD:Package.swift") { oid }
         caller: object(expression: "HEAD:.github/workflows/ci.yml") {
           ... on Blob { text byteSize isBinary }
@@ -435,6 +488,44 @@ query($q: String!, $after: String) {
   }
 }
 """
+
+# Coordinator-directed column (2026-08-04): today's live ruleset convergence
+# makes `ci / matrix / ci-ok` a REQUIRED context on converged public package
+# repositories. A repository whose workflow is divergent, bespoke, or absent
+# may not produce that name at all, which blocks its pull requests. This is
+# read from the SAME batched GraphQL page as the rest of the census (nested
+# `checkSuites`/`checkRuns` on the default-branch commit) — deliberately not
+# a second per-repository REST call, per the coordinator's rate-limit
+# instruction ("do not fan out per-repo REST calls where an org-level or
+# GraphQL read will do").
+REQUIRED_MATRIX_AGGREGATE = "ci / matrix / ci-ok"
+
+
+def emits_matrix_ci_ok(node: dict) -> str:
+    """'emits' / 'does-not-emit' / an UNMEASURED-with-reason string.
+
+    Never silently 'does-not-emit' when the read itself was incomplete
+    (R10 / zero-result protocol): absence of a default branch, a target
+    commit, or any check suite at all is UNMEASURED, not a negative
+    finding — those are read failures or repositories that have simply
+    never run a workflow, not evidence the aggregate is missing FROM a
+    workflow that did run.
+    """
+    if node["isPrivate"]:
+        return "not-applicable-private"
+    branch = node.get("defaultBranchRef")
+    target = (branch or {}).get("target")
+    if target is None:
+        return "UNMEASURED (no default-branch target commit)"
+    suites = ((target.get("checkSuites") or {}).get("nodes")) or []
+    if not suites:
+        return "UNMEASURED (no check suites at default-branch head)"
+    names = {
+        run.get("name")
+        for suite in suites
+        for run in ((suite.get("checkRuns") or {}).get("nodes")) or []
+    }
+    return "emits" if REQUIRED_MATRIX_AGGREGATE in names else "does-not-emit"
 
 
 def read_active_orgs(repo_root: Path) -> list[str]:
@@ -456,6 +547,7 @@ class Disposition:
     layer: Optional[str] = None
     spec: Optional[dict] = None
     delete_standalone: bool = False
+    matrix_ci_ok: str = "unmeasured"  # 'emits' | 'does-not-emit' | 'not-applicable-private' | 'UNMEASURED (...)'
 
 
 @dataclass
@@ -466,6 +558,7 @@ class ExceptionRecord:
     owner: str
     review_condition: str
     detected_at: str
+    matrix_ci_ok: str = "unmeasured"
 
 
 def _iter_org_repos(gh: RateLimitedGh, org: str) -> Iterator[dict]:
@@ -488,25 +581,32 @@ def classify_repo(node: dict, generate_caller) -> tuple[Optional[Disposition], O
     repo = node["nameWithOwner"]
     visibility = "private" if node["isPrivate"] else "public"
     now = datetime.now(timezone.utc).isoformat()
+    # Computed once, from the same GraphQL page, regardless of disposition
+    # class — the coordinator's instruction was to cover the divergent and
+    # no-CI classes deliberately (R10), not only the healthy/canonical
+    # population, so this is attached to every return path below, typed
+    # exceptions included.
+    matrix = emits_matrix_ci_ok(node)
 
     if node["isArchived"]:
         return None, ExceptionRecord(
             repo, "archived", "repository is archived", "n/a (platform state)",
-            "repository is unarchived", now,
+            "repository is unarchived", now, matrix,
         )
     if node["pkg"] is None:
-        return Disposition(repo, visibility, "out-of-scope", "no Package.swift at HEAD"), None
+        return Disposition(repo, visibility, "out-of-scope", "no Package.swift at HEAD",
+                            matrix_ci_ok=matrix), None
     if node["caller"] is None:
         return None, ExceptionRecord(
             repo, "no-caller-file", "no .github/workflows/ci.yml at HEAD",
             "repository maintainer / Workspace layer assignment",
             "Workspace assigns this repository's layer and a caller is authored",
-            now,
+            now, matrix,
         )
     if node["caller"].get("isBinary"):
         return None, ExceptionRecord(
             repo, "unreadable-caller", "ci.yml object reported isBinary=true",
-            "repository maintainer", "manual investigation of the blob", now,
+            "repository maintainer", "manual investigation of the blob", now, matrix,
         )
     text = node["caller"]["text"]
     try:
@@ -515,7 +615,7 @@ def classify_repo(node: dict, generate_caller) -> tuple[Optional[Disposition], O
     except Exception as e:
         return None, ExceptionRecord(
             repo, "unparseable-caller", f"YAML parse error: {e}",
-            "repository maintainer", "manual repair of ci.yml syntax", now,
+            "repository maintainer", "manual repair of ci.yml syntax", now, matrix,
         )
     uses = ((document or {}).get("jobs") or {}).get("ci", {}).get("uses", "")
     wrapper_org = uses.split("/", 1)[0] if "/" in uses else ""
@@ -527,7 +627,7 @@ def classify_repo(node: dict, generate_caller) -> tuple[Optional[Disposition], O
             repo, "layer-unresolvable",
             f"ci job uses: {uses!r} does not match a known layer wrapper org",
             "coordinator / Workspace", "layer wrapper org corrected or a new "
-            "layer class typed into LAYER_WRAPPER_ORG", now,
+            "layer class typed into LAYER_WRAPPER_ORG", now, matrix,
         )
     try:
         spec = generate_caller.parse_existing_caller(text, repository=repo, layer=layer)
@@ -537,12 +637,13 @@ def classify_repo(node: dict, generate_caller) -> tuple[Optional[Disposition], O
             "repository maintainer",
             "the customization is either approved into the generator's typed "
             "schema, or the repository is confirmed a permanent typed exception",
-            now,
+            now, matrix,
         )
     canonical = generate_caller.generate(spec)
     delete_standalone = bool(node["formatWorkflow"] or node["swiftlintWorkflow"])
     if canonical == text and not delete_standalone:
-        return Disposition(repo, visibility, "converged", "already byte-identical to canonical output", layer), None
+        return Disposition(repo, visibility, "converged", "already byte-identical to canonical output", layer,
+                            matrix_ci_ok=matrix), None
     return Disposition(
         repo, visibility, "needs-convergence",
         "differs from canonical output" + (
@@ -551,6 +652,7 @@ def classify_repo(node: dict, generate_caller) -> tuple[Optional[Disposition], O
         layer,
         spec=asdict(spec),
         delete_standalone=delete_standalone,
+        matrix_ci_ok=matrix,
     ), None
 
 

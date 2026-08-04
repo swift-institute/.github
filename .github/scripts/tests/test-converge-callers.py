@@ -81,6 +81,60 @@ CANONICAL_SAME_ORG = generate_caller.generate(
 )
 
 
+def _check_suite(*names):
+    return {"checkRuns": {"nodes": [{"name": n} for n in names]}}
+
+
+class EmitsMatrixCiOkTests(unittest.TestCase):
+    """Coordinator-directed column (2026-08-04): whether a repository's
+    default-branch head currently produces the `ci / matrix / ci-ok`
+    check-run name — read from the same batched GraphQL page as the rest
+    of the census, never a per-repository REST fan-out."""
+
+    def test_private_repository_is_not_applicable(self):
+        self.assertEqual(
+            converge_callers.emits_matrix_ci_ok(_node(isPrivate=True)), "not-applicable-private"
+        )
+
+    def test_emits_when_the_name_is_present_among_check_runs(self):
+        """Positive control, matching the coordinator's own live
+        verification on swift-copy-on-write: the name appears inside a
+        check suite alongside many other run names."""
+        node = _node(defaultBranchRef={
+            "name": "main",
+            "target": {"checkSuites": {"nodes": [
+                _check_suite("ci / ci-ok", "ci / matrix / ci-ok", "ci / matrix / SwiftLint"),
+            ]}},
+        })
+        self.assertEqual(converge_callers.emits_matrix_ci_ok(node), "emits")
+
+    def test_does_not_emit_when_suites_exist_but_lack_the_name(self):
+        """Negative control: check suites ARE present (so this is a real
+        read, not a missing-data case) but the exact required name is
+        absent — the divergent/bespoke-workflow population the coordinator
+        asked to be enumerated, not assumed empty."""
+        node = _node(defaultBranchRef={
+            "name": "main",
+            "target": {"checkSuites": {"nodes": [_check_suite("build", "test")]}},
+        })
+        self.assertEqual(converge_callers.emits_matrix_ci_ok(node), "does-not-emit")
+
+    def test_no_check_suites_is_unmeasured_not_does_not_emit(self):
+        """R10 / zero-result protocol: a repository that has simply never
+        run a workflow at its default-branch head is UNMEASURED, never
+        silently folded into the same bucket as one whose workflow ran and
+        genuinely lacks the aggregate."""
+        node = _node(defaultBranchRef={"name": "main", "target": {"checkSuites": {"nodes": []}}})
+        result = converge_callers.emits_matrix_ci_ok(node)
+        self.assertNotEqual(result, "does-not-emit")
+        self.assertIn("UNMEASURED", result)
+
+    def test_no_target_commit_is_unmeasured(self):
+        node = _node(defaultBranchRef={"name": "main", "target": None})
+        result = converge_callers.emits_matrix_ci_ok(node)
+        self.assertIn("UNMEASURED", result)
+
+
 class ClassifyRepoTests(unittest.TestCase):
     def test_archived_repository_is_a_typed_exception(self):
         _, exc = converge_callers.classify_repo(_node(isArchived=True), generate_caller)
@@ -227,7 +281,26 @@ class PreconditionTests(unittest.TestCase):
         result = converge_callers.check_integrated_docs_live(gh)
         self.assertEqual(result.status, "established")
 
-    def test_rulesets_reduced_pending_when_sample_not_yet_canonical(self):
+    def test_rulesets_reduced_pending_when_matrix_context_not_yet_required(self):
+        """Corrected predicate (coordinator, 2026-08-04): the migration-window
+        TARGET shape is `ci / matrix / ci-ok` present as a required context —
+        both-present with `ci / ci-ok` satisfies it. A sample carrying ONLY
+        the pre-existing `ci / ci-ok` (matrix context not yet required) is
+        the reduced-pending / pre-convergence state."""
+        gh = mock.Mock()
+        gh.api.side_effect = [
+            [{"id": 1}],
+            {"rules": [{"type": "required_status_checks",
+                        "parameters": {"required_status_checks": [{"context": "ci / ci-ok"}]}}]},
+        ]
+        result = converge_callers.check_rulesets_on_target(gh, sample_repos=["swift-primitives/swift-example"])
+        self.assertEqual(result.status, "reduced-pending-Task-3-02")
+
+    def test_rulesets_established_when_matrix_context_is_required(self):
+        """Positive control for the corrected predicate: both `ci / ci-ok`
+        AND `ci / matrix / ci-ok` required is the ESTABLISHED shape, not a
+        transitional one — single-context exclusivity is a later predicate
+        this function does not attempt to detect."""
         gh = mock.Mock()
         gh.api.side_effect = [
             [{"id": 1}],
@@ -235,14 +308,19 @@ class PreconditionTests(unittest.TestCase):
                         "parameters": {"required_status_checks": [{"context": "ci / ci-ok"}, {"context": "ci / matrix / ci-ok"}]}}]},
         ]
         result = converge_callers.check_rulesets_on_target(gh, sample_repos=["swift-primitives/swift-example"])
-        self.assertEqual(result.status, "reduced-pending-Task-3-02")
+        self.assertEqual(result.status, "established")
 
-    def test_rulesets_established_when_every_sample_is_canonical(self):
+    def test_rulesets_established_even_when_matrix_context_is_the_only_one(self):
+        """Negative control against re-introducing exclusivity: a sample
+        carrying ONLY `ci / matrix / ci-ok` (the later, fully-converged
+        shape) must still read as established by THIS predicate — it must
+        never regress to reduced-pending once the fleet moves past
+        both-present, which single-context-exclusivity coding would do."""
         gh = mock.Mock()
         gh.api.side_effect = [
             [{"id": 1}],
             {"rules": [{"type": "required_status_checks",
-                        "parameters": {"required_status_checks": [{"context": "ci / ci-ok"}]}}]},
+                        "parameters": {"required_status_checks": [{"context": "ci / matrix / ci-ok"}]}}]},
         ]
         result = converge_callers.check_rulesets_on_target(gh, sample_repos=["swift-primitives/swift-example"])
         self.assertEqual(result.status, "established")
@@ -311,6 +389,34 @@ class RateLimitedGhTests(unittest.TestCase):
             if len(calls) == 1:
                 proc.returncode = 1
                 proc.stderr = "You have exceeded a secondary rate limit"
+                proc.stdout = ""
+            else:
+                proc.returncode = 0
+                proc.stdout = "{}"
+                proc.stderr = ""
+            return proc
+
+        with mock.patch("time.sleep", return_value=None), \
+             mock.patch.object(subprocess, "run", side_effect=fake_run):
+            out = gh.api("repos/foo/bar")
+        self.assertEqual(out, {})
+        self.assertEqual(len(calls), 2)
+
+    def test_transient_502_is_retried_not_raised(self):
+        """Positive control added after this task's own live census run
+        hit a real `gh: HTTP 502` on an otherwise well-formed GraphQL call
+        against the first organization queried — a transient infrastructure
+        failure, not a quota signal, but equally not a reason to abandon a
+        fleet-scale run partway through."""
+        gh = converge_callers.RateLimitedGh()
+        calls = []
+
+        def fake_run(cmd, capture_output, text, timeout):
+            calls.append(cmd)
+            proc = mock.Mock()
+            if len(calls) == 1:
+                proc.returncode = 1
+                proc.stderr = "gh: HTTP 502"
                 proc.stdout = ""
             else:
                 proc.returncode = 0
