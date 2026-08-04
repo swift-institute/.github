@@ -282,8 +282,21 @@ jobs:
               cd "$workdir"
               # `swift package resolve` may fail for branch-pinned private deps
               # if the token doesn't have read access; tolerate and continue.
-              swift package resolve 2>/dev/null || true
-              swift package show-dependencies --format json > /tmp/deps.json 2>/dev/null
+              # Bounded with `timeout` so one hung/pathological target's
+              # manifest resolution cannot consume the org's entire step
+              # budget on its own.
+              timeout 300 swift package resolve 2>/dev/null || true
+              # Guarded the same way as `resolve` above, and for the same
+              # reason: this line sits in a bare, unguarded statement under
+              # `set -euo pipefail` (top of this step). Without `|| true`,
+              # an ordinary failure OR a signal kill (observed: OOM SIGKILL,
+              # exit 137, in run 30805660536 / swift-institute/.github#279)
+              # propagates through `errexit` and aborts this entire step —
+              # every remaining target in this org's sweep — instead of
+              # being classified as one target's failure by the check just
+              # below. `timeout` additionally bounds a hang that would
+              # otherwise never produce an exit status to catch.
+              timeout 300 swift package show-dependencies --format json > /tmp/deps.json 2>/dev/null || true
             )
             if [[ ! -s /tmp/deps.json ]]; then
               failures=$((failures+1))
