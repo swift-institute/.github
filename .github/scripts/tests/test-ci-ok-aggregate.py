@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
@@ -838,6 +839,116 @@ class AdvisoryPostureTests(unittest.TestCase):
             PLATFORM_SUPPORT="apple",
         )
         self.assertNotIn("linux-6-4", outputs["legs"].split(","))
+
+
+class SubjectDerivationSingularityTests(unittest.TestCase):
+    """R7 (swift-institute/.github#276): after task 0A-01, exactly one
+    component derives the CI subject and every other consumer reads it.
+    #179's defect was ten checkout sites independently re-deriving a
+    subject from raw event context; `ci-ok`'s aggregator carried an
+    eleventh, non-checkout instance of the same class. Both are gone —
+    but a fixture that only re-asserts a fixed count (ten sites, one
+    aggregator) protects against the two known offenders and nothing
+    else. This one searches every step in every job for the *shape* of
+    an independent recomputation — a subject-named shell variable
+    assigned from a command substitution outside the single designated
+    resolver step — so a differently-named, newly-introduced offender
+    still trips it.
+
+    Per the standing fixture rule (a fixture whose passing state is
+    indistinguishable from the hazard being unreachable proves nothing):
+    `test_detector_catches_a_reintroduced_recomputation` feeds the exact
+    same detector a synthetic document shaped like the deleted `ci-ok`
+    bug reintroduced under an unrelated step name, and requires it to
+    fire. That is what this fixture's failure looks like.
+    """
+
+    # Matches `SOMETHING_SUBJECT_SHA="$(...)"` / `SUBJECT_REPOSITORY=$(...)`
+    # style assignments — i.e. a variable whose name contains SUBJECT being
+    # bound to the result of a command substitution (an API call, `gh`,
+    # `git rev-parse`, etc.), which is the shape of *deriving* a subject.
+    # Reading one that was already supplied via `env:` never takes this
+    # shape — it shows up as a bare `$VAR`/`${VAR}` reference, never as the
+    # left-hand side of a `NAME=$(...)` assignment.
+    SUSPECT = re.compile(r"(?i)\b([A-Z0-9_]*SUBJECT[A-Z0-9_]*)\s*=\s*\"?\$\(")
+
+    @staticmethod
+    def offending_sites(document, exempt_step=RESOLVE_SUBJECT_STEP):
+        sites = []
+        for job_id, job in (document.get("jobs") or {}).items():
+            for step in job.get("steps", []) or []:
+                name = step.get("name")
+                if name == exempt_step:
+                    continue
+                body = step.get("run")
+                if not body:
+                    continue
+                for line in body.splitlines():
+                    if SubjectDerivationSingularityTests.SUSPECT.search(line):
+                        sites.append((job_id, name))
+                        break
+        return sites
+
+    def test_repaired_workflow_has_no_independent_recomputation(self):
+        document = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+        sites = self.offending_sites(document)
+        self.assertEqual(
+            sites,
+            [],
+            "found a step outside "
+            f"'{RESOLVE_SUBJECT_STEP}' that assigns a SUBJECT-named "
+            f"variable from a command substitution: {sites!r}. This is "
+            "the #179/ci-ok defect class — a second component deriving "
+            "its own opinion of the CI subject instead of reading "
+            "Plan's single resolved output.",
+        )
+
+    def test_detector_catches_a_reintroduced_recomputation(self):
+        synthetic = {
+            "jobs": {
+                "plan": {
+                    "steps": [
+                        {"name": RESOLVE_SUBJECT_STEP, "run": "echo ok\n"}
+                    ]
+                },
+                "ci-ok": {
+                    "steps": [
+                        {
+                            "name": "Aggregate required-job results",
+                            "run": (
+                                'EXPECTED_SUBJECT_SHA="$(gh api '
+                                "repos/x/commits/main --jq .sha)\"\n"
+                            ),
+                        }
+                    ]
+                },
+            }
+        }
+        sites = self.offending_sites(synthetic)
+        self.assertEqual(sites, [("ci-ok", "Aggregate required-job results")])
+
+    def test_detector_does_not_flag_a_pure_consumer(self):
+        # Negative control on the detector itself: a step that only reads
+        # an already-resolved subject via env: (the correct, post-repair
+        # shape) must not be flagged.
+        synthetic = {
+            "jobs": {
+                "plan": {
+                    "steps": [
+                        {"name": RESOLVE_SUBJECT_STEP, "run": "echo ok\n"},
+                        {
+                            "name": "Verify checked-out subject HEAD",
+                            "run": (
+                                'ACTUAL="$(git rev-parse HEAD)"\n'
+                                'if [ "$ACTUAL" != "$SUBJECT_SHA" ]; then '
+                                "exit 1; fi\n"
+                            ),
+                        },
+                    ]
+                }
+            }
+        }
+        self.assertEqual(self.offending_sites(synthetic), [])
 
 
 if __name__ == "__main__":
