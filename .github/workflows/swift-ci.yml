@@ -289,7 +289,13 @@ jobs:
   # plan in needs.
   plan:
     name: Plan (tier + identity fast-check)
-    if: ${{ !github.event.repository.private && inputs.job == '' }}
+    # Runs on EVERY non-private event, including single-job ci-dispatch.yml
+    # (previously `inputs.job == ''` skipped this job entirely on dispatch).
+    # The job now always resolves the CI subject exactly once (see "Resolve
+    # CI subject" below); only the heavier identity-conflict/branch-pin steps
+    # stay gated on `inputs.job == ''`, preserving the pre-existing dispatch
+    # bypass for those two checks specifically.
+    if: ${{ !github.event.repository.private }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -298,18 +304,126 @@ jobs:
       tier: ${{ steps.classify.outputs.tier }}
       legs: ${{ steps.classify.outputs.legs }}
       gating: ${{ steps.classify.outputs.gating }}
-      subject-repository: ${{ steps.classify.outputs.subject-repository }}
-      subject-sha: ${{ steps.classify.outputs.subject-sha }}
+      subject-repository: ${{ steps.resolve-subject.outputs.subject-repository }}
+      subject-ref: ${{ steps.resolve-subject.outputs.subject-ref }}
+      subject-sha: ${{ steps.resolve-subject.outputs.subject-sha }}
     steps:
       - name: Harden runner (audit-mode egress logging)
         uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # THE single subject-resolution contract (swift-institute/.github#179
+      # regression class). Every build/test/lint/docs checkout in this file
+      # consumes `needs.plan.outputs.subject-repository` / `subject-ref` /
+      # `subject-sha` directly — none may re-derive them. Before this step,
+      # ten sites each carried their own copy of a three-way fallback
+      # expression; the copy at the very first Plan checkout resolved
+      # `target-repo` (repository) independently of `ref`, so a dispatch that
+      # supplied `target-repo` without `ref` (ci-sweep.yml's nightly rotation)
+      # checked out the TARGET repository at the TRIGGERING repository's own
+      # SHA — a commit that does not exist there ("not our ref", PR #179
+      # merge 5685c9e3, run 30875153360, Plan failure 57/57).
+      #
+      # Resolution order:
+      #   target-repo supplied (ci-sweep.yml / ci-dispatch.yml; the only
+      #     caller-controlled override, and the only case needing a live API
+      #     resolution because its ref may be a branch/tag name or absent):
+      #       ref supplied -> resolve it to that repository's exact commit
+      #                        SHA (branch, tag, or SHA all accepted); an
+      #                        unresolvable ref fails closed, no defaulting.
+      #       ref empty    -> resolve the TARGET repository's live default
+      #                        branch and its exact head SHA. NEVER
+      #                        substitute the triggering repository's SHA.
+      #   pull_request event -> the exact PR head repository/SHA (fork-safe:
+      #                        forks are untrusted, so every job stays
+      #                        read-only against exactly that head).
+      #   anything else       -> the triggering repository and exact event
+      #                        SHA.
+      #
+      # Runs unconditionally (including single-job ci-dispatch.yml, where the
+      # rest of this job is skipped below) so every consumer — including a
+      # dispatched leg — has one resolved subject to check out. `subject-ref`
+      # and `subject-sha` hold the identical resolved 40-character SHA; two
+      # names exist so a checkout's `ref:` field and a post-checkout identity
+      # comparison each read the value under the name matching their role.
+      - name: Resolve CI subject
+        id: resolve-subject
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_TARGET_REPOSITORY: ${{ inputs.target-repo }}
+          INPUT_REF: ${{ inputs.ref }}
+          PULL_REQUEST_HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          PULL_REQUEST_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          TRIGGER_REPOSITORY: ${{ github.repository }}
+          TRIGGER_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ -n "$INPUT_TARGET_REPOSITORY" ]; then
+            SUBJECT_REPOSITORY="$INPUT_TARGET_REPOSITORY"
+            if [ -n "$INPUT_REF" ]; then
+              RESOLVE_REF="$INPUT_REF"
+            else
+              RESOLVE_REF="$(gh api "repos/${SUBJECT_REPOSITORY}" --jq '.default_branch' 2>/dev/null || true)"
+              if [ -z "$RESOLVE_REF" ]; then
+                echo "::error::could not read the default branch of target repository '${SUBJECT_REPOSITORY}'; refusing to attest an unspecified revision."
+                exit 1
+              fi
+            fi
+            SUBJECT_SHA="$(gh api "repos/${SUBJECT_REPOSITORY}/commits/${RESOLVE_REF}" --jq '.sha' 2>/dev/null || true)"
+            if [ -z "$SUBJECT_SHA" ]; then
+              echo "::error::could not resolve ref '${RESOLVE_REF}' of target repository '${SUBJECT_REPOSITORY}' to a commit SHA; refusing to attest an unspecified revision."
+              exit 1
+            fi
+          elif [ "$EVENT_NAME" = "pull_request" ]; then
+            SUBJECT_REPOSITORY="$PULL_REQUEST_HEAD_REPOSITORY"
+            SUBJECT_SHA="$PULL_REQUEST_HEAD_SHA"
+          else
+            SUBJECT_REPOSITORY="$TRIGGER_REPOSITORY"
+            SUBJECT_SHA="$TRIGGER_SHA"
+          fi
+          if [ -z "$SUBJECT_REPOSITORY" ] || [ -z "$SUBJECT_SHA" ]; then
+            echo "::error::CI subject repository/SHA is empty; refusing to attest an unspecified revision."
+            exit 1
+          fi
+          if ! [[ "$SUBJECT_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::resolved CI subject SHA '${SUBJECT_SHA}' for '${SUBJECT_REPOSITORY}' is not a 40-character commit SHA; refusing to attest an unspecified revision."
+            exit 1
+          fi
+          echo "subject-repository=$SUBJECT_REPOSITORY" >> "$GITHUB_OUTPUT"
+          echo "subject-ref=$SUBJECT_SHA" >> "$GITHUB_OUTPUT"
+          echo "subject-sha=$SUBJECT_SHA" >> "$GITHUB_OUTPUT"
+          echo "Resolved CI subject: ${SUBJECT_REPOSITORY}@${SUBJECT_SHA}"
+
+      # The remaining Plan steps (subject checkout through the branch-pin
+      # guard) exist only to feed the identity-conflict fast-check and the
+      # branch-pin guard. Single-job ci-dispatch.yml deliberately bypasses
+      # both — a debug repro of one already-broken leg must not be newly
+      # blocked by an unrelated identity or branch-pin finding in the same
+      # target — so they stay gated on `inputs.job == ''`, exactly the
+      # pre-existing dispatch-bypass semantics, now sitting on top of a
+      # correctly resolved subject instead of a second buggy fallback.
+      - name: Checkout subject
+        if: ${{ inputs.job == '' }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: ${{ inputs.target-repo || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name) || github.repository }}
-          ref: ${{ inputs.ref || (github.event_name == 'pull_request' && github.event.pull_request.head.sha) || github.sha }}
+          repository: ${{ steps.resolve-subject.outputs.subject-repository }}
+          ref: ${{ steps.resolve-subject.outputs.subject-ref }}
+
+      - name: Verify checked-out subject HEAD
+        if: ${{ inputs.job == '' }}
+        shell: bash
+        env:
+          SUBJECT_SHA: ${{ steps.resolve-subject.outputs.subject-sha }}
+        run: |
+          set -euo pipefail
+          ACTUAL="$(git rev-parse HEAD)"
+          if [ "$ACTUAL" != "$SUBJECT_SHA" ]; then
+            echo "::error::checked-out HEAD '$ACTUAL' does not match Plan's resolved CI subject SHA '$SUBJECT_SHA'. Refusing to proceed against an unverified checkout."
+            exit 1
+          fi
 
       # Identity-conflict fast-check ([PKG-DEP-009] class): fails in <1s with
       # the exact edge named when this repo's manifests spell one identity two
@@ -325,12 +439,14 @@ jobs:
       # so the executed script cannot differ from the workflow revision
       # that invoked it (#43 item 3).
       - name: Checkout CI scripts
+        if: ${{ inputs.job == '' }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: swift-institute/.github
           ref: ${{ job.workflow_sha }}
           path: .ci-scripts
       - name: Identity-conflict fast-check
+        if: ${{ inputs.job == '' }}
         shell: bash
         run: |
           command -v python3 >/dev/null 2>&1 || { sudo apt-get update -qq && sudo apt-get install -qq -y python3; }
@@ -354,9 +470,15 @@ jobs:
       # own failing controls live in lint-validator-fixtures.yml
       # (test-validate-branch-pins.py + the branch-pin-001 fixture ladder).
       - name: Branch-pin guard
+        if: ${{ inputs.job == '' }}
         shell: bash
         env:
-          TARGET_REPO: ${{ inputs.target-repo || github.repository }}
+          # Consumes the single resolved subject (was its own independent
+          # `inputs.target-repo || github.repository` fallback, which unlike
+          # "Resolve CI subject" never accounted for a pull_request's fork
+          # head repository — a second, narrower copy of the same defect
+          # class this task closes).
+          TARGET_REPO: ${{ steps.resolve-subject.outputs.subject-repository }}
         run: |
           python3 -c 'import yaml' 2>/dev/null \
             || { sudo apt-get update -qq && sudo apt-get install -qq -y python3-yaml; }
@@ -372,33 +494,13 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           HEAD_MSG: ${{ github.event.head_commit.message }}
           PLATFORM_SUPPORT: ${{ inputs.platform-support }}
-          INPUT_TARGET_REPOSITORY: ${{ inputs.target-repo }}
-          INPUT_REF: ${{ inputs.ref }}
-          PULL_REQUEST_HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
-          PULL_REQUEST_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          TRIGGER_REPOSITORY: ${{ github.repository }}
-          TRIGGER_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          # The subject is the immutable repository revision this run attests.
-          # A PR's repository is its head repository, not its base repository:
-          # forks are untrusted, so every job remains read-only while checking
-          # out that exact head SHA. ci-dispatch remains an explicit debug
-          # surface and deliberately keeps its caller-provided target/ref.
-          if [ -n "$INPUT_TARGET_REPOSITORY" ]; then
-            SUBJECT_REPOSITORY="$INPUT_TARGET_REPOSITORY"
-            SUBJECT_SHA="$INPUT_REF"
-          elif [ "$EVENT_NAME" = "pull_request" ]; then
-            SUBJECT_REPOSITORY="$PULL_REQUEST_HEAD_REPOSITORY"
-            SUBJECT_SHA="$PULL_REQUEST_HEAD_SHA"
-          else
-            SUBJECT_REPOSITORY="$TRIGGER_REPOSITORY"
-            SUBJECT_SHA="$TRIGGER_SHA"
-          fi
-          if [ -z "$SUBJECT_REPOSITORY" ] || [ -z "$SUBJECT_SHA" ]; then
-            echo "::error::CI subject repository/SHA is empty; refusing to attest an unspecified revision."
-            exit 1
-          fi
+          # The CI subject (repository/ref/SHA this run attests) is resolved
+          # exactly once, above, by "Resolve CI subject" — this step no
+          # longer computes or re-derives it; see that step's outputs
+          # (`needs.plan.outputs.subject-repository` / `subject-ref` /
+          # `subject-sha`) for the single source of truth.
           if [ -n "$PLATFORM_SUPPORT" ]; then
             REMAINING_FAMILIES="$PLATFORM_SUPPORT"
             SEEN_FAMILIES=","
@@ -541,8 +643,6 @@ jobs:
           echo "tier=$TIER" >> "$GITHUB_OUTPUT"
           echo "legs=$LEGS" >> "$GITHUB_OUTPUT"
           echo "gating=$GATING" >> "$GITHUB_OUTPUT"
-          echo "subject-repository=$SUBJECT_REPOSITORY" >> "$GITHUB_OUTPUT"
-          echo "subject-sha=$SUBJECT_SHA" >> "$GITHUB_OUTPUT"
           echo "Selected tier: $TIER"
           echo "legs: $LEGS"
           echo "gating: $GATING"
@@ -572,8 +672,20 @@ jobs:
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: ${{ inputs.target-repo || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name) || github.repository }}
-          ref: ${{ inputs.ref || (github.event_name == 'pull_request' && github.event.pull_request.head.sha) || github.sha }}
+          repository: ${{ needs.plan.outputs.subject-repository }}
+          ref: ${{ needs.plan.outputs.subject-ref }}
+
+      - name: Verify checked-out subject HEAD
+        shell: bash
+        env:
+          SUBJECT_SHA: ${{ needs.plan.outputs.subject-sha }}
+        run: |
+          set -euo pipefail
+          ACTUAL="$(git rev-parse HEAD)"
+          if [ "$ACTUAL" != "$SUBJECT_SHA" ]; then
+            echo "::error::checked-out HEAD '$ACTUAL' does not match Plan's resolved CI subject SHA '$SUBJECT_SHA'. Refusing to proceed against an unverified checkout."
+            exit 1
+          fi
 
       - uses: swift-institute/.github/.github/actions/configure-private-repos@d1af72d05bf8262fb3918a2f1607b82fafcafdf9  # main 2026-08-03, pin-advance to main HEAD (dependabot #224 via #232); no functional change to this action in range
         with:
@@ -631,8 +743,20 @@ jobs:
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: ${{ inputs.target-repo || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name) || github.repository }}
-          ref: ${{ inputs.ref || (github.event_name == 'pull_request' && github.event.pull_request.head.sha) || github.sha }}
+          repository: ${{ needs.plan.outputs.subject-repository }}
+          ref: ${{ needs.plan.outputs.subject-ref }}
+
+      - name: Verify checked-out subject HEAD
+        shell: bash
+        env:
+          SUBJECT_SHA: ${{ needs.plan.outputs.subject-sha }}
+        run: |
+          set -euo pipefail
+          ACTUAL="$(git rev-parse HEAD)"
+          if [ "$ACTUAL" != "$SUBJECT_SHA" ]; then
+            echo "::error::checked-out HEAD '$ACTUAL' does not match Plan's resolved CI subject SHA '$SUBJECT_SHA'. Refusing to proceed against an unverified checkout."
+            exit 1
+          fi
 
       - uses: swift-institute/.github/.github/actions/configure-private-repos@d1af72d05bf8262fb3918a2f1607b82fafcafdf9  # main 2026-08-03, pin-advance to main HEAD (dependabot #224 via #232); no functional change to this action in range
         with:
@@ -699,8 +823,20 @@ jobs:
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: ${{ inputs.target-repo || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name) || github.repository }}
-          ref: ${{ inputs.ref || (github.event_name == 'pull_request' && github.event.pull_request.head.sha) || github.sha }}
+          repository: ${{ needs.plan.outputs.subject-repository }}
+          ref: ${{ needs.plan.outputs.subject-ref }}
+
+      - name: Verify checked-out subject HEAD
+        shell: bash
+        env:
+          SUBJECT_SHA: ${{ needs.plan.outputs.subject-sha }}
+        run: |
+          set -euo pipefail
+          ACTUAL="$(git rev-parse HEAD)"
+          if [ "$ACTUAL" != "$SUBJECT_SHA" ]; then
+            echo "::error::checked-out HEAD '$ACTUAL' does not match Plan's resolved CI subject SHA '$SUBJECT_SHA'. Refusing to proceed against an unverified checkout."
+            exit 1
+          fi
 
       - uses: swift-institute/.github/.github/actions/configure-private-repos@d1af72d05bf8262fb3918a2f1607b82fafcafdf9  # main 2026-08-03, pin-advance to main HEAD (dependabot #224 via #232); no functional change to this action in range
         with:
@@ -793,8 +929,20 @@ jobs:
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: ${{ inputs.target-repo || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name) || github.repository }}
-          ref: ${{ inputs.ref || (github.event_name == 'pull_request' && github.event.pull_request.head.sha) || github.sha }}
+          repository: ${{ needs.plan.outputs.subject-repository }}
+          ref: ${{ needs.plan.outputs.subject-ref }}
+
+      - name: Verify checked-out subject HEAD
+        shell: bash
+        env:
+          SUBJECT_SHA: ${{ needs.plan.outputs.subject-sha }}
+        run: |
+          set -euo pipefail
+          ACTUAL="$(git rev-parse HEAD)"
+          if [ "$ACTUAL" != "$SUBJECT_SHA" ]; then
+            echo "::error::checked-out HEAD '$ACTUAL' does not match Plan's resolved CI subject SHA '$SUBJECT_SHA'. Refusing to proceed against an unverified checkout."
+            exit 1
+          fi
 
       - uses: swift-institute/.github/.github/actions/configure-private-repos@d1af72d05bf8262fb3918a2f1607b82fafcafdf9  # main 2026-08-03, pin-advance to main HEAD (dependabot #224 via #232); no functional change to this action in range
         with:
@@ -858,8 +1006,20 @@ jobs:
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: ${{ inputs.target-repo || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name) || github.repository }}
-          ref: ${{ inputs.ref || (github.event_name == 'pull_request' && github.event.pull_request.head.sha) || github.sha }}
+          repository: ${{ needs.plan.outputs.subject-repository }}
+          ref: ${{ needs.plan.outputs.subject-ref }}
+
+      - name: Verify checked-out subject HEAD
+        shell: bash
+        env:
+          SUBJECT_SHA: ${{ needs.plan.outputs.subject-sha }}
+        run: |
+          set -euo pipefail
+          ACTUAL="$(git rev-parse HEAD)"
+          if [ "$ACTUAL" != "$SUBJECT_SHA" ]; then
+            echo "::error::checked-out HEAD '$ACTUAL' does not match Plan's resolved CI subject SHA '$SUBJECT_SHA'. Refusing to proceed against an unverified checkout."
+            exit 1
+          fi
 
       - uses: swift-institute/.github/.github/actions/configure-private-repos@d1af72d05bf8262fb3918a2f1607b82fafcafdf9  # main 2026-08-03, pin-advance to main HEAD (dependabot #224 via #232); no functional change to this action in range
         with:
@@ -946,8 +1106,20 @@ jobs:
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: ${{ inputs.target-repo || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name) || github.repository }}
-          ref: ${{ inputs.ref || (github.event_name == 'pull_request' && github.event.pull_request.head.sha) || github.sha }}
+          repository: ${{ needs.plan.outputs.subject-repository }}
+          ref: ${{ needs.plan.outputs.subject-ref }}
+
+      - name: Verify checked-out subject HEAD
+        shell: bash
+        env:
+          SUBJECT_SHA: ${{ needs.plan.outputs.subject-sha }}
+        run: |
+          set -euo pipefail
+          ACTUAL="$(git rev-parse HEAD)"
+          if [ "$ACTUAL" != "$SUBJECT_SHA" ]; then
+            echo "::error::checked-out HEAD '$ACTUAL' does not match Plan's resolved CI subject SHA '$SUBJECT_SHA'. Refusing to proceed against an unverified checkout."
+            exit 1
+          fi
 
       - uses: swift-institute/.github/.github/actions/configure-private-repos@d1af72d05bf8262fb3918a2f1607b82fafcafdf9  # main 2026-08-03, pin-advance to main HEAD (dependabot #224 via #232); no functional change to this action in range
         with:
@@ -1030,8 +1202,20 @@ jobs:
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: ${{ inputs.target-repo || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name) || github.repository }}
-          ref: ${{ inputs.ref || (github.event_name == 'pull_request' && github.event.pull_request.head.sha) || github.sha }}
+          repository: ${{ needs.plan.outputs.subject-repository }}
+          ref: ${{ needs.plan.outputs.subject-ref }}
+
+      - name: Verify checked-out subject HEAD
+        shell: bash
+        env:
+          SUBJECT_SHA: ${{ needs.plan.outputs.subject-sha }}
+        run: |
+          set -euo pipefail
+          ACTUAL="$(git rev-parse HEAD)"
+          if [ "$ACTUAL" != "$SUBJECT_SHA" ]; then
+            echo "::error::checked-out HEAD '$ACTUAL' does not match Plan's resolved CI subject SHA '$SUBJECT_SHA'. Refusing to proceed against an unverified checkout."
+            exit 1
+          fi
 
       - name: Print swift-format version
         run: swift-format --version
@@ -1076,8 +1260,20 @@ jobs:
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: ${{ inputs.target-repo || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name) || github.repository }}
-          ref: ${{ inputs.ref || (github.event_name == 'pull_request' && github.event.pull_request.head.sha) || github.sha }}
+          repository: ${{ needs.plan.outputs.subject-repository }}
+          ref: ${{ needs.plan.outputs.subject-ref }}
+
+      - name: Verify checked-out subject HEAD
+        shell: bash
+        env:
+          SUBJECT_SHA: ${{ needs.plan.outputs.subject-sha }}
+        run: |
+          set -euo pipefail
+          ACTUAL="$(git rev-parse HEAD)"
+          if [ "$ACTUAL" != "$SUBJECT_SHA" ]; then
+            echo "::error::checked-out HEAD '$ACTUAL' does not match Plan's resolved CI subject SHA '$SUBJECT_SHA'. Refusing to proceed against an unverified checkout."
+            exit 1
+          fi
 
       # Pin swiftlint config resolution to this workflow revision (#269).
       # Root cause: every consumer's `.swiftlint.yml` declares
@@ -1320,9 +1516,21 @@ jobs:
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: ${{ inputs.target-repo || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name) || github.repository }}
-          ref: ${{ inputs.ref || (github.event_name == 'pull_request' && github.event.pull_request.head.sha) || github.sha }}
+          repository: ${{ needs.plan.outputs.subject-repository }}
+          ref: ${{ needs.plan.outputs.subject-ref }}
           path: consumer
+
+      - name: Verify checked-out subject HEAD
+        shell: bash
+        env:
+          SUBJECT_SHA: ${{ needs.plan.outputs.subject-sha }}
+        run: |
+          set -euo pipefail
+          ACTUAL="$(git -C consumer rev-parse HEAD)"
+          if [ "$ACTUAL" != "$SUBJECT_SHA" ]; then
+            echo "::error::checked-out HEAD '$ACTUAL' does not match Plan's resolved CI subject SHA '$SUBJECT_SHA'. Refusing to proceed against an unverified checkout."
+            exit 1
+          fi
 
       # Classifies WHICH lint path runs. It no longer decides WHETHER one does
       # — both branches lint. `lint-bundle` is validated here, before the
@@ -1876,8 +2084,6 @@ jobs:
           PLANNED_TIER: ${{ needs.plan.outputs.tier }}
           PLANNED_SUBJECT_REPOSITORY: ${{ needs.plan.outputs.subject-repository }}
           PLANNED_SUBJECT_SHA: ${{ needs.plan.outputs.subject-sha }}
-          EXPECTED_SUBJECT_REPOSITORY: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name || github.repository }}
-          EXPECTED_SUBJECT_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           REQUIRE_FULL_TIER: ${{ github.ref == 'refs/heads/main' }}
         run: |
           set -euo pipefail
@@ -1893,11 +2099,21 @@ jobs:
             echo "::error::the plan named no gating legs. A run with nothing required cannot report success."
             RC=1
           fi
+          # Non-empty is the only check here. This step used to also
+          # recompute an independent "expected" subject from raw event
+          # context and fail on any mismatch — but that recomputation never
+          # accounted for `inputs.target-repo`/`inputs.ref`, so it disagreed
+          # with Plan's correctly resolved subject on EVERY dispatched run
+          # (ci-sweep.yml, ci-dispatch.yml) and would have turned every such
+          # run red by construction. Plan is the single subject-resolution
+          # authority (see "Resolve CI subject"); re-deriving a second
+          # opinion here reintroduces exactly the class of bug this task
+          # closes. Plan already fails closed on an empty/unresolvable
+          # subject and every leg checkout verifies its own checked-out HEAD
+          # against Plan's subject-sha, so there is nothing left for a
+          # second, independent recomputation to usefully catch.
           if [ -z "${PLANNED_SUBJECT_REPOSITORY:-}" ] || [ -z "${PLANNED_SUBJECT_SHA:-}" ]; then
             echo "::error::the plan named an empty CI subject; ci-ok cannot attest an unspecified revision."
-            RC=1
-          elif [ "$PLANNED_SUBJECT_REPOSITORY" != "$EXPECTED_SUBJECT_REPOSITORY" ] || [ "$PLANNED_SUBJECT_SHA" != "$EXPECTED_SUBJECT_SHA" ]; then
-            echo "::error::the plan's CI subject ($PLANNED_SUBJECT_REPOSITORY@$PLANNED_SUBJECT_SHA) does not match this event's immutable subject ($EXPECTED_SUBJECT_REPOSITORY@$EXPECTED_SUBJECT_SHA). Stale or mismatched evidence is not admissible."
             RC=1
           fi
           if [ "$REQUIRE_FULL_TIER" = "true" ]; then

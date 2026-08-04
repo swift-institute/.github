@@ -31,6 +31,7 @@ import yaml
 
 WORKFLOW = Path(__file__).parents[2] / "workflows" / "swift-ci.yml"
 
+RESOLVE_SUBJECT_STEP = "Resolve CI subject"
 CLASSIFY_STEP = "Classify tier"
 AGGREGATE_STEP = "Aggregate required-job results"
 
@@ -127,8 +128,6 @@ class AggregatorTests(ShellHarness):
         tier="build",
         planned_repository="swift-institute/example",
         planned_sha="a" * 40,
-        expected_repository="swift-institute/example",
-        expected_sha="a" * 40,
         require_full_tier="false",
     ):
         needs = {job: {"result": results.get(job, "skipped")} for job in GATING_JOBS}
@@ -138,8 +137,6 @@ class AggregatorTests(ShellHarness):
             PLANNED_TIER=tier,
             PLANNED_SUBJECT_REPOSITORY=planned_repository,
             PLANNED_SUBJECT_SHA=planned_sha,
-            EXPECTED_SUBJECT_REPOSITORY=expected_repository,
-            EXPECTED_SUBJECT_SHA=expected_sha,
             REQUIRE_FULL_TIER=require_full_tier,
         )
 
@@ -280,6 +277,17 @@ class AggregatorTests(ShellHarness):
         self.assertIn("named no gating legs", log)
 
     def test_empty_subject_fails(self):
+        # ci-ok used to also recompute an independent "expected" subject from
+        # raw event context and fail on any mismatch against Plan's. That
+        # recomputation never accounted for `inputs.target-repo`/`inputs.ref`,
+        # so it disagreed with Plan on every dispatched run (ci-sweep.yml,
+        # ci-dispatch.yml) and would have turned every one of them red by
+        # construction — the swift-institute/.github#179 regression class.
+        # Plan is the single subject-resolution authority now (see
+        # swift-ci.yml's "Resolve CI subject" step); this non-empty check is
+        # what remains, and it is sufficient because Plan already fails
+        # closed on an unresolvable subject and every leg checkout verifies
+        # its own checked-out HEAD against Plan's subject-sha.
         code, log, _ = self.aggregate(
             "format,lint,swift-linter,linux-release",
             {job: "success" for job in GATING_JOBS},
@@ -287,16 +295,6 @@ class AggregatorTests(ShellHarness):
         )
         self.assertNotEqual(code, 0, log)
         self.assertIn("empty CI subject", log)
-
-    def test_stale_or_mismatched_subject_fails(self):
-        code, log, _ = self.aggregate(
-            "format,lint,swift-linter,linux-release",
-            {job: "success" for job in GATING_JOBS},
-            planned_sha="a" * 40,
-            expected_sha="b" * 40,
-        )
-        self.assertNotEqual(code, 0, log)
-        self.assertIn("Stale or mismatched evidence", log)
 
     def test_main_non_full_tier_fails(self):
         code, log, _ = self.aggregate(
@@ -459,21 +457,183 @@ class RunnerDigestTests(ShellHarness):
         self.assertIn("standrules=", second_log)
 
 
-class ClassifierTests(ShellHarness):
-    script = extract("plan", CLASSIFY_STEP)
+class ResolveSubjectTests(ShellHarness):
+    """The single subject-resolution contract (swift-institute/.github#179).
 
-    def classify(self, **env):
+    Extracted from swift-ci.yml's `plan` job "Resolve CI subject" step — the
+    bytes under test are the bytes that ship. Before this step existed, the
+    Plan job's own initial checkout resolved `repository:` (from
+    `target-repo`) independently of `ref:`, so a dispatch that supplied
+    `target-repo` without `ref` (ci-sweep.yml's nightly rotation) checked out
+    the TARGET repository at the TRIGGERING repository's own SHA — a commit
+    that does not exist there. Regression: PR #179 merge 5685c9e3, run
+    30875153360 ("fatal: remote error: upload-pack: not our ref"), Plan
+    failure 57/57, 912 skipped leaf jobs. These controls feed the resolver
+    every shape from that regression plus the task's full positive-control
+    list, mocking `gh api` so no network access is required.
+    """
+
+    script = extract("plan", RESOLVE_SUBJECT_STEP)
+
+    def resolve(self, gh_responses=None, **env):
         base = {
-            "FORCED_TIER": "",
             "EVENT_NAME": "push",
-            "HEAD_MSG": "chore: something",
-            "PLATFORM_SUPPORT": "",
             "INPUT_TARGET_REPOSITORY": "",
             "INPUT_REF": "",
             "PULL_REQUEST_HEAD_REPOSITORY": "",
             "PULL_REQUEST_HEAD_SHA": "",
             "TRIGGER_REPOSITORY": "swift-institute/example",
             "TRIGGER_SHA": "a" * 40,
+        }
+        base.update(env)
+        responses = gh_responses or {}
+
+        def configure(root, environment):
+            # Maps an exact `gh api ...` invocation (as bash's "$*" sees it)
+            # to its stdout. A None value simulates a 404/inaccessible
+            # repository or ref: empty stdout, nonzero exit — exactly what
+            # `gh api` does on failure, which is what the script's `||
+            # true` fallback must turn into an empty (and therefore
+            # fail-closed) value, not a crash.
+            lines = ["gh() {", '  case "$*" in']
+            for call, output in responses.items():
+                escaped_call = call.replace("'", "'\\''")
+                if output is None:
+                    lines.append(f"    '{escaped_call}') return 1 ;;")
+                else:
+                    escaped_output = output.replace("'", "'\\''")
+                    lines.append(
+                        f"    '{escaped_call}') printf '%s\\n' '{escaped_output}' ;;"
+                    )
+            lines.append(
+                '    *) echo "unexpected gh invocation: $*" >&2; return 99 ;;'
+            )
+            lines.append("  esac")
+            lines.append("}")
+            bash_env = root / "mock-gh.bash"
+            bash_env.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            environment["BASH_ENV"] = str(bash_env)
+
+        return self.run_script(setup=configure, **base)
+
+    # ---- the task's positive-control list --------------------------------
+
+    def test_target_repo_with_empty_ref_resolves_live_default_branch_head(self):
+        """target-repo + empty ref: resolves the target's live default
+        branch and its exact head SHA — never the triggering repository's
+        SHA (the #179 defect, made to fail here)."""
+        code, log, outputs = self.resolve(
+            INPUT_TARGET_REPOSITORY="mock/target",
+            INPUT_REF="",
+            TRIGGER_SHA="9" * 40,
+            gh_responses={
+                "api repos/mock/target --jq .default_branch": "main",
+                "api repos/mock/target/commits/main --jq .sha": "1" * 40,
+            },
+        )
+        self.assertEqual(code, 0, log)
+        self.assertEqual(outputs["subject-repository"], "mock/target")
+        self.assertEqual(outputs["subject-sha"], "1" * 40)
+        self.assertEqual(outputs["subject-ref"], "1" * 40)
+        self.assertNotEqual(outputs["subject-sha"], "9" * 40)
+
+    def test_target_repo_with_explicit_ref_resolves_to_one_commit_sha(self):
+        code, log, outputs = self.resolve(
+            INPUT_TARGET_REPOSITORY="mock/target",
+            INPUT_REF="release-branch",
+            gh_responses={
+                "api repos/mock/target/commits/release-branch --jq .sha": "2" * 40,
+            },
+        )
+        self.assertEqual(code, 0, log)
+        self.assertEqual(outputs["subject-repository"], "mock/target")
+        self.assertEqual(outputs["subject-sha"], "2" * 40)
+        self.assertEqual(outputs["subject-ref"], "2" * 40)
+
+    def test_invalid_explicit_ref_fails_with_no_defaulting(self):
+        code, log, outputs = self.resolve(
+            INPUT_TARGET_REPOSITORY="mock/target",
+            INPUT_REF="does-not-exist",
+            gh_responses={
+                "api repos/mock/target/commits/does-not-exist --jq .sha": None,
+            },
+        )
+        self.assertNotEqual(code, 0, log)
+        self.assertIn("could not resolve ref 'does-not-exist'", log)
+        self.assertNotIn("subject-sha", outputs)
+
+    def test_inaccessible_target_repository_fails_closed(self):
+        code, log, outputs = self.resolve(
+            INPUT_TARGET_REPOSITORY="mock/missing",
+            INPUT_REF="",
+            gh_responses={
+                "api repos/mock/missing --jq .default_branch": None,
+            },
+        )
+        self.assertNotEqual(code, 0, log)
+        self.assertIn("could not read the default branch", log)
+        self.assertNotIn("subject-sha", outputs)
+
+    def test_pull_request_uses_exact_fork_head_with_no_api_call(self):
+        # Forks are untrusted, but a PR's head SHA is already exact — no
+        # resolution call is needed or made (the mock has zero registered
+        # responses, so any `gh` call at all fails the test).
+        code, log, outputs = self.resolve(
+            EVENT_NAME="pull_request",
+            PULL_REQUEST_HEAD_REPOSITORY="fork/example",
+            PULL_REQUEST_HEAD_SHA="b" * 40,
+        )
+        self.assertEqual(code, 0, log)
+        self.assertEqual(outputs["subject-repository"], "fork/example")
+        self.assertEqual(outputs["subject-sha"], "b" * 40)
+        self.assertNotIn("unexpected gh invocation", log)
+
+    def test_ordinary_push_uses_triggering_repository_and_exact_sha(self):
+        code, log, outputs = self.resolve(
+            EVENT_NAME="push",
+            TRIGGER_REPOSITORY="swift-institute/example",
+            TRIGGER_SHA="c" * 40,
+        )
+        self.assertEqual(code, 0, log)
+        self.assertEqual(outputs["subject-repository"], "swift-institute/example")
+        self.assertEqual(outputs["subject-sha"], "c" * 40)
+        self.assertNotIn("unexpected gh invocation", log)
+
+    def test_empty_subject_fails_closed(self):
+        code, log, outputs = self.resolve(
+            EVENT_NAME="push", TRIGGER_REPOSITORY="", TRIGGER_SHA=""
+        )
+        self.assertNotEqual(code, 0, log)
+        self.assertIn("CI subject repository/SHA is empty", log)
+
+    def test_non_sha_resolution_result_fails_closed(self):
+        """Defense in depth: a resolver reply that is not a 40-character
+        commit SHA must not be trusted silently."""
+        code, log, outputs = self.resolve(
+            INPUT_TARGET_REPOSITORY="mock/target",
+            INPUT_REF="main",
+            gh_responses={
+                "api repos/mock/target/commits/main --jq .sha": "not-a-sha",
+            },
+        )
+        self.assertNotEqual(code, 0, log)
+        self.assertIn("is not a 40-character commit SHA", log)
+
+
+class ClassifierTests(ShellHarness):
+    script = extract("plan", CLASSIFY_STEP)
+
+    def classify(self, **env):
+        # Subject resolution (subject-repository/subject-ref/subject-sha)
+        # moved out of this step entirely, into "Resolve CI subject" — see
+        # ResolveSubjectTests below. This step now only classifies the tier
+        # and computes legs/gating; it takes no subject-related input and
+        # produces no subject-related output.
+        base = {
+            "FORCED_TIER": "",
+            "EVENT_NAME": "push",
+            "HEAD_MSG": "chore: something",
+            "PLATFORM_SUPPORT": "",
         }
         base.update(env)
         return self.run_script(**base)
@@ -517,34 +677,22 @@ class ClassifierTests(ShellHarness):
         self.assertEqual(code, 0, log)
         self.assertEqual(outputs["tier"], "full")
 
-    def test_pull_request_defaults_to_build_and_uses_exact_head_subject(self):
-        code, log, outputs = self.classify(
-            EVENT_NAME="pull_request",
-            PULL_REQUEST_HEAD_REPOSITORY="fork/example",
-            PULL_REQUEST_HEAD_SHA="b" * 40,
-        )
+    def test_pull_request_defaults_to_build(self):
+        code, log, outputs = self.classify(EVENT_NAME="pull_request")
         self.assertEqual(code, 0, log)
         self.assertEqual(outputs["tier"], "build")
-        self.assertEqual(outputs["subject-repository"], "fork/example")
-        self.assertEqual(outputs["subject-sha"], "b" * 40)
 
-    def test_main_push_defaults_to_full_and_uses_exact_trigger_sha(self):
-        code, log, outputs = self.classify(
-            GITHUB_REF="refs/heads/main", TRIGGER_SHA="c" * 40
-        )
+    def test_main_push_defaults_to_full(self):
+        code, log, outputs = self.classify(GITHUB_REF="refs/heads/main")
         self.assertEqual(code, 0, log)
         self.assertEqual(outputs["tier"], "full")
-        self.assertEqual(outputs["subject-repository"], "swift-institute/example")
-        self.assertEqual(outputs["subject-sha"], "c" * 40)
 
     def test_explicit_build_cannot_weaken_main_integration(self):
         code, log, outputs = self.classify(
-            GITHUB_REF="refs/heads/main", FORCED_TIER="build", TRIGGER_SHA="c" * 40
+            GITHUB_REF="refs/heads/main", FORCED_TIER="build"
         )
         self.assertEqual(code, 0, log)
         self.assertEqual(outputs["tier"], "full")
-        self.assertEqual(outputs["subject-repository"], "swift-institute/example")
-        self.assertEqual(outputs["subject-sha"], "c" * 40)
 
     def test_build_tier_keeps_quality_gates_and_a_release_build(self):
         code, log, outputs = self.classify(FORCED_TIER="build")
