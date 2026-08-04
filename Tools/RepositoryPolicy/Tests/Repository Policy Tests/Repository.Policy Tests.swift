@@ -1093,7 +1093,31 @@ struct RepositoryPolicyTests {
             ]
         )
 
-        #expect(policy.actionGrants.count == 4)
+        // swift-institute/swift-institute.org (#276 predicate-18, decided
+        // together with the same-day ruleset-class-overrides.json
+        // reclassification): control-plane class, a bespoke-kind grant
+        // naming exactly its own repository/path for its non-reusable
+        // GitHub Pages deployment workflow.
+        let siteGrants = policy.actionGrants.filter {
+            $0.repository == "swift-institute/swift-institute.org"
+        }
+        #expect(siteGrants.count == 1)
+        let siteGrant = try #require(siteGrants.first)
+        #expect(siteGrant.repositoryClass == .controlPlane)
+        #expect(siteGrant.path == ".github/workflows/deploy-docs.yml")
+        #expect(siteGrant.kind == .bespoke)
+        #expect(siteGrant.triggers == ["push", "workflow_dispatch"])
+        #expect(
+            siteGrant.uses == [
+                "actions/checkout@v7",
+                "actions/configure-pages@v6",
+                "actions/deploy-pages@v5",
+                "actions/upload-pages-artifact@v5",
+                "swift-actions/setup-swift@v3",
+            ]
+        )
+
+        #expect(policy.actionGrants.count == 5)
 
         // Typed exemptions carry exact repository and path scope.
         #expect(
@@ -1101,7 +1125,6 @@ struct RepositoryPolicyTests {
                 "swift-foundations/swift-linter:.github/workflows/publish-ci-binaries.yml",
                 "swift-foundations/swift-pdf:.github/workflows/windows-6.4-proof.yml",
                 "swift-foundations/swift-pdf:.github/workflows/windows-existential-repro.yml",
-                "swift-institute/swift-institute.org:.github/workflows/deploy-docs.yml",
                 "swift-iso/swift-iso-32000:.github/workflows/no-verbatim-spec-text.yml",
             ]
         )
