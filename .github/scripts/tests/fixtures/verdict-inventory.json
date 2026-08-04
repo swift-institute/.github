@@ -11,7 +11,11 @@
       "lint-license-header",
       "lint-test-support-spine",
       "lint-api-breakage",
-      "lint-pr-title"
+      "lint-pr-title",
+      "embedded",
+      "embedded-wasm-sdk",
+      "android-build",
+      "static-linux-musl-build"
     ],
     "aggregate": {
       "advisory_summary_needs": [
@@ -24,7 +28,11 @@
         "lint-license-header",
         "lint-test-support-spine",
         "lint-api-breakage",
-        "lint-pr-title"
+        "lint-pr-title",
+        "embedded",
+        "embedded-wasm-sdk",
+        "android-build",
+        "static-linux-musl-build"
       ],
       "ci_ok_needs": [
         "plan",
@@ -56,7 +64,7 @@
       "lint",
       "swift-linter"
     ],
-    "job_count": 18,
+    "job_count": 22,
     "jobs": {
       "advisory-summary": {
         "continue_on_error": true,
@@ -73,7 +81,11 @@
           "lint-license-header",
           "lint-test-support-spine",
           "lint-api-breakage",
-          "lint-pr-title"
+          "lint-pr-title",
+          "embedded",
+          "embedded-wasm-sdk",
+          "android-build",
+          "static-linux-musl-build"
         ],
         "nested_test_detection": false,
         "permissions": {
@@ -87,6 +99,32 @@
           "Render advisory leg results to the run summary"
         ],
         "wave": 2
+      },
+      "android-build": {
+        "continue_on_error": true,
+        "has_matrix": false,
+        "if": "${{ !cancelled() && !github.event.repository.private && (inputs.job == 'android-build' || (inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',android-build,'))) }}",
+        "matrix_axes": {},
+        "needs": [
+          "plan"
+        ],
+        "nested_test_detection": false,
+        "permissions": {
+          "contents": "read"
+        },
+        "posture": "advisory",
+        "private_guarded": true,
+        "runner": "ubuntu-latest",
+        "step_names": [
+          "Harden runner (audit-mode egress logging)",
+          null,
+          "Verify checked-out subject HEAD",
+          null,
+          "Print Swift version",
+          "Install Android SDK matching container Swift",
+          "Build (Android)"
+        ],
+        "wave": 1
       },
       "apple-simulator-build": {
         "continue_on_error": true,
@@ -147,6 +185,58 @@
           "Aggregate required-job results"
         ],
         "wave": 2
+      },
+      "embedded": {
+        "continue_on_error": true,
+        "has_matrix": false,
+        "if": "${{ !cancelled() && !github.event.repository.private && (inputs.job == 'embedded' || (inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',embedded,'))) }}",
+        "matrix_axes": {},
+        "needs": [
+          "plan"
+        ],
+        "nested_test_detection": false,
+        "permissions": {
+          "contents": "read"
+        },
+        "posture": "advisory",
+        "private_guarded": true,
+        "runner": "ubuntu-latest",
+        "step_names": [
+          "Harden runner (audit-mode egress logging)",
+          null,
+          "Verify checked-out subject HEAD",
+          null,
+          "Print Swift version",
+          "Build (Embedded)",
+          "Build target (Embedded, default traits disabled)"
+        ],
+        "wave": 1
+      },
+      "embedded-wasm-sdk": {
+        "continue_on_error": true,
+        "has_matrix": false,
+        "if": "${{ !cancelled() && !github.event.repository.private && (inputs.job == 'embedded-wasm-sdk' || (inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',embedded-wasm-sdk,'))) }}",
+        "matrix_axes": {},
+        "needs": [
+          "plan"
+        ],
+        "nested_test_detection": false,
+        "permissions": {
+          "contents": "read"
+        },
+        "posture": "advisory",
+        "private_guarded": true,
+        "runner": "ubuntu-latest",
+        "step_names": [
+          "Harden runner (audit-mode egress logging)",
+          null,
+          "Verify checked-out subject HEAD",
+          null,
+          "Print Swift version",
+          "Install Embedded Wasm SDK matching container Swift",
+          "Build (Embedded Wasm)"
+        ],
+        "wave": 1
       },
       "format": {
         "continue_on_error": false,
@@ -421,6 +511,32 @@
         ],
         "wave": 0
       },
+      "static-linux-musl-build": {
+        "continue_on_error": true,
+        "has_matrix": false,
+        "if": "${{ !cancelled() && !github.event.repository.private && (inputs.job == 'static-linux-musl-build' || (inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',static-linux-musl-build,'))) }}",
+        "matrix_axes": {},
+        "needs": [
+          "plan"
+        ],
+        "nested_test_detection": false,
+        "permissions": {
+          "contents": "read"
+        },
+        "posture": "advisory",
+        "private_guarded": true,
+        "runner": "ubuntu-latest",
+        "step_names": [
+          "Harden runner (audit-mode egress logging)",
+          null,
+          "Verify checked-out subject HEAD",
+          null,
+          "Print Swift version",
+          "Install Static Linux SDK matching container Swift",
+          "Build (Static Linux musl, x86_64)"
+        ],
+        "wave": 1
+      },
       "swift-linter": {
         "continue_on_error": false,
         "has_matrix": false,
@@ -504,7 +620,7 @@
       "skipped"
     ],
     "required_check_context": "ci / ci-ok",
-    "source_sha256": "810870972baa81bd572eaec246ed07f42403beab1797e0985a3dc60f69744bd0"
+    "source_sha256": "b87c7fde0dc6cdf265fe8a537851b814aac5d4e6bb7ba3de87834fa65a26f791"
   },
   "wrappers": {
     "foundations": {
