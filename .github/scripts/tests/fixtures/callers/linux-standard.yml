@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Build + test matrix — see swift-standards/.github/.github/workflows/swift-ci.yml (layer wrapper)
+  ci:
+    uses: swift-standards/.github/.github/workflows/swift-ci.yml@main
+    with:
+      # This package IS the Linux standard; Windows is not a target it can
+      # honestly build for — its C shims are already conditioned
+      # `.when(platforms: [.linux])`. A blind Windows leg here dragged
+      # ISO 9945 (POSIX) onto Windows and manufactured POSIX emulation
+      # inside the POSIX spec package (swift-iso-9945 06fc4b2). The apple
+      # legs stay: they build green today via the same platform gates.
+      platform-support: apple,linux
+    secrets:
+      PRIVATE_REPO_TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }}
+      SWIFT_INSTITUTE_BOT_APP_CLIENT_ID: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+      SWIFT_INSTITUTE_BOT_APP_ID: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
+      SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+
+  # DocC umbrella-catalog pipeline per [DOC-019a] — see
+  # swift-standards/.github/.github/workflows/swift-docs.yml
+  docs:
+    uses: swift-standards/.github/.github/workflows/swift-docs.yml@main
+    secrets:
+      PRIVATE_REPO_TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }}
+      SWIFT_INSTITUTE_BOT_APP_CLIENT_ID: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+      SWIFT_INSTITUTE_BOT_APP_ID: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
+      SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}

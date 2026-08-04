@@ -188,6 +188,17 @@ jobs:
           set -euo pipefail
           python3 .github/scripts/tests/test-extract-action-coordinates.py 2>&1 | tee /tmp/extract-action-coordinates-controls.txt
 
+      # Task 5-01 (swift-institute/.github#276, #304): the canonical caller
+      # generator, proven against seven real fetched callers (same-org/
+      # cross-org × Primitives/Standards/Foundations, the three known
+      # platform-support holders) plus synthetic unknown-customization
+      # controls. No consumer file is touched by this task or this suite.
+      - name: Run caller generator controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/tests/test-generate-caller.py 2>&1 | tee /tmp/generate-caller-controls.txt
+
       # The prebuilt-linter identity gate (#43 item 4) is likewise embedded
       # shell: these controls extract the shipped download step and prove it
       # falls back closed when the fetched manifest omits or mismatches the
@@ -355,6 +366,12 @@ jobs:
             echo
             echo '```'
             tail -n 20 /tmp/extract-action-coordinates-controls.txt 2>/dev/null || echo "(controls produced no output)"
+            echo '```'
+            echo
+            echo "### Caller generator controls"
+            echo
+            echo '```'
+            tail -n 20 /tmp/generate-caller-controls.txt 2>/dev/null || echo "(controls produced no output)"
             echo '```'
             echo
             echo "### Branch-pin baseline controls"

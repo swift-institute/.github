@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Build + test matrix — see swift-standards/.github/.github/workflows/swift-ci.yml (layer wrapper)
+  ci:
+    uses: swift-standards/.github/.github/workflows/swift-ci.yml@main
+    with:
+      # ISO/IEC 9945 IS the POSIX standard; Windows is not a POSIX system.
+      # The platform seam lives at L3 per [PLAT-ARCH-001] — never inside an
+      # L2 spec package — so a Windows CI leg is illegitimate here: the only
+      # way to green it is to emulate POSIX inside the POSIX specification
+      # (06fc4b2 — the violation this declaration exists to reverse).
+      # Package.swift:240 already conditions CISO9945Shim
+      # to the Apple platforms + Linux; this declaration makes CI agree.
+      platform-support: apple,linux
+    secrets:
+      PRIVATE_REPO_TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }}
+      SWIFT_INSTITUTE_BOT_APP_CLIENT_ID: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+      SWIFT_INSTITUTE_BOT_APP_ID: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
+      SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+
+  # DocC umbrella-catalog pipeline per [DOC-019a] — see
+  # swift-standards/.github/.github/workflows/swift-docs.yml
+  docs:
+    uses: swift-standards/.github/.github/workflows/swift-docs.yml@main
+    secrets:
+      PRIVATE_REPO_TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }}
+      SWIFT_INSTITUTE_BOT_APP_CLIENT_ID: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+      SWIFT_INSTITUTE_BOT_APP_ID: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
+      SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
