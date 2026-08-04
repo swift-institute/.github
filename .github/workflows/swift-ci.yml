@@ -2001,6 +2001,8 @@ jobs:
     uses: ./.github/workflows/lint-license-header.yml
     with:
       advisory: true
+      subject-repository: ${{ needs.plan.outputs.subject-repository }}
+      subject-sha: ${{ needs.plan.outputs.subject-sha }}
 
   lint-test-support-spine:
     name: Test Support dependency integrity (advisory)
@@ -2010,6 +2012,8 @@ jobs:
     with:
       advisory: true     # Phase β. Drop in Phase γ.
       swift-version: ${{ inputs.swift-version }}
+      subject-repository: ${{ needs.plan.outputs.subject-repository }}
+      subject-sha: ${{ needs.plan.outputs.subject-sha }}
 
   # ─── PR-only conventions ─────────────────────────────────────────────────
   # Fire on pull_request events only; skipped on push/dispatch.
