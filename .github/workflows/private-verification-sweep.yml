@@ -174,7 +174,6 @@ jobs:
           dispatch_one() {
             local repository="$1" head="$2" default_branch="$3" visibility="$4" layer="$5"
             local inventory_digest="$6"
-            local owner="${repository%%/*}" name="${repository#*/}"
 
             local policy_id
             policy_id=$(printf '%s|%s|%s' "$repository" "$head" "$POLICY_REVISION" \
