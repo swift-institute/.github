@@ -246,6 +246,18 @@ jobs:
           set -euo pipefail
           python3 .github/scripts/tests/test-scheduled-workflow-alert-drift.py 2>&1 | tee /tmp/scheduled-workflow-alert-drift-controls.txt
 
+      # [CI-117] (swift-institute/.github#286, corrigendum §11.1, R4/R4a/R4b):
+      # self-referential composite-action `uses:` sites must stay identity-
+      # pinned to a full 40-hex SHA. The mandatory positive control includes
+      # test_real_repository_workflows_are_clean, which runs the validator
+      # against this checkout's own workflows and is what turns red if a
+      # future PR reverts a converged site back to `@main`.
+      - name: Run composite-action pin controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/tests/test-validate-composite-action-pins.py 2>&1 | tee /tmp/composite-action-pin-controls.txt
+
       # The branch-pin baseline is a shrink-only ratchet: entries may be
       # pruned as repointings land, never added — a new branch pin is a
       # regression the guard exists to reject, not baseline material. An
@@ -334,5 +346,11 @@ jobs:
             echo
             echo '```'
             tail -n 20 /tmp/scheduled-workflow-alert-drift-controls.txt 2>/dev/null || echo "(controls produced no output)"
+            echo '```'
+            echo
+            echo "### composite-action pin controls"
+            echo
+            echo '```'
+            tail -n 20 /tmp/composite-action-pin-controls.txt 2>/dev/null || echo "(controls produced no output)"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"

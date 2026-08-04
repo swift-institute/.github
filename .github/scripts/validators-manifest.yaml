@@ -225,6 +225,15 @@ validators:
     rule-id-regex: '^CI-105'
     migrate-to-base: yes
 
+  - rule-id: CI-117
+    validator-script: .github/scripts/validate-composite-action-pins.py
+    workflow-file: ''
+    status: active
+    self-firing: active
+    discovery-mode: single-target
+    rule-id-regex: '^CI-117'
+    migrate-to-base: 'no (repo-local self-check of swift-institute/.github''s own workflow files — corrigendum §11.1, swift-institute/.github#286 — not a fleet per-repo scan; validate-base.yml''s per-package-org-sweep shape does not apply)'
+
   - rule-id: CI-MANIFEST-BINDING
     validator-script: .github/scripts/validate-manifest-binding.py
     workflow-file: .github/workflows/validate-manifest-binding.yml
