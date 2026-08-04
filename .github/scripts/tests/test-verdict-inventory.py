@@ -463,16 +463,41 @@ class TokenBoundaryTests(unittest.TestCase):
     def _uses_local_reusable_workflow(self, entry):
         return isinstance(entry["runner"], str) and entry["runner"].startswith("./")
 
+    # swift-institute/.github#276 Task 6-01: ci-ok reads its own run object
+    # (GET /repos/.../actions/runs/{run_id}) to emit the effective-runtime
+    # receipt, which needs `actions: read` — still read-only, granting no
+    # write capability anywhere, but no longer identical to every other
+    # job's bare `{contents: read}`. A typed, named exception (one job id,
+    # one extra read-only scope), not a general widening: every job NOT
+    # named here still carries exactly `{contents: read}`.
+    PERMISSIONS_EXCEPTIONS = {
+        "ci-ok": {"contents": "read", "actions": "read"},
+    }
+
     def test_every_inline_job_permissions_is_exactly_contents_read(self):
         for job_id, entry in self.universal["jobs"].items():
             if self._uses_local_reusable_workflow(entry):
                 continue
+            expected = self.PERMISSIONS_EXCEPTIONS.get(job_id, {"contents": "read"})
             with self.subTest(job=job_id):
                 self.assertEqual(
                     entry["permissions"],
-                    {"contents": "read"},
-                    f"{job_id} does not carry the uniform read-only permissions floor",
+                    expected,
+                    f"{job_id} does not carry its expected read-only permissions",
                 )
+
+    def test_detector_catches_an_unlisted_job_gaining_a_scope(self):
+        """Positive control: a job outside PERMISSIONS_EXCEPTIONS that
+        somehow carries `actions: read` (or anything beyond bare
+        `contents: read`) must still fail the assertion above — proven by
+        checking a job NOT in the exceptions map against the read-only
+        floor directly."""
+        hazardous = {"contents": "read", "actions": "read"}
+        job_id = next(
+            j for j in self.universal["jobs"] if j not in self.PERMISSIONS_EXCEPTIONS
+        )
+        expected = self.PERMISSIONS_EXCEPTIONS.get(job_id, {"contents": "read"})
+        self.assertNotEqual(hazardous, expected)
 
     def test_local_reusable_workflow_jobs_declare_no_call_site_permissions(self):
         expected = {
