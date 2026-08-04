@@ -1104,7 +1104,7 @@ jobs:
       # runs. Every event now resolves the identical Tier 1 rule set for a
       # given workflow revision, uniformly: not narrower on push, not wider
       # on dispatch, never a function of wall-clock fetch time.
-      - name: Checkout pinned central SwiftLint config
+      - name: Checkout pinned Tier 1 SwiftLint config
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: swift-institute/.github
@@ -1114,20 +1114,85 @@ jobs:
             .swiftlint.yml
           sparse-checkout-cone-mode: false
 
-      - name: Pin parent_config to this workflow revision
+      # Pin parent_config resolution (#269, corrected per review
+      # 4850700583): the deployed chain is TWO-HOP, not one. A consumer
+      # points at its ORG's Tier 2 canonical (e.g.
+      # swift-standards/.github's own main .swiftlint.yml), and that Tier 2
+      # file is the one that points at this Tier 1 file — the consumer
+      # never references swift-institute/.github directly. Pinning only the
+      # consumer's own hop (the original version of this fix) left the Tier
+      # 2 hop floating, so it zero-rewrote in every repo that goes through
+      # an org canonical and both hops stayed unpinned.
+      #
+      # This step pins BOTH hops it can identify:
+      #   1. If the consumer's own parent_config already points directly at
+      #      swift-institute/.github (a direct Tier 1 reference, no org
+      #      canonical in between), rewrite it straight to the local pinned
+      #      copy checked out above.
+      #   2. Otherwise, if it points at some other org's own `.github`
+      #      canonical (the Tier 2 shape), fetch that Tier 2 file ONCE over
+      #      HTTPS, record the resolved org/ref/commit it actually served in
+      #      the run log as an explicit, honest residual (this hop is
+      #      pinned to "whatever main served at lint time", not to a fixed
+      #      SHA — a real limitation, logged rather than hidden), rewrite
+      #      THAT materialized copy's OWN parent_config (if it is the
+      #      expected direct reference to swift-institute/.github) to the
+      #      local Tier 1 pin, and repoint the consumer's parent_config at
+      #      the local, rewritten Tier 2 copy.
+      #   3. Any parent_config line this step cannot positively identify and
+      #      pin — an unrecognized host/org shape, or a Tier 2 file whose
+      #      own parent_config isn't the expected direct swift-institute/
+      #      .github reference — is left untouched AND reported with a loud
+      #      ::warning::, never silently left to a floating fetch without
+      #      comment. A run with such a warning is evidence that a hop in
+      #      that repo's chain is still time-dependent.
+      - name: Pin parent_config chain to this workflow revision
         shell: bash
         run: |
           set -euo pipefail
-          pinned="${GITHUB_WORKSPACE}/.ci-central-swiftlint-config/.swiftlint.yml"
-          [ -f "$pinned" ] || { echo "::error::pinned central .swiftlint.yml did not check out"; exit 1; }
-          # Only the documented, sanctioned URL shape is rewritten (any ref,
-          # e.g. main or a tag) — a repo-local .swiftlint.yml with no
-          # parent_config, or one pointed elsewhere, is left untouched.
+          pinned_tier1="${GITHUB_WORKSPACE}/.ci-central-swiftlint-config/.swiftlint.yml"
+          [ -f "$pinned_tier1" ] || { echo "::error::pinned Tier 1 .swiftlint.yml did not check out"; exit 1; }
+          tier1_re='^[[:space:]]*parent_config:[[:space:]]*https://raw\.githubusercontent\.com/swift-institute/\.github/([^/]+)/\.swiftlint\.yml[[:space:]]*$'
+          tier2_re='^[[:space:]]*parent_config:[[:space:]]*https://raw\.githubusercontent\.com/([^/]+)/\.github/([^/]+)/\.swiftlint\.yml[[:space:]]*$'
           mapfile -d '' configs < <(find . -name '.swiftlint.yml' -not -path './.ci-central-swiftlint-config/*' -print0)
           for config in "${configs[@]}"; do
-            if grep -Eq '^[[:space:]]*parent_config:[[:space:]]*https://raw\.githubusercontent\.com/swift-institute/\.github/[^/]+/\.swiftlint\.yml[[:space:]]*$' "$config"; then
-              sed -i -E "s#^([[:space:]]*parent_config:[[:space:]]*)https://raw\.githubusercontent\.com/swift-institute/\.github/[^/]+/\.swiftlint\.yml[[:space:]]*\$#\1${pinned}#" "$config"
-              echo "Pinned parent_config in $config -> $pinned (workflow revision ${{ job.workflow_sha }})"
+            line=$(grep -E '^[[:space:]]*parent_config:' "$config" || true)
+            [ -z "$line" ] && continue
+            if [[ "$line" =~ $tier1_re ]]; then
+              sed -i -E "s#^([[:space:]]*parent_config:[[:space:]]*)https://raw\.githubusercontent\.com/swift-institute/\.github/[^/]+/\.swiftlint\.yml[[:space:]]*\$#\1${pinned_tier1}#" "$config"
+              echo "Pinned $config: direct Tier 1 hop -> $pinned_tier1 (workflow revision ${{ job.workflow_sha }})"
+            elif [[ "$line" =~ $tier2_re ]]; then
+              org="${BASH_REMATCH[1]}"
+              ref="${BASH_REMATCH[2]}"
+              if [ "$org" = "swift-institute" ]; then
+                echo "::warning::$config: parent_config org 'swift-institute' matched the Tier 2 pattern, not the Tier 1 pattern — investigate, left unpinned: $line"
+                continue
+              fi
+              tier2_url="https://raw.githubusercontent.com/${org}/.github/${ref}/.swiftlint.yml"
+              tier2_local="${RUNNER_TEMP}/tier2-${org}.swiftlint.yml"
+              if ! curl -fsSL -o "$tier2_local" "$tier2_url"; then
+                echo "::warning::$config: could not fetch Tier 2 config from $tier2_url — left unpinned (floating): $line"
+                continue
+              fi
+              # Record the residual honestly: this hop is fetched fresh at
+              # lint time from $org/.github@$ref, resolved to whatever
+              # commit that ref names right now. That commit, not a fixed
+              # SHA, is what's actually pinned for the remainder of THIS
+              # run (both hops rewritten below stay stable within the run);
+              # a re-run later can still resolve $ref to a different commit.
+              resolved_sha=$(git ls-remote "https://github.com/${org}/.github" "$ref" | cut -f1)
+              echo "Materialized Tier 2 config for $config: ${org}/.github@${ref} (resolved ${resolved_sha:-unknown at fetch time}) -> $tier2_local — RESIDUAL: this hop is fetched live each run, not pinned to a fixed commit."
+              tier2_line=$(grep -E '^[[:space:]]*parent_config:' "$tier2_local" || true)
+              if [[ "$tier2_line" =~ $tier1_re ]]; then
+                sed -i -E "s#^([[:space:]]*parent_config:[[:space:]]*)https://raw\.githubusercontent\.com/swift-institute/\.github/[^/]+/\.swiftlint\.yml[[:space:]]*\$#\1${pinned_tier1}#" "$tier2_local"
+                echo "Pinned $tier2_local: Tier 1 hop -> $pinned_tier1 (workflow revision ${{ job.workflow_sha }})"
+              elif [ -n "$tier2_line" ]; then
+                echo "::warning::$tier2_local (Tier 2 config for $org, materialized from $tier2_url): its own parent_config did not match the expected direct swift-institute/.github shape — left unpinned (floating): $tier2_line"
+              fi
+              sed -i -E "s#^([[:space:]]*parent_config:[[:space:]]*)https://raw\.githubusercontent\.com/${org}/\.github/[^/]+/\.swiftlint\.yml[[:space:]]*\$#\1${tier2_local}#" "$config"
+              echo "Pinned $config: Tier 2 hop -> $tier2_local (materialized, see residual note above)"
+            else
+              echo "::warning::$config: parent_config did not match a recognized Tier 1 or Tier 2 shape — left unpinned (floating): $line"
             fi
           done
           rm -rf .ci-central-swiftlint-config/.git
