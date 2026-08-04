@@ -66,6 +66,25 @@ jobs:
       # `apply-rulesets` stays unset (false) here — first application on a
       # previously unenforced repository remains explicit-opt-in only.
       heal-rulesets: true
+      # TEMPORARY, migration-window only (swift-institute/.github#276 Task
+      # 3-02, #310). Without this, the nightly's scheduled heal reaches
+      # sync-metadata.yml's `rulesets` job (gated on `heal-rulesets`, not
+      # only `apply-rulesets`) with `ruleset-compat` unset, which selects
+      # the TARGET public contract (`ci / matrix / ci-ok` only) and
+      # silently strips `ci / ci-ok` from every public package repository
+      # it touches — undoing Task 3-02's in-flight convergence to the
+      # compatibility contract before its zero-use proof (step 6) exists.
+      # Passing `true` here holds both `ci / ci-ok` and `ci / matrix /
+      # ci-ok` required through the nightly's own unattended pass instead.
+      # DELETION: this line must be removed as part of Task 3-02 step 9
+      # (`delete-temporary-compatibility-policy`,
+      # Tools/RepositoryPolicy/Policy/Ruleset-Convergence-Runbook.md) — that
+      # step deletes the `ruleset-compat` input from sync-metadata.yml
+      # entirely, so leaving this line afterward breaks this workflow_call
+      # with an unknown-input error. Its own removal is therefore forced by
+      # step 9, not merely licensed by it. Deleting this one line is the
+      # programme's second convergence pass for the nightly path.
+      ruleset-compat: true
     secrets: inherit
 
   report:
