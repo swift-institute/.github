@@ -47,6 +47,20 @@ on:
           since this audit invokes `swift package dump-package`. Mirrors
           the universal reusable's input so callers bumping the floor
           flip every container reference in lockstep.
+      subject-repository:
+        type: string
+        required: true
+        description: |
+          The exact repository to audit, already resolved by the caller's
+          own Plan (swift-institute/.github#277/#292). This workflow reads
+          the single resolved subject rather than deriving one of its own —
+          it has no `target-repo`/`ref` fallback and none may be added.
+      subject-sha:
+        type: string
+        required: true
+        description: |
+          The exact 40-character commit SHA to audit, matching
+          `subject-repository`. See `subject-repository`.
     outputs:
       ok-count:
         description: 'Number of existing Test Support targets with valid dependencies.'
@@ -76,6 +90,9 @@ jobs:
           egress-policy: audit
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ inputs.subject-repository }}
+          ref: ${{ inputs.subject-sha }}
 
       - name: Install dependencies (python3, git for sparse-checkout)
         shell: bash
@@ -83,6 +100,27 @@ jobs:
           set -euo pipefail
           apt-get update -qq
           apt-get install -qq -y python3 git
+
+      - name: Verify checked-out subject HEAD
+        shell: bash
+        env:
+          SUBJECT_SHA: ${{ inputs.subject-sha }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SUBJECT_SHA:-}" ]; then
+            echo "No subject SHA supplied (direct workflow_dispatch, not the swift-ci.yml workflow_call path); skipping verification."
+            exit 0
+          fi
+          # Job-level `container:` steps execute via a fresh `docker exec`
+          # per step, so a bare shell `git` call sees the checkout owned by
+          # the runner's host UID and refuses it as dubious ownership
+          # (2.35.2+).
+          git config --global --add safe.directory '*'
+          ACTUAL="$(git rev-parse HEAD)"
+          if [ "$ACTUAL" != "$SUBJECT_SHA" ]; then
+            echo "::error::checked-out HEAD '$ACTUAL' does not match the caller's resolved subject SHA '$SUBJECT_SHA'. Refusing to proceed against an unverified checkout."
+            exit 1
+          fi
 
       - name: Fetch audit script (sparse-checkout from swift-institute/.github)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

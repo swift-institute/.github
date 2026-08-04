@@ -39,6 +39,20 @@ on:
           If true, missing-header findings emit warnings only and the
           workflow exits 0. Used during γ-1b Stage 1 (advisory). Stage 3
           flip omits the input → workflow exits 1 on findings (gating).
+      subject-repository:
+        type: string
+        required: true
+        description: |
+          The exact repository to audit, already resolved by the caller's
+          own Plan (swift-institute/.github#277/#292). This workflow reads
+          the single resolved subject rather than deriving one of its own —
+          it has no `target-repo`/`ref` fallback and none may be added.
+      subject-sha:
+        type: string
+        required: true
+        description: |
+          The exact 40-character commit SHA to audit, matching
+          `subject-repository`. See `subject-repository`.
 
 jobs:
   audit:
@@ -60,6 +74,22 @@ jobs:
           egress-policy: audit
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ inputs.subject-repository }}
+          ref: ${{ inputs.subject-sha }}
+
+      - name: Verify checked-out subject HEAD
+        shell: bash
+        env:
+          SUBJECT_SHA: ${{ inputs.subject-sha }}
+        run: |
+          set -euo pipefail
+          git config --global --add safe.directory '*'
+          ACTUAL="$(git rev-parse HEAD)"
+          if [ "$ACTUAL" != "$SUBJECT_SHA" ]; then
+            echo "::error::checked-out HEAD '$ACTUAL' does not match the caller's resolved subject SHA '$SUBJECT_SHA'. Refusing to proceed against an unverified checkout."
+            exit 1
+          fi
 
       - name: Fetch audit script (sparse-checkout from swift-institute/.github)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
