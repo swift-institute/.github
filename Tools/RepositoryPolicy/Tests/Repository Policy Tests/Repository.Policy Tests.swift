@@ -838,7 +838,28 @@ struct RepositoryPolicyTests {
                 == .toolWorkflow
         )
 
-        #expect(policy.actionGrants.count == 3)
+        // swift-institute/Issues (#266 follow-up): control-plane class, a
+        // bespoke-kind grant naming exactly its own repository/path so it
+        // never widens any other repository's admissible shape.
+        let issuesGrants = policy.actionGrants.filter {
+            $0.repository == "swift-institute/Issues"
+        }
+        #expect(issuesGrants.count == 1)
+        let issuesGrant = try #require(issuesGrants.first)
+        #expect(issuesGrant.repositoryClass == .controlPlane)
+        #expect(issuesGrant.path == ".github/workflows/ci.yml")
+        #expect(issuesGrant.kind == .bespoke)
+        #expect(
+            issuesGrant.triggers == ["pull_request", "push", "schedule", "workflow_dispatch"]
+        )
+        #expect(
+            issuesGrant.uses == [
+                "actions/checkout@v6",
+                "swift-institute/.github/.github/workflows/swift-ci.yml@main",
+            ]
+        )
+
+        #expect(policy.actionGrants.count == 4)
 
         // Typed exemptions carry exact repository and path scope.
         #expect(

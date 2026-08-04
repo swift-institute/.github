@@ -36,6 +36,23 @@
       ]
     },
     {
+      "_comment": "swift-institute/.github#266 (control-plane surface reachability follow-up, 2026-08-04): swift-institute/Issues carries a root Package.swift (its per-issue reproducers are packages), so it is NOT excluded from the surfaces sweep the way a manifest-less control-plane repo (e.g. this .github repo itself) is, and with no grant naming it here it fell back to the 'package' repositoryClass default and its bespoke ci.yml (an enumerate-issues job with its own steps, feeding a per-issue matrix job that calls the universal reusable) failed REPO-ACTIONS-003 (schedule trigger not granted under the package-class grant above), -004 (direct actions/checkout + this exact swift-ci.yml reference not in the package-class uses list), and -005 (thin-caller shape forbids non-reusable steps). This grant both names the repositoryClass override (control-plane, matching #266's ruleset-side control-plane classification for the same repo and the same reproducer-CI rationale) and the 'bespoke' kind that exempts this shape from the thin-caller structural constraint while still enforcing explicit trigger/uses allowlists below.",
+      "repositoryClass": "control-plane",
+      "repository": "swift-institute/Issues",
+      "path": ".github/workflows/ci.yml",
+      "kind": "bespoke",
+      "triggers": [
+        "pull_request",
+        "push",
+        "schedule",
+        "workflow_dispatch"
+      ],
+      "uses": [
+        "actions/checkout@v6",
+        "swift-institute/.github/.github/workflows/swift-ci.yml@main"
+      ]
+    },
+    {
       "repositoryClass": "tool",
       "repository": "swift-foundations/swift-linter",
       "path": ".github/workflows/lint.yml",
