@@ -83,7 +83,7 @@ extension PRTransaction.Transaction.Unit {
             head: approvalHead ?? head
         )
         let packageChecks = [
-            check("ci / ci-ok"),
+            check("ci / matrix / ci-ok"),
             check("full-tier"),
         ]
         let checks =
@@ -221,42 +221,55 @@ extension PRTransaction.Transaction.Unit {
         }
     }
     @Test func `package profile rejects the bare legacy ci-ok name`() {
-        // GitHub renders the fleet aggregate as `ci / ci-ok`; bare `ci-ok` is
-        // a name no caller path produces, so it must not satisfy the profile.
+        // GitHub renders the required aggregate as `ci / matrix / ci-ok`;
+        // bare `ci-ok` is a name no caller path has ever produced, so it
+        // must not satisfy the profile.
         #expect(throws: PRTransaction.Error.missingCI) {
             try PRTransaction.review(fixture(checks: [check("ci-ok"), check("full-tier")]))
+        }
+    }
+    @Test func `package profile rejects the retired wrapper-compatibility ci-ok name alone`() {
+        // Renamed swift-institute/.github#276 Task 3-01: `ci / ci-ok` was
+        // the required context before the rename (and remains, temporarily,
+        // a layer wrapper's compatibility aggregate — Task 1-04). It alone
+        // no longer satisfies the `.package` profile; only `ci / matrix /
+        // ci-ok` does. (Public canary/fleet overlap waves that still need
+        // BOTH names use the `.control(checks:)` profile with both names
+        // declared explicitly — that profile is fully general already.)
+        #expect(throws: PRTransaction.Error.missingCI) {
+            try PRTransaction.review(fixture(checks: [check("ci / ci-ok"), check("full-tier")]))
         }
     }
     @Test func `package profile rejects a stale ci-ok`() {
         #expect(throws: PRTransaction.Error.staleCI) {
             try PRTransaction.review(
-                fixture(checks: [check("ci / ci-ok", revision: old), check("full-tier")])
+                fixture(checks: [check("ci / matrix / ci-ok", revision: old), check("full-tier")])
             )
         }
     }
     @Test func `package profile rejects a failed ci-ok`() {
         #expect(throws: PRTransaction.Error.staleCI) {
             try PRTransaction.review(
-                fixture(checks: [check("ci / ci-ok", conclusion: "failure"), check("full-tier")])
+                fixture(checks: [check("ci / matrix / ci-ok", conclusion: "failure"), check("full-tier")])
             )
         }
     }
     @Test func `package profile rejects an absent full tier`() {
         #expect(throws: PRTransaction.Error.nonterminalFullTier) {
-            try PRTransaction.review(fixture(checks: [check("ci / ci-ok")]))
+            try PRTransaction.review(fixture(checks: [check("ci / matrix / ci-ok")]))
         }
     }
     @Test func `package profile rejects a stale full tier`() {
         #expect(throws: PRTransaction.Error.nonterminalFullTier) {
             try PRTransaction.review(
-                fixture(checks: [check("ci / ci-ok"), check("full-tier", revision: old)])
+                fixture(checks: [check("ci / matrix / ci-ok"), check("full-tier", revision: old)])
             )
         }
     }
     @Test func `package profile rejects a nonterminal full tier`() {
         #expect(throws: PRTransaction.Error.nonterminalFullTier) {
             try PRTransaction.review(
-                fixture(checks: [check("ci / ci-ok"), check("full-tier", conclusion: nil)])
+                fixture(checks: [check("ci / matrix / ci-ok"), check("full-tier", conclusion: nil)])
             )
         }
     }
@@ -303,6 +316,116 @@ extension PRTransaction.Transaction.Unit {
                         check("fixtures"), check("correspondence"),
                         check("scan", conclusion: "failure"),
                     ]
+                )
+            )
+        }
+    }
+    // MARK: - R9: `skipped` satisfies GitHub's ruleset but not the engine
+    //
+    // swift-institute/.github#276 Ruling R8, independently re-verified by
+    // this lane against GitHub's own documentation (fetched live,
+    // docs.github.com/en/pull-requests/collaborating-with-pull-requests/
+    // collaborating-on-repositories-with-code-quality-features/
+    // about-status-checks): "A job that is skipped will report its status
+    // as 'Success'. It will not prevent a pull request from merging, even
+    // if it is a required check." — and separately, a `neutral` conclusion
+    // "is treated as a success for dependent checks." So a required-status-checks
+    // ruleset treats a `skipped` conclusion at the required context as
+    // PASSING. So a public ordinary package repository's protected-main
+    // RULESET is satisfied by a required context that concluded `skipped` —
+    // e.g. its aggregate job's own `if:` condition evaluating false while
+    // the workflow run still executes and posts a real check-run under the
+    // required name (a live, concrete mechanism: the layer wrapper's
+    // temporary `ci-ok` compatibility job carries exactly this shape today,
+    // `if: ${{ always() && !github.event.repository.private }}`; and
+    // swift-institute/Skills#34's `skill-hygiene / self-test` independently
+    // demonstrated a control-plane repository's conditional self-test
+    // reporting `skipped` at a real merged head — Ruling R10).
+    //
+    // Ruling R9 requires this task to ENUMERATE every merge path available
+    // to a public ordinary package PR and demonstrate a `skipped` aggregate
+    // is refused on each, or name the path as an open hazard with an exact
+    // owner — "demonstrate, do not build": the enforcing mechanism already
+    // exists (`current.allSatisfy({ $0.conclusion == "success" })` in
+    // `PRTransaction.verify`, both the `.package` and `.control` cases).
+    //
+    // Two merge paths exist for a repository carrying the target ruleset:
+    //
+    //   Path A — bot-mediated: the author dispatches
+    //   `review-pr-transaction.yml`, which calls exactly the function these
+    //   two tests exercise. It refuses a `skipped` required check — proven
+    //   below, not asserted.
+    //
+    //   Path B — native GitHub merge (UI "Squash and merge", `gh pr merge`,
+    //   the REST `PUT .../merge` endpoint, or GitHub's own auto-merge):
+    //   available to ANY actor with repository write access once the
+    //   RULESET's own conditions are met — one approving review (from any
+    //   reviewer; `require_code_owner_review: false`,
+    //   `dismissal_restriction.enabled: false`) plus every required status
+    //   check "successful" per GitHub's definition above. This path never
+    //   invokes `PRTransaction.verify` at all, so it inherits none of the
+    //   protection these two tests demonstrate. It is NOT closed by this
+    //   task — no new enforcement is in scope (R9's explicit boundary) — and
+    //   is recorded here as an OPEN HAZARD:
+    //
+    //     Owner: unassigned — needs a principal decision (e.g. restrict
+    //     merge/write access on Institute repositories to the bot identity
+    //     only, which GitHub rulesets cannot themselves express as a
+    //     "require success, not skipped" predicate). Out of Task 3-01/3-02
+    //     scope; raised to the coordinator/principal rather than
+    //     self-assigned by this lane.
+    //
+    //     Severity today is bounded, not zero: `bypass_actors: []` and the
+    //     single-org-member posture mean the only non-bot identity who
+    //     could exploit Path B today is the same principal who could bypass
+    //     enforcement by other means anyway. The gap widens the moment any
+    //     additional collaborator or automation gains repository write
+    //     access, which is exactly the #64 "vacuous green" class Ruling R8
+    //     names one layer above the aggregate's own predicate.
+    @Test func `package profile refuses a skipped required aggregate — R9 positive control on the gap`()
+    {
+        // If this test could not fail — if `.package` accepted `skipped`
+        // the same way GitHub's ruleset does — it would prove nothing about
+        // the gap (the standing fixture rule: a fixture whose passing state
+        // is indistinguishable from the hazard being unreachable proves
+        // nothing). It fails for the reason it exists: change `conclusion`
+        // below to `"success"` and this test's `#expect(throws:)` fails.
+        #expect(throws: PRTransaction.Error.staleCI) {
+            try PRTransaction.review(
+                fixture(
+                    checks: [
+                        check("ci / matrix / ci-ok", conclusion: "skipped"), check("full-tier"),
+                    ]
+                )
+            )
+        }
+    }
+    @Test func `control profile refuses a skipped required native check — R9 positive control on the gap`()
+    {
+        #expect(throws: PRTransaction.Error.unsuccessful("scan")) {
+            try PRTransaction.review(
+                fixture(
+                    verification: native,
+                    checks: [
+                        check("fixtures"), check("correspondence"),
+                        check("scan", conclusion: "skipped"),
+                    ]
+                )
+            )
+        }
+    }
+    @Test func `control profile refuses a skipped required workspace verification check`() {
+        // The same refusal, exercised against the literal private-package
+        // required context, so the R9 demonstration is not read as
+        // public-only.
+        let workspace: PRTransaction.Snapshot.Verification = .control(
+            checks: ["verification / workspace"]
+        )
+        #expect(throws: PRTransaction.Error.unsuccessful("verification / workspace")) {
+            try PRTransaction.review(
+                fixture(
+                    verification: workspace,
+                    checks: [check("verification / workspace", conclusion: "skipped")]
                 )
             )
         }

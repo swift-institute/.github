@@ -1,7 +1,11 @@
 extension PRTransaction.Snapshot {
     /// The exact-head checks an accepted pull-request transaction requires.
     public enum Verification: Codable, Equatable, Sendable {
-        /// Requires successful exact-head `ci / ci-ok` and `full-tier` results.
+        /// Requires successful exact-head `ci / matrix / ci-ok` and
+        /// `full-tier` results. Public package profile only
+        /// (swift-institute/.github#276 Task 3-01); a private package's
+        /// `verification / workspace` receipt is verified through
+        /// `.control(checks:)` with that name declared explicitly.
         case `package`
 
         /// Requires every named repository-native check to succeed at the exact head.

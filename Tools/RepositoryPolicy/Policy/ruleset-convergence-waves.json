@@ -1,0 +1,97 @@
+{
+  "schemaVersion": 1,
+  "goal": "swift-institute/.github#276",
+  "task": "3-02",
+  "programmeDocumentSha256": "184db8ef230cd7e532f9aeb167a51508bc897f8221ec935cb5a776ca1eaf62ef",
+  "note": "The nine steps in the exact order the programme document's Task 3-02 Change section states them, verbatim in 'description'. This file is a machine-checkable index into the operator runbook (Ruleset-Convergence-Runbook.md, same directory), not a substitute for it — every step's exact command, read-back, and reversal is spelled out there, including the two-phase mechanics inside step 3 that the document states as one line but that requires two distinct payload transitions (see the runbook's 'Why step 3 has two payload states' section). Agents produce this source; the principal executes it (swift-institute/.github#276 Ruling R22.2).",
+  "steps": [
+    {
+      "order": 1,
+      "name": "canary-public-overlap",
+      "description": "Apply a compatibility ruleset requiring old and new contexts to a small public canary cohort while both producers exist; read back exact rulesets and mergeability.",
+      "visibility": "public",
+      "compatibility": true,
+      "payload": "protected-main-public-compatibility-ruleset.json",
+      "precondition": "Task 3-01 merged and read back at its exact head; universal ci / matrix / ci-ok has fresh exact-head public full-tier evidence; the layer wrapper's ci / ci-ok compatibility aggregate is still live at the canary head."
+    },
+    {
+      "order": 2,
+      "name": "canary-private-switch",
+      "description": "Apply private policy requiring verification / workspace only after a fresh check exists on the canary head; read back and prove mergeability.",
+      "visibility": "private",
+      "compatibility": false,
+      "payload": "protected-main-private-ruleset.json",
+      "precondition": "verification / workspace is automatically produced for the canary repository's exact head with forgery/replay controls (Task 2-01/2-02, #253).",
+      "gate": "REDUCED-PENDING-#253 at time of writing (2026-08-04) — Phase 2 (#253) is open. This step is a task-local §6.2 stop until #253 lands; do not push through (swift-institute/.github#276 Ruling R21)."
+    },
+    {
+      "order": 3,
+      "name": "public-fleet-switch",
+      "description": "Converge public ordinary package rulesets to the new universal context in bounded organization waves, retaining the old producer during convergence.",
+      "visibility": "public",
+      "compatibility": "two-phase — see runbook",
+      "payload": "protected-main-public-compatibility-ruleset.json, then protected-main-ruleset.json per bounded wave once validated",
+      "precondition": "Step 1 (canary-public-overlap) demonstrated mergeability with the compatibility contract.",
+      "note": "This one line in the document covers two distinct payload transitions per bounded organization wave: (a) apply the compatibility payload (both contexts required — the 'retaining the old producer' clause) and validate mergeability; (b) only once (a) is validated for that wave, converge the same repositories from the compatibility payload to the target payload (ci / matrix / ci-ok only). (b) is what step 6's zero-use proof actually measures, and (b) is safe to run before step 7 (wrapper deletion) because dropping a required-check requirement never blocks a merge — the wrapper's ci-ok job keeps running harmlessly, just unrequired, until step 7 deletes it."
+    },
+    {
+      "order": 4,
+      "name": "private-fleet-switch",
+      "description": "Converge private ordinary package rulesets to the Workspace context in bounded waves; verify each repository has an automatic verification path.",
+      "visibility": "private",
+      "compatibility": false,
+      "payload": "protected-main-private-ruleset.json",
+      "precondition": "Step 2 (canary-private-switch) demonstrated mergeability; every repository in the wave already has a fresh verification / workspace producer.",
+      "gate": "Same #253 gate as step 2."
+    },
+    {
+      "order": 5,
+      "name": "control-meta-verification",
+      "description": "Prove non-package/control-plane classes did not accidentally receive package checks.",
+      "visibility": "n/a",
+      "compatibility": null,
+      "payload": "protected-main-control-ruleset.json (read-back only; this step applies no new mutation of its own)",
+      "precondition": "Steps 1-4 converged for their scoped repositories."
+    },
+    {
+      "order": 6,
+      "name": "zero-use-proof",
+      "description": "Enumerate all live rulesets and require zero in-scope repositories still require ci / ci-ok.",
+      "visibility": "n/a",
+      "compatibility": null,
+      "payload": null,
+      "precondition": "Step 3's phase (b) (converge from compatibility to target payload) has run for every public package repository in scope.",
+      "gate": "Acceptance gate for proceeding to step 7 — do not delete a wrapper's ci-ok job while any repository's live ruleset still lists ci / ci-ok as a required context."
+    },
+    {
+      "order": 7,
+      "name": "wrapper-deletion",
+      "description": "Remove the outer runner-backed ci-ok jobs in the three layer wrappers, one PR per owner. Standards' success || skipped disappears only now, after private rulesets no longer depend on it.",
+      "visibility": "n/a",
+      "compatibility": null,
+      "payload": null,
+      "precondition": "Step 6 (zero-use-proof) confirms zero repositories still require ci / ci-ok.",
+      "gate": "Three separate PRs, one per wrapper-owning repository; each is its own protected-main transaction. NOT this lane's task — the work objects exist and are explicitly left alone by Task 3-01/3-02 (swift-primitives/.github#12, swift-standards/.github#8, swift-foundations/.github#7)."
+    },
+    {
+      "order": 8,
+      "name": "post-deletion-canaries",
+      "description": "Dispatch public full tier and private verification, confirm required contexts and protected-main behavior.",
+      "visibility": "both",
+      "compatibility": null,
+      "payload": null,
+      "precondition": "Step 7 landed for every affected wrapper.",
+      "gate": "Closure evidence for Task 3-02: fresh exact-head public full-tier run plus fresh private verification / workspace run, both read back at run level."
+    },
+    {
+      "order": 9,
+      "name": "delete-temporary-compatibility-policy",
+      "description": "Delete temporary compatibility policy only after zero-use proof.",
+      "visibility": "n/a",
+      "compatibility": null,
+      "payload": "protected-main-public-compatibility-ruleset.json (retired, not deleted from source control until this step's own PR — the file's continued presence in Policy/ after retirement is itself the historical record of what the compatibility contract was)",
+      "precondition": "Step 6 (zero-use-proof) passed and step 7/8 landed.",
+      "note": "Retiring the compatibility policy means: the sync-metadata.yml ruleset-compat input, the protectedMainPublicCompatibilityPayload function, and the compatibility JSON policy file are removed in one PR once nothing in the fleet is ever dispatched with ruleset-compat: true again. Do not remove them earlier — a wave that needs to be reversed after step 3 but before this step may need to re-apply the compatibility payload."
+    }
+  ]
+}

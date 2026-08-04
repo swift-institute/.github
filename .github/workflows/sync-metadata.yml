@@ -70,6 +70,26 @@ on:
         type: boolean
         required: false
         default: false
+      ruleset-compat:
+        description: >
+          Public package targets only (swift-institute/.github#276 Task
+          3-01/3-02): when true, converge to the migration-window
+          compatibility contract requiring BOTH `ci / ci-ok` (a layer
+          wrapper's still-live temporary aggregate) and `ci / matrix /
+          ci-ok` (the universal chain's own aggregate) instead of the
+          target `ci / matrix / ci-ok`-only contract. Retaining the old
+          producer as a second required context is what keeps a
+          convergence wave reversible while both producers exist. Default
+          false converges straight to the target contract; set true only
+          for the canary/fleet overlap waves, then false again once a
+          repository's layer wrapper has had its temporary `ci-ok`
+          aggregate deleted (Task 3-02 step 7) — a compat-contract
+          repository whose old producer is gone would deadlock on a
+          context that can never report. Ignored for private and
+          control-plane targets, which have no compatibility variant.
+        type: boolean
+        required: false
+        default: false
       visibility:
         description: 'Filter targets by visibility: public | private | internal | all. Default public — swift-institute''s own fleet is public; a peer institute with a private fleet (#244) supplies its own value.'
         type: string
@@ -123,6 +143,11 @@ on:
         default: false
       heal-rulesets:
         description: 'Re-apply the class-correct ruleset over an existing Institute ruleset only; never creates one where absent.'
+        type: boolean
+        required: false
+        default: false
+      ruleset-compat:
+        description: 'Public package targets only: converge to the migration-window compatibility contract (both ci / ci-ok and ci / matrix / ci-ok) instead of the target ci / matrix / ci-ok-only contract. See workflow_call input of the same name for the full rationale.'
         type: boolean
         required: false
         default: false
@@ -610,14 +635,30 @@ jobs:
           INPUT_VISIBILITY: ${{ inputs.visibility }}
           ENUM_REPOS: ${{ steps.enum.outputs.repos }}
           APPLY_RULESETS: ${{ inputs.apply-rulesets }}
+          RULESET_COMPAT: ${{ inputs.ruleset-compat }}
+          REVERSE_DIR: ${{ runner.temp }}/reverse-payloads
         run: |
           set -euo pipefail
-          desired_package=$(swift run --package-path institute-ci/Tools/RepositoryPolicy repository-policy ruleset --policy institute-ci/Tools/RepositoryPolicy/Policy/protected-main-ruleset.json --class package)
+          mkdir -p "$REVERSE_DIR"
+          # Four package-class-adjacent payloads: the target public contract
+          # (ci / matrix / ci-ok only), the migration-window public
+          # compatibility contract (ci / ci-ok AND ci / matrix / ci-ok, both
+          # required so a wave stays reversible while both producers exist —
+          # Task 3-02 step 3), the private contract (verification /
+          # workspace only — Task 2-01/2-02, #253), and the unchanged
+          # control-plane contract. Visibility is NOT a fifth top-level
+          # RepositoryClass — it selects among the package-class payloads
+          # only (swift-institute/.github#276 Task 3-01).
+          desired_package_public=$(swift run --package-path institute-ci/Tools/RepositoryPolicy repository-policy ruleset --policy institute-ci/Tools/RepositoryPolicy/Policy/protected-main-ruleset.json --class package --visibility public --compatibility false)
+          desired_package_public_compat=$(swift run --package-path institute-ci/Tools/RepositoryPolicy repository-policy ruleset --policy institute-ci/Tools/RepositoryPolicy/Policy/protected-main-public-compatibility-ruleset.json --class package --visibility public --compatibility true)
+          desired_package_private=$(swift run --package-path institute-ci/Tools/RepositoryPolicy repository-policy ruleset --policy institute-ci/Tools/RepositoryPolicy/Policy/protected-main-private-ruleset.json --class package --visibility private --compatibility false)
           desired_control=$(swift run --package-path institute-ci/Tools/RepositoryPolicy repository-policy ruleset --policy institute-ci/Tools/RepositoryPolicy/Policy/protected-main-control-ruleset.json --class control-plane)
           normalize() {
             jq -S '{name, target, enforcement, conditions, bypass_actors, rules:(.rules | sort_by(.type) | map(if .parameters? then .parameters.required_status_checks? |= (if . then sort_by(.context) else . end) else . end))}'
           }
-          desired_package_normalized=$(printf '%s' "$desired_package" | normalize)
+          desired_package_public_normalized=$(printf '%s' "$desired_package_public" | normalize)
+          desired_package_public_compat_normalized=$(printf '%s' "$desired_package_public_compat" | normalize)
+          desired_package_private_normalized=$(printf '%s' "$desired_package_private" | normalize)
           desired_control_normalized=$(printf '%s' "$desired_control" | normalize)
           # explicit-apply (apply-rulesets: true) may create a first ruleset;
           # scheduled-heal (the nightly's heal-rulesets: true) never does
@@ -659,7 +700,9 @@ jobs:
           for target in "${targets[@]}"; do
             # Classify mechanically: a root Package.swift present at the
             # default branch means the package contract (the repo emits
-            # `ci / ci-ok`); its absence means the control-plane contract.
+            # `ci / matrix / ci-ok` if public, `verification / workspace` if
+            # private — live visibility read below selects between them,
+            # Task 3-01); its absence means the control-plane contract.
             # This mirrors RepositoryPolicy.GitHubClient.rootManifestKind's
             # `contents/Package.swift` probe (200 + type "file" vs 404),
             # which the `surfaces` job's private-vulnerability-reporting
@@ -699,8 +742,50 @@ jobs:
             if [[ "$manifest_type" == "file" ]]; then
               ruleset_name="$package_name"
               opposite_name="$control_name"
-              desired="$desired_package"
-              desired_normalized="$desired_package_normalized"
+
+              # Visibility is a live authenticated GitHub read, never a
+              # declared policy file (swift-institute/.github#276 Task
+              # 3-01, Task 0C-02 Change item 4: a manually maintained
+              # private list drifts silently and a stale signal applies the
+              # wrong required-check payload — exactly the failure Phase 3
+              # exists to remove). Fail closed on anything other than an
+              # unambiguous "public" or "private": a repository whose
+              # visibility cannot be read is UNMEASURED, never defaulted to
+              # either payload.
+              visibility_error="$RUNNER_TEMP/visibility-error-$$.txt"
+              if ! target_visibility=$(gh api "repos/$target" --jq '.visibility' 2>"$visibility_error"); then
+                echo "::error::$target: UNMEASURED — could not read repository visibility: $(cat "$visibility_error")"
+                rm -f "$visibility_error"
+                exit 1
+              fi
+              rm -f "$visibility_error"
+
+              case "$target_visibility" in
+                public)
+                  if [[ "$RULESET_COMPAT" == "true" ]]; then
+                    desired="$desired_package_public_compat"
+                    desired_normalized="$desired_package_public_compat_normalized"
+                  else
+                    desired="$desired_package_public"
+                    desired_normalized="$desired_package_public_normalized"
+                  fi
+                  ;;
+                private)
+                  if [[ "$RULESET_COMPAT" == "true" ]]; then
+                    echo "::error::$target: ruleset-compat requested for a private target — no compatibility variant exists for verification / workspace (Task 2-01/2-02 is what first gives private repositories any CI attestation; no prior producer preceded it)."
+                    exit 1
+                  fi
+                  desired="$desired_package_private"
+                  desired_normalized="$desired_package_private_normalized"
+                  ;;
+                *)
+                  # Includes "internal" and any unrecognized value: fail
+                  # closed rather than guess which payload applies. #3.1
+                  # zero-result protocol — UNMEASURED, never a default.
+                  echo "::error::$target: UNMEASURED — visibility '${target_visibility}' is neither 'public' nor 'private'; refusing to select a required-check payload rather than default one."
+                  exit 1
+                  ;;
+              esac
             else
               ruleset_name="$control_name"
               opposite_name="$package_name"
@@ -757,31 +842,70 @@ jobs:
               continue
             fi
 
-            if [[ -z "$id" ]]; then
-              if [[ "$DRY_RUN" == true ]]; then
-                echo "$target: would create $ruleset_name"
-                continue
-              fi
-              id=$(printf '%s' "$desired" | gh api -X POST "repos/$target/rulesets" --input - --jq .id)
-            else
-              actual=$(gh api "repos/$target/rulesets/$id" | normalize)
+            # Exact reverse payload per repository, captured before any
+            # mutation (swift-institute/.github#276 Ruling R21/R22.2: "hold
+            # exact reverse payloads per repository before each wave" is
+            # what makes a wave bounded and reversible, and must be
+            # "expressed in the payloads, not left to operator discipline").
+            # Written whether or not this run actually applies the change,
+            # so a dry-run preview shows the exact reverse an operator would
+            # get. `id` is empty only for a genuine first CREATE, whose
+            # reverse is DELETE (there is nothing prior to restore to) —
+            # recorded once the created id is known, below.
+            reverse_file="$REVERSE_DIR/$(printf '%s' "$target" | tr '/' '_').json"
+            if [[ -n "$id" ]]; then
+              actual_raw=$(gh api "repos/$target/rulesets/$id")
+              actual=$(printf '%s' "$actual_raw" | normalize)
+              jq -n --arg target "$target" --argjson payload "$actual_raw" --arg name "$ruleset_name" \
+                '{target: $target, action: "restore", rulesetId: $payload.id, name: $name, payload: $payload}' \
+                > "$reverse_file"
               if [[ "$actual" == "$desired_normalized" ]]; then
                 echo "$target: $ruleset_name converged"
+                rm -f "$reverse_file"  # nothing changes; no reverse needed
                 continue
               fi
               if [[ "$DRY_RUN" == true ]]; then
-                echo "$target: would update $ruleset_name ($id)"
+                echo "$target: would update $ruleset_name ($id); reverse payload previewed at $reverse_file"
                 continue
               fi
               printf '%s' "$desired" | gh api -X PUT "repos/$target/rulesets/$id" --input - >/dev/null
+            else
+              if [[ "$DRY_RUN" == true ]]; then
+                echo "$target: would create $ruleset_name (reverse would be: delete)"
+                continue
+              fi
+              id=$(printf '%s' "$desired" | gh api -X POST "repos/$target/rulesets" --input - --jq .id)
+              jq -n --arg target "$target" --arg id "$id" --arg name "$ruleset_name" \
+                '{target: $target, action: "delete", rulesetId: ($id | tonumber), name: $name}' \
+                > "$reverse_file"
             fi
             readback=$(gh api "repos/$target/rulesets/$id" | normalize)
             if [[ "$readback" != "$desired_normalized" ]]; then
               echo "::error::$target ruleset read-back differs from the $ruleset_name contract"
               exit 1
             fi
-            echo "$target: $ruleset_name converged ($id)"
+            echo "$target: $ruleset_name converged ($id); reverse payload at $reverse_file"
           done
+          echo "Reverse payloads written to $REVERSE_DIR:"
+          find "$REVERSE_DIR" -type f -name '*.json' | sort
+
+      # Every reverse payload this run computed, uploaded so it survives
+      # the ephemeral runner (swift-institute/.github#276 Task 3-02: "hold
+      # exact reverse payloads per repository before each wave" must be an
+      # artefact an operator can retrieve, not a value that existed only in
+      # a step's stdout). `if-no-files-found: warn` rather than `error`: a
+      # fully-converged run (or a dry-run whose desired state already
+      # matched everywhere) legitimately produces zero reverse files, and
+      # that is not itself a failure. See `Operator-Runbook.md` for the
+      # exact reversal procedure that consumes this artifact.
+      - name: Upload reverse-ruleset payloads
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: reverse-ruleset-payloads-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/reverse-payloads/*.json
+          if-no-files-found: warn
+          retention-days: 90
 
   # Repository surface enforcement + private vulnerability reporting.
   # Deliberately NOT a dependency of `sync` — see the note under `jobs:`.

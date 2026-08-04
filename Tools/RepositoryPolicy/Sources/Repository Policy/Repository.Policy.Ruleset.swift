@@ -4,17 +4,59 @@ extension RepositoryPolicy {
     /// The Institute protected-main branch ruleset contracts, converged by
     /// `sync-metadata`'s `rulesets` job and read back for drift detection.
     ///
-    /// Two classes exist. `protectedMainPayload` is the package contract:
-    /// package repositories emit the `ci / ci-ok` status check, so it carries
-    /// a `required_status_checks` rule requiring that context. Control-plane
-    /// repositories (`.github` repos, Workspace, Research, Issues) never
-    /// produce that check, so `protectedMainControlPayload` is the same
-    /// contract minus the `required_status_checks` rule entirely — its
-    /// absence is fail-closed enforced by the validator, not merely
-    /// unchecked. The `rulesets` job classifies each target repository
-    /// mechanically (root `Package.swift` present ⇒ package; absent ⇒
-    /// control) and applies the class-correct contract
-    /// (swift-institute/.github#200).
+    /// Two independent dimensions select the applicable payload
+    /// (swift-institute/.github#276 Task 3-01):
+    ///
+    /// - **Class** (already realized by `#200`/`#266`): `package` vs
+    ///   `control-plane` vs a declared override. `protectedMainPayload`
+    ///   family covers `package`; `protectedMainControlPayload` covers
+    ///   `control-plane` and never carries a `required_status_checks` rule
+    ///   at all — its absence is fail-closed enforced by the validator, not
+    ///   merely unchecked.
+    /// - **Visibility** (Task 3-01, new): a `package`-class repository's
+    ///   required-check *context* depends on whether it is public or
+    ///   private. This is NOT a third top-level `RepositoryClass` case —
+    ///   visibility is an observable runtime property read live from GitHub
+    ///   (`GET /repos/{full_name}` → `.visibility`), never a declared
+    ///   policy file, and never defaulted when unreadable (fail-closed
+    ///   `UNMEASURED` at the caller). A public package emits
+    ///   `ci / matrix / ci-ok` (the universal chain's own aggregate,
+    ///   rendered through a layer wrapper's `matrix` job — the caller-path
+    ///   prefix the wrapper's now-temporary `ci-ok` compatibility job used
+    ///   to shadow at `ci / ci-ok`, swift-institute/.github#276 Task 1-04).
+    ///   A private package emits `verification / workspace` (the trusted
+    ///   control-plane receipt, Task 2-01/2-02, swift-institute/.github#253)
+    ///   instead — it never runs the public universal chain at all
+    ///   ([known-broken-instrument #10]: a private repository's universal CI
+    ///   run is zero signal, every job there is visibility-guarded).
+    ///
+    /// Three package-class payloads exist for the migration window:
+    ///
+    /// - `protectedMainPayload` — the **target** public contract: requires
+    ///   exactly `ci / matrix / ci-ok`. Fleet-final state once every
+    ///   layer wrapper's temporary `ci-ok` compatibility aggregate is
+    ///   deleted (Task 3-02 step 7).
+    /// - `protectedMainPublicCompatibilityPayload` — the **migration**
+    ///   public contract: requires BOTH `ci / ci-ok` (the layer wrapper's
+    ///   still-live temporary aggregate) AND `ci / matrix / ci-ok` (the
+    ///   universal chain's own aggregate, already live underneath it).
+    ///   Both producers run unconditionally on every push during the
+    ///   overlap window, so both contexts always report; retaining the old
+    ///   producer as a second required context (not an either/or) is what
+    ///   keeps a wave reversible without ever leaving a repository unable
+    ///   to satisfy its required checks (Task 3-02 step 3, "retaining the
+    ///   old producer during convergence").
+    /// - `protectedMainPrivatePayload` — the private contract: requires
+    ///   exactly `verification / workspace`. No compatibility variant
+    ///   exists because no prior producer preceded it — Phase 2 is what
+    ///   first gives private repositories any CI attestation at all.
+    ///
+    /// The `rulesets` job classifies each target repository mechanically
+    /// (root `Package.swift` present ⇒ package; absent ⇒ control;
+    /// `Policy/ruleset-class-overrides.json` wins over the mechanical
+    /// probe — swift-institute/.github#200/#266) and, for the package
+    /// class, reads live visibility to select among the three payloads
+    /// above.
     ///
     /// Break-glass: in a genuine emergency, an organization admin may delete
     /// the "Institute protected main" (or "Institute protected main
@@ -38,7 +80,46 @@ extension RepositoryPolicy {
     /// the owning issue's receipt; absent that receipt, restore promptly
     /// rather than let the bypass linger.
     public enum Ruleset {
+        /// The target public contract: exactly `ci / matrix / ci-ok`.
         public static func protectedMainPayload(from url: URL) throws -> Data {
+            try protectedMainPackagePayload(
+                from: url,
+                requiredContexts: ["ci / matrix / ci-ok"]
+            )
+        }
+
+        /// The migration-window public contract: both the layer wrapper's
+        /// temporary `ci / ci-ok` aggregate and the universal chain's own
+        /// `ci / matrix / ci-ok` aggregate, required together so a wave
+        /// stays reversible while both producers exist (Task 3-02 step 3).
+        public static func protectedMainPublicCompatibilityPayload(from url: URL) throws -> Data {
+            try protectedMainPackagePayload(
+                from: url,
+                requiredContexts: ["ci / ci-ok", "ci / matrix / ci-ok"]
+            )
+        }
+
+        /// The private contract: exactly `verification / workspace`, the
+        /// trusted control-plane receipt (Task 2-01/2-02,
+        /// swift-institute/.github#253). No compatibility variant: no
+        /// producer preceded it.
+        public static func protectedMainPrivatePayload(from url: URL) throws -> Data {
+            try protectedMainPackagePayload(
+                from: url,
+                requiredContexts: ["verification / workspace"]
+            )
+        }
+
+        /// Shared package-class validator parameterized by the exact set of
+        /// required contexts. `requiredContexts` is the Swift-side equality
+        /// guard: it must match the JSON policy file's own
+        /// `required_status_checks` contexts exactly (same cardinality, same
+        /// set, no duplicates) or the payload is rejected — a one-sided
+        /// Swift-only or JSON-only edit fails this guard.
+        private static func protectedMainPackagePayload(
+            from url: URL,
+            requiredContexts: Set<String>
+        ) throws -> Data {
             let (object, rules) = try identity(
                 from: url,
                 expectedName: "Institute protected main"
@@ -60,7 +141,8 @@ extension RepositoryPolicy {
                 checks["strict_required_status_checks_policy"] as? Bool == true,
                 checks["do_not_enforce_on_create"] as? Bool == false,
                 let required = checks["required_status_checks"] as? [[String: Any]],
-                required.count == 1, required.first?["context"] as? String == "ci / ci-ok"
+                required.count == requiredContexts.count,
+                Set(required.compactMap { $0["context"] as? String }) == requiredContexts
             else {
                 throw ConfigurationError(
                     "protected-main status-check transaction differs from the Institute contract"
@@ -71,7 +153,9 @@ extension RepositoryPolicy {
 
         /// The control-plane variant: identical protections minus the
         /// required-status-check rule, since control-plane repositories emit
-        /// no `ci / ci-ok`. Its rule-type set is exactly `deletion`,
+        /// neither `ci / matrix / ci-ok` nor `verification / workspace` —
+        /// visibility is irrelevant to this class. Its rule-type set is
+        /// exactly `deletion`,
         /// `non_fast_forward`, `pull_request` — a payload carrying a fourth
         /// rule of any type (including a smuggled `required_status_checks`)
         /// fails closed, as does a package-shaped payload (wrong name, and a
