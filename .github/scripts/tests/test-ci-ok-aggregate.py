@@ -94,6 +94,13 @@ class ShellHarness(unittest.TestCase):
                     "PULL_REQUEST_HEAD_SHA": "",
                     "TRIGGER_REPOSITORY": "swift-institute/example",
                     "TRIGGER_SHA": "0" * 40,
+                    # swift-institute/.github#276 Task 1-03: "Classify tier"
+                    # now validates `lint-bundle` before anything else, so
+                    # every harness needs a value even when its own test
+                    # doesn't care about it (only ClassifierTests and
+                    # PrimitivesLegSelectionTests actually vary it). Matches
+                    # the workflow input's own non-empty default.
+                    "LINT_BUNDLE": "institute",
                 }
             )
             environment.update({k: v for k, v in env.items()})
@@ -949,6 +956,132 @@ class SubjectDerivationSingularityTests(unittest.TestCase):
             }
         }
         self.assertEqual(self.offending_sites(synthetic), [])
+
+
+class PrimitivesRelocationTests(ShellHarness):
+    """swift-institute/.github#276 Task 1-03: the four Primitives-layer
+    cross-compile legs (`embedded`, `embedded-wasm-sdk`, `android-build`,
+    `static-linux-musl-build`), relocated from the Primitives wrapper into
+    the universal execution graph. RELOCATION, NOT PROMOTION — Task 1-03's
+    own Change item 6 reads "preserve advisory jobs as advisory with
+    explicit outputs", and its "mandatory" language (items 3/5, and the
+    positive control "each MANDATORY Primitives gate...") never applied to
+    these four: none meets the layer's own documented criteria for
+    mandatory status (see the Task 1-01 receipt — nightly-instability
+    precedent for `embedded`; an unmet soak exit criterion for
+    `embedded-wasm-sdk`/`android-build`; no flip criterion ever defined for
+    `static-linux-musl-build`). So this suite characterizes a RELOCATION:
+    the same selection channel (`lint-bundle`) the swift-linter job already
+    validates, now ALSO read and validated in "Classify tier" before any
+    job — gating or advisory — provisions anything; the four legs riding
+    both tiers exactly as they did, unconditionally, in the wrapper; and
+    confirmation that `ci-ok` itself is untouched (none of the four ever
+    enters its `needs:`, so the aggregate step's algorithm has nothing new
+    to reason about — the cleanest possible "stayed advisory").
+    """
+
+    script = extract("plan", CLASSIFY_STEP)
+
+    PRIMITIVES_LEGS = {
+        "embedded", "embedded-wasm-sdk", "android-build", "static-linux-musl-build",
+    }
+
+    def classify(self, **env):
+        base = {
+            "FORCED_TIER": "",
+            "EVENT_NAME": "push",
+            "HEAD_MSG": "chore: something",
+            "PLATFORM_SUPPORT": "",
+            "LINT_BUNDLE": "institute",
+        }
+        base.update(env)
+        return self.run_script(**base)
+
+    # ---- lint-bundle validation, now enforced before any provisioning ----
+
+    def test_empty_lint_bundle_fails_before_any_leg_is_selected(self):
+        code, log, outputs = self.classify(LINT_BUNDLE="")
+        self.assertNotEqual(code, 0, log)
+        self.assertIn("lint-bundle", log)
+        self.assertNotIn("legs", outputs)
+
+    def test_invalid_lint_bundle_fails_before_any_leg_is_selected(self):
+        code, log, outputs = self.classify(LINT_BUNDLE="bogus")
+        self.assertNotEqual(code, 0, log)
+        self.assertIn("lint-bundle 'bogus' is not one of primitives|standards|institute", log)
+        self.assertNotIn("legs", outputs)
+
+    def test_each_of_the_three_valid_tokens_passes_validation(self):
+        for token in ("primitives", "standards", "institute"):
+            with self.subTest(token=token):
+                code, log, outputs = self.classify(LINT_BUNDLE=token)
+                self.assertEqual(code, 0, log)
+                self.assertIn("legs", outputs)
+
+    # ---- leg selection: primitives rides both tiers, everything else never ----
+
+    def test_primitives_bundle_selects_all_four_legs_on_the_build_tier(self):
+        code, log, outputs = self.classify(LINT_BUNDLE="primitives", FORCED_TIER="build")
+        self.assertEqual(code, 0, log)
+        legs = set(outputs["legs"].split(","))
+        self.assertTrue(self.PRIMITIVES_LEGS <= legs, legs)
+
+    def test_primitives_bundle_selects_all_four_legs_on_the_full_tier(self):
+        code, log, outputs = self.classify(LINT_BUNDLE="primitives", FORCED_TIER="full")
+        self.assertEqual(code, 0, log)
+        legs = set(outputs["legs"].split(","))
+        self.assertTrue(self.PRIMITIVES_LEGS <= legs, legs)
+
+    def test_non_primitives_bundles_never_select_any_of_the_four_legs(self):
+        for token in ("standards", "institute"):
+            for tier in ("build", "full"):
+                with self.subTest(token=token, tier=tier):
+                    code, log, outputs = self.classify(LINT_BUNDLE=token, FORCED_TIER=tier)
+                    self.assertEqual(code, 0, log)
+                    legs = set(outputs["legs"].split(","))
+                    self.assertEqual(legs & self.PRIMITIVES_LEGS, set())
+
+    def test_none_of_the_four_legs_ever_enters_gating(self):
+        # Preserve-advisory, proven directly: even for a Primitives package
+        # on the full tier (every leg selected), `gating` — the set ci-ok
+        # requires to SUCCEED — contains none of the four.
+        code, log, outputs = self.classify(LINT_BUNDLE="primitives", FORCED_TIER="full")
+        self.assertEqual(code, 0, log)
+        gating = set(outputs["gating"].split(","))
+        self.assertEqual(gating & self.PRIMITIVES_LEGS, set())
+
+    def test_detector_catches_a_leg_silently_added_to_gating(self):
+        """Positive control: if a future edit added one of the four to the
+        GATING case-arms in the shipped step, this same assertion shape
+        must catch it — proven by feeding the detector a gating set that
+        already contains one."""
+        promoted_gating = {"format", "lint", "swift-linter", "linux-release", "embedded"}
+        self.assertNotEqual(promoted_gating & self.PRIMITIVES_LEGS, set())
+
+    # ---- ci-ok itself is untouched (static check on the shipped YAML) ----
+
+    def test_ci_ok_needs_contains_none_of_the_four_relocated_legs(self):
+        document = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+        ci_ok_needs = set(document["jobs"]["ci-ok"]["needs"])
+        self.assertEqual(ci_ok_needs & self.PRIMITIVES_LEGS, set())
+
+    def test_all_four_relocated_jobs_stay_continue_on_error(self):
+        document = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+        for job_id in self.PRIMITIVES_LEGS:
+            with self.subTest(job=job_id):
+                self.assertIs(document["jobs"][job_id].get("continue-on-error"), True)
+
+    def test_all_four_relocated_jobs_expose_an_explicit_result_output(self):
+        document = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+        for job_id in self.PRIMITIVES_LEGS:
+            with self.subTest(job=job_id):
+                outputs = document["jobs"][job_id].get("outputs") or {}
+                self.assertIn("result", outputs)
+
+    def test_advisory_summary_needs_all_four_relocated_legs(self):
+        document = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+        advisory_needs = set(document["jobs"]["advisory-summary"]["needs"])
+        self.assertTrue(self.PRIMITIVES_LEGS <= advisory_needs)
 
 
 if __name__ == "__main__":

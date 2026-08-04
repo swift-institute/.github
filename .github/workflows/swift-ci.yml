@@ -153,6 +153,10 @@ on:
         type: string
         default: ""
         description: "Dispatch-only target ref (set by ci-dispatch.yml). Selects the branch/tag/SHA of `target-repo` to build. Threaded into the `ref:` field of the target checkouts only. It never reaches the swift-linter engine, which is no longer checked out or built here at all: the `swift-linter` job installs the published, checksum-verified `ci-binaries` release (#137). Empty default — every push/PR/wrapper call passes nothing — so `actions/checkout` resolves the TRIGGERING ref (github.ref/SHA, i.e. the pushed branch), bit-identical to the pre-dispatch implicit-default checkout. See ci-dispatch.yml."
+      embedded-target:
+        type: string
+        default: ""
+        description: "Optional target to build for Embedded with default traits disabled, consulted only by the `embedded` job (`lint-bundle == 'primitives'`). Empty preserves the full-package Embedded build. Relocated verbatim from the Primitives layer wrapper (swift-institute/.github#276 Task 1-03) so an existing consumer's `with: { embedded-target: ... }` keeps meaning the same thing after the wrapper forwards it here; every other layer/consumer never sets it and is unaffected."
     secrets:
       PRIVATE_REPO_TOKEN:
         required: false
@@ -502,8 +506,26 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           HEAD_MSG: ${{ github.event.head_commit.message }}
           PLATFORM_SUPPORT: ${{ inputs.platform-support }}
+          LINT_BUNDLE: ${{ inputs.lint-bundle }}
         run: |
           set -euo pipefail
+          # swift-institute/.github#276 Task 1-03: `lint-bundle` is the one
+          # existing layer-selection channel (set by the layer wrapper, never
+          # by a package) and is now also read here — before ANY job,
+          # gating or advisory, provisions anything — to decide which
+          # Primitives-only advisory legs this run selects. Validated here
+          # too, redundantly with the swift-linter job's own later check
+          # (that job's comment already documents this as "the fast half of
+          # a fail-closed pair, not the only guard"): an invalid token must
+          # not let the Primitives cross-compile legs spin up containers
+          # before failing.
+          case "$LINT_BUNDLE" in
+            primitives|standards|institute) ;;
+            *)
+              echo "::error::lint-bundle '$LINT_BUNDLE' is not one of primitives|standards|institute. This selects which layer-specific advisory legs this run selects; refusing to guess one."
+              exit 1
+              ;;
+          esac
           # The CI subject (repository/ref/SHA this run attests) is resolved
           # exactly once, above, by "Resolve CI subject" — this step no
           # longer computes or re-derives it; see that step's outputs
@@ -602,6 +624,26 @@ jobs:
             full)  LEGS="format,lint,swift-linter,linux-release,macos-release,windows-release,linux-nightly,linux-6-4,apple-simulator-build,lint-yaml,lint-broken-symlink,lint-license-header,lint-test-support-spine,advisory-summary" ;;
             *) echo "::error::Unknown tier '$TIER' (expected build|full)"; exit 1 ;;
           esac
+          # swift-institute/.github#276 Task 1-03 (relocation, not promotion):
+          # the four Primitives-layer cross-compile legs, moved here from the
+          # Primitives wrapper's own job list. Appended in BOTH tiers,
+          # mirroring linux-6-4's precedent immediately above ("rides every
+          # ordinary push, stays advisory") — the wrapper's own copies of
+          # these jobs previously ran unconditionally on every trigger with
+          # no tier concept at all, so riding both tiers here is what
+          # preserves that existing behavior rather than narrowing it to
+          # full-tier-only. None of the four is mandatory by the layer's own
+          # documented criteria (nightly-instability precedent for
+          # `embedded`; an explicit, currently-unmet soak exit criterion for
+          # `embedded-wasm-sdk`/`android-build`; no flip criterion ever
+          # defined for `static-linux-musl-build` — see
+          # swift-institute/Research/wasm-ci-strategy-and-sdk-toolchain-coupling.md
+          # and the Task 1-01 receipt), so they stay OUT of `GATING` below —
+          # the case arms there are unchanged, and these four job ids match
+          # none of them, which is what keeps them advisory automatically.
+          if [ "$LINT_BUNDLE" = "primitives" ]; then
+            LEGS="${LEGS},embedded,embedded-wasm-sdk,android-build,static-linux-musl-build"
+          fi
           # Apply the platform-support exclusion to `legs` itself, so `legs`
           # is the ONE list of what this run expects to execute. The build
           # tier already picked a supported primary; this is what narrows the
@@ -1228,6 +1270,284 @@ jobs:
             -destination "generic/platform=${{ matrix.platform }} Simulator" \
             -skipPackagePluginValidation \
             -skipMacroValidation
+
+  # ─── Primitives-layer advisory legs (swift-institute/.github#276 Task 1-03) ──
+  # Relocated from the Primitives wrapper's own job list into the universal
+  # execution graph. RELOCATION, NOT PROMOTION (Task 1-03 Change item 6:
+  # "Preserve advisory jobs as advisory with explicit outputs"): each keeps
+  # its exact prior `continue-on-error: true` posture, container, timeout,
+  # and build steps; only the checkout/subject-verification/private-repo
+  # scaffolding is updated to match every other universal job (subject
+  # checkout via `needs.plan.outputs.subject-*`, `inputs.job` single-leg
+  # dispatch support), and each now exposes an explicit `outputs.result` per
+  # item 6. Selected via `lint-bundle == 'primitives'` in Plan's "Classify
+  # tier" step (the one existing layer-selection channel — Change item 1);
+  # none is in `ci-ok`'s `needs`, matching their prior non-gating posture
+  # exactly. The Primitives wrapper's own copies of these four jobs are
+  # deliberately UNCHANGED and keep running in parallel for now — Task 1-03
+  # Change item 7 forbids removing the duplicate until a full-tier canary
+  # proves this path first; that removal is Task 1-04's, not this one's.
+  #
+  # None of the four is "mandatory" by the layer's own documented criteria
+  # (recorded in the Task 1-01 receipt, not this task's to resolve):
+  #   - embedded: continue-on-error is permanent by design, matching the
+  #     linux-nightly precedent (nightly toolchain instability).
+  #   - embedded-wasm-sdk / android-build: each has an explicit soak exit
+  #     criterion ("no package-actionable failures ... for 2 consecutive
+  #     weekly sweeps", swift-institute/Research/wasm-ci-strategy-and-sdk-
+  #     toolchain-coupling.md, non-normative tier-2) that current fleet data
+  #     does not meet.
+  #   - static-linux-musl-build: no flip criterion was ever defined; its own
+  #     comment says it "may remain permanently" advisory.
+
+  embedded:
+    # NAME (swift-institute/.github#161, 2026-07-31): this leg was called
+    # "Ubuntu (Swift main nightly, Embedded build)", which read as an
+    # embedded-target build. It is not one — `swift build` here targets the
+    # host triple x86_64-unknown-linux-gnu with the Embedded feature flag on.
+    name: Ubuntu (Swift main nightly, Embedded mode on host triple)
+    needs: plan
+    if: ${{ !cancelled() && !github.event.repository.private && (inputs.job == 'embedded' || (inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',embedded,'))) }}
+    runs-on: ubuntu-latest
+    container: swiftlang/swift:nightly-main-jammy
+    continue-on-error: true
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    outputs:
+      # Exactly one of the two build steps below runs (mutually exclusive
+      # `if:`); the skipped one's `.outcome` is empty, and GitHub Actions
+      # expressions treat an empty/undefined operand as falsy for `||`, so
+      # this resolves to whichever step actually ran.
+      result: ${{ steps.build.outcome || steps.build-target.outcome }}
+    steps:
+      - name: Harden runner (audit-mode egress logging)
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ needs.plan.outputs.subject-repository }}
+          ref: ${{ needs.plan.outputs.subject-ref }}
+
+      - name: Verify checked-out subject HEAD
+        shell: bash
+        env:
+          SUBJECT_SHA: ${{ needs.plan.outputs.subject-sha }}
+        run: |
+          set -euo pipefail
+          git config --global --add safe.directory '*'
+          ACTUAL="$(git rev-parse HEAD)"
+          if [ "$ACTUAL" != "$SUBJECT_SHA" ]; then
+            echo "::error::checked-out HEAD '$ACTUAL' does not match Plan's resolved CI subject SHA '$SUBJECT_SHA'. Refusing to proceed against an unverified checkout."
+            exit 1
+          fi
+
+      - uses: swift-institute/.github/.github/actions/configure-private-repos@1862f98d955f31a11addc7d41d2a3a6cdd87533c  # relocated verbatim from the Primitives wrapper (swift-institute/.github#276 Task 1-03); pin-advance is a separate task's scope (0A-04) and is not touched by this relocation
+        with:
+          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+          app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+          app-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
+          app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          enabled: ${{ inputs.enable-private-repos }}
+
+      - name: Print Swift version
+        run: swift --version
+
+      # NO `.build` CACHE HERE, EVER (swift-institute/.github#161, [CI-040]).
+      # Cold build is the only honest one under gitignored `Package.resolved`
+      # + branch-pinned dependencies; see the wrapper's original comment
+      # (preserved in git history) for the measured cache-poisoning incident.
+
+      - name: Build (Embedded)
+        id: build
+        if: ${{ inputs.embedded-target == '' }}
+        run: swift build -Xswiftc -enable-experimental-feature -Xswiftc Embedded
+
+      - name: Build target (Embedded, default traits disabled)
+        id: build-target
+        if: ${{ inputs.embedded-target != '' }}
+        env:
+          EMBEDDED_TARGET: ${{ inputs.embedded-target }}
+        run: swift build --target "$EMBEDDED_TARGET" --disable-default-traits -Xswiftc -enable-experimental-feature -Xswiftc Embedded
+
+  embedded-wasm-sdk:
+    name: Ubuntu (Swift 6.3, Embedded Wasm SDK build)
+    needs: plan
+    if: ${{ !cancelled() && !github.event.repository.private && (inputs.job == 'embedded-wasm-sdk' || (inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',embedded-wasm-sdk,'))) }}
+    runs-on: ubuntu-latest
+    container: swift:${{ inputs.swift-version }}
+    continue-on-error: true     # γ-3 advisory; classified soak. Drop after flip.
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      result: ${{ steps.build.outcome }}
+    steps:
+      - name: Harden runner (audit-mode egress logging)
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ needs.plan.outputs.subject-repository }}
+          ref: ${{ needs.plan.outputs.subject-ref }}
+
+      - name: Verify checked-out subject HEAD
+        shell: bash
+        env:
+          SUBJECT_SHA: ${{ needs.plan.outputs.subject-sha }}
+        run: |
+          set -euo pipefail
+          git config --global --add safe.directory '*'
+          ACTUAL="$(git rev-parse HEAD)"
+          if [ "$ACTUAL" != "$SUBJECT_SHA" ]; then
+            echo "::error::checked-out HEAD '$ACTUAL' does not match Plan's resolved CI subject SHA '$SUBJECT_SHA'. Refusing to proceed against an unverified checkout."
+            exit 1
+          fi
+
+      - uses: swift-institute/.github/.github/actions/configure-private-repos@1862f98d955f31a11addc7d41d2a3a6cdd87533c  # relocated verbatim from the Primitives wrapper (swift-institute/.github#276 Task 1-03); pin-advance is a separate task's scope (0A-04) and is not touched by this relocation
+        with:
+          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+          app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+          app-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
+          app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          enabled: ${{ inputs.enable-private-repos }}
+
+      - name: Print Swift version
+        run: swift --version
+
+      - name: Install Embedded Wasm SDK matching container Swift
+        uses: swift-institute/.github/.github/actions/install-swift-sdk@1862f98d955f31a11addc7d41d2a3a6cdd87533c  # relocated verbatim from the Primitives wrapper (swift-institute/.github#276 Task 1-03); pin-advance is a separate task's scope (0A-04) and is not touched by this relocation
+        with:
+          platform: wasm-sdk
+          bundle-suffix: wasm
+          sdk-id: ${TAG}_wasm-embedded
+          output-env-var: WASM_SDK_ID
+
+      - name: Build (Embedded Wasm)
+        id: build
+        run: swift build --swift-sdk "${WASM_SDK_ID}"
+
+  android-build:
+    name: Ubuntu (Swift 6.3, Android SDK build)
+    needs: plan
+    if: ${{ !cancelled() && !github.event.repository.private && (inputs.job == 'android-build' || (inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',android-build,'))) }}
+    runs-on: ubuntu-latest
+    container: swift:${{ inputs.swift-version }}
+    continue-on-error: true     # advisory; classified soak. Drop after flip.
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      result: ${{ steps.build.outcome }}
+    steps:
+      - name: Harden runner (audit-mode egress logging)
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ needs.plan.outputs.subject-repository }}
+          ref: ${{ needs.plan.outputs.subject-ref }}
+
+      - name: Verify checked-out subject HEAD
+        shell: bash
+        env:
+          SUBJECT_SHA: ${{ needs.plan.outputs.subject-sha }}
+        run: |
+          set -euo pipefail
+          git config --global --add safe.directory '*'
+          ACTUAL="$(git rev-parse HEAD)"
+          if [ "$ACTUAL" != "$SUBJECT_SHA" ]; then
+            echo "::error::checked-out HEAD '$ACTUAL' does not match Plan's resolved CI subject SHA '$SUBJECT_SHA'. Refusing to proceed against an unverified checkout."
+            exit 1
+          fi
+
+      - uses: swift-institute/.github/.github/actions/configure-private-repos@1862f98d955f31a11addc7d41d2a3a6cdd87533c  # relocated verbatim from the Primitives wrapper (swift-institute/.github#276 Task 1-03); pin-advance is a separate task's scope (0A-04) and is not touched by this relocation
+        with:
+          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+          app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+          app-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
+          app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          enabled: ${{ inputs.enable-private-repos }}
+
+      - name: Print Swift version
+        run: swift --version
+
+      - name: Install Android SDK matching container Swift
+        uses: swift-institute/.github/.github/actions/install-swift-sdk@1862f98d955f31a11addc7d41d2a3a6cdd87533c  # relocated verbatim from the Primitives wrapper (swift-institute/.github#276 Task 1-03); pin-advance is a separate task's scope (0A-04) and is not touched by this relocation
+        with:
+          platform: android-sdk
+          bundle-suffix: android
+          sdk-id: ${TAG}_android
+          output-env-var: ANDROID_SDK_ID
+
+      - name: Build (Android)
+        id: build
+        run: swift build --swift-sdk "${ANDROID_SDK_ID}"
+
+  static-linux-musl-build:
+    name: Ubuntu (Swift 6.3, Static Linux musl build)
+    needs: plan
+    if: ${{ !cancelled() && !github.event.repository.private && (inputs.job == 'static-linux-musl-build' || (inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',static-linux-musl-build,'))) }}
+    runs-on: ubuntu-latest
+    container: swift:${{ inputs.swift-version }}
+    continue-on-error: true     # γ-3b advisory; may remain permanently.
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      result: ${{ steps.build.outcome }}
+    steps:
+      - name: Harden runner (audit-mode egress logging)
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ needs.plan.outputs.subject-repository }}
+          ref: ${{ needs.plan.outputs.subject-ref }}
+
+      - name: Verify checked-out subject HEAD
+        shell: bash
+        env:
+          SUBJECT_SHA: ${{ needs.plan.outputs.subject-sha }}
+        run: |
+          set -euo pipefail
+          git config --global --add safe.directory '*'
+          ACTUAL="$(git rev-parse HEAD)"
+          if [ "$ACTUAL" != "$SUBJECT_SHA" ]; then
+            echo "::error::checked-out HEAD '$ACTUAL' does not match Plan's resolved CI subject SHA '$SUBJECT_SHA'. Refusing to proceed against an unverified checkout."
+            exit 1
+          fi
+
+      - uses: swift-institute/.github/.github/actions/configure-private-repos@1862f98d955f31a11addc7d41d2a3a6cdd87533c  # relocated verbatim from the Primitives wrapper (swift-institute/.github#276 Task 1-03); pin-advance is a separate task's scope (0A-04) and is not touched by this relocation
+        with:
+          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+          app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+          app-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
+          app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          enabled: ${{ inputs.enable-private-repos }}
+
+      - name: Print Swift version
+        run: swift --version
+
+      - name: Install Static Linux SDK matching container Swift
+        uses: swift-institute/.github/.github/actions/install-swift-sdk@1862f98d955f31a11addc7d41d2a3a6cdd87533c  # relocated verbatim from the Primitives wrapper (swift-institute/.github#276 Task 1-03); pin-advance is a separate task's scope (0A-04) and is not touched by this relocation
+        with:
+          platform: static-sdk
+          bundle-suffix: static-linux
+          use-platform-version: 'true'
+          sdk-id: x86_64-swift-linux-musl
+
+      - name: Build (Static Linux musl, x86_64)
+        id: build
+        run: swift build --swift-sdk x86_64-swift-linux-musl
 
   # ─── Ecosystem-wide quality gates ─────────────────────────────────────
   # `format` and `lint` run on every consumer CI in parallel with the
@@ -2073,6 +2393,15 @@ jobs:
       - lint-test-support-spine
       - lint-api-breakage
       - lint-pr-title
+      # swift-institute/.github#276 Task 1-03: relocated Primitives-layer
+      # advisory legs. Present here unconditionally (like every other
+      # entry); on a non-Primitives run (lint-bundle != 'primitives') Plan
+      # never selects them, so they report `skipped` — same shape as any
+      # other advisory leg a given run doesn't select.
+      - embedded
+      - embedded-wasm-sdk
+      - android-build
+      - static-linux-musl-build
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
