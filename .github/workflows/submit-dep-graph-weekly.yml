@@ -137,7 +137,16 @@ jobs:
       matrix:
         org: ${{ fromJSON(needs.config.outputs.orgs) }}
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # 60 minutes was insufficient for real fleet-scale throughput: a fresh
+    # exact-head dispatch (run 30918885155, swift-institute/.github#279) was
+    # cancelled by this ceiling with `Targets enumerated: 204` and no further
+    # progress — a real, sequential clone+resolve+show-dependencies sweep of
+    # a 200+ repo org, bounded local timing puts real per-target cost at
+    # roughly 15-70s (dominated by network-cold `swift package resolve`),
+    # i.e. ~150 minutes aggregate for this org alone. 180 minutes gives that
+    # observed throughput headroom while staying well under GitHub's
+    # 360-minute hard per-job ceiling.
+    timeout-minutes: 180
     # Swift toolchain pin per [CI-011]; bump in lockstep with the universal reusable's default.
     # Hardcoded literal: env.* and workflow-level env: are not bound when GitHub Actions
     # resolves container: at job-startup. vars.* (org/repo variables) is the only working
@@ -263,7 +272,16 @@ jobs:
           failures=0
           skipped=0
           per_target_failures=()
+          target_index=0
           for target in "${targets[@]}"; do
+            target_index=$((target_index+1))
+            # Prior to this line, the loop produced no output between
+            # "Targets enumerated" and the final summary write, so a
+            # signal-killed target (#279) or a job-timeout cancellation
+            # (#279, run 30918885155) left zero evidence of how far the
+            # sweep had reached. One line per target costs nothing and
+            # makes that observable going forward.
+            echo "[${target_index}/${#targets[@]}] ${target}"
             workdir=$(mktemp -d)
             if ! git clone --depth 1 --quiet \
                 "https://x-access-token:${GH_TOKEN}@github.com/${target}.git" \
