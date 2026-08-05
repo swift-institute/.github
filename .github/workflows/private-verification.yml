@@ -30,7 +30,10 @@
 #     RUNNER_TEMP, never to stdout;
 #   - derives a PUBLIC-SAFE ENVELOPE containing no repository name, ref,
 #     source path, dependency URL, test name, or raw diagnostic, and deletes
-#     the raw receipt and logs before the job ends (`trap ... EXIT`), so even
+#     the raw receipt and logs before the job ends (subject logs via the
+#     producing step's EXIT trap; the receipt in the envelope step AFTER
+#     derivation, with a proved absence — TX3 keeps production, envelope
+#     derivation and raw-evidence deletion in one containment unit), so even
 #     a compromised `verify` job cannot leave private content on the runner
 #     past its own lifetime;
 #   - cannot forge a passing check on its own: it never holds checks/statuses
@@ -161,7 +164,7 @@ jobs:
           test "$observed_head" = "$SUBJECT_HEAD"
           echo "subject-dir=${subject_dir}" >> "$GITHUB_OUTPUT"
 
-      - name: Resolve and build Workspace at its pinned, control-plane-supplied revision
+      - name: Resolve Workspace at its pinned, control-plane-supplied revision
         id: workspace
         shell: bash
         env:
@@ -174,14 +177,14 @@ jobs:
           git -C "$workspace_dir" checkout --quiet "$WORKSPACE_REVISION"
           observed=$(git -C "$workspace_dir" rev-parse HEAD)
           test "$observed" = "$WORKSPACE_REVISION"
-          # Build the exact `workspace` executable product this revision
-          # defines — never the caller's own `workspace` install, so the
-          # trusted verifier always runs the pinned revision's own code,
-          # never whatever happens to be on the runner's PATH.
-          swift build --package-path "${workspace_dir}/Application" -c release --product workspace
-          test -x "${workspace_dir}/Application/.build/release/workspace"
+          # TX3 (swift-institute/.github#276 §8.5): every invocation goes
+          # through the Workspace Skill's documented fresh-clone bootstrap
+          # (`swift run --package-path .../Application -c release
+          # workspace …`) so the trusted verifier always runs the pinned
+          # revision's own code — never a raw `swift build` product and
+          # never whatever happens to be on the runner's PATH. The
+          # bootstrap itself is never cited as package evidence.
           echo "workspace-dir=${workspace_dir}" >> "$GITHUB_OUTPUT"
-          echo "workspace-bin=${workspace_dir}/Application/.build/release/workspace" >> "$GITHUB_OUTPUT"
 
       - name: Run Workspace verification seal — subject code, fully contained
         id: run
@@ -203,11 +206,20 @@ jobs:
           run_log="${RUNNER_TEMP}/run.log"
 
           cleanup() {
-            # Deletes raw logs and the full receipt before the job can end,
-            # on every exit path — success, subject-code failure, or this
-            # step's own failure. This is the confidentiality backstop, not
-            # only the happy path.
-            rm -f "$run_log" "$receipt_path" 2>/dev/null || true
+            # Deletes the raw subject log on every exit path — success,
+            # subject-code failure, or this step's own failure.
+            #
+            # TX3 repair (swift-institute/.github#276 §4.3): the receipt is
+            # deliberately NOT deleted here. Bash runs an EXIT trap when
+            # THIS step's shell exits — the earlier variant deleted
+            # `$receipt_path` in this trap while the next step still needed
+            # to read it, so a truthful positive verification path was
+            # impossible by construction. Receipt production, envelope
+            # derivation, and raw-evidence deletion are one containment
+            # unit: the envelope step deletes the receipt AFTER deriving
+            # the safe envelope, and proves its absence before the job
+            # ends.
+            rm -f "$run_log" 2>/dev/null || true
           }
           trap cleanup EXIT
 
@@ -216,7 +228,7 @@ jobs:
           set +x
           run_status=0
           env -u GITHUB_ENV -u GITHUB_OUTPUT -u GITHUB_PATH -u GITHUB_STEP_SUMMARY -u ACTIONS_STEP_DEBUG \
-            "${WORKSPACE_DIR}/Application/.build/release/workspace" verification seal \
+            swift run --package-path "${WORKSPACE_DIR}/Application" -c release workspace verification seal \
               --package-path "$SUBJECT_DIR" \
               --claimed-head "$SUBJECT_HEAD" \
               --default-branch "$SUBJECT_DEFAULT_BRANCH" \
@@ -241,7 +253,7 @@ jobs:
           # re-digesting from bytes on disk.
           check_status=0
           env -u GITHUB_ENV -u GITHUB_OUTPUT -u GITHUB_PATH -u GITHUB_STEP_SUMMARY \
-            "${WORKSPACE_DIR}/Application/.build/release/workspace" verification check \
+            swift run --package-path "${WORKSPACE_DIR}/Application" -c release workspace verification check \
               --receipt "$receipt_path" \
               > "${RUNNER_TEMP}/check.log" 2>&1 \
             || check_status=$?
@@ -251,13 +263,11 @@ jobs:
           echo "run-status=${run_status}" >> "$GITHUB_OUTPUT"
           echo "check-status=${check_status}" >> "$GITHUB_OUTPUT"
           # `receipt_path` is intentionally NOT deleted here — the next step
-          # reads it to build the safe envelope. `cleanup` above still fires
-          # when this step exits, but the trap is step-scoped in bash; the
-          # receipt survives to the next step only because GITHUB_ENV/PATH
-          # propagation is unaffected by the unset applied to the subject
-          # subprocess above (that `env -u` only touched the one child
-          # process). The receipt is deleted for real at the end of the next
-          # step instead.
+          # reads it to build the safe envelope, deletes it after
+          # derivation, and proves its absence (TX3: the step-scoped EXIT
+          # trap above no longer touches the receipt; the earlier variant's
+          # claim that a step trap leaves it for the next step was false —
+          # bash runs the trap when the producing step's shell exits).
 
       - name: Derive the public-safe envelope and delete raw evidence
         id: envelope
@@ -343,9 +353,17 @@ jobs:
 
           # Confidentiality backstop, restated: the raw receipt and every
           # subject-derived log this job wrote are removed now, before the
-          # job can complete — never uploaded, never left on the runner.
+          # job can complete — never uploaded, never left on the runner —
+          # and the deletion is PROVED (TX3): a raw path still readable
+          # after this point fails the job rather than leaking silently.
           rm -f "$RECEIPT_PATH" "${RUNNER_TEMP}/run.log" 2>/dev/null || true
           rm -rf "${RUNNER_TEMP}/subject" "${RUNNER_TEMP}/workspace-src" 2>/dev/null || true
+          for raw in "$RECEIPT_PATH" "${RUNNER_TEMP}/run.log" "${RUNNER_TEMP}/subject" "${RUNNER_TEMP}/workspace-src"; do
+            if [[ -n "$raw" && -e "$raw" ]]; then
+              echo "::error::raw evidence path still present after deletion: $(basename "$raw")"
+              exit 1
+            fi
+          done
 
           echo "artifact-name=envelope-${REQUEST_ID}" >> "$GITHUB_OUTPUT"
           echo "envelope-path=${envelope_path}" >> "$GITHUB_OUTPUT"
