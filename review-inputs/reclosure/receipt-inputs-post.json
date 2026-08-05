@@ -1,0 +1,271 @@
+{
+ "assertions": [
+  {
+   "n": 1,
+   "supportable": true
+  },
+  {
+   "n": 2,
+   "supportable": true
+  },
+  {
+   "n": 3,
+   "supportable": true
+  },
+  {
+   "n": 4,
+   "supportable": true
+  },
+  {
+   "n": 5,
+   "supportable": true
+  },
+  {
+   "n": 6,
+   "supportable": true
+  },
+  {
+   "n": 7,
+   "supportable": true
+  },
+  {
+   "n": 8,
+   "supportable": true
+  },
+  {
+   "n": 9,
+   "supportable": true
+  },
+  {
+   "n": 10,
+   "supportable": true
+  },
+  {
+   "n": 11,
+   "supportable": true
+  },
+  {
+   "n": 12,
+   "supportable": true
+  },
+  {
+   "n": 13,
+   "supportable": true
+  },
+  {
+   "n": 14,
+   "supportable": true
+  },
+  {
+   "n": 15,
+   "supportable": true
+  },
+  {
+   "n": 16,
+   "supportable": true
+  }
+ ],
+ "authority": {
+  "completionProgramme": "62e315c42f6ec6b34320af560697fc8bfb772ab655ddc4c65456ff04cd90d21f",
+  "refactorProgramme": "184db8ef230cd7e532f9aeb167a51508bc897f8221ec935cb5a776ca1eaf62ef"
+ },
+ "compatibilityRemoved": true,
+ "destructiveOperationsAccounted": true,
+ "externalReview": {
+  "basis": "R36 cross-review satisfaction ruling; E1 fresh acceptance on the reclosure cut",
+  "verdict": "ACCEPTED FOR R1"
+ },
+ "fleetDispositionAuthorized": true,
+ "fleetDispositionImplemented": true,
+ "holdsRemoved": true,
+ "performativeAmendment": {
+  "located": true,
+  "ruling": "R29"
+ },
+ "positiveControls": [
+  {
+   "fired": true,
+   "name": "v1-per-root distinct-blob census"
+  },
+  {
+   "fired": true,
+   "name": "VAL-47 bot-PR search (401 total, 0 open)"
+  }
+ ],
+ "predicates": {
+  "P1": {
+   "state": "MET"
+  },
+  "P10": {
+   "ruling": "R32",
+   "state": "MET (reconstructed Class A evidence)"
+  },
+  "P11": {
+   "state": "MET"
+  },
+  "P12": {
+   "ruling": "R34",
+   "state": "MET (reduced G1 contract typed)"
+  },
+  "P13": {
+   "ruling": "R34",
+   "state": "MET (reduced G1 contract typed)"
+  },
+  "P14": {
+   "ruling": "R33",
+   "state": "MET (public/control limbs) + DESCOPED (private-ruleset limb)"
+  },
+  "P15": {
+   "state": "MET"
+  },
+  "P16": {
+   "state": "MET"
+  },
+  "P17": {
+   "state": "MET"
+  },
+  "P18": {
+   "state": "MET"
+  },
+  "P19": {
+   "ruling": "R35",
+   "state": "MET (identity families typed unmeasured-with-cause)"
+  },
+  "P2": {
+   "state": "MET"
+  },
+  "P20": {
+   "state": "MET"
+  },
+  "P21": {
+   "state": "DESCOPED"
+  },
+  "P22": {
+   "state": "MET"
+  },
+  "P23": {
+   "state": "MET"
+  },
+  "P24": {
+   "state": "MET"
+  },
+  "P25": {
+   "state": "MET"
+  },
+  "P26": {
+   "state": "MET"
+  },
+  "P27": {
+   "nonPerformativeLimbsSupportable": true,
+   "state": "MET"
+  },
+  "P28": {
+   "nonPerformativeLimbsSupportable": true,
+   "state": "MET"
+  },
+  "P3": {
+   "state": "MET"
+  },
+  "P4": {
+   "state": "MET"
+  },
+  "P5": {
+   "state": "MET"
+  },
+  "P6": {
+   "state": "MET"
+  },
+  "P7": {
+   "state": "MET"
+  },
+  "P8": {
+   "state": "MET"
+  },
+  "P9": {
+   "state": "MET"
+  }
+ },
+ "privateCoordinatesOpaque": true,
+ "receiptCandidateDigest": "56d8309cfacae83c002afa7ae62a192b08171aaa7098e95c9807a866aaf4f4ad",
+ "runtimeReceipts": [
+  {
+   "digest": "a649e0883d1b2abb12474a723917c469d855afe28fab3370501cf4d3fe52db9b",
+   "headSha": "6fbc0f80b22b19b13b339772231260a96e24c8db",
+   "runAttempt": 1,
+   "runId": 31010155651
+  }
+ ],
+ "tables": [
+  {
+   "name": "table-1",
+   "populated": true
+  },
+  {
+   "name": "table-2",
+   "populated": true
+  },
+  {
+   "name": "table-3",
+   "populated": true
+  },
+  {
+   "name": "table-4",
+   "populated": true
+  },
+  {
+   "name": "table-5",
+   "populated": true
+  },
+  {
+   "name": "table-6",
+   "populated": true
+  },
+  {
+   "name": "table-7",
+   "populated": true
+  },
+  {
+   "name": "table-8",
+   "nameReservationField": true,
+   "populated": true
+  },
+  {
+   "name": "table-9",
+   "populated": true
+  },
+  {
+   "name": "table-10",
+   "populated": true
+  },
+  {
+   "name": "table-11",
+   "populated": true
+  },
+  {
+   "name": "table-12",
+   "populated": true
+  },
+  {
+   "name": "table-13",
+   "populated": true
+  },
+  {
+   "name": "table-14",
+   "populated": true
+  },
+  {
+   "name": "table-15",
+   "populated": true
+  },
+  {
+   "name": "table-16",
+   "populated": true
+  }
+ ],
+ "workspaceReconciliation": [
+  {
+   "item": "effective-inventory",
+   "state": "reconciled at 49fad76bed2cc34da62de1b733600e725b6ae2e1"
+  }
+ ]
+}
