@@ -124,10 +124,13 @@ jobs:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
 
-      - name: Select Swift 6.3
-        uses: SwiftyLab/setup-swift@38f54a76b70d989321de9dc7c840618c08cf56e9 # v1.14.0
-        with:
-          swift-version: '6.3'
+      # No toolchain-selection step: Workspace's floor is Swift 6.4 and the
+      # macos-26 image's Xcode toolchain satisfies it — the previous
+      # "Select Swift 6.3" pinned a toolchain BELOW the floor, so every seal
+      # (ubuntu and macOS alike) died compiling Workspace
+      # (runStatus=1,log=toolchain-error; runs 31024168933, 31025139885).
+      # Workspace's own green contributor-path CI on macos-26 uses exactly
+      # this image toolchain.
 
       - name: Mint a read-only App token scoped to the one subject repository
         id: token
