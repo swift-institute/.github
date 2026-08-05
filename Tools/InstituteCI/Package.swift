@@ -12,6 +12,10 @@ let package = Package(
             name: "CI Contract",
             targets: ["CI Contract"]
         ),
+        .library(
+            name: "Institute Receipt",
+            targets: ["Institute Receipt"]
+        ),
         .executable(
             name: "institute-ci",
             targets: ["Institute CI Command"]
@@ -21,6 +25,9 @@ let package = Package(
         .target(
             name: "CI Contract"
         ),
+        .target(
+            name: "Institute Receipt"
+        ),
         .executableTarget(
             name: "Institute CI Command",
             dependencies: ["CI Contract"]
@@ -28,6 +35,10 @@ let package = Package(
         .testTarget(
             name: "CI Contract Tests",
             dependencies: ["CI Contract"]
+        ),
+        .testTarget(
+            name: "Institute Receipt Tests",
+            dependencies: ["Institute Receipt"]
         ),
     ],
     swiftLanguageModes: [.v6]
