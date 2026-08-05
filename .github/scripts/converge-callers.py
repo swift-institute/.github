@@ -208,9 +208,25 @@ class RateLimitedGh:
         return json.loads(out) if out.strip() else None
 
     def graphql(self, query: str, **variables: Any) -> dict:
+        """Every variable is sent via `-F` (typed), never `-f` (always
+        string) — a real, live-caught defect: this method originally used
+        `-f` uniformly, which silently stringifies everything, and a
+        `$number: Int!` GraphQL variable sent as a JSON string is a hard
+        `gh` CLI error ('Variable $number of type Int! was provided
+        invalid value'), not a warning. `-F`'s "magic type conversion"
+        (per `gh api --help`: literal `true`/`false`/`null` and
+        integer-looking values convert; everything else stays a JSON
+        string) makes it correct for BOTH typed and string GraphQL
+        variables uniformly, so there is no need to track each variable's
+        declared type here — verified directly: `-F owner=swift-primitives`
+        still sends a JSON string, `-F number=11` sends a JSON integer.
+        The query text itself stays on `-f` (`query=...` is never meant to
+        be type-converted; it is Actions/GraphQL query TEXT, not a
+        variable value).
+        """
         args = ["api", "graphql", "-f", f"query={query}"]
         for key, value in variables.items():
-            args += ["-f", f"{key}={value}"]
+            args += ["-F", f"{key}={value}"]
         out = self._run(args)
         return json.loads(out)
 
@@ -823,24 +839,76 @@ def self_verify(
     return True, "generator round-trip OK; validate-thin-callers.py exit 0, zero findings"
 
 
+def _required_contexts(gh: RateLimitedGh, repository: str) -> list[str]:
+    """Every `required_status_checks` context name across every ruleset on
+    `repository`, read live — the same read `check_rulesets_on_target()`
+    already performs, factored out so `_checks_ready_and_green()` can
+    scope to it too."""
+    contexts: list[str] = []
+    rulesets = gh.api(f"repos/{repository}/rulesets") or []
+    for rs in rulesets:
+        detail = gh.api(f"repos/{repository}/rulesets/{rs['id']}")
+        for rule in detail.get("rules", []):
+            if rule.get("type") == "required_status_checks":
+                contexts += [
+                    c["context"]
+                    for c in rule.get("parameters", {}).get("required_status_checks", [])
+                ]
+    return contexts
+
+
 def _checks_ready_and_green(gh: RateLimitedGh, repository: str, head: str) -> tuple[bool, bool, str]:
-    """One snapshot read of check-runs at `head`. Returns (ready, ok, detail):
-    `ready` is False while any check tied to this exact head is still
-    non-terminal (Trap A: only current-head runs count — a stale run at an
-    older head must never block or satisfy this gate). `ok` is only
-    meaningful when `ready` is True, and requires literal `success` on
-    every current-head run (Trap B: `skipped` is terminal but is not
-    success, so it never satisfies this gate by itself)."""
+    """One snapshot read of check-runs at `head`, scoped to the
+    repository's own live REQUIRED contexts — never "every check-run
+    whatsoever."
+
+    CORRECTED (2026-08-05, caught before re-firing rather than after):
+    the original version required literal `success` on every check-run
+    reported at the head, full stop. Every real matrix run in this fleet
+    reports many LEGITIMATELY skipped legs (conditional platform/build
+    variants that don't apply to a given event) and can carry unrelated
+    advisory-leg failures (e.g. an experimental Embedded Wasm SDK build)
+    that the ruleset itself does not require — observed live on
+    `swift-primitives/swift-array-primitives#11`: both actual required
+    contexts (`ci / ci-ok`, `ci / matrix / ci-ok`) `success`, while one
+    unrelated advisory leg reports `failure` and ten legs report
+    `skipped`. The original predicate would have refused to approve this
+    (and structurally every other) PR in the fleet, never converging
+    anything, for a reason that has nothing to do with mergeability. The
+    ruleset's own required-context LIST is the authoritative scope, read
+    live via `_required_contexts()` — never the full check-run set, and
+    never a hardcoded name.
+
+    Returns (ready, ok, detail): `ready` is False while any REQUIRED
+    context is missing at this exact head or still non-terminal (Trap A:
+    only current-head runs count). `ok` is only meaningful when `ready`
+    is True, and requires literal `success` on every REQUIRED context
+    (Trap B: `skipped` is terminal but is not success, so a required
+    context that skipped never satisfies this gate)."""
+    required = _required_contexts(gh, repository)
+    if not required:
+        return False, False, f"could not determine required status-check contexts for {repository} (empty ruleset read)"
     checks = gh.api(f"repos/{repository}/commits/{head}/check-runs?per_page=100")
-    current = [r for r in checks.get("check_runs", []) if r["head_sha"] == head]
-    non_terminal = [r for r in current if r["status"] != "completed"]
+    current_by_name: dict[str, list[dict]] = {}
+    for r in checks.get("check_runs", []):
+        if r["head_sha"] == head:  # Trap A: stale-head runs neither block nor satisfy
+            current_by_name.setdefault(r["name"], []).append(r)
+    missing = [name for name in required if name not in current_by_name]
+    if missing:
+        return False, False, f"required context(s) not yet reported at head {head}: {missing}"
+    non_terminal = [
+        (name, r["status"]) for name in required for r in current_by_name[name]
+        if r["status"] != "completed"
+    ]
     if non_terminal:
-        return False, False, f"{len(non_terminal)} check(s) still non-terminal at head {head}"
-    unsuccessful = [r for r in current if r["conclusion"] != "success"]
+        return False, False, f"required check(s) still non-terminal at head {head}: {non_terminal}"
+    unsuccessful = [
+        (name, r["conclusion"]) for name in required for r in current_by_name[name]
+        if r["conclusion"] != "success"
+    ]
     if unsuccessful:
-        names = [(r["name"], r["conclusion"]) for r in unsuccessful]
-        return True, False, f"not every check-run at head {head} is 'success': {names}"
-    return True, True, f"{len(current)} check-run(s) at head {head}, all 'success'"
+        return True, False, f"not every REQUIRED check-run at head {head} is 'success': {unsuccessful}"
+    return True, True, f"all {len(required)} required context(s) 'success' at head {head}: {required}"
 
 
 def approve_and_merge(
@@ -1181,13 +1249,26 @@ def cmd_run(args: argparse.Namespace) -> int:
     print(f"[canary] {canary.repository}: {canary_result['outcome']} — {canary_result.get('detail', '')}")
 
     if canary_result["outcome"] != "converged":
+        # This message intentionally makes NO claim about R11's own
+        # standing. R11 (a bot-authored PR can merge under the current
+        # rulesets, with coenttb as the required distinct approver) is a
+        # one-time historical fact once ANY canary has demonstrably
+        # merged — swift-foundations/swift-copy-on-write#11, merge
+        # 8e43e43cad71f45111e74f37fb875a9d0f68b63d, approved by coenttb at
+        # 2026-08-05T00:49:35Z. A LATER canary failing (this one, or a
+        # future one) never un-proves that; it means only that THIS run's
+        # self-verifying first target did not converge, for whatever
+        # reason logged above. An earlier version of this message
+        # asserted "R11 ... is therefore still unproven" unconditionally
+        # here, which became false the moment R11 was first proven and
+        # would have told a future reader the opposite of what happened —
+        # corrected live, 2026-08-05, coordinator-caught.
         print(
             "::error::the self-verifying first target did not converge end-to-end "
-            "(R11's positive control for a bot-authored PR merging under the "
-            "current rulesets is therefore still unproven). Stopping before "
-            "touching any of the remaining repositories, per the brief: "
-            "'If the first PR cannot be merged, stop and report rather than "
-            "opening 549 more.'"
+            "this run — see the logged outcome/detail above for the reason. "
+            "Stopping before touching any of the remaining repositories, per the "
+            "brief: 'If the first PR cannot be merged, stop and report rather "
+            "than opening 549 more.'"
         )
         return 7
 
