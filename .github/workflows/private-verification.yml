@@ -284,7 +284,7 @@ jobs:
         run: |
           set -euo pipefail
           set +x
-          envelope_path="${RUNNER_TEMP}/envelope.json"
+          envelope_path="${RUNNER_TEMP}/envelope-${REQUEST_ID}.json"
 
           if [[ -z "${RECEIPT_PATH:-}" || ! -s "$RECEIPT_PATH" ]]; then
             jq -n --arg requestId "$REQUEST_ID" --arg reason "noReceiptProduced" '
