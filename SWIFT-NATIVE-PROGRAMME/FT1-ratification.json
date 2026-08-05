@@ -1,0 +1,146 @@
+{
+ "schemaVersion": 1,
+ "transaction": "FT1",
+ "goal": "swift-institute/.github#358",
+ "subIssue": "swift-institute/.github#361",
+ "ratifiedAt": "2026-08-05T20:53:45Z",
+ "responsibleIdentity": "Claude (Fable 5) implementation session 7697e9db, authenticated as coenttb",
+ "mutating": false,
+ "baselineGate": {
+  "goal276State": "closed completed at 2026-08-05T20:46:54Z",
+  "acceptance": "issuecomment-5197073067 (E1 fresh acceptance, ACCEPTED FOR R1)",
+  "crossReviewRuling": "R36 issuecomment-5197058883",
+  "recutReceiptCommit": "634b84f3ce1b9079e7f86e07f85d9942733b2a25",
+  "recutReceiptSha256": "c99006232eec0c3a04b9a27a1c1cdbe7d30709406d5f458a1c06bfdb5ff1ff84",
+  "postFinalization": "PASS zero findings at e401daed52ce5a34dbc9c873365fed5a48bc622b (review-inputs/reclosure/completion-post-finalization.json)",
+  "postR1GoverningHeads": {
+   "swift-institute/.github": "e401daed52ce5a34dbc9c873365fed5a48bc622b",
+   "swift-institute/Workspace": "49fad76bed2cc34da62de1b733600e725b6ae2e1",
+   "swift-institute/Skills": "b2ac6552ab6fbe3b4dc0344750f8d8ebd4086247",
+   "swift-primitives/.github": "ea9c55330d496f0b276f9c9a9030c15ce1f07122",
+   "swift-standards/.github": "904ddb4c5e67be436a772332eef1b16acfbe1765",
+   "swift-foundations/.github": "84ac0109aab50db70c46fdba11729a58126f530c",
+   "swift-foundations/swift-linter": "57f78bb799999f90f41c7b768756f192de1a3459"
+  },
+  "headsComment": "swift-institute/.github#276 issuecomment-5197184065"
+ },
+ "authority": {
+  "bundleHead": "aef3bbff7edd073700aec66cda019d5230da810b",
+  "sha256sumsVerified": true,
+  "controlling": [
+   "SWIFT-NATIVE-PROGRAMME/PROGRAMME.md — architecture, FT1→F18, stops, canaries",
+   "SWIFT-NATIVE-PROGRAMME/naming-annex-nest-name.md — all module/target/type/file spellings (supersedes flat compounds)",
+   "SWIFT-NATIVE-PROGRAMME/MOVE-FAST-POSTURE.md — migration mechanics (principal ruling 2026-08-05)"
+  ],
+  "standingRulings": [
+   "main-only / no tags / no releases",
+   "cross-platform mandate (Linux/macOS/Windows; macOS-only tooling is a blocker)",
+   "R32 TX12 reconstruction deviation typed",
+   "R33 private-ruleset limb descoped; central-verifier compensation",
+   "R34 reduced G1 contract typed; full-contract G1 is the follow-up private-verification activation gate (F8)",
+   "R35 P19 identity families typed unmeasured-with-cause; zero-mandatory semantics",
+   "R36 E1 satisfied by the cross-review that actually happened",
+   "Nest.Name convention; Application pattern; typed throws via per-operation leaf errors",
+   "Institute packages must not depend on github.com/coenttb/*"
+  ]
+ },
+ "packageGraph": {
+  "packages": [
+   {
+    "directory": "Tools/InstituteCI",
+    "packageName": "Institute CI",
+    "boundary": "credential-free; admitted to ordinary/fork execution",
+    "executableProducts": ["institute-ci"],
+    "targets": [
+     {"target": "Repository Policy", "namespace": "Repository.Policy.*", "filePattern": "Repository.Policy.<Type>.swift", "exists": true, "existingPath": "Tools/RepositoryPolicy"},
+     {"target": "CI Contract", "namespace": "CI.Contract.*", "publicTypes": ["CI.Contract.Plan", "CI.Contract.Requirement", "CI.Contract.AggregateVerdict"], "filePattern": "CI.Contract.<Type>.swift"},
+     {"target": "Institute Receipt", "namespace": "Institute.Receipt.*", "publicTypes": ["Institute.Receipt.Preterminal", "Institute.Receipt.Terminal", "Institute.Receipt.FailureClass"], "filePattern": "Institute.Receipt.<Type>.swift"},
+     {"target": "Institute CI Application", "namespace": "Institute.CI.Application.*", "filePattern": "Institute.CI.Application.<UseCase>.swift"},
+     {"target": "Institute CI Command", "namespace": "CLI mapping only; owns no predicate", "filePattern": "Institute.CI.Command.<Verb>.swift"}
+    ],
+    "dependencies": ["Workspace command boundary", "swift-linter diagnostics", "swift-json", "swift-file-system", "Institute SHA witness (STOPPED — see shaWitness)"]
+   },
+   {
+    "directory": "Tools/InstituteCIControl",
+    "packageName": "Institute CI Control",
+    "boundary": "credentialed trusted control; never linked into ordinary/fork execution",
+    "executableProducts": ["institute-ci-control"],
+    "targets": [
+     {"target": "GitHub Control", "namespace": "GitHub.Control.*", "publicTypes": ["GitHub.Control.Client", "GitHub.Control.AppCredential", "GitHub.Control.PageSequence", "GitHub.Control.RetryPolicy"], "filePattern": "GitHub.Control.<Type>.swift"},
+     {"target": "Fleet Inventory", "namespace": "Fleet.Inventory.*", "publicTypes": ["Fleet.Inventory.Census"], "filePattern": "Fleet.Inventory.<Type>.swift"},
+     {"target": "Fleet Convergence", "namespace": "Fleet.Convergence.*", "publicTypes": ["Fleet.Convergence.Plan", "Fleet.Convergence.Apply", "Fleet.Convergence.Resume", "Fleet.Convergence.Readback"], "filePattern": "Fleet.Convergence.<Type>.swift"},
+     {"target": "Private Verification", "namespace": "Private.Verification.*", "publicTypes": ["Private.Verification.Request", "Private.Verification.Envelope", "Private.Verification.Verify", "Private.Verification.Publish"], "filePattern": "Private.Verification.<Type>.swift"},
+     {"target": "PullRequest Transaction", "namespace": "PullRequest.Transaction.*", "publicTypes": ["PullRequest.Transaction.Snapshot", "PullRequest.Transaction.Verdict", "PullRequest.Transaction.Receipt"], "filePattern": "PullRequest.Transaction.<Type>.swift"},
+     {"target": "Programme Policy", "namespace": "Programme.Policy.*", "filePattern": "Programme.Policy.<Type>.swift"},
+     {"target": "Institute CI Control Application", "namespace": "Institute.CI.Control.Application.*", "filePattern": "Institute.CI.Control.Application.<UseCase>.swift"},
+     {"target": "Institute CI Control Command", "namespace": "CLI mapping only", "filePattern": "Institute.CI.Control.Command.<Verb>.swift"}
+    ],
+    "dependencies": ["Institute CI", "swift-github", "swift-github-http", "swift-file-system", "swift-process", "swift-environment"]
+   }
+  ],
+  "namingRules": [
+   "Target names with spaces follow the live `Repository Policy` precedent (verified in Tools/RepositoryPolicy/Package.swift target name \"Repository Policy\")",
+   "Namespaces are caseless-nested enum nouns; one type per file; typed throws via per-operation leaf errors (Institute.Receipt.Terminal.ValidationError style)",
+   "Executables stay kebab-case",
+   "Workspace-side additions keep Workspace conventions (Workspace.Inventory.Effective.*, Workspace.CI.Routing.*)",
+   "Generated artifacts carry no Swift spelling; generator types follow the annex"
+  ],
+  "dependencyDirection": "Workspace and swift-linter facts → credential-free Institute CI → credentialed Institute CI Control → Application layers/thin CLIs → generated host projection; Workspace never depends on Institute CI",
+  "requiredCheckContext": "ci / matrix / ci-ok (preserved exactly; no ruleset context migration)",
+  "secretProfile": "exactly vars.SWIFT_INSTITUTE_BOT_APP_ID and secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY, explicit map at every hop; no secrets: inherit; no PAT"
+ },
+ "dependencyCoordinates": {
+  "swift-institute/Workspace": {
+   "head": "49fad76bed2cc34da62de1b733600e725b6ae2e1",
+   "packagePath": "Application",
+   "packageName": "workspace",
+   "cliOperations": ["install", "sync", "doctor", "inventory", "dependencies", "compose", "restore", "verify", "context", "navigation", "package", "lint", "build", "coherence", "conversion", "github", "verification"],
+   "boundaryNote": "All SwiftPM work rides `workspace package …`; `workspace verification seal|check` is the G1 seal surface; `workspace github token --org <org>` mints per-step App tokens"
+  },
+  "swift-foundations/swift-json": {"head": "d4261ec61ef7c624fc952d09f354148e8090850b", "disposition": "Reuse (CO-02)"},
+  "swift-foundations/swift-file-system": {"head": "a1e3ea6d5b8515032e5434962ad9560672bf92a5", "disposition": "Reuse (CO-04)"},
+  "swift-foundations/swift-process": {"head": "065d82c38b00dddfee9cef7b70b62755ad1c574d", "disposition": "Reuse (CO-04)"},
+  "swift-foundations/swift-environment": {"head": "de58585603fa45b96a711b65543c67a448995faf", "disposition": "Reuse (CO-04)"},
+  "swift-foundations/swift-github": {"head": "4b050696854940c61a62ae1299a7e2c606bc74d8", "disposition": "Compose (CO-03, via GitHub Control)"},
+  "swift-foundations/swift-github-http": {"head": "be6fe63907f33150737e308475b150c6c8fa2110", "disposition": "Compose (CO-03, via GitHub Control)"},
+  "swift-foundations/swift-linter": {"head": "57f78bb799999f90f41c7b768756f192de1a3459", "disposition": "Complete (CO-07, F9)"}
+ },
+ "shaWitness": {
+  "status": "STOP-FT1-API (witness limb only)",
+  "measuredFacts": [
+   "No public Institute SHA-256 witness/adapter package over pinned swift-crypto exists in the checked-out ecosystem (searched Package.swift swift-crypto dependents and SHA-256 witness types, 2026-08-05)",
+   "The only SHA-256 witness is TEST-TARGET-ONLY: swift-ietf/swift-rfc-8446 Tests/RFC 8446 Tests/RFC_8446_CryptoWitness.swift (extension RFC_8446.KeySchedule.Witness.sha256 over Crypto.SHA256/HMAC), main head d7d5637692baf866ce413a79e085145fd46ed46e, swift-crypto range 3.0.0..<5.0.0, Apache-2.0",
+   "Adjacent crypto adapters with public surfaces exist but are not SHA-256 witnesses: swift-foundations/swift-json-web-token (5436a4b9556d57a52d8b57cb6ad330160e9df9f3), swift-foundations/swift-certificate-verification (3900853883f5fda710c6624e3b67f964c1831ebd, swift-crypto resolved 4.5.1 revision 47d3869a7291f085c1fb9fb1e6d3b97a793f45c6)"
+  ],
+  "stopAction": "No duplicate SHA package is implemented and no witness import is ratified. CO-05/R-06 presuppose an existing witness; the measured fact is that none exists as a public reusable surface. Per §23 no alternative may be chosen absent an express principal amendment.",
+  "blockedDependents": ["F5 witness activation limb (DEL-07 hashing replacement)", "F10 cache-identity hashing limb"],
+  "resumeOwner": "Architecture/composition owners + principal amendment naming the witness coordinate (or authorizing its creation)",
+  "resumeEvidence": "exact repository/revision/API/license/vectors/dependency-closure/three-platform receipt for the named witness"
+ },
+ "census": {
+  "artifact": "SWIFT-NATIVE-PROGRAMME/non-swift-executable-inventory.csv",
+  "csvSha256": "e58287a231b45a1a156b5add0091f1def1a187916547f0a86fac863ce543158c",
+  "generator": "SWIFT-NATIVE-PROGRAMME/census-generator.py",
+  "regeneratedFrom": {
+   "swift-institute/.github": "e401daed52ce5a34dbc9c873365fed5a48bc622b",
+   "swift-primitives/.github": "ea9c55330d496f0b276f9c9a9030c15ce1f07122",
+   "swift-standards/.github": "904ddb4c5e67be436a772332eef1b16acfbe1765",
+   "swift-foundations/.github": "84ac0109aab50db70c46fdba11729a58126f530c"
+  },
+  "totals": {"total": 5059, "file": 374, "run-block": 294, "expression": 1703, "uses-edge": 443, "command-reference": 2240, "sentinel-family": 5},
+  "reviewCensusNote": "The review venue's 4185-coordinate census was not committed and is not reproducible byte-for-byte; this regenerated census at post-R1 heads supersedes it as the FT1-frozen root. Count differences arise from head movement and generator methodology; both are typed here rather than laundered.",
+  "unmeasuredSentinels": ["private-ordinary-repositories", "private-verification-private-side", "workspace-repo-automation", "skills-repo-automation", "swift-linter-repo-automation"],
+  "leafCallerFamily": "449 generated ci.yml callers; per-repo heads + caller blob SHAs frozen in review-inputs/reclosure/v1-per-root.json (sha256 56d8309cfacae83c002afa7ae62a192b08171aaa7098e95c9807a866aaf4f4ad)"
+ },
+ "canaryMatrix": {
+  "artifact": "SWIFT-NATIVE-PROGRAMME/canary-matrix.csv",
+  "csvSha256": "17b53a28b6180ee55160a2b13efd64747ad926e99401d02ce69eb2a5fd2d7fe7",
+  "rows": 22,
+  "source": "PROGRAMME.md §19 K-01…K-22, restated verbatim"
+ },
+ "moveFastPosture": "Single measured cutovers; deletion joins activation; no compatibility surfaces; F13/F14/F15 compress to the smallest canary-permitted waves including the two-name secret cutover in the caller wave; safety and evidence rules unwaived",
+ "stops": [
+  {"stop": "STOP-FT1-API", "limb": "SHA-256 witness", "state": "FIRED — recorded above; all other FT1 limbs ratified"}
+ ],
+ "ratification": "The two-package/main-only/preserved-context architecture, the annex Nest.Name spelling table, the dependency coordinates, the census root, and the canary matrix above are frozen. Implementation transactions F1…F18 execute against these exact coordinates; the SHA-witness limb and its dependents remain stopped until the principal names the witness coordinate."
+}

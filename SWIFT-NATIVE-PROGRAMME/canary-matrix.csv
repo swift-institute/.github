@@ -1,0 +1,23 @@
+canary,transaction,hazard,setup,expected,stop
+K-01,F13,same-org direct reusable,explicit two-name map,only declared names; @main resolved SHA recorded,STOP-F13-DIRECT
+K-02,F13,cross-org direct reusable,authorized cross-org package,access and each name proved; no inherit,STOP-F13-DIRECT
+K-03,F13,fork PR,hostile fork probes secrets/writes,secrets absent and writes denied,STOP-F13-DIRECT
+K-04,F13,Dependabot PR,same-repo dependency update,treated like fork; secret-free or fail closed,STOP-F13-DIRECT
+K-05,F13,same-repo untrusted PR,hostile manifest/plugin,no key/token/private material observable,STOP-F13-DIRECT
+K-06,F13,root permission ceiling,permissive and restrictive defaults,explicit actions:read+contents:read works; writes fail,STOP-F13-DIRECT
+K-07,F13,omitted-root elevation,permissions only in callee,required read fails; descendant cannot elevate,STOP-F13-DIRECT
+K-08,F13,App mint isolation,trusted mint plus forbidden operation,exact scope; key/token absent from subject,STOP-F13-DIRECT
+K-09,F13,main push and manual triggers,authorized/unauthorized actor and inputs,no tags; semantic validation agrees,STOP-F13-DIRECT
+K-10,F13,concurrency,same full ref and distinct refs,same ref cancels; distinct refs independent; no duplicate group,STOP-F13-DIRECT
+K-11,F13,preserved check context,direct caller hosted run,exactly required ci / matrix / ci-ok producer is emitted,STOP-F13-DIRECT
+K-12,F13,property transfer,each former wrapper property perturbed,new named owner catches every perturbation,STOP-F13-DIRECT
+K-13,F15,wrapper and legacy-secret zero,seeded positive controls plus full search,all real references zero while seeds found,STOP-F15-ZERO
+K-14,F8,full private contract,build/test/nested/lint/inventory and failure fixtures,all required operations/digest measured; failures typed and leak-safe,STOP-F8-G1
+K-15,F8,private replay/stale/destruction,"replay, head drift and artifact sentinel",publish refuses; raw evidence destroyed; safe envelope retained,STOP-F8-G1
+K-16,F10,Linux source/cache,"cold, hit, corrupt and wrong source/toolchain",Workspace build succeeds; exact hit verified; bad entries fail closed,STOP-F10-BOOTSTRAP
+K-17,F10,macOS source/cache,"cold, hit, corrupt and foreign provenance",same identity and behavior,STOP-F10-BOOTSTRAP
+K-18,F10,Windows source/cache,"cold, hit, path and process edge cases",same identity and behavior; no macOS dependency,STOP-F10-BOOTSTRAP
+K-19,F10,untrusted cache writer,fork/Dependabot attempts populate/broad key,cannot write or select broader key,STOP-F10-BOOTSTRAP
+K-20,F10,cache-disabled recovery,deliberately absent cache,exact known commits build through sanctioned Workspace coordinate,STOP-F10-BOOTSTRAP
+K-21,F5,receipt requiredness,empty identities and zero mandatory jobs,terminal validation refuses unless exact typed inapplicability applies,STOP-F5-EVIDENCE
+K-22,F7,portable fleet root,"shuffle, interruption and preimage drift",canonical per-root dataset resumes deterministically,STOP-F7-DURABILITY
