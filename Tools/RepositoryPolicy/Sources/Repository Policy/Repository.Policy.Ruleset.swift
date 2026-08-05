@@ -30,26 +30,15 @@ extension RepositoryPolicy {
     ///   ([known-broken-instrument #10]: a private repository's universal CI
     ///   run is zero signal, every job there is visibility-guarded).
     ///
-    /// Three package-class payloads exist for the migration window:
+    /// Two package-class payloads exist (TX5, swift-institute/.github#276,
+    /// retired the migration-window compatibility variant):
     ///
-    /// - `protectedMainPayload` — the **target** public contract: requires
-    ///   exactly `ci / matrix / ci-ok`. Fleet-final state once every
-    ///   layer wrapper's temporary `ci-ok` compatibility aggregate is
-    ///   deleted (Task 3-02 step 7).
-    /// - `protectedMainPublicCompatibilityPayload` — the **migration**
-    ///   public contract: requires BOTH `ci / ci-ok` (the layer wrapper's
-    ///   still-live temporary aggregate) AND `ci / matrix / ci-ok` (the
-    ///   universal chain's own aggregate, already live underneath it).
-    ///   Both producers run unconditionally on every push during the
-    ///   overlap window, so both contexts always report; retaining the old
-    ///   producer as a second required context (not an either/or) is what
-    ///   keeps a wave reversible without ever leaving a repository unable
-    ///   to satisfy its required checks (Task 3-02 step 3, "retaining the
-    ///   old producer during convergence").
+    /// - `protectedMainPayload` — the terminal public contract: requires
+    ///   exactly `ci / matrix / ci-ok`.
     /// - `protectedMainPrivatePayload` — the private contract: requires
     ///   exactly `verification / workspace`. No compatibility variant
-    ///   exists because no prior producer preceded it — Phase 2 is what
-    ///   first gives private repositories any CI attestation at all.
+    ///   ever existed because no prior producer preceded it — Phase 2 is
+    ///   what first gives private repositories any CI attestation at all.
     ///
     /// The `rulesets` job classifies each target repository mechanically
     /// (root `Package.swift` present ⇒ package; absent ⇒ control;
@@ -88,55 +77,6 @@ extension RepositoryPolicy {
             )
         }
 
-        /// The migration-window public contract: both the layer wrapper's
-        /// temporary `ci / ci-ok` aggregate and the universal chain's own
-        /// `ci / matrix / ci-ok` aggregate, required together so a wave
-        /// stays reversible while both producers exist (Task 3-02 step 3).
-        ///
-        /// This is the one payload class that may declare the programme
-        /// bypass window (`BypassAllowance.instituteBotAlways`, below). It
-        /// is still fail-closed: an empty list stays valid, the single
-        /// authorized `swift-institute-bot` App actor is admitted by exact
-        /// shape, and anything else — a second actor, a different
-        /// `actor_type`, a different `actor_id`, or `bypass_mode:
-        /// pull_request` — is rejected exactly as before.
-        public static func protectedMainPublicCompatibilityPayload(from url: URL) throws -> Data {
-            try protectedMainPackagePayload(
-                from: url,
-                requiredContexts: ["ci / ci-ok", "ci / matrix / ci-ok"],
-                bypassAllowance: .instituteBotAlways
-            )
-        }
-
-        /// What a payload class is permitted to declare in `bypass_actors`.
-        ///
-        /// `none` is the standing Institute contract and the default: no
-        /// actor may bypass protected main, which is why admin merge and
-        /// admin direct push both fail (verified live —
-        /// `current_user_can_bypass: "never"`).
-        ///
-        /// `instituteBotAlways` additionally admits **exactly one** actor —
-        /// the `swift-institute-bot` GitHub App (`Integration`, id
-        /// `3543256`), in `always` mode — and nothing else. It exists for
-        /// the bounded programme window in which the fleet's
-        /// `.github/workflows/ci.yml` callers are converged by direct push
-        /// (swift-institute/.github#276 Task 5-02, #282; Ruling R26
-        /// supersedes R22.2; Ruling R28.1 selects the App over an
-        /// organization-admin actor because it is narrower and is what lets
-        /// the pushes happen inside Actions). `pull_request` mode is
-        /// deliberately NOT admitted: it permits merging without review,
-        /// which is a weakening of the review contract, while `always`
-        /// permits the push this window actually needs.
-        ///
-        /// This is an admission of a named, authorized shape — not a
-        /// relaxation of the guard. Every other payload class keeps `none`,
-        /// and the window is closed by restoring the empty list in the
-        /// policy file and reverting this allowance.
-        public enum BypassAllowance {
-            case none
-            case instituteBotAlways
-        }
-
         /// The private contract: exactly `verification / workspace`, the
         /// trusted control-plane receipt (Task 2-01/2-02,
         /// swift-institute/.github#253). No compatibility variant: no
@@ -156,13 +96,11 @@ extension RepositoryPolicy {
         /// Swift-only or JSON-only edit fails this guard.
         private static func protectedMainPackagePayload(
             from url: URL,
-            requiredContexts: Set<String>,
-            bypassAllowance: BypassAllowance = .none
+            requiredContexts: Set<String>
         ) throws -> Data {
             let (object, rules) = try identity(
                 from: url,
-                expectedName: "Institute protected main",
-                bypassAllowance: bypassAllowance
+                expectedName: "Institute protected main"
             )
             guard
                 Set(rules.compactMap { $0["type"] as? String }) == [
@@ -225,8 +163,7 @@ extension RepositoryPolicy {
         /// class-specific rule validation.
         private static func identity(
             from url: URL,
-            expectedName: String,
-            bypassAllowance: BypassAllowance = .none
+            expectedName: String
         ) throws -> (object: [String: Any], rules: [[String: Any]]) {
             let source = try Data(contentsOf: url)
             guard var object = try JSONSerialization.jsonObject(with: source) as? [String: Any]
@@ -245,7 +182,13 @@ extension RepositoryPolicy {
             guard let bypass = object["bypass_actors"] as? [Any] else {
                 throw ConfigurationError("protected-main ruleset must declare bypass_actors")
             }
-            try validateBypassActors(bypass, allowance: bypassAllowance)
+            // TX5 (swift-institute/.github#276): the R28.1 programme bypass
+            // window is retired with the compatibility payload class. The
+            // standing contract is the only lawful shape: no actor may
+            // bypass protected main.
+            guard bypass.isEmpty else {
+                throw ConfigurationError("protected-main ruleset permits a bypass actor")
+            }
             guard let conditions = object["conditions"] as? [String: Any],
                 let reference = conditions["ref_name"] as? [String: Any],
                 (reference["include"] as? [String]) == ["refs/heads/main"],
@@ -259,34 +202,6 @@ extension RepositoryPolicy {
                 )
             }
             return (object, rules)
-        }
-
-        /// Fail-closed `bypass_actors` validation. An empty list is always
-        /// valid. A non-empty list is valid ONLY under
-        /// `.instituteBotAlways`, and only as exactly one entry whose three
-        /// fields match the authorized shape exactly — an extra key, an
-        /// extra actor, a different actor, or `pull_request` mode is
-        /// rejected. The default remains "no bypass actor at all", so a
-        /// payload class that does not opt in cannot acquire one by edit.
-        private static func validateBypassActors(
-            _ bypass: [Any],
-            allowance: BypassAllowance
-        ) throws {
-            if bypass.isEmpty { return }
-            guard case .instituteBotAlways = allowance else {
-                throw ConfigurationError("protected-main ruleset permits a bypass actor")
-            }
-            guard bypass.count == 1, let actor = bypass[0] as? [String: Any],
-                actor.count == 3,
-                actor["actor_id"] as? Int == 3543256,
-                actor["actor_type"] as? String == "Integration",
-                actor["bypass_mode"] as? String == "always"
-            else {
-                throw ConfigurationError(
-                    "protected-main ruleset declares a bypass actor outside the one authorized "
-                        + "swift-institute-bot App always-mode window"
-                )
-            }
         }
 
         /// The pull-request transaction both contract classes pin identically.

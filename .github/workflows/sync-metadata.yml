@@ -70,26 +70,6 @@ on:
         type: boolean
         required: false
         default: false
-      ruleset-compat:
-        description: >
-          Public package targets only (swift-institute/.github#276 Task
-          3-01/3-02): when true, converge to the migration-window
-          compatibility contract requiring BOTH `ci / ci-ok` (a layer
-          wrapper's still-live temporary aggregate) and `ci / matrix /
-          ci-ok` (the universal chain's own aggregate) instead of the
-          target `ci / matrix / ci-ok`-only contract. Retaining the old
-          producer as a second required context is what keeps a
-          convergence wave reversible while both producers exist. Default
-          false converges straight to the target contract; set true only
-          for the canary/fleet overlap waves, then false again once a
-          repository's layer wrapper has had its temporary `ci-ok`
-          aggregate deleted (Task 3-02 step 7) — a compat-contract
-          repository whose old producer is gone would deadlock on a
-          context that can never report. Ignored for private and
-          control-plane targets, which have no compatibility variant.
-        type: boolean
-        required: false
-        default: false
       visibility:
         description: 'Filter targets by visibility: public | private | internal | all. Default public — swift-institute''s own fleet is public; a peer institute with a private fleet (#244) supplies its own value.'
         type: string
@@ -143,11 +123,6 @@ on:
         default: false
       heal-rulesets:
         description: 'Re-apply the class-correct ruleset over an existing Institute ruleset only; never creates one where absent.'
-        type: boolean
-        required: false
-        default: false
-      ruleset-compat:
-        description: 'Public package targets only: converge to the migration-window compatibility contract (both ci / ci-ok and ci / matrix / ci-ok) instead of the target ci / matrix / ci-ok-only contract. See workflow_call input of the same name for the full rationale.'
         type: boolean
         required: false
         default: false
@@ -635,29 +610,25 @@ jobs:
           INPUT_VISIBILITY: ${{ inputs.visibility }}
           ENUM_REPOS: ${{ steps.enum.outputs.repos }}
           APPLY_RULESETS: ${{ inputs.apply-rulesets }}
-          RULESET_COMPAT: ${{ inputs.ruleset-compat }}
           REVERSE_DIR: ${{ runner.temp }}/reverse-payloads
         run: |
           set -euo pipefail
           mkdir -p "$REVERSE_DIR"
-          # Four package-class-adjacent payloads: the target public contract
-          # (ci / matrix / ci-ok only), the migration-window public
-          # compatibility contract (ci / ci-ok AND ci / matrix / ci-ok, both
-          # required so a wave stays reversible while both producers exist —
-          # Task 3-02 step 3), the private contract (verification /
+          # Three package-class-adjacent payloads (TX5,
+          # swift-institute/.github#276, retired the migration-window
+          # compatibility contract): the terminal public contract
+          # (ci / matrix / ci-ok only), the private contract (verification /
           # workspace only — Task 2-01/2-02, #253), and the unchanged
-          # control-plane contract. Visibility is NOT a fifth top-level
+          # control-plane contract. Visibility is NOT a fourth top-level
           # RepositoryClass — it selects among the package-class payloads
           # only (swift-institute/.github#276 Task 3-01).
-          desired_package_public=$(swift run --package-path institute-ci/Tools/RepositoryPolicy repository-policy ruleset --policy institute-ci/Tools/RepositoryPolicy/Policy/protected-main-ruleset.json --class package --visibility public --compatibility false)
-          desired_package_public_compat=$(swift run --package-path institute-ci/Tools/RepositoryPolicy repository-policy ruleset --policy institute-ci/Tools/RepositoryPolicy/Policy/protected-main-public-compatibility-ruleset.json --class package --visibility public --compatibility true)
-          desired_package_private=$(swift run --package-path institute-ci/Tools/RepositoryPolicy repository-policy ruleset --policy institute-ci/Tools/RepositoryPolicy/Policy/protected-main-private-ruleset.json --class package --visibility private --compatibility false)
+          desired_package_public=$(swift run --package-path institute-ci/Tools/RepositoryPolicy repository-policy ruleset --policy institute-ci/Tools/RepositoryPolicy/Policy/protected-main-ruleset.json --class package --visibility public)
+          desired_package_private=$(swift run --package-path institute-ci/Tools/RepositoryPolicy repository-policy ruleset --policy institute-ci/Tools/RepositoryPolicy/Policy/protected-main-private-ruleset.json --class package --visibility private)
           desired_control=$(swift run --package-path institute-ci/Tools/RepositoryPolicy repository-policy ruleset --policy institute-ci/Tools/RepositoryPolicy/Policy/protected-main-control-ruleset.json --class control-plane)
           normalize() {
             jq -S '{name, target, enforcement, conditions, bypass_actors, rules:(.rules | sort_by(.type) | map(if .parameters? then .parameters.required_status_checks? |= (if . then sort_by(.context) else . end) else . end))}'
           }
           desired_package_public_normalized=$(printf '%s' "$desired_package_public" | normalize)
-          desired_package_public_compat_normalized=$(printf '%s' "$desired_package_public_compat" | normalize)
           desired_package_private_normalized=$(printf '%s' "$desired_package_private" | normalize)
           desired_control_normalized=$(printf '%s' "$desired_control" | normalize)
           # explicit-apply (apply-rulesets: true) may create a first ruleset;
@@ -762,19 +733,10 @@ jobs:
 
               case "$target_visibility" in
                 public)
-                  if [[ "$RULESET_COMPAT" == "true" ]]; then
-                    desired="$desired_package_public_compat"
-                    desired_normalized="$desired_package_public_compat_normalized"
-                  else
-                    desired="$desired_package_public"
-                    desired_normalized="$desired_package_public_normalized"
-                  fi
+                  desired="$desired_package_public"
+                  desired_normalized="$desired_package_public_normalized"
                   ;;
                 private)
-                  if [[ "$RULESET_COMPAT" == "true" ]]; then
-                    echo "::error::$target: ruleset-compat requested for a private target — no compatibility variant exists for verification / workspace (Task 2-01/2-02 is what first gives private repositories any CI attestation; no prior producer preceded it)."
-                    exit 1
-                  fi
                   desired="$desired_package_private"
                   desired_normalized="$desired_package_private_normalized"
                   ;;

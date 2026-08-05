@@ -149,60 +149,7 @@ struct RepositoryPolicyTests {
         }
     }
 
-    // MARK: - Public compatibility ruleset contract (Task 3-01/3-02)
-
-    // Positive control: the compatibility fixture requires BOTH the layer
-    // wrapper's temporary `ci / ci-ok` aggregate and the universal chain's
-    // own `ci / matrix / ci-ok` aggregate — a wave stays reversible while
-    // both producers exist because both always report during the overlap
-    // window.
-    @Test
-    func protectedMainPublicCompatibilityPayloadFixtureRequiresBothContexts() throws {
-        let url = URL(filePath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appending(path: "Policy/protected-main-public-compatibility-ruleset.json")
-        let payload = try RepositoryPolicy.Ruleset.protectedMainPublicCompatibilityPayload(
-            from: url
-        )
-        let object = try #require(try JSONSerialization.jsonObject(with: payload) as? [String: Any])
-        let rules = try #require(object["rules"] as? [[String: Any]])
-        let checks = try #require(
-            rules.first(where: { $0["type"] as? String == "required_status_checks" })?[
-                "parameters"
-            ] as? [String: Any]
-        )
-        let required = try #require(checks["required_status_checks"] as? [[String: Any]])
-        #expect(Set(required.compactMap { $0["context"] as? String }) == ["ci / ci-ok", "ci / matrix / ci-ok"])
-        #expect(required.count == 2)
-    }
-
-    // Discriminating negative: the ONE-SIDED public-final validator must
-    // refuse the two-context compatibility payload (wrong cardinality), and
-    // vice versa — proving a one-sided Swift/JSON pairing edit fails rather
-    // than silently degrading to whichever side changed.
-    @Test
-    func protectedMainPayloadAndCompatibilityPayloadRejectEachOthersFixture() throws {
-        let compat = URL(filePath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appending(path: "Policy/protected-main-public-compatibility-ruleset.json")
-        let final = URL(filePath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appending(path: "Policy/protected-main-ruleset.json")
-        #expect(throws: RepositoryPolicy.ConfigurationError.self) {
-            try RepositoryPolicy.Ruleset.protectedMainPayload(from: compat)
-        }
-        #expect(throws: RepositoryPolicy.ConfigurationError.self) {
-            try RepositoryPolicy.Ruleset.protectedMainPublicCompatibilityPayload(from: final)
-        }
-    }
-
-    // MARK: - Programme bypass window (Task 5-02, #282; Ruling R26, R28.1)
+    // MARK: - Bypass prohibition (TX5, swift-institute/.github#276)
 
     // Writes `object` to a scratch fixture and returns its URL. Used by the
     // bypass negative controls below, which need a payload that differs from
@@ -214,99 +161,12 @@ struct RepositoryPolicyTests {
         return url
     }
 
-    private func compatFixtureObject() throws -> [String: Any] {
-        let url = URL(filePath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appending(path: "Policy/protected-main-public-compatibility-ruleset.json")
-        return try #require(
-            try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any]
-        )
-    }
-
-    // Positive control: the compatibility fixture declares the ONE authorized
-    // bypass actor — the `swift-institute-bot` App, `always` mode — and the
-    // validator admits it by exact shape rather than by merely tolerating a
-    // non-empty list.
+    // Discriminating negative: no payload class admits a bypass actor. The
+    // retired R28.1 programme window's actor (the swift-institute-bot App,
+    // `always` mode) is refused on every class — the standing contract is
+    // "no bypass actor at all".
     @Test
-    func compatibilityFixtureDeclaresExactlyTheAuthorizedBypassActor() throws {
-        let url = URL(filePath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appending(path: "Policy/protected-main-public-compatibility-ruleset.json")
-        let payload = try RepositoryPolicy.Ruleset.protectedMainPublicCompatibilityPayload(
-            from: url
-        )
-        let object = try #require(try JSONSerialization.jsonObject(with: payload) as? [String: Any])
-        let bypass = try #require(object["bypass_actors"] as? [[String: Any]])
-        #expect(bypass.count == 1)
-        #expect(bypass[0]["actor_id"] as? Int == 3543256)
-        #expect(bypass[0]["actor_type"] as? String == "Integration")
-        #expect(bypass[0]["bypass_mode"] as? String == "always")
-    }
-
-    // Discriminating negative: `always` mode is admitted, `pull_request` mode
-    // is NOT. The window exists to permit a direct push, never to permit a
-    // merge without review — so the mode that weakens the review contract
-    // fails closed even on the one class that may declare a bypass at all.
-    @Test
-    func compatibilityPayloadRejectsPullRequestBypassMode() throws {
-        var object = try compatFixtureObject()
-        object["bypass_actors"] = [
-            ["actor_id": 3543256, "actor_type": "Integration", "bypass_mode": "pull_request"]
-        ]
-        let url = try scratchFixture(object)
-        defer { try? FileManager.default.removeItem(at: url) }
-        #expect(throws: RepositoryPolicy.ConfigurationError.self) {
-            try RepositoryPolicy.Ruleset.protectedMainPublicCompatibilityPayload(from: url)
-        }
-    }
-
-    // Discriminating negative: a SECOND actor, or any actor that is not the
-    // authorized App, is refused — the allowance is one exact shape, not "a
-    // bypass list is now acceptable here". Also covers the superseded R28.1
-    // shape (`OrganizationAdmin`) explicitly: that actor is no longer
-    // admitted even though it was the prior window's authorized actor.
-    @Test
-    func compatibilityPayloadRejectsAnyOtherBypassActor() throws {
-        var object = try compatFixtureObject()
-        object["bypass_actors"] = [
-            ["actor_id": 3543256, "actor_type": "Integration", "bypass_mode": "always"],
-            ["actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always"],
-        ]
-        let two = try scratchFixture(object)
-        defer { try? FileManager.default.removeItem(at: two) }
-        #expect(throws: RepositoryPolicy.ConfigurationError.self) {
-            try RepositoryPolicy.Ruleset.protectedMainPublicCompatibilityPayload(from: two)
-        }
-
-        object["bypass_actors"] = [
-            ["actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always"]
-        ]
-        let role = try scratchFixture(object)
-        defer { try? FileManager.default.removeItem(at: role) }
-        #expect(throws: RepositoryPolicy.ConfigurationError.self) {
-            try RepositoryPolicy.Ruleset.protectedMainPublicCompatibilityPayload(from: role)
-        }
-
-        object["bypass_actors"] = [
-            ["actor_id": 1, "actor_type": "OrganizationAdmin", "bypass_mode": "always"]
-        ]
-        let priorWindow = try scratchFixture(object)
-        defer { try? FileManager.default.removeItem(at: priorWindow) }
-        #expect(throws: RepositoryPolicy.ConfigurationError.self) {
-            try RepositoryPolicy.Ruleset.protectedMainPublicCompatibilityPayload(from: priorWindow)
-        }
-    }
-
-    // Discriminating negative: the allowance is scoped to the compatibility
-    // class alone. The target public contract, the private contract, and the
-    // control-plane contract all keep "no bypass actor at all" — the SAME
-    // actor the compatibility fixture legitimately declares is refused there.
-    @Test
-    func everyOtherPayloadClassStillRefusesTheAuthorizedBypassActor() throws {
+    func everyPayloadClassRefusesAnyBypassActor() throws {
         let authorized = [
             ["actor_id": 3543256, "actor_type": "Integration", "bypass_mode": "always"]
         ]
@@ -411,9 +271,6 @@ struct RepositoryPolicyTests {
 
         #expect(throws: RepositoryPolicy.ConfigurationError.self) {
             try RepositoryPolicy.Ruleset.protectedMainPayload(from: url)
-        }
-        #expect(throws: RepositoryPolicy.ConfigurationError.self) {
-            try RepositoryPolicy.Ruleset.protectedMainPublicCompatibilityPayload(from: url)
         }
         #expect(throws: RepositoryPolicy.ConfigurationError.self) {
             try RepositoryPolicy.Ruleset.protectedMainPrivatePayload(from: url)
@@ -804,9 +661,10 @@ struct RepositoryPolicyTests {
 
         // Live read, not a declared list.
         #expect(rulesetsJob.contains(#"gh api "repos/$target" --jq '.visibility'"#))
-        // The three package-adjacent payloads are all computed up front.
+        // The package-adjacent payloads are all computed up front (TX5
+        // retired the migration-window compatibility payload).
         #expect(rulesetsJob.contains("desired_package_public="))
-        #expect(rulesetsJob.contains("desired_package_public_compat="))
+        #expect(!rulesetsJob.contains("desired_package_public_compat="))
         #expect(rulesetsJob.contains("desired_package_private="))
         // Fail-closed branch: neither public nor private is UNMEASURED, not
         // a default.
@@ -816,32 +674,6 @@ struct RepositoryPolicyTests {
                 "UNMEASURED — visibility '${target_visibility}' is neither 'public' nor 'private'"
             )
         )
-        // Compat requested against a private target is refused rather than
-        // silently downgraded to the (nonexistent) final private payload.
-        #expect(
-            rulesetsJob.contains(
-                "ruleset-compat requested for a private target"
-            )
-        )
-    }
-
-    // Both input blocks declare ruleset-compat, defaulted false so an
-    // existing dispatch keeps converging straight to the target contract
-    // unless a wave explicitly opts into the migration-window overlap.
-    @Test
-    func bothInputBlocksDeclareRulesetCompatDefaultedFalse() throws {
-        let url = URL(filePath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appending(path: ".github/workflows/sync-metadata.yml")
-        let workflow = try String(contentsOf: url, encoding: .utf8)
-        let rulesets = try #require(workflow.range(of: "\n  rulesets:\n"))
-        let onBlock = try #require(workflow.range(of: "\non:\n", range: workflow.startIndex..<rulesets.lowerBound))
-        let inputsText = workflow[onBlock.upperBound..<rulesets.lowerBound]
-        #expect(inputsText.components(separatedBy: "ruleset-compat:").count - 1 == 2)
     }
 
     @Test

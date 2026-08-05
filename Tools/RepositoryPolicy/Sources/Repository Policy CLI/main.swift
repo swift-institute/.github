@@ -146,27 +146,17 @@ enum Main {
     private static func ruleset(_ arguments: RulesetArguments) throws {
         let url = URL(filePath: arguments.policy)
         let payload: Data
-        switch (arguments.repositoryClass, arguments.visibility, arguments.compatibility) {
-        case (.package, .public, false):
+        // TX5 (swift-institute/.github#276): the migration-window public
+        // compatibility variant and its `--compatibility` flag are retired —
+        // the terminal contract is the only public package payload.
+        switch (arguments.repositoryClass, arguments.visibility) {
+        case (.package, .public):
             payload = try RepositoryPolicy.Ruleset.protectedMainPayload(from: url)
-        case (.package, .public, true):
-            payload = try RepositoryPolicy.Ruleset.protectedMainPublicCompatibilityPayload(
-                from: url
-            )
-        case (.package, .private, false):
+        case (.package, .private):
             payload = try RepositoryPolicy.Ruleset.protectedMainPrivatePayload(from: url)
-        case (.package, .private, true):
-            // No compatibility variant exists for private repositories: no
-            // producer preceded `verification / workspace` (Phase 2 is
-            // itself what first gives private repositories any CI
-            // attestation). Requesting compatibility for a private target
-            // is a caller error, not a silently-downgraded final payload.
-            throw RepositoryPolicy.ConfigurationError(
-                "ruleset --visibility private admits no --compatibility variant"
-            )
-        case (.controlPlane, _, _):
+        case (.controlPlane, _):
             payload = try RepositoryPolicy.Ruleset.protectedMainControlPayload(from: url)
-        case (.tool, _, _):
+        case (.tool, _):
             throw RepositoryPolicy.ConfigurationError(
                 "ruleset --class must be package or control-plane"
             )
@@ -351,7 +341,6 @@ enum Main {
         let policy: String
         let repositoryClass: RepositoryPolicy.RepositoryClass
         let visibility: Visibility
-        let compatibility: Bool
 
         init(_ arguments: [String]) throws {
             var values = [String: String]()
@@ -395,12 +384,6 @@ enum Main {
                     "--visibility must be public or private"
                 )
             }
-            let compatibilityValue = values.removeValue(forKey: "--compatibility") ?? "false"
-            guard let compatibility = Bool(compatibilityValue) else {
-                throw RepositoryPolicy.ConfigurationError(
-                    "--compatibility must be true or false"
-                )
-            }
             guard values.isEmpty else {
                 throw RepositoryPolicy.ConfigurationError(
                     "unknown argument \(values.keys.sorted().joined(separator: ", "))"
@@ -409,7 +392,6 @@ enum Main {
             self.policy = policy
             self.repositoryClass = repositoryClass
             self.visibility = visibility
-            self.compatibility = compatibility
         }
     }
 
