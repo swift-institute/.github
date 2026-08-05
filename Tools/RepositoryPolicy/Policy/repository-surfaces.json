@@ -66,6 +66,24 @@
         "step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920",
         "swift-institute/.github/.github/actions/configure-private-repos@main"
       ]
+    },
+    {
+      "_comment": "swift-institute/.github#276 predicate-18 finding (2026-08-04), decided together with the same-day ruleset-class-overrides.json addition for this repo: REPO-ACTIONS-001 denied deploy-docs.yml under the package-class default (no grant named this path). Reclassifying the repository as control-plane (Tools/RepositoryPolicy/Policy/ruleset-class-overrides.json, same rationale as swift-institute/Issues) makes an exact typed 'bespoke' actionGrant the correct disposition here too, in place of a blanket surface exemption: it still enforces exact trigger/uses allowlists (REPO-ACTIONS-003/004) while exempting the non-reusable-workflow-call shape (steps + runs-on, no workflow_call) from the thin-caller structural constraint (REPO-ACTIONS-002/005), the same mechanism swift-institute/Issues' ci.yml grant above uses. deploy-docs.yml is a standalone GitHub Pages deployment (DocC build + actions/deploy-pages) and cannot become a reusable-workflow caller: documentation *deployment* is explicitly out of scope for the CI/CD refactor programme (#276), which only moves common DocC build/validation evidence into the universal chain.",
+      "repositoryClass": "control-plane",
+      "repository": "swift-institute/swift-institute.org",
+      "path": ".github/workflows/deploy-docs.yml",
+      "kind": "bespoke",
+      "triggers": [
+        "push",
+        "workflow_dispatch"
+      ],
+      "uses": [
+        "actions/checkout@v7",
+        "actions/configure-pages@v6",
+        "actions/deploy-pages@v5",
+        "actions/upload-pages-artifact@v5",
+        "swift-actions/setup-swift@v3"
+      ]
     }
   ],
   "exemptions": [

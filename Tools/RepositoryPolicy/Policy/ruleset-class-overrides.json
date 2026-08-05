@@ -4,6 +4,10 @@
     {
       "repo": "swift-institute/Issues",
       "reason": "swift-institute/.github#266: the mechanical classifier (root Package.swift present => package class => required status check 'ci / ci-ok') misclassifies this repo. Issues hosts isolated per-reproducer Swift packages by design, so a root Package.swift exists, but its CI emits per-reproducer contexts (swift-issue-<name> / ci-ok, red-by-design while a crash reproduces) and no repo-level 'ci / ci-ok' aggregate ever exists at any head — the package class's required check is therefore permanently unsatisfiable. For this reproducer repo, check redness is the repo's signal, not a defect, so the honest gate is the control class's PR + 1 approval + required-thread-resolution, with no required status checks. Declared override, not a hand-mutation of live ruleset state; convergence applies the control-plane contract to this repo the same way it does for every other control-plane-classified repository."
+    },
+    {
+      "repo": "swift-institute/swift-institute.org",
+      "reason": "swift-institute/.github#276 predicate-18 finding (2026-08-04): the mechanical classifier (root Package.swift present => package class => required status checks 'ci / ci-ok' and 'ci / matrix / ci-ok') misclassifies this repo. It is the organization's public-website stub: its only workflow, deploy-docs.yml, is a bespoke GitHub Pages deployment (DocC build + actions/deploy-pages) that never runs the universal CI chain and therefore never emits either required context at any head, so the package class's required checks are permanently unsatisfiable and every pull request against this repository was stuck pending forever. Declared override, not a hand-mutation of live ruleset state; convergence applies the control-plane contract (PR + 1 approval + required-thread-resolution, no required status checks) to this repo the same way it does for swift-institute/Issues."
     }
   ]
 }
