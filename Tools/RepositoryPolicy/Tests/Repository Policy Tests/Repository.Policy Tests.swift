@@ -202,6 +202,131 @@ struct RepositoryPolicyTests {
         }
     }
 
+    // MARK: - Programme bypass window (Task 5-02, #282; Ruling R26)
+
+    // Writes `object` to a scratch fixture and returns its URL. Used by the
+    // bypass negative controls below, which need a payload that differs from
+    // a shipped fixture in exactly one field.
+    private func scratchFixture(_ object: [String: Any]) throws -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appending(path: "protected-main-bypass-\(UUID().uuidString).json")
+        try JSONSerialization.data(withJSONObject: object).write(to: url)
+        return url
+    }
+
+    private func compatFixtureObject() throws -> [String: Any] {
+        let url = URL(filePath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appending(path: "Policy/protected-main-public-compatibility-ruleset.json")
+        return try #require(
+            try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any]
+        )
+    }
+
+    // Positive control: the compatibility fixture declares the ONE authorized
+    // bypass actor — organization admin, `always` mode — and the validator
+    // admits it by exact shape rather than by merely tolerating a non-empty
+    // list.
+    @Test
+    func compatibilityFixtureDeclaresExactlyTheAuthorizedBypassActor() throws {
+        let url = URL(filePath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appending(path: "Policy/protected-main-public-compatibility-ruleset.json")
+        let payload = try RepositoryPolicy.Ruleset.protectedMainPublicCompatibilityPayload(
+            from: url
+        )
+        let object = try #require(try JSONSerialization.jsonObject(with: payload) as? [String: Any])
+        let bypass = try #require(object["bypass_actors"] as? [[String: Any]])
+        #expect(bypass.count == 1)
+        #expect(bypass[0]["actor_id"] as? Int == 1)
+        #expect(bypass[0]["actor_type"] as? String == "OrganizationAdmin")
+        #expect(bypass[0]["bypass_mode"] as? String == "always")
+    }
+
+    // Discriminating negative: `always` mode is admitted, `pull_request` mode
+    // is NOT. The window exists to permit a direct push, never to permit a
+    // merge without review — so the mode that weakens the review contract
+    // fails closed even on the one class that may declare a bypass at all.
+    @Test
+    func compatibilityPayloadRejectsPullRequestBypassMode() throws {
+        var object = try compatFixtureObject()
+        object["bypass_actors"] = [
+            ["actor_id": 1, "actor_type": "OrganizationAdmin", "bypass_mode": "pull_request"]
+        ]
+        let url = try scratchFixture(object)
+        defer { try? FileManager.default.removeItem(at: url) }
+        #expect(throws: RepositoryPolicy.ConfigurationError.self) {
+            try RepositoryPolicy.Ruleset.protectedMainPublicCompatibilityPayload(from: url)
+        }
+    }
+
+    // Discriminating negative: a SECOND actor, or any actor that is not the
+    // organization-admin role, is refused — the allowance is one exact shape,
+    // not "a bypass list is now acceptable here".
+    @Test
+    func compatibilityPayloadRejectsAnyOtherBypassActor() throws {
+        var object = try compatFixtureObject()
+        object["bypass_actors"] = [
+            ["actor_id": 1, "actor_type": "OrganizationAdmin", "bypass_mode": "always"],
+            ["actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always"],
+        ]
+        let two = try scratchFixture(object)
+        defer { try? FileManager.default.removeItem(at: two) }
+        #expect(throws: RepositoryPolicy.ConfigurationError.self) {
+            try RepositoryPolicy.Ruleset.protectedMainPublicCompatibilityPayload(from: two)
+        }
+
+        object["bypass_actors"] = [
+            ["actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always"]
+        ]
+        let role = try scratchFixture(object)
+        defer { try? FileManager.default.removeItem(at: role) }
+        #expect(throws: RepositoryPolicy.ConfigurationError.self) {
+            try RepositoryPolicy.Ruleset.protectedMainPublicCompatibilityPayload(from: role)
+        }
+    }
+
+    // Discriminating negative: the allowance is scoped to the compatibility
+    // class alone. The target public contract, the private contract, and the
+    // control-plane contract all keep "no bypass actor at all" — the SAME
+    // actor the compatibility fixture legitimately declares is refused there.
+    @Test
+    func everyOtherPayloadClassStillRefusesTheAuthorizedBypassActor() throws {
+        let authorized = [
+            ["actor_id": 1, "actor_type": "OrganizationAdmin", "bypass_mode": "always"]
+        ]
+        for fixture in [
+            "Policy/protected-main-ruleset.json",
+            "Policy/protected-main-private-ruleset.json",
+            "Policy/protected-main-control-ruleset.json",
+        ] {
+            let source = URL(filePath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appending(path: fixture)
+            var object = try #require(
+                try JSONSerialization.jsonObject(with: Data(contentsOf: source)) as? [String: Any]
+            )
+            object["bypass_actors"] = authorized
+            let url = try scratchFixture(object)
+            defer { try? FileManager.default.removeItem(at: url) }
+            #expect(throws: RepositoryPolicy.ConfigurationError.self) {
+                if fixture.contains("control") {
+                    _ = try RepositoryPolicy.Ruleset.protectedMainControlPayload(from: url)
+                } else if fixture.contains("private") {
+                    _ = try RepositoryPolicy.Ruleset.protectedMainPrivatePayload(from: url)
+                } else {
+                    _ = try RepositoryPolicy.Ruleset.protectedMainPayload(from: url)
+                }
+            }
+        }
+    }
+
     // MARK: - Private ruleset contract (Task 2-01/2-02, #253; Task 3-01)
 
     // Positive control: the private fixture requires exactly `verification /
