@@ -1,0 +1,59 @@
+{
+ "actions": [
+  {
+   "closed": "unmerged",
+   "pr": "swift-primitives/swift-logic-primitives#4",
+   "readback": "state=CLOSED merged=null; ref 404; main readable f0a477fa",
+   "ref": "bot/5-02-converge-caller-20260805025028521611",
+   "refDeleted": true
+  },
+  {
+   "closed": "unmerged",
+   "pr": "swift-primitives/swift-percent-primitives#7",
+   "readback": "state=CLOSED merged=null; ref 404; main readable d6e523f5",
+   "ref": "bot/5-02-converge-caller-20260805024642104964",
+   "refDeleted": true
+  },
+  {
+   "closed": "unmerged",
+   "pr": "swift-ietf/swift-rfc-3986#6",
+   "readback": "state=CLOSED merged=null; ref 404; main readable 44f3ea98",
+   "ref": "bot/5-02-converge-caller-20260805013507",
+   "refDeleted": true
+  }
+ ],
+ "authority": "reopened Goal swift-institute/.github#276 remediation (E1 cross-review finding A-01; S30/VAL-47)",
+ "classification": "each PR: open at capture, same-repository head, author swift-institute-bot[bot], single bot-authored commit, exact bot/5-02-converge-caller- namespace, superseded by the terminal canonical caller on the default branch",
+ "files": {
+  "swift-logic-primitives-4-commits.json": {
+   "bytes": 1825,
+   "sha256": "568a9d90a82b71a18fe9002bc79d2d7e69dca9f114b1fd5c7f9565f644a93102"
+  },
+  "swift-logic-primitives-4-pr.json": {
+   "bytes": 19711,
+   "sha256": "2f4239a8bcdd422a84b1e7a2cd7c002732f0e46ded6c2dfbe9a1eff80341caa2"
+  },
+  "swift-percent-primitives-7-commits.json": {
+   "bytes": 1841,
+   "sha256": "d7cf2e93ba2301f9466f7df2326cc2742863ab751a827b00444b8bc93609551a"
+  },
+  "swift-percent-primitives-7-pr.json": {
+   "bytes": 19939,
+   "sha256": "9e889c77bee6f9562f75372e559970b696172c26d7d9653f8a0502bd54ab9ae1"
+  },
+  "swift-rfc-3986-6-commits.json": {
+   "bytes": 1712,
+   "sha256": "49b9c7cd36968fd0146847f3f88a568d6c7606aa21a95451f11afa478140c267"
+  },
+  "swift-rfc-3986-6-pr.json": {
+   "bytes": 17917,
+   "sha256": "984d72e66795c8038426367ff6635e21926197c0e906209a63d360708bda586e"
+  }
+ },
+ "fleetCensus": {
+  "positiveControl": "same instrument, unrestricted state: 401 PRs",
+  "query": "is:pr is:open author:app/swift-institute-bot",
+  "result": 0
+ },
+ "schema": 1
+}
