@@ -2611,6 +2611,10 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
+      # TX7 receipt contract (swift-institute/.github#276 §8.9): this
+      # aggregate alone reads its OWN run object and paginated jobs
+      # collection to produce the preterminal effective runtime receipt.
+      actions: read
     steps:
       # The body of this step is executed verbatim, against synthetic
       # NEEDS_JSON / PLANNED_GATING pairs, by
@@ -2713,3 +2717,61 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
           exit "$RC"
+
+      # ─── Effective runtime receipt (TX7, swift-institute/.github#276 §8.9) ──
+      # Produced even when the aggregate above failed (a failure receipt is
+      # a retained control, never P19 evidence). The helper is a pure base
+      # canonicalizer resolved from THIS workflow's own ref; it never calls
+      # GitHub itself and never asserts a terminal conclusion while this
+      # run is in progress. The post-completion collector
+      # (augment-effective-runtime-receipt.py) is invoked from repository
+      # root after status=completed, never from this job.
+      - name: Checkout swift-institute/.github (receipt helper at this workflow's own ref)
+        if: ${{ always() }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: swift-institute/.github
+          ref: ${{ job.workflow_sha }}
+          path: institute-receipt
+
+      - name: Produce preterminal effective runtime receipt
+        id: receipt
+        if: ${{ always() }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PLANNED_GATING: ${{ needs.plan.outputs.gating }}
+          SUBJECT_REPOSITORY: ${{ needs.plan.outputs.subject-repository }}
+          SUBJECT_SHA: ${{ needs.plan.outputs.subject-sha }}
+        run: |
+          set -euo pipefail
+          # A sweep run carries one ci-ok — and so one receipt — PER swept
+          # subject inside the same run; the artifact name must be unique
+          # per subject or the collector's exactly-one lookup fails
+          # (observed live: run 31009088381 produced two same-named
+          # artifacts).
+          echo "subject-slug=${SUBJECT_REPOSITORY//\//__}" >> "$GITHUB_OUTPUT"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            > "$RUNNER_TEMP/run.json"
+          gh api --paginate \
+            "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs?per_page=100" \
+            --jq '.jobs[]' | jq -s '{jobs: .}' > "$RUNNER_TEMP/jobs.json"
+          mkdir -p "$RUNNER_TEMP/receipt"
+          python3 institute-receipt/.github/scripts/effective-runtime-receipt.py \
+            --run-json "$RUNNER_TEMP/run.json" \
+            --jobs-json "$RUNNER_TEMP/jobs.json" \
+            --planned-gating "${PLANNED_GATING:-}" \
+            --subject-repository "$SUBJECT_REPOSITORY" \
+            --subject-sha "$SUBJECT_SHA" \
+            --subject-visibility public \
+            --output "$RUNNER_TEMP/receipt/effective-runtime-receipt.v1.base.json" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload effective runtime receipt artifact
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: effective-runtime-receipt-${{ github.run_id }}-${{ github.run_attempt }}-${{ steps.receipt.outputs.subject-slug }}
+          path: ${{ runner.temp }}/receipt/
+          if-no-files-found: warn
+          retention-days: 90

@@ -179,13 +179,17 @@
         ],
         "nested_test_detection": false,
         "permissions": {
+          "actions": "read",
           "contents": "read"
         },
         "posture": "aggregate",
         "private_guarded": true,
         "runner": "ubuntu-latest",
         "step_names": [
-          "Aggregate required-job results"
+          "Aggregate required-job results",
+          "Checkout swift-institute/.github (receipt helper at this workflow's own ref)",
+          "Produce preterminal effective runtime receipt",
+          "Upload effective runtime receipt artifact"
         ],
         "wave": 2
       },
@@ -641,7 +645,7 @@
       "skipped"
     ],
     "required_check_context": "ci / matrix / ci-ok",
-    "source_sha256": "63cc7c9cac3ae155101c6df02d54d903dffb9dc8ee8ad0ef2a8c7c246888a22f"
+    "source_sha256": "113d5cec4a25ace0eb16b98c98f66277fec3d25704f481f433a8849be5159bae"
   },
   "wrappers": {
     "foundations": {
@@ -656,7 +660,7 @@
       },
       "layer": "foundations",
       "layer_required_jobs_outside_universal_verdict": [],
-      "source_sha256": "2085b5806d44f71ddb4a9e69e606373c903fb617b5ce479fa46b8a18b1103527"
+      "source_sha256": "9ef7128529f1d21643601a7c9e3bffc3ce323c2f3ef4547e69d9f71dae9898f6"
     },
     "primitives": {
       "ci_ok_needs": [],
@@ -670,7 +674,7 @@
       },
       "layer": "primitives",
       "layer_required_jobs_outside_universal_verdict": [],
-      "source_sha256": "68f3146e5b20f4a25bb9476da1e8393170018eac34fe5fe7c574cf7b96aea667"
+      "source_sha256": "658250a8130fb5b7a960abb1cde6a17e68a4ece630b3d2b650a02f9f435fb4f8"
     },
     "standards": {
       "ci_ok_needs": [],
@@ -684,7 +688,7 @@
       },
       "layer": "standards",
       "layer_required_jobs_outside_universal_verdict": [],
-      "source_sha256": "86686b62b07d8b2584c919a143d9ef439c57b5757912e4de7d8657329a417494"
+      "source_sha256": "b8b365f4c8eaa039e436feea19c5ecc4b20c04d063355d9595a375442d17e49b"
     }
   }
 }
