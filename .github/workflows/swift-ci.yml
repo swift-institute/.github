@@ -181,7 +181,7 @@ on:
       integrated-docs:
         type: boolean
         default: false
-        description: "TEMPORARY migration-only compatibility input [temp-integrated-docs-4-01] (swift-institute/.github#276 Task 4-01/#284). false (default, legacy): the `docs` job below never runs; the caller's separate package `docs:` job (-> layer swift-docs.yml wrapper) remains authoritative. true (migrated, bot-generated only): the `docs` job runs DocC validation once inside this chain via the full-coordinate call to this repository's OWN swift-docs.yml, and the caller MUST have removed its separate package docs job to avoid duplicate execution. Deleted at Task 5-03 once fleet convergence proves zero remaining false/default callers."
+        description: "IGNORED NO-OP [temp-integrated-docs-4-01 -> TX7] (swift-institute/.github#276). Integrated docs are now unconditional in this chain (the `docs` job's own scheduling guard is the only gate); this input is retained solely so migrated callers that still send `integrated-docs: true` do not fail on an undeclared input. Deleted at TX10 after the TX8 caller pass elides it fleet-wide."
       docs-umbrella-module:
         type: string
         default: ""
@@ -1401,7 +1401,7 @@ jobs:
             exit 1
           fi
 
-      - uses: swift-institute/.github/.github/actions/configure-private-repos@1862f98d955f31a11addc7d41d2a3a6cdd87533c  # relocated verbatim from the Primitives wrapper (swift-institute/.github#276 Task 1-03); pin-advance is a separate task's scope (0A-04) and is not touched by this relocation
+      - uses: swift-institute/.github/.github/actions/configure-private-repos@d1af72d05bf8262fb3918a2f1607b82fafcafdf9  # main 2026-08-03, pin normalized to the deliberately advanced full SHA (TX7, swift-institute/.github#276); action blobs identical at both commits
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
           app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
@@ -1466,7 +1466,7 @@ jobs:
             exit 1
           fi
 
-      - uses: swift-institute/.github/.github/actions/configure-private-repos@1862f98d955f31a11addc7d41d2a3a6cdd87533c  # relocated verbatim from the Primitives wrapper (swift-institute/.github#276 Task 1-03); pin-advance is a separate task's scope (0A-04) and is not touched by this relocation
+      - uses: swift-institute/.github/.github/actions/configure-private-repos@d1af72d05bf8262fb3918a2f1607b82fafcafdf9  # main 2026-08-03, pin normalized to the deliberately advanced full SHA (TX7, swift-institute/.github#276); action blobs identical at both commits
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
           app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
@@ -1478,7 +1478,7 @@ jobs:
         run: swift --version
 
       - name: Install Embedded Wasm SDK matching container Swift
-        uses: swift-institute/.github/.github/actions/install-swift-sdk@1862f98d955f31a11addc7d41d2a3a6cdd87533c  # relocated verbatim from the Primitives wrapper (swift-institute/.github#276 Task 1-03); pin-advance is a separate task's scope (0A-04) and is not touched by this relocation
+        uses: swift-institute/.github/.github/actions/install-swift-sdk@d1af72d05bf8262fb3918a2f1607b82fafcafdf9  # main 2026-08-03, pin normalized to the deliberately advanced full SHA (TX7, swift-institute/.github#276); action blobs identical at both commits
         with:
           platform: wasm-sdk
           bundle-suffix: wasm
@@ -1526,7 +1526,7 @@ jobs:
             exit 1
           fi
 
-      - uses: swift-institute/.github/.github/actions/configure-private-repos@1862f98d955f31a11addc7d41d2a3a6cdd87533c  # relocated verbatim from the Primitives wrapper (swift-institute/.github#276 Task 1-03); pin-advance is a separate task's scope (0A-04) and is not touched by this relocation
+      - uses: swift-institute/.github/.github/actions/configure-private-repos@d1af72d05bf8262fb3918a2f1607b82fafcafdf9  # main 2026-08-03, pin normalized to the deliberately advanced full SHA (TX7, swift-institute/.github#276); action blobs identical at both commits
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
           app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
@@ -1538,7 +1538,7 @@ jobs:
         run: swift --version
 
       - name: Install Android SDK matching container Swift
-        uses: swift-institute/.github/.github/actions/install-swift-sdk@1862f98d955f31a11addc7d41d2a3a6cdd87533c  # relocated verbatim from the Primitives wrapper (swift-institute/.github#276 Task 1-03); pin-advance is a separate task's scope (0A-04) and is not touched by this relocation
+        uses: swift-institute/.github/.github/actions/install-swift-sdk@d1af72d05bf8262fb3918a2f1607b82fafcafdf9  # main 2026-08-03, pin normalized to the deliberately advanced full SHA (TX7, swift-institute/.github#276); action blobs identical at both commits
         with:
           platform: android-sdk
           bundle-suffix: android
@@ -1586,7 +1586,7 @@ jobs:
             exit 1
           fi
 
-      - uses: swift-institute/.github/.github/actions/configure-private-repos@1862f98d955f31a11addc7d41d2a3a6cdd87533c  # relocated verbatim from the Primitives wrapper (swift-institute/.github#276 Task 1-03); pin-advance is a separate task's scope (0A-04) and is not touched by this relocation
+      - uses: swift-institute/.github/.github/actions/configure-private-repos@d1af72d05bf8262fb3918a2f1607b82fafcafdf9  # main 2026-08-03, pin normalized to the deliberately advanced full SHA (TX7, swift-institute/.github#276); action blobs identical at both commits
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
           app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
@@ -1598,7 +1598,7 @@ jobs:
         run: swift --version
 
       - name: Install Static Linux SDK matching container Swift
-        uses: swift-institute/.github/.github/actions/install-swift-sdk@1862f98d955f31a11addc7d41d2a3a6cdd87533c  # relocated verbatim from the Primitives wrapper (swift-institute/.github#276 Task 1-03); pin-advance is a separate task's scope (0A-04) and is not touched by this relocation
+        uses: swift-institute/.github/.github/actions/install-swift-sdk@d1af72d05bf8262fb3918a2f1607b82fafcafdf9  # main 2026-08-03, pin normalized to the deliberately advanced full SHA (TX7, swift-institute/.github#276); action blobs identical at both commits
         with:
           platform: static-sdk
           bundle-suffix: static-linux
@@ -2474,7 +2474,7 @@ jobs:
     name: DocC archive (integrated)
     needs: plan
     if: >-
-      ${{ !cancelled() && !github.event.repository.private && inputs.integrated-docs == true
+      ${{ !cancelled() && !github.event.repository.private
           && (inputs.job == 'docs' || (inputs.job == '' && (
                 startsWith(github.ref, 'refs/tags/')
                 || github.event_name == 'workflow_dispatch'
