@@ -4,7 +4,7 @@
   "target": "branch",
   "enforcement": "active",
   "conditions": { "ref_name": { "include": ["refs/heads/main"], "exclude": [] } },
-  "bypass_actors": [{ "actor_id": 3543256, "actor_type": "Integration", "bypass_mode": "always" }],
+  "bypass_actors": [],
   "rules": [
     { "type": "deletion" },
     { "type": "non_fast_forward" },
