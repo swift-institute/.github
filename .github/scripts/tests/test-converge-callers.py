@@ -36,6 +36,8 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import argparse
+import io
 import subprocess
 import threading
 import time
@@ -637,6 +639,73 @@ class RollbackPersistenceTests(unittest.TestCase):
             self.assertTrue(out.is_file())
             self.assertEqual(out.parent, receipts / "rollback")
             self.assertIn("swift-primitives__swift-example", out.name)
+
+
+class RepoResultPersistenceTests(unittest.TestCase):
+    """Coordinator instruction (2026-08-05): a kill mid-fleet must leave no
+    repository in an ambiguous state. `fleet-results.json` was previously
+    written ONCE at the very end of a run — this is the fix, one durable
+    file per repository, written the moment its result is known, plus the
+    read half (`load_persisted_results`) and the `tally` subcommand's
+    aggregation logic that reads from it."""
+
+    def test_persist_and_reload_round_trips(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            receipts = Path(tmp)
+            converge_callers._persist_repo_result(
+                receipts, {"repository": "swift-primitives/swift-a", "outcome": "converged"}
+            )
+            converge_callers._persist_repo_result(
+                receipts, {"repository": "swift-primitives/swift-b", "outcome": "typed-exception",
+                           "reason_code": "blocked-by-pre-existing-red"}
+            )
+            results = converge_callers.load_persisted_results(receipts)
+        self.assertEqual(len(results), 2)
+        repos = {r["repository"] for r in results}
+        self.assertEqual(repos, {"swift-primitives/swift-a", "swift-primitives/swift-b"})
+
+    def test_unreadable_result_file_is_dropped_not_fabricated(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            receipts = Path(tmp)
+            results_dir = receipts / "results"
+            results_dir.mkdir(parents=True)
+            (results_dir / "broken.json").write_text("{not valid json")
+            converge_callers._persist_repo_result(
+                receipts, {"repository": "swift-primitives/swift-a", "outcome": "converged"}
+            )
+            results = converge_callers.load_persisted_results(receipts)
+        self.assertEqual(len(results), 1)  # the broken file is dropped, not counted as a phantom repository
+
+    def test_empty_results_directory_is_empty_not_an_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(converge_callers.load_persisted_results(Path(tmp)), [])
+
+    def test_tally_three_way_breakdown_matches_persisted_results(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            receipts = Path(tmp)
+            for repo, outcome, reason in [
+                ("swift-primitives/swift-a", "converged", None),
+                ("swift-primitives/swift-b", "converged", None),
+                ("swift-primitives/swift-c", "typed-exception", "blocked-by-pre-existing-red"),
+                ("swift-primitives/swift-d", "typed-exception", "pipeline-error"),
+                ("swift-primitives/swift-e", "unmeasured", None),
+            ]:
+                result = {"repository": repo, "outcome": outcome}
+                if reason:
+                    result["reason_code"] = reason
+                converge_callers._persist_repo_result(receipts, result)
+
+            args = argparse.Namespace(receipts=str(receipts))
+            buf = io.StringIO()
+            with mock.patch("sys.stdout", buf):
+                exit_code = converge_callers.cmd_tally(args)
+        summary = json.loads(buf.getvalue())
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(summary["converged"], 2)
+        self.assertEqual(summary["blocked_by_pre_existing_red"], 1)
+        self.assertEqual(summary["genuinely_failed_to_converge"], 1)
+        self.assertEqual(summary["unmeasured"], 1)
+        self.assertEqual(summary["total_recorded"], 5)
 
 
 class CensusCheckpointTests(unittest.TestCase):
