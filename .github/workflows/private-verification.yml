@@ -230,6 +230,11 @@ jobs:
           # GitHub command-file variable and disable tracing before it runs.
           set +x
           run_status=0
+          # lint is requested but NOT required: the subject sits outside any
+          # Workspace layer root and the runner installs no swift-linter, so
+          # lint lands honestly `unmeasured` — a required unmeasured operation
+          # makes `seal` refuse (noReceiptProduced), which nulled every run
+          # of the first live batch.
           env -u GITHUB_ENV -u GITHUB_OUTPUT -u GITHUB_PATH -u GITHUB_STEP_SUMMARY -u ACTIONS_STEP_DEBUG \
             swift run --package-path "${WORKSPACE_DIR}/Application" -c release workspace verification seal \
               --package-path "$SUBJECT_DIR" \
@@ -241,6 +246,7 @@ jobs:
               --workspace-revision "$WORKSPACE_REVISION" \
               --policy-revision "$POLICY_REVISION" \
               --step build --step test --step nested-tests --step lint \
+              --required-step build --required-step test --required-step nested-tests \
               --receipt "$receipt_path" \
               > "$run_log" 2>&1 \
             || run_status=$?
