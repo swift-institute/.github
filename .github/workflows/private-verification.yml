@@ -85,12 +85,15 @@ jobs:
       - name: Register private-subject masks before any value can be logged
         id: masks
         shell: bash
-        env:
-          SUBJECT_REPOSITORY: ${{ github.event.client_payload.repository }}
-          SUBJECT_HEAD: ${{ github.event.client_payload.head }}
-          SUBJECT_DEFAULT_BRANCH: ${{ github.event.client_payload.defaultBranch }}
+        # The payload is read from GITHUB_EVENT_PATH, NEVER from step env:
+        # the runner prints a step's env block into the public log BEFORE the
+        # step runs, so an env-carried subject coordinate leaks in this very
+        # step's header before its masks exist (observed: run 31015364118).
         run: |
           set -euo pipefail
+          SUBJECT_REPOSITORY=$(jq -r '.client_payload.repository' "$GITHUB_EVENT_PATH")
+          SUBJECT_HEAD=$(jq -r '.client_payload.head' "$GITHUB_EVENT_PATH")
+          SUBJECT_DEFAULT_BRANCH=$(jq -r '.client_payload.defaultBranch' "$GITHUB_EVENT_PATH")
           # Every private coordinate this job will ever hold is masked here,
           # before the first step that could touch it — including the owner
           # and name halves separately, since GitHub masks exact substrings
@@ -392,11 +395,14 @@ jobs:
       - name: Register private-subject masks before any value can be logged
         id: masks
         shell: bash
-        env:
-          SUBJECT_REPOSITORY: ${{ github.event.client_payload.repository }}
-          SUBJECT_HEAD: ${{ github.event.client_payload.head }}
+        # The payload is read from GITHUB_EVENT_PATH, NEVER from step env:
+        # the runner prints a step's env block into the public log BEFORE the
+        # step runs, so an env-carried subject coordinate leaks in this very
+        # step's header before its masks exist (observed: run 31015364118).
         run: |
           set -euo pipefail
+          SUBJECT_REPOSITORY=$(jq -r '.client_payload.repository' "$GITHUB_EVENT_PATH")
+          SUBJECT_HEAD=$(jq -r '.client_payload.head' "$GITHUB_EVENT_PATH")
           echo "::add-mask::${SUBJECT_REPOSITORY}"
           echo "::add-mask::${SUBJECT_REPOSITORY%%/*}"
           echo "::add-mask::${SUBJECT_REPOSITORY#*/}"
