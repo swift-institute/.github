@@ -37,6 +37,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import subprocess
+from dataclasses import asdict
 import sys
 import tempfile
 import unittest
@@ -535,6 +536,35 @@ class RateLimitedGhTests(unittest.TestCase):
         self.assertEqual(out, {})
         self.assertEqual(len(calls), 2)
 
+    def test_empty_or_truncated_body_is_retried_not_raised(self):
+        """Positive control for the third live-caught retryable class
+        (2026-08-05): `gh: unexpected end of JSON input` — an empty/
+        truncated response body that fails gh's own JSON parse before any
+        HTTP-status or rate-limit phrase is available in stderr. Confirmed
+        live not to be a quota signal (core/graphql both had thousands of
+        calls of headroom at the moment of failure)."""
+        gh = converge_callers.RateLimitedGh()
+        calls = []
+
+        def fake_run(cmd, capture_output, text, timeout):
+            calls.append(cmd)
+            proc = mock.Mock()
+            if len(calls) == 1:
+                proc.returncode = 1
+                proc.stderr = "gh: unexpected end of JSON input"
+                proc.stdout = ""
+            else:
+                proc.returncode = 0
+                proc.stdout = "{}"
+                proc.stderr = ""
+            return proc
+
+        with mock.patch("time.sleep", return_value=None), \
+             mock.patch.object(subprocess, "run", side_effect=fake_run):
+            out = gh.api("repos/foo/bar")
+        self.assertEqual(out, {})
+        self.assertEqual(len(calls), 2)
+
     def test_ordinary_failure_is_not_retried_into_a_false_success(self):
         """Negative control: the retry path above is not simply masking
         every failure — an ordinary (non-secondary-rate-limit) error must
@@ -605,6 +635,99 @@ class RollbackPersistenceTests(unittest.TestCase):
             self.assertTrue(out.is_file())
             self.assertEqual(out.parent, receipts / "rollback")
             self.assertIn("swift-primitives__swift-example", out.name)
+
+
+class CensusCheckpointTests(unittest.TestCase):
+    """Regression coverage for the third live-caught incident (2026-08-05):
+    a full 17-organization census died mid-page (an unparseable/empty gh
+    response) and had to restart from scratch, discarding every already-
+    classified organization. run_census() must persist per-page and
+    resume a not-done organization from its last recorded cursor, and
+    must never re-fetch an organization already marked done."""
+
+    def _spec(self):
+        return generate_caller  # already loaded at module scope, above
+
+    def test_fresh_org_pages_through_to_completion_and_checkpoints_each_page(self):
+        gc = self._spec()
+        pages = [
+            {"data": {"search": {
+                "nodes": [_node(nameWithOwner="swift-primitives/swift-a")],
+                "pageInfo": {"hasNextPage": True, "endCursor": "CURSOR1"},
+            }}},
+            {"data": {"search": {
+                "nodes": [_node(nameWithOwner="swift-primitives/swift-b")],
+                "pageInfo": {"hasNextPage": False, "endCursor": None},
+            }}},
+        ]
+        gh = mock.Mock()
+        gh.graphql.side_effect = pages
+        with tempfile.TemporaryDirectory() as tmp:
+            receipts = Path(tmp)
+            dispositions, exceptions = converge_callers.run_census(
+                gh, Path("."), gc, receipts, orgs=["swift-primitives"]
+            )
+            ckpt = converge_callers._load_census_checkpoint(receipts, "swift-primitives")
+        self.assertTrue(ckpt["done"])
+        self.assertEqual(len(ckpt["dispositions"]) + len(ckpt["exceptions"]), 2)
+        self.assertEqual(gh.graphql.call_count, 2)
+
+    def test_resumes_from_last_cursor_instead_of_restarting(self):
+        """THE regression test: an org already checkpointed through page 1
+        (not done, cursor recorded) must resume from that cursor — a
+        fresh run_census() call must make exactly ONE more GraphQL call
+        (for the remaining page), never re-fetch page 1."""
+        gc = self._spec()
+        with tempfile.TemporaryDirectory() as tmp:
+            receipts = Path(tmp)
+            converge_callers._save_census_checkpoint(
+                receipts, "swift-primitives",
+                {"dispositions": [], "exceptions": [], "next_cursor": "CURSOR1", "done": False},
+            )
+            gh = mock.Mock()
+            gh.graphql.return_value = {"data": {"search": {
+                "nodes": [_node(nameWithOwner="swift-primitives/swift-b")],
+                "pageInfo": {"hasNextPage": False, "endCursor": None},
+            }}}
+            converge_callers.run_census(gh, Path("."), gc, receipts, orgs=["swift-primitives"])
+        self.assertEqual(gh.graphql.call_count, 1)
+        called_kwargs = gh.graphql.call_args.kwargs
+        self.assertEqual(called_kwargs["after"], "CURSOR1")
+
+    def test_done_org_is_never_refetched(self):
+        gc = self._spec()
+        with tempfile.TemporaryDirectory() as tmp:
+            receipts = Path(tmp)
+            converge_callers._save_census_checkpoint(
+                receipts, "swift-primitives",
+                {"dispositions": [asdict(converge_callers.Disposition(
+                    repository="swift-primitives/swift-a", visibility="public",
+                    outcome="converged", detail="already canonical"))],
+                 "exceptions": [], "next_cursor": None, "done": True},
+            )
+            gh = mock.Mock()
+            dispositions, exceptions = converge_callers.run_census(
+                gh, Path("."), gc, receipts, orgs=["swift-primitives"]
+            )
+        gh.graphql.assert_not_called()
+        self.assertEqual(len(dispositions), 1)
+
+    def test_unreadable_checkpoint_file_restarts_that_org_not_silently_empty(self):
+        gc = self._spec()
+        with tempfile.TemporaryDirectory() as tmp:
+            receipts = Path(tmp)
+            path = converge_callers._census_checkpoint_path(receipts, "swift-primitives")
+            path.write_text("{not valid json")
+            gh = mock.Mock()
+            gh.graphql.return_value = {"data": {"search": {
+                "nodes": [_node(nameWithOwner="swift-primitives/swift-a")],
+                "pageInfo": {"hasNextPage": False, "endCursor": None},
+            }}}
+            dispositions, exceptions = converge_callers.run_census(
+                gh, Path("."), gc, receipts, orgs=["swift-primitives"]
+            )
+        self.assertEqual(len(dispositions) + len(exceptions), 1)
+
 
 
 class ConvergeOneOrderingTests(unittest.TestCase):
