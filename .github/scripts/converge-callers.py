@@ -1277,6 +1277,47 @@ def converge_one(
                 "reason_code": "pipeline-error", "detail": str(e)}
 
 
+def _persist_repo_result(receipts: Path, result: dict) -> Path:
+    """Write ONE repository's final result durably, immediately —
+    coordinator instruction (2026-08-05): 'no repository in an ambiguous
+    state... no PR merged without its rollback record persisted.' That
+    specific window was already closed (`persist_rollback_blob()` always
+    runs before `approve_and_merge()`'s merge call, in both the fresh-
+    dispatch and resume paths — verified by reading the exact line order,
+    not asserted). This closes the OTHER window: `fleet-results.json` was
+    previously written ONCE, only after every repository in a run
+    finished, so a kill mid-fleet lost the record of every already-
+    computed outcome even though the underlying GitHub state (merged PR,
+    rollback blob) was already durable. Write-then-rename, matching the
+    census checkpoint convention, so a kill mid-write can never leave a
+    half-written, unparseable result file behind."""
+    results_dir = receipts / "results"
+    results_dir.mkdir(parents=True, exist_ok=True)
+    out = results_dir / f"{result['repository'].replace('/', '__')}.json"
+    tmp = out.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(result, indent=2))
+    tmp.replace(out)
+    return out
+
+
+def load_persisted_results(receipts: Path) -> list[dict]:
+    """The read half of `_persist_repo_result()` — every repository result
+    any invocation against this `--receipts` directory has ever durably
+    recorded, regardless of which process computed it. This is what makes
+    the three-way tally defensible across a kill: it is read from disk,
+    not carried in one process's memory."""
+    results_dir = receipts / "results"
+    if not results_dir.is_dir():
+        return []
+    out = []
+    for path in sorted(results_dir.glob("*.json")):
+        try:
+            out.append(json.loads(path.read_text()))
+        except (json.JSONDecodeError, OSError):
+            continue  # an unreadable result file is dropped, never fabricated
+    return out
+
+
 def converge_fleet(
     gh: RateLimitedGh,
     repo_root: Path,
@@ -1319,6 +1360,7 @@ def converge_fleet(
             gh.checkpoint()
             run_suffix = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
             result = converge_one(gh, repo_root, generate_caller, receipts, disposition, run_suffix=run_suffix)
+            _persist_repo_result(receipts, result)
             results.append(result)
             print(f"[converge] {disposition.repository}: {result['outcome']} — {result.get('detail', '')}")
         return results
@@ -1339,6 +1381,7 @@ def converge_fleet(
             except Exception as e:  # a worker thread must never silently vanish a repository
                 result = {"repository": disposition.repository, "outcome": "typed-exception",
                           "reason_code": "pipeline-error", "detail": f"worker thread raised: {e}"}
+            _persist_repo_result(receipts, result)
             results.append(result)
             print(f"[converge] {disposition.repository}: {result['outcome']} — {result.get('detail', '')}")
     return results
@@ -1369,6 +1412,40 @@ def cmd_check_preconditions(args: argparse.Namespace) -> int:
     result = {"preconditions": [asdict(docs), asdict(rulesets)]}
     print(json.dumps(result, indent=2))
     return 0 if docs.status == "established" and rulesets.status == "established" else 1
+
+
+def cmd_tally(args: argparse.Namespace) -> int:
+    """Read-only, no network: the three-way tally (converged / blocked-
+    by-pre-existing-red / genuinely-failed-to-converge) plus unmeasured,
+    derived ENTIRELY from `_persist_repo_result()`'s durable per-
+    repository files under `<receipts>/results/` — never from one
+    process's in-memory list. Coordinator instruction (2026-08-05):
+    'Report format when you next land... A number I cannot defend is
+    worse than a smaller number I can.' This is queryable at any time,
+    including immediately after an unexpected kill, without re-running
+    anything."""
+    receipts = Path(args.receipts)
+    results = load_persisted_results(receipts)
+    by_label: dict[str, int] = {}
+    for r in results:
+        label = r["outcome"] if r["outcome"] != "typed-exception" else f"typed-exception / {r.get('reason_code', 'unlabelled')}"
+        by_label[label] = by_label.get(label, 0) + 1
+    converged = by_label.get("converged", 0)
+    pre_existing_red = by_label.get("typed-exception / blocked-by-pre-existing-red", 0)
+    genuinely_failed = sum(
+        v for k, v in by_label.items()
+        if k.startswith("typed-exception") and k != "typed-exception / blocked-by-pre-existing-red"
+    )
+    unmeasured = by_label.get("unmeasured", 0)
+    print(json.dumps({
+        "converged": converged,
+        "blocked_by_pre_existing_red": pre_existing_red,
+        "genuinely_failed_to_converge": genuinely_failed,
+        "unmeasured": unmeasured,
+        "total_recorded": len(results),
+        "by_label": by_label,
+    }, indent=2))
+    return 0
 
 
 def cmd_census(args: argparse.Namespace) -> int:
@@ -1472,6 +1549,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     run_suffix = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
     canary_result = converge_one(gh, repo_root, generate_caller, receipts, canary, run_suffix=run_suffix)
     (receipts / "canary-result.json").write_text(json.dumps(canary_result, indent=2))
+    _persist_repo_result(receipts, canary_result)
     print(f"[canary] {canary.repository}: {canary_result['outcome']} — {canary_result.get('detail', '')}")
 
     if canary_result["outcome"] != "converged":
@@ -1555,6 +1633,10 @@ def build_parser() -> argparse.ArgumentParser:
     pcensus.add_argument("--receipts", required=True)
     pcensus.add_argument("--org", default=None, help="Restrict census to one org (testing).")
     pcensus.set_defaults(func=cmd_census)
+
+    ptally = sub.add_parser("tally", help="Read-only, no network: the durable three-way tally so far.")
+    ptally.add_argument("--receipts", required=True)
+    ptally.set_defaults(func=cmd_tally)
 
     prun = sub.add_parser("run", help="Full orchestration. Dry-run unless --execute.")
     prun.add_argument("--repo-root", required=True)
