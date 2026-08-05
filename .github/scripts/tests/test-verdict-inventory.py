@@ -485,10 +485,32 @@ class TokenBoundaryTests(unittest.TestCase):
     widening any job's own GITHUB_TOKEN — a distinct credential this suite
     names but does not re-verify (that composite action's own
     identity/scope is out of this task's exact-files boundary).
+
+    §10 predicate 22's second clause (swift-institute/.github#276) adds one
+    more boundary this class characterizes: `actions/checkout` defaults
+    `persist-credentials` to `true`, which writes the job's own token into
+    `.git/config` inside the checked-out working tree. For the 14 checkouts
+    of the untrusted CI *subject* (`needs.plan.outputs.subject-repository` /
+    `steps.resolve-subject.outputs.subject-repository`), that tree is the
+    exact workspace SwiftPM builds, test targets, and build-tool plugins
+    subsequently execute arbitrary subject code in — so persistence there
+    is a live token-write into an untrusted execution context, not merely
+    an unused default. The 2 checkouts of `swift-institute/.github` itself
+    at `job.workflow_sha` (Plan's "Checkout CI scripts"; lint's "Checkout
+    pinned Tier 1 SwiftLint config") are this repository's OWN trusted code,
+    never subject code, and are deliberately excluded from the assertion,
+    not accidentally missed by it.
     """
 
     def setUp(self):
         self.universal = current_inventory()["universal"]
+        self._raw_universal = yaml.safe_load(UNIVERSAL_WORKFLOW.read_text(encoding="utf-8"))
+
+    def _checkout_steps(self):
+        for job_id, job in self._raw_universal["jobs"].items():
+            for step in job.get("steps", []) or []:
+                if isinstance(step, dict) and str(step.get("uses", "")).startswith("actions/checkout@"):
+                    yield job_id, step
 
     def _uses_local_reusable_workflow(self, entry):
         return isinstance(entry["runner"], str) and entry["runner"].startswith("./")
@@ -544,6 +566,76 @@ class TokenBoundaryTests(unittest.TestCase):
             "expected fork-PR subject resolution coverage in "
             "test-ci-ok-aggregate.py has moved or been removed",
         )
+
+    def test_every_subject_checkout_persists_no_credentials(self):
+        """§10 predicate 22, second clause: every checkout of the untrusted
+        CI subject must set `persist-credentials: false` explicitly —
+        `actions/checkout` defaults it to `true`, which would otherwise
+        leave this job's own token embedded in `.git/config` inside the
+        exact working tree that SwiftPM subsequently builds, tests, and
+        runs build-tool plugins from."""
+        subject_repo_exprs = {
+            "${{ needs.plan.outputs.subject-repository }}",
+            "${{ steps.resolve-subject.outputs.subject-repository }}",
+        }
+        checked = 0
+        for job_id, step in self._checkout_steps():
+            with_block = step.get("with", {}) or {}
+            if with_block.get("repository") not in subject_repo_exprs:
+                continue
+            checked += 1
+            with self.subTest(job=job_id, step=step.get("name", "<unnamed>")):
+                self.assertIs(
+                    with_block.get("persist-credentials"),
+                    False,
+                    f"{job_id}: subject checkout omits `persist-credentials: false`; "
+                    "actions/checkout defaults this to true, persisting this job's "
+                    "token into .git/config in the workspace where untrusted "
+                    "subject code (SwiftPM builds/tests/plugins) subsequently runs.",
+                )
+        # R10 fixture-population rule: an empty population would make this
+        # test pass vacuously. There must be a non-trivial count of subject
+        # checkouts for the assertion above to mean anything.
+        self.assertGreaterEqual(
+            checked, 10,
+            "too few subject checkouts found to be the real population — "
+            "the repository/ref expression match likely drifted from the "
+            "live workflow's actual expressions",
+        )
+
+    def test_control_plane_checkout_of_own_repo_is_deliberately_excluded(self):
+        """The 2 checkouts of `swift-institute/.github` at
+        `job.workflow_sha` are this repository's own trusted code, not
+        subject code, and carry no `persist-credentials` requirement.
+        Pinned at exactly 2 so a THIRD site quietly appearing (which would
+        silently narrow the subject-checkout population above) is caught
+        here rather than nowhere."""
+        control_plane = [
+            (job_id, step) for job_id, step in self._checkout_steps()
+            if (step.get("with", {}) or {}).get("ref") == "${{ job.workflow_sha }}"
+        ]
+        self.assertEqual(
+            len(control_plane), 2,
+            f"expected exactly 2 own-repository checkouts at job.workflow_sha, found {len(control_plane)}",
+        )
+        for job_id, step in control_plane:
+            with self.subTest(job=job_id, step=step.get("name", "<unnamed>")):
+                self.assertEqual(
+                    (step.get("with", {}) or {}).get("repository"),
+                    "swift-institute/.github",
+                )
+
+    def test_detector_catches_a_subject_checkout_missing_persist_credentials(self):
+        """Positive control: a subject checkout that omits
+        `persist-credentials` (or sets it anything other than the literal
+        `False`) must fail the assertion above. Observed failing, against a
+        real reverted-hunk variant of swift-ci.yml, before this test
+        shipped — see the task receipt."""
+        hazardous_with = {
+            "repository": "${{ needs.plan.outputs.subject-repository }}",
+            "ref": "${{ needs.plan.outputs.subject-ref }}",
+        }
+        self.assertIsNot(hazardous_with.get("persist-credentials"), False)
 
 
 class RequiredCheckContextTests(unittest.TestCase):
