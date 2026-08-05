@@ -950,27 +950,44 @@ def converge_one(
                      "reason_code": "dispatch-run-failed",
                      "detail": f"converge-caller.yml concluded {run.get('conclusion')!r} ({run.get('html_url')})"}
 
-        rollback_path = download_rollback_artifact(run["id"], owner, name, receipts / "rollback-artifacts")
-        if rollback_path is None:
-            # Property 2 is non-negotiable: no durable rollback blob means
-            # this repository is NEVER treated as converged, even if the
-            # run itself reported success.
-            return {"repository": disposition.repository, "outcome": "typed-exception",
-                     "reason_code": "rollback-blob-missing",
-                     "detail": f"run {run.get('html_url')} succeeded but no rollback artifact was found"}
-        rollback_blob = json.loads(rollback_path.read_text())
-        persist_rollback_blob(receipts, disposition.repository, rollback_blob)
+        # CORRECTED ORDERING (2026-08-05, live incident): find the actual
+        # PR this dispatch produced FIRST, independent of whether the
+        # rollback artifact can be downloaded. The original ordering
+        # checked artifact availability before ever looking at the PR's
+        # own state, so a download-path defect (a real one, fixed
+        # separately in converge-caller.yml — `tr '/' '__'` silently
+        # collapses to a single underscore, not the double underscore the
+        # artifact's own NAME and this function both expect) masked a
+        # genuine `startup_failure` on the caller's own CI behind an
+        # unrelated, less alarming 'rollback-blob-missing' label. A
+        # mislabelled failure is worse than a loud one: it looks like a
+        # containable, well-understood exception class instead of what it
+        # actually was, a fleet-wide outage. The rollback artifact is
+        # still fetched here, but its absence is recorded and DEFERRED —
+        # never allowed to stand in front of the PR's real check-run
+        # verdict, which is authoritative and is read via
+        # approve_and_merge() below regardless of artifact availability.
+        open_prs = gh.api(f"repos/{disposition.repository}/pulls?state=open")
+        matching = [p for p in open_prs if p["head"]["ref"].startswith("bot/5-02-converge-caller-")]
+        pr_number = matching[0]["number"] if matching else None
 
-        pr_number = rollback_blob.get("pr_number")
+        rollback_path = download_rollback_artifact(run["id"], owner, name, receipts / "rollback-artifacts")
+        rollback_blob = None
+        if rollback_path is not None:
+            rollback_blob = json.loads(rollback_path.read_text())
+            persist_rollback_blob(receipts, disposition.repository, rollback_blob)
+
         if pr_number is None:
-            # already-canonical or already-open: nothing new was mutated by
-            # THIS dispatch. Re-read live to record which one it was.
-            open_prs = gh.api(f"repos/{disposition.repository}/pulls?state=open")
-            matching = [p for p in open_prs if p["head"]["ref"].startswith("bot/5-02-converge-caller-")]
-            if not matching:
+            if rollback_blob is not None and rollback_blob.get("pr_number") is None:
+                # converge-caller.yml itself decided there was nothing to
+                # change (already-canonical) — a real, positive outcome,
+                # not a failure to find something that should exist.
                 return {"repository": disposition.repository, "outcome": "converged",
-                         "detail": "converge-caller.yml reported no PR to open (already canonical)."}
-            pr_number = matching[0]["number"]
+                         "detail": "already canonical; no PR opened."}
+            return {"repository": disposition.repository, "outcome": "unmeasured",
+                     "detail": f"run {run.get('html_url')} succeeded but no open bot/5-02-* PR and no "
+                               f"rollback record was found for this repository — genuinely inconclusive, "
+                               f"never silently folded into either 'converged' or a specific exception class."}
 
         ok, verify_detail = self_verify(repo_root, generate_caller, disposition.spec or {}, disposition.layer)
         if not ok:
@@ -978,10 +995,30 @@ def converge_one(
                      "reason_code": "self-verify-failed-post-dispatch",
                      "detail": verify_detail}
 
+        # THE authoritative signal. approve_and_merge() polls the PR's own
+        # check-runs with R6 Trap A/B discipline and raises naming the
+        # EXACT conclusion (e.g. `startup_failure`, not a generic
+        # 'checks failed') — this must run regardless of rollback-artifact
+        # availability, which is exactly what the reordering above makes
+        # true now.
         merge_result = approve_and_merge(gh, disposition.repository, pr_number)
         if not merge_result.get("merged"):
             return {"repository": disposition.repository, "outcome": "typed-exception",
                      "reason_code": "merge-not-confirmed", "detail": str(merge_result)}
+
+        # Property 2 is still non-negotiable — it is evaluated LAST, not
+        # first, so it can never again mask a real outcome, but a merge
+        # with no recovered rollback blob is a genuine, distinctly
+        # alarming finding in its own right (this repository's pre-image
+        # is not recorded) and must not be silently treated as 'converged'.
+        if rollback_blob is None:
+            return {"repository": disposition.repository, "outcome": "typed-exception",
+                     "reason_code": "rollback-blob-missing-after-merge",
+                     "detail": f"{disposition.repository}#{pr_number} MERGED "
+                               f"(merge_sha={merge_result.get('merge_sha')}) but no durable rollback blob "
+                               f"was ever recovered — this repository's pre-image is NOT recorded; "
+                               f"investigate reversibility before trusting it."}
+
         return {"repository": disposition.repository, "outcome": "converged",
                 "pr_number": pr_number, **merge_result}
     except (GhCallFailed, RuntimeError, subprocess.CalledProcessError) as e:

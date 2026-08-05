@@ -35,8 +35,10 @@ Usage: python3 .github/scripts/tests/test-converge-callers.py
 from __future__ import annotations
 
 import importlib.util
+import json
 import subprocess
 import sys
+import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -500,6 +502,99 @@ class RollbackPersistenceTests(unittest.TestCase):
             self.assertTrue(out.is_file())
             self.assertEqual(out.parent, receipts / "rollback")
             self.assertIn("swift-primitives__swift-example", out.name)
+
+
+class ConvergeOneOrderingTests(unittest.TestCase):
+    """Regression coverage for the 2026-08-05 live incident: a real
+    `startup_failure` on a caller's own CI was mislabelled as a
+    'rollback-blob-missing' typed exception, because the original
+    converge_one() checked rollback-artifact availability BEFORE ever
+    reading the PR's own check-run verdict. 'A mislabelled failure is
+    worse than a loud one' (coordinator) — these tests pin the corrected
+    ordering down so this class of defect cannot silently reappear."""
+
+    def _disposition(self):
+        return converge_callers.Disposition(
+            repository="swift-foundations/swift-example",
+            visibility="public",
+            outcome="needs-convergence",
+            detail="differs from canonical output",
+            layer="institute",
+            spec={"repository": "swift-foundations/swift-example", "layer": "institute",
+                  "platform_support": None, "enable_private_repos": None, "test_filter": None},
+        )
+
+    def test_real_check_failure_surfaces_even_when_rollback_download_fails(self):
+        """THE regression test. Rollback download returns None (simulating
+        the live incident's tr-collapse bug, or any transient download
+        failure) AND an open PR exists — the function must still reach
+        approve_and_merge() and surface ITS real failure detail
+        (e.g. a startup_failure), never a generic rollback-missing label
+        that masks it."""
+        gh = mock.Mock()
+        gh.api.return_value = [{"number": 11, "head": {"ref": "bot/5-02-converge-caller-20260804210621"}}]
+        with mock.patch.object(converge_callers, "dispatch_convergence"), \
+             mock.patch.object(converge_callers, "poll_run_to_completion",
+                                return_value={"status": "completed", "conclusion": "success",
+                                               "id": 1, "html_url": "https://example/run/1"}), \
+             mock.patch.object(converge_callers, "download_rollback_artifact", return_value=None), \
+             mock.patch.object(converge_callers, "self_verify", return_value=(True, "ok")), \
+             mock.patch.object(converge_callers, "approve_and_merge",
+                                side_effect=RuntimeError(
+                                    "swift-foundations/swift-example#11: check 'CI' concluded "
+                                    "'startup_failure' at head abc123, not 'success'")):
+            with tempfile.TemporaryDirectory() as tmp:
+                result = converge_callers.converge_one(
+                    gh, Path("."), generate_caller, Path(tmp), self._disposition(), run_suffix="x"
+                )
+        self.assertEqual(result["outcome"], "typed-exception")
+        self.assertEqual(result["reason_code"], "pipeline-error")
+        self.assertIn("startup_failure", result["detail"])
+        self.assertNotIn("rollback-blob-missing", result.get("reason_code", ""))
+
+    def test_successful_merge_with_missing_rollback_is_its_own_distinct_alarming_outcome(self):
+        """Positive control for the new, deliberately distinct outcome: a
+        genuine merge with NO recovered rollback blob must never read as
+        plain 'converged' — property 2 is non-negotiable, evaluated last."""
+        gh = mock.Mock()
+        gh.api.return_value = [{"number": 11, "head": {"ref": "bot/5-02-converge-caller-20260804210621"}}]
+        with mock.patch.object(converge_callers, "dispatch_convergence"), \
+             mock.patch.object(converge_callers, "poll_run_to_completion",
+                                return_value={"status": "completed", "conclusion": "success",
+                                               "id": 1, "html_url": "https://example/run/1"}), \
+             mock.patch.object(converge_callers, "download_rollback_artifact", return_value=None), \
+             mock.patch.object(converge_callers, "self_verify", return_value=(True, "ok")), \
+             mock.patch.object(converge_callers, "approve_and_merge",
+                                return_value={"merged": True, "merge_sha": "d" * 40, "default_branch_head": "d" * 40}):
+            with tempfile.TemporaryDirectory() as tmp:
+                result = converge_callers.converge_one(
+                    gh, Path("."), generate_caller, Path(tmp), self._disposition(), run_suffix="x"
+                )
+        self.assertEqual(result["outcome"], "typed-exception")
+        self.assertEqual(result["reason_code"], "rollback-blob-missing-after-merge")
+
+    def test_ordinary_success_path_still_converges(self):
+        """Negative control: the reordering does not break the ordinary
+        successful case — rollback found, PR found, checks green, merged."""
+        gh = mock.Mock()
+        gh.api.return_value = [{"number": 11, "head": {"ref": "bot/5-02-converge-caller-20260804210621"}}]
+        with mock.patch.object(converge_callers, "dispatch_convergence"), \
+             mock.patch.object(converge_callers, "poll_run_to_completion",
+                                return_value={"status": "completed", "conclusion": "success",
+                                               "id": 1, "html_url": "https://example/run/1"}), \
+             mock.patch.object(converge_callers, "download_rollback_artifact") as dl, \
+             mock.patch.object(converge_callers, "self_verify", return_value=(True, "ok")), \
+             mock.patch.object(converge_callers, "approve_and_merge",
+                                return_value={"merged": True, "merge_sha": "d" * 40, "default_branch_head": "d" * 40}), \
+             tempfile.TemporaryDirectory() as tmp:
+            blob_path = Path(tmp) / "blob.json"
+            blob_path.write_text(json.dumps({"repository": "swift-foundations/swift-example",
+                                              "base_sha": "a" * 40, "pr_number": 11}))
+            dl.return_value = blob_path
+            result = converge_callers.converge_one(
+                gh, Path("."), generate_caller, Path(tmp), self._disposition(), run_suffix="x"
+            )
+        self.assertEqual(result["outcome"], "converged")
 
 
 if __name__ == "__main__":

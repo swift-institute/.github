@@ -220,7 +220,19 @@ jobs:
             printf '\n  }\n}\n'
           } > "$rollback"
           mkdir -p "$GITHUB_WORKSPACE/rollback"
-          cp "$rollback" "$GITHUB_WORKSPACE/rollback/$(echo "$TARGET_REPOSITORY" | tr '/' '__').json"
+          # `tr '/' '__'` is a real defect this task's own canary run
+          # exposed: tr does single-CHARACTER-to-single-CHARACTER
+          # translation, not substring replacement, so it silently
+          # collapsed to a SINGLE underscore — while the artifact's own
+          # NAME above (built via literal YAML `__` interpolation, not
+          # tr) correctly used a double underscore, and the driver's
+          # download_rollback_artifact() expects double-underscore too.
+          # That mismatch made every successful dispatch's rollback file
+          # undiscoverable by the driver, which is precisely backwards
+          # for the one property (rollback pre-image capture) this whole
+          # workflow exists to make non-negotiable. Bash parameter
+          # expansion replaces ALL occurrences correctly.
+          cp "$rollback" "$GITHUB_WORKSPACE/rollback/${TARGET_REPOSITORY//\//__}.json"
 
           # ---- Canonical content, from the ONE landed generator -----------
           spec="$workdir/spec.json"
@@ -324,7 +336,19 @@ jobs:
           jq --argjson pr_number "$pr_number" --arg pr_url "$pr_url" --arg head_sha "$head_sha" \
             '. + {pr_number: $pr_number, pr_url: $pr_url, head_sha: $head_sha}' \
             "$rollback" > "$rollback.tmp" && mv "$rollback.tmp" "$rollback"
-          cp "$rollback" "$GITHUB_WORKSPACE/rollback/$(echo "$TARGET_REPOSITORY" | tr '/' '__').json"
+          # `tr '/' '__'` is a real defect this task's own canary run
+          # exposed: tr does single-CHARACTER-to-single-CHARACTER
+          # translation, not substring replacement, so it silently
+          # collapsed to a SINGLE underscore — while the artifact's own
+          # NAME above (built via literal YAML `__` interpolation, not
+          # tr) correctly used a double underscore, and the driver's
+          # download_rollback_artifact() expects double-underscore too.
+          # That mismatch made every successful dispatch's rollback file
+          # undiscoverable by the driver, which is precisely backwards
+          # for the one property (rollback pre-image capture) this whole
+          # workflow exists to make non-negotiable. Bash parameter
+          # expansion replaces ALL occurrences correctly.
+          cp "$rollback" "$GITHUB_WORKSPACE/rollback/${TARGET_REPOSITORY//\//__}.json"
 
           echo "outcome=opened" >> "$GITHUB_OUTPUT"
           echo "pr-number=${pr_number}" >> "$GITHUB_OUTPUT"
