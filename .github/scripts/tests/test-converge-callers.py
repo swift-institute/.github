@@ -372,7 +372,7 @@ class ChecksReadyAndGreenTests(unittest.TestCase):
             ["ci / ci-ok"],
             [{"name": "ci / ci-ok", "head_sha": "OLDSHA", "status": "in_progress", "conclusion": None}],
         )
-        ready, ok, detail = converge_callers._checks_ready_and_green(gh, "o/r", "NEWSHA")
+        ready, ok, detail, unsuccessful = converge_callers._checks_ready_and_green(gh, "o/r", "NEWSHA")
         # The only report of the required context is at a STALE head, so
         # it is treated as never having reported at the current head —
         # not ready (never vacuously "ok" the way the unscoped version
@@ -385,7 +385,7 @@ class ChecksReadyAndGreenTests(unittest.TestCase):
             ["ci / ci-ok"],
             [{"name": "ci / ci-ok", "head_sha": "NEWSHA", "status": "in_progress", "conclusion": None}],
         )
-        ready, ok, detail = converge_callers._checks_ready_and_green(gh, "o/r", "NEWSHA")
+        ready, ok, detail, unsuccessful = converge_callers._checks_ready_and_green(gh, "o/r", "NEWSHA")
         self.assertFalse(ready)
 
     def test_skipped_required_context_is_terminal_but_not_success(self):
@@ -395,7 +395,7 @@ class ChecksReadyAndGreenTests(unittest.TestCase):
             ["ci / ci-ok"],
             [{"name": "ci / ci-ok", "head_sha": "NEWSHA", "status": "completed", "conclusion": "skipped"}],
         )
-        ready, ok, detail = converge_callers._checks_ready_and_green(gh, "o/r", "NEWSHA")
+        ready, ok, detail, unsuccessful = converge_callers._checks_ready_and_green(gh, "o/r", "NEWSHA")
         self.assertTrue(ready)
         self.assertFalse(ok)
         self.assertIn("skipped", detail)
@@ -408,7 +408,7 @@ class ChecksReadyAndGreenTests(unittest.TestCase):
                 {"name": "ci / matrix / ci-ok", "head_sha": "NEWSHA", "status": "completed", "conclusion": "success"},
             ],
         )
-        ready, ok, _ = converge_callers._checks_ready_and_green(gh, "o/r", "NEWSHA")
+        ready, ok, _, _unsuccessful = converge_callers._checks_ready_and_green(gh, "o/r", "NEWSHA")
         self.assertTrue(ready)
         self.assertTrue(ok)
 
@@ -430,7 +430,7 @@ class ChecksReadyAndGreenTests(unittest.TestCase):
                  "head_sha": "NEWSHA", "status": "completed", "conclusion": "skipped"},
             ],
         )
-        ready, ok, detail = converge_callers._checks_ready_and_green(gh, "o/r", "NEWSHA")
+        ready, ok, detail, unsuccessful = converge_callers._checks_ready_and_green(gh, "o/r", "NEWSHA")
         self.assertTrue(ready)
         self.assertTrue(ok, detail)
 
@@ -439,7 +439,7 @@ class ChecksReadyAndGreenTests(unittest.TestCase):
         treated as 'nothing required, therefore trivially green' — that
         would admit any PR regardless of its real checks."""
         gh = _rulesets_and_checks_gh([], [])
-        ready, ok, detail = converge_callers._checks_ready_and_green(gh, "o/r", "NEWSHA")
+        ready, ok, detail, unsuccessful = converge_callers._checks_ready_and_green(gh, "o/r", "NEWSHA")
         self.assertFalse(ready)
         self.assertFalse(ok)
 
@@ -728,6 +728,112 @@ class CensusCheckpointTests(unittest.TestCase):
             )
         self.assertEqual(len(dispositions) + len(exceptions), 1)
 
+
+
+class PreExistingRedClassificationTests(unittest.TestCase):
+    """Coordinator instruction (2026-08-05), live example
+    swift-ietf/swift-rfc-3986#6: a required context that ran to
+    completion and genuinely failed is the TARGET repository's own
+    pre-existing red, not a defect in the converged caller — it must be
+    labelled distinctly so the fleet's own output stays readable rather
+    than one undifferentiated failure count."""
+
+    def test_all_failure_conclusions_raises_pre_existing_red(self):
+        gh = _rulesets_and_checks_gh(
+            ["ci / ci-ok", "ci / matrix / ci-ok"],
+            [
+                {"name": "ci / ci-ok", "head_sha": "NEWSHA", "status": "completed", "conclusion": "failure"},
+                {"name": "ci / matrix / ci-ok", "head_sha": "NEWSHA", "status": "completed", "conclusion": "failure"},
+            ],
+        )
+        gh.graphql.return_value = {"data": {"repository": {"pullRequest": {
+            "headRefOid": "NEWSHA", "closingIssuesReferences": {"nodes": []},
+        }}}}
+        with mock.patch("time.sleep"):
+            with self.assertRaises(converge_callers.PreExistingRedError):
+                converge_callers.approve_and_merge(gh, "o/r", 1, checks_timeout_seconds=1, poll_interval=0)
+
+    def test_startup_failure_is_not_pre_existing_red(self):
+        """Negative control: a structural failure (startup_failure — the
+        actual shape of the real fleet-wide outage this task hit earlier)
+        must NOT be classified as the target's own pre-existing red; it
+        stays a plain RuntimeError, which converge_one() routes to
+        'pipeline-error' — the class that needs investigation."""
+        gh = _rulesets_and_checks_gh(
+            ["ci / ci-ok", "ci / matrix / ci-ok"],
+            [
+                {"name": "ci / ci-ok", "head_sha": "NEWSHA", "status": "completed", "conclusion": "startup_failure"},
+                {"name": "ci / matrix / ci-ok", "head_sha": "NEWSHA", "status": "completed", "conclusion": "startup_failure"},
+            ],
+        )
+        gh.graphql.return_value = {"data": {"repository": {"pullRequest": {
+            "headRefOid": "NEWSHA", "closingIssuesReferences": {"nodes": []},
+        }}}}
+        with mock.patch("time.sleep"):
+            try:
+                converge_callers.approve_and_merge(gh, "o/r", 1, checks_timeout_seconds=1, poll_interval=0)
+                self.fail("expected an exception")
+            except converge_callers.PreExistingRedError:
+                self.fail("startup_failure must not be classified as pre-existing red")
+            except RuntimeError:
+                pass  # expected: the general, investigate-me class
+
+    def test_mixed_failure_and_startup_failure_is_not_pre_existing_red(self):
+        """One genuine failure plus one structural failure must NOT be
+        called pre-existing red — ALL unsuccessful required contexts must
+        be 'failure' for that classification, per the coordinator's own
+        framing ('the target's own build is broken', not 'some mix')."""
+        gh = _rulesets_and_checks_gh(
+            ["ci / ci-ok", "ci / matrix / ci-ok"],
+            [
+                {"name": "ci / ci-ok", "head_sha": "NEWSHA", "status": "completed", "conclusion": "failure"},
+                {"name": "ci / matrix / ci-ok", "head_sha": "NEWSHA", "status": "completed", "conclusion": "startup_failure"},
+            ],
+        )
+        gh.graphql.return_value = {"data": {"repository": {"pullRequest": {
+            "headRefOid": "NEWSHA", "closingIssuesReferences": {"nodes": []},
+        }}}}
+        with mock.patch("time.sleep"):
+            try:
+                converge_callers.approve_and_merge(gh, "o/r", 1, checks_timeout_seconds=1, poll_interval=0)
+                self.fail("expected an exception")
+            except converge_callers.PreExistingRedError:
+                self.fail("a mixed failure set must not be classified as pre-existing red")
+            except RuntimeError:
+                pass
+
+    def test_converge_one_labels_pre_existing_red_distinctly(self):
+        """End-to-end through converge_one(): the PreExistingRedError must
+        surface as its own reason_code, never lumped into 'pipeline-error'."""
+        gh = mock.Mock()
+        gh.api.return_value = [{"number": 11, "head": {"ref": "bot/5-02-converge-caller-x"}}]
+        disposition = converge_callers.Disposition(
+            repository="swift-ietf/swift-example", visibility="public",
+            outcome="needs-convergence", detail="differs from canonical output",
+            layer="standards",
+            spec={"repository": "swift-ietf/swift-example", "layer": "standards",
+                  "platform_support": None, "enable_private_repos": None, "test_filter": None},
+        )
+        with mock.patch.object(converge_callers, "dispatch_convergence"), \
+             mock.patch.object(converge_callers, "poll_run_to_completion",
+                                return_value={"status": "completed", "conclusion": "success",
+                                               "id": 1, "html_url": "https://example/run/1"}), \
+             mock.patch.object(converge_callers, "download_rollback_artifact") as dl, \
+             mock.patch.object(converge_callers, "self_verify", return_value=(True, "ok")), \
+             mock.patch.object(converge_callers, "approve_and_merge",
+                                side_effect=converge_callers.PreExistingRedError(
+                                    "swift-ietf/swift-example#11: not every REQUIRED check-run is 'success': "
+                                    "[('ci / ci-ok', 'failure'), ('ci / matrix / ci-ok', 'failure')]")), \
+             tempfile.TemporaryDirectory() as tmp:
+            blob_path = Path(tmp) / "blob.json"
+            blob_path.write_text(json.dumps({"repository": "swift-ietf/swift-example",
+                                              "base_sha": "a" * 40, "pr_number": 11}))
+            dl.return_value = blob_path
+            result = converge_callers.converge_one(
+                gh, Path("."), generate_caller, Path(tmp), disposition, run_suffix="x"
+            )
+        self.assertEqual(result["outcome"], "typed-exception")
+        self.assertEqual(result["reason_code"], "blocked-by-pre-existing-red")
 
 
 class ConvergeOneOrderingTests(unittest.TestCase):
