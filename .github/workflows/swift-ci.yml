@@ -464,6 +464,7 @@ jobs:
         with:
           repository: ${{ steps.resolve-subject.outputs.subject-repository }}
           ref: ${{ steps.resolve-subject.outputs.subject-ref }}
+          persist-credentials: false
 
       - name: Verify checked-out subject HEAD
         if: ${{ inputs.job == '' }}
@@ -773,6 +774,7 @@ jobs:
         with:
           repository: ${{ needs.plan.outputs.subject-repository }}
           ref: ${{ needs.plan.outputs.subject-ref }}
+          persist-credentials: false
 
       - name: Verify checked-out subject HEAD
         shell: bash
@@ -852,6 +854,7 @@ jobs:
         with:
           repository: ${{ needs.plan.outputs.subject-repository }}
           ref: ${{ needs.plan.outputs.subject-ref }}
+          persist-credentials: false
 
       - name: Verify checked-out subject HEAD
         shell: bash
@@ -940,6 +943,7 @@ jobs:
         with:
           repository: ${{ needs.plan.outputs.subject-repository }}
           ref: ${{ needs.plan.outputs.subject-ref }}
+          persist-credentials: false
 
       - name: Verify checked-out subject HEAD
         shell: bash
@@ -1054,6 +1058,7 @@ jobs:
         with:
           repository: ${{ needs.plan.outputs.subject-repository }}
           ref: ${{ needs.plan.outputs.subject-ref }}
+          persist-credentials: false
 
       - name: Verify checked-out subject HEAD
         shell: bash
@@ -1139,6 +1144,7 @@ jobs:
         with:
           repository: ${{ needs.plan.outputs.subject-repository }}
           ref: ${{ needs.plan.outputs.subject-ref }}
+          persist-credentials: false
 
       - name: Verify checked-out subject HEAD
         shell: bash
@@ -1247,6 +1253,7 @@ jobs:
         with:
           repository: ${{ needs.plan.outputs.subject-repository }}
           ref: ${{ needs.plan.outputs.subject-ref }}
+          persist-credentials: false
 
       - name: Verify checked-out subject HEAD
         shell: bash
@@ -1379,6 +1386,7 @@ jobs:
         with:
           repository: ${{ needs.plan.outputs.subject-repository }}
           ref: ${{ needs.plan.outputs.subject-ref }}
+          persist-credentials: false
 
       - name: Verify checked-out subject HEAD
         shell: bash
@@ -1443,6 +1451,7 @@ jobs:
         with:
           repository: ${{ needs.plan.outputs.subject-repository }}
           ref: ${{ needs.plan.outputs.subject-ref }}
+          persist-credentials: false
 
       - name: Verify checked-out subject HEAD
         shell: bash
@@ -1502,6 +1511,7 @@ jobs:
         with:
           repository: ${{ needs.plan.outputs.subject-repository }}
           ref: ${{ needs.plan.outputs.subject-ref }}
+          persist-credentials: false
 
       - name: Verify checked-out subject HEAD
         shell: bash
@@ -1561,6 +1571,7 @@ jobs:
         with:
           repository: ${{ needs.plan.outputs.subject-repository }}
           ref: ${{ needs.plan.outputs.subject-ref }}
+          persist-credentials: false
 
       - name: Verify checked-out subject HEAD
         shell: bash
@@ -1629,6 +1640,7 @@ jobs:
         with:
           repository: ${{ needs.plan.outputs.subject-repository }}
           ref: ${{ needs.plan.outputs.subject-ref }}
+          persist-credentials: false
 
       - name: Verify checked-out subject HEAD
         shell: bash
@@ -1695,6 +1707,7 @@ jobs:
         with:
           repository: ${{ needs.plan.outputs.subject-repository }}
           ref: ${{ needs.plan.outputs.subject-ref }}
+          persist-credentials: false
 
       - name: Verify checked-out subject HEAD
         shell: bash
@@ -1959,6 +1972,7 @@ jobs:
         with:
           repository: ${{ needs.plan.outputs.subject-repository }}
           ref: ${{ needs.plan.outputs.subject-ref }}
+          persist-credentials: false
           path: consumer
 
       - name: Verify checked-out subject HEAD
