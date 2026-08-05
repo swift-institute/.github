@@ -1,0 +1,18 @@
+{
+ "forms": {
+  "current": "incumbent terminal wrapper form (tags trigger, legacy four-name cross-org secrets) \u2014 parity-locked",
+  "direct": "FT1-ratified no-tag leaf calling universal swift-ci.yml@main, two-name secret map only under a measured private dependency closure \u2014 staged for F13/F14"
+ },
+ "goal": "swift-institute/.github#358",
+ "owner": "Repository Policy (Repository.Policy.Caller / .Render)",
+ "parityCorpus": {
+  "cases": 18,
+  "method": "byte equality of generate-caller.py generate <spec> vs repository-policy render-caller --form current, 3 layers x same/cross-org x 3 input sets",
+  "mismatches": 0,
+  "positiveControl": "an earlier harness defect (stale binary path) produced 18/18 detected mismatches before correction, proving the comparator fires"
+ },
+ "schemaVersion": 1,
+ "stop": "STOP-F3-YAML did not fire; every admitted declaration is representable by the closed projection",
+ "subIssue": "swift-institute/.github#366",
+ "transaction": "F3"
+}
