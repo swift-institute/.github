@@ -1,0 +1,98 @@
+[
+  {
+    "concept" : "package identity, effective inventory, layer, dependency graph, SwiftPM and package operations",
+    "domainOwner" : "Workspace",
+    "forbiddenDuplicate" : "raw SwiftPM or local manifest\/layer parsers in Institute CI",
+    "id" : "D-01",
+    "namespace" : "Workspace.*",
+    "target" : "Workspace targets"
+  },
+  {
+    "concept" : "Swift syntax\/AST rules and diagnostics",
+    "domainOwner" : "swift-linter",
+    "forbiddenDuplicate" : "Python\/regex source rules",
+    "id" : "D-02",
+    "namespace" : "swift-linter typed diagnostics",
+    "target" : "swift-linter targets"
+  },
+  {
+    "concept" : "repository, routing row, workflow\/action and ruleset projection policy",
+    "domainOwner" : "Repository.Policy",
+    "forbiddenDuplicate" : "handwritten semantic YAML or wrapper-owned layer policy",
+    "id" : "D-03",
+    "namespace" : "Repository.Policy.*",
+    "target" : "Repository Policy"
+  },
+  {
+    "concept" : "subject, event, platform, plan, aggregate and required check",
+    "domainOwner" : "CI.Contract",
+    "forbiddenDuplicate" : "workflow matrix or shell aggregate semantics",
+    "id" : "D-04",
+    "namespace" : "CI.Contract.*",
+    "target" : "CI Contract"
+  },
+  {
+    "concept" : "canonical evidence, measurement, provenance, receipt and readiness",
+    "domainOwner" : "Institute.Receipt",
+    "forbiddenDuplicate" : "Python receipt producers\/validators",
+    "id" : "D-05",
+    "namespace" : "Institute.Receipt.*",
+    "target" : "Institute Receipt"
+  },
+  {
+    "concept" : "GitHub REST\/GraphQL\/App authentication\/pagination\/retry relation",
+    "domainOwner" : "GitHub.Control",
+    "forbiddenDuplicate" : "gh\/curl\/jq policy clients",
+    "id" : "D-06",
+    "namespace" : "GitHub.Control.*",
+    "target" : "GitHub Control"
+  },
+  {
+    "concept" : "fleet census and durable convergence",
+    "domainOwner" : "Fleet.Inventory and Fleet.Convergence",
+    "forbiddenDuplicate" : "workflow-owned sweep\/convergence",
+    "id" : "D-07",
+    "namespace" : "Fleet.Inventory.* + Fleet.Convergence.*",
+    "target" : "Fleet Inventory + Fleet Convergence"
+  },
+  {
+    "concept" : "private request, lease, exact-head verification, redaction and safe publication",
+    "domainOwner" : "Private.Verification",
+    "forbiddenDuplicate" : "credential-bearing subject jobs",
+    "id" : "D-08",
+    "namespace" : "Private.Verification.*",
+    "target" : "Private Verification"
+  },
+  {
+    "concept" : "pull-request transaction",
+    "domainOwner" : "PullRequest.Transaction",
+    "forbiddenDuplicate" : "workflow GraphQL transaction logic",
+    "id" : "D-09",
+    "namespace" : "PullRequest.Transaction.*",
+    "target" : "PullRequest Transaction"
+  },
+  {
+    "concept" : "programme work-item governance",
+    "domainOwner" : "Programme.Policy",
+    "forbiddenDuplicate" : "issue-specific shell",
+    "id" : "D-10",
+    "namespace" : "Programme.Policy.*",
+    "target" : "Programme Policy"
+  },
+  {
+    "concept" : "credential-free command orchestration",
+    "domainOwner" : "Institute CI Application",
+    "forbiddenDuplicate" : "predicate ownership in CLI\/UI",
+    "id" : "D-11",
+    "namespace" : "Institute.CI.Application.*",
+    "target" : "Institute CI Application"
+  },
+  {
+    "concept" : "credentialed command orchestration",
+    "domainOwner" : "Institute CI Control Application",
+    "forbiddenDuplicate" : "control libraries in ordinary\/fork closure",
+    "id" : "D-12",
+    "namespace" : "Institute.CI.Control.Application.*",
+    "target" : "Institute CI Control Application"
+  }
+]
