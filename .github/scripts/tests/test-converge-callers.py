@@ -37,6 +37,8 @@ from __future__ import annotations
 import importlib.util
 import json
 import subprocess
+import threading
+import time
 from dataclasses import asdict
 import sys
 import tempfile
@@ -907,26 +909,181 @@ class ConvergeOneOrderingTests(unittest.TestCase):
 
     def test_ordinary_success_path_still_converges(self):
         """Negative control: the reordering does not break the ordinary
-        successful case — rollback found, PR found, checks green, merged."""
+        successful case — rollback found, PR found, checks green, merged.
+        (This exercises the RESUME branch, since gh.api returns the same
+        open-PR fixture for the up-front idempotency check too — see the
+        dedicated RESUME/fresh-dispatch tests below for each branch
+        exercised deliberately.)"""
         gh = mock.Mock()
         gh.api.return_value = [{"number": 11, "head": {"ref": "bot/5-02-converge-caller-20260804210621"}}]
         with mock.patch.object(converge_callers, "dispatch_convergence"), \
              mock.patch.object(converge_callers, "poll_run_to_completion",
                                 return_value={"status": "completed", "conclusion": "success",
                                                "id": 1, "html_url": "https://example/run/1"}), \
-             mock.patch.object(converge_callers, "download_rollback_artifact") as dl, \
              mock.patch.object(converge_callers, "self_verify", return_value=(True, "ok")), \
              mock.patch.object(converge_callers, "approve_and_merge",
                                 return_value={"merged": True, "merge_sha": "d" * 40, "default_branch_head": "d" * 40}), \
              tempfile.TemporaryDirectory() as tmp:
-            blob_path = Path(tmp) / "blob.json"
-            blob_path.write_text(json.dumps({"repository": "swift-foundations/swift-example",
-                                              "base_sha": "a" * 40, "pr_number": 11}))
-            dl.return_value = blob_path
+            converge_callers.persist_rollback_blob(
+                Path(tmp), "swift-foundations/swift-example",
+                {"repository": "swift-foundations/swift-example", "base_sha": "a" * 40, "pr_number": 11},
+            )
             result = converge_callers.converge_one(
                 gh, Path("."), generate_caller, Path(tmp), self._disposition(), run_suffix="x"
             )
         self.assertEqual(result["outcome"], "converged")
+
+
+class ConvergeOneRestartIdempotencyTests(unittest.TestCase):
+    """Coordinator instruction (2026-08-05): 'a repository already
+    converged must be skipped, and a repository with an open, unmerged PR
+    from a prior invocation must be resumed rather than re-opened.' The
+    driver having been killed mid-run (a real incident) makes this
+    load-bearing, not cosmetic."""
+
+    def _disposition(self, repo="swift-primitives/swift-example"):
+        return converge_callers.Disposition(
+            repository=repo, visibility="public", outcome="needs-convergence",
+            detail="differs from canonical output", layer="primitives",
+            spec={"repository": repo, "layer": "primitives",
+                  "platform_support": None, "enable_private_repos": None, "test_filter": None},
+        )
+
+    def test_existing_open_pr_is_resumed_without_a_new_dispatch(self):
+        """THE regression test for the killed-driver incident: an already-
+        open bot/5-02-* PR must be found and resumed WITHOUT calling
+        dispatch_convergence() again — a fresh dispatch would be wasted
+        work at best and, per converge-caller.yml's own idempotency
+        check, a no-op at worst, but this function should not even try."""
+        gh = mock.Mock()
+        gh.api.return_value = [{"number": 7, "head": {"ref": "bot/5-02-converge-caller-prior"}}]
+        with mock.patch.object(converge_callers, "dispatch_convergence") as dispatch_mock, \
+             mock.patch.object(converge_callers, "poll_run_to_completion") as poll_mock, \
+             mock.patch.object(converge_callers, "self_verify", return_value=(True, "ok")), \
+             mock.patch.object(converge_callers, "approve_and_merge",
+                                return_value={"merged": True, "merge_sha": "e" * 40, "default_branch_head": "e" * 40}), \
+             tempfile.TemporaryDirectory() as tmp:
+            converge_callers.persist_rollback_blob(
+                Path(tmp), "swift-primitives/swift-example",
+                {"repository": "swift-primitives/swift-example", "base_sha": "b" * 40, "pr_number": 7},
+            )
+            result = converge_callers.converge_one(
+                gh, Path("."), generate_caller, Path(tmp), self._disposition(), run_suffix="x"
+            )
+        dispatch_mock.assert_not_called()
+        poll_mock.assert_not_called()
+        self.assertEqual(result["outcome"], "converged")
+        self.assertEqual(result["pr_number"], 7)
+
+    def test_no_open_pr_takes_the_fresh_dispatch_path(self):
+        """Negative control: when no matching open PR exists, the function
+        must still dispatch — resume-first must not silently skip real
+        work when there is genuinely nothing to resume."""
+        gh = mock.Mock()
+        gh.api.return_value = []  # no open PRs at all, on every call
+        with mock.patch.object(converge_callers, "dispatch_convergence") as dispatch_mock, \
+             mock.patch.object(converge_callers, "poll_run_to_completion",
+                                return_value={"status": "completed", "conclusion": "success",
+                                               "id": 1, "html_url": "https://example/run/1"}), \
+             mock.patch.object(converge_callers, "download_rollback_artifact", return_value=None), \
+             tempfile.TemporaryDirectory() as tmp:
+            result = converge_callers.converge_one(
+                gh, Path("."), generate_caller, Path(tmp), self._disposition(), run_suffix="x"
+            )
+        dispatch_mock.assert_called_once()
+        # No PR ever appeared and no rollback record exists either —
+        # genuinely inconclusive, must read as unmeasured, never silently
+        # 'converged'.
+        self.assertEqual(result["outcome"], "unmeasured")
+
+
+class ConvergeFleetConcurrencyTests(unittest.TestCase):
+    """Coordinator instruction (2026-08-05): bounded concurrency, default 6,
+    to take a ~36-hour serial run inside a single process lifetime — a
+    prior invocation of this exact function was killed by the host
+    environment after ~62 minutes serial. These tests exercise
+    converge_fleet() directly against a stubbed converge_one() (no real
+    network), asserting the concurrency bound is respected and every
+    repository's real result — including one that raises — survives."""
+
+    def _targets(self, n):
+        return [
+            converge_callers.Disposition(
+                repository=f"swift-primitives/swift-example-{i}", visibility="public",
+                outcome="needs-convergence", detail="d", layer="primitives",
+                spec={"repository": f"swift-primitives/swift-example-{i}", "layer": "primitives",
+                      "platform_support": None, "enable_private_repos": None, "test_filter": None},
+            )
+            for i in range(n)
+        ]
+
+    def test_max_concurrency_one_takes_the_original_serial_path(self):
+        """Negative control: max_concurrency=1 must produce the exact same
+        outcome shape as before concurrency existed — no thread pool, no
+        behavior change for a caller that does not opt in."""
+        gh = mock.Mock()
+        calls = []
+
+        def fake_converge_one(gh_, repo_root, gc, receipts, disposition, *, run_suffix):
+            calls.append(disposition.repository)
+            return {"repository": disposition.repository, "outcome": "converged"}
+
+        with mock.patch.object(converge_callers, "converge_one", side_effect=fake_converge_one):
+            with tempfile.TemporaryDirectory() as tmp:
+                results = converge_callers.converge_fleet(
+                    gh, Path("."), generate_caller, Path(tmp), self._targets(3), max_concurrency=1
+                )
+        self.assertEqual(len(results), 3)
+        self.assertEqual(calls, [d.repository for d in self._targets(3)])  # strict submission order, serial
+
+    def test_never_more_than_max_concurrency_in_flight_simultaneously(self):
+        """THE regression/positive control: instrument converge_one() with
+        a shared counter and a barrier-like sleep so overlapping calls are
+        observable, and assert the peak concurrent count never exceeds the
+        configured bound."""
+        gh = mock.Mock()
+        in_flight = {"current": 0, "peak": 0}
+        lock = threading.Lock()
+
+        def fake_converge_one(gh_, repo_root, gc, receipts, disposition, *, run_suffix):
+            with lock:
+                in_flight["current"] += 1
+                in_flight["peak"] = max(in_flight["peak"], in_flight["current"])
+            time.sleep(0.05)
+            with lock:
+                in_flight["current"] -= 1
+            return {"repository": disposition.repository, "outcome": "converged"}
+
+        with mock.patch.object(converge_callers, "converge_one", side_effect=fake_converge_one):
+            with tempfile.TemporaryDirectory() as tmp:
+                results = converge_callers.converge_fleet(
+                    gh, Path("."), generate_caller, Path(tmp), self._targets(12), max_concurrency=3
+                )
+        self.assertEqual(len(results), 12)
+        self.assertLessEqual(in_flight["peak"], 3)
+        self.assertGreater(in_flight["peak"], 1)  # negative control: concurrency actually happened, not accidental serial
+
+    def test_a_worker_thread_exception_never_silently_drops_a_repository(self):
+        """A defect inside converge_one() (or a bug in this instrumentation
+        itself) must still surface as a result for that repository, not
+        vanish the repository from the fleet's own accounting."""
+        gh = mock.Mock()
+
+        def fake_converge_one(gh_, repo_root, gc, receipts, disposition, *, run_suffix):
+            if disposition.repository.endswith("-1"):
+                raise RuntimeError("boom")
+            return {"repository": disposition.repository, "outcome": "converged"}
+
+        with mock.patch.object(converge_callers, "converge_one", side_effect=fake_converge_one):
+            with tempfile.TemporaryDirectory() as tmp:
+                results = converge_callers.converge_fleet(
+                    gh, Path("."), generate_caller, Path(tmp), self._targets(3), max_concurrency=3
+                )
+        self.assertEqual(len(results), 3)
+        failed = [r for r in results if r["repository"].endswith("-1")]
+        self.assertEqual(len(failed), 1)
+        self.assertEqual(failed[0]["outcome"], "typed-exception")
+        self.assertEqual(failed[0]["reason_code"], "pipeline-error")
 
 
 if __name__ == "__main__":
