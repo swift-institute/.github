@@ -115,27 +115,29 @@ class GeneratorTests(unittest.TestCase):
         self.assertIn("secrets: inherit", text)
         self.assertIn("tags:", text)
         self.assertIn("- '*'", text)
-        # inherit appears exactly twice (ci: and docs:), never the
-        # four-name explicit block.
-        self.assertEqual(text.count("secrets: inherit"), 2)
+        # inherit appears exactly once (the single terminal ci: job), never
+        # the four-name explicit block.
+        self.assertEqual(text.count("secrets: inherit"), 1)
         for name in generate_caller.CI059_SECRET_NAMES:
             self.assertNotIn(name, text)
 
-    def test_cross_org_emits_exactly_the_four_ci059_secrets_and_no_tag_trigger(self):
+    def test_cross_org_emits_exactly_the_four_ci059_secrets_and_the_tag_trigger(self):
+        # Terminal canonical contract (§5.1): tags trigger on EVERY
+        # ordinary class, cross-org included.
         spec = CallerSpec(repository="swift-ietf/swift-example", layer="standards")
         text = generate(spec)
         self.assertNotIn("secrets: inherit", text)
-        self.assertNotIn("tags:", text)
+        self.assertIn("tags:", text)
         for name in generate_caller.CI059_SECRET_NAMES:
             with self.subTest(name=name):
-                # Twice per job (the YAML key and the `${{ secrets.NAME }}`
-                # expression value), across two jobs (ci: + docs:) = 4.
-                self.assertEqual(text.count(name), 4)
+                # Twice in the single ci: job (the YAML key and the
+                # `${{ secrets.NAME }}` expression value).
+                self.assertEqual(text.count(name), 2)
 
-    def test_detector_catches_a_same_org_caller_missing_the_tag_trigger(self):
-        """Positive control: the same-org/cross-org trigger split this
-        generator encodes must be something the test can tell apart, not
-        an assertion that happens to pass regardless."""
+    def test_detector_catches_a_caller_missing_the_tag_trigger(self):
+        """Positive control: the tag-trigger assertion must be something
+        the test can tell apart, not an assertion that happens to pass
+        regardless."""
         spec = CallerSpec(repository="swift-primitives/swift-example", layer="primitives")
         text = generate(spec)
         neutered = text.replace("    tags:\n      - '*'\n", "")
@@ -147,21 +149,44 @@ class GeneratorTests(unittest.TestCase):
         text = generate(spec)
         self.assertIn("platform-support: apple,linux", text)
 
-    def test_no_with_block_when_no_typed_input_is_set(self):
+    def test_with_block_carries_only_integrated_docs_when_no_typed_input_is_set(self):
         spec = CallerSpec(repository="swift-standards/swift-example", layer="standards")
         text = generate(spec)
-        self.assertNotIn("with:", text)
+        self.assertIn("    with:\n      integrated-docs: true\n    secrets:", text)
 
-    def test_two_jobs_when_integrated_docs_is_not_yet_supported(self):
-        self.assertFalse(
+    def test_terminal_form_is_single_job_with_integrated_docs_and_permissions(self):
+        self.assertTrue(
             generate_caller.INTEGRATED_DOCS_SUPPORTED,
-            "flip this test (and the module docstring) once swift-ci.yml/"
-            "swift-docs.yml ship the integrated-docs migration input",
+            "the terminal bridge form requires the live integrated-docs "
+            "contract in swift-ci.yml and all three layer wrappers",
         )
         spec = CallerSpec(repository="swift-primitives/swift-example", layer="primitives")
         text = generate(spec)
         self.assertIn("  ci:", text)
-        self.assertIn("  docs:", text)
+        self.assertNotIn("  docs:", text)
+        self.assertNotIn("swift-docs.yml", text)
+        self.assertIn("integrated-docs: true", text)
+        self.assertIn("permissions:\n  actions: read\n  contents: read\n", text)
+
+    def test_legacy_docs_job_with_overrides_maps_onto_docs_inputs(self):
+        text = """\
+jobs:
+  ci:
+    uses: swift-primitives/.github/.github/workflows/swift-ci.yml@main
+    secrets: inherit
+  docs:
+    uses: swift-primitives/.github/.github/workflows/swift-docs.yml@main
+    with:
+      umbrella-module: Example
+      exclude-modules: Internal
+    secrets: inherit
+"""
+        spec = parse_existing_caller(text, "swift-primitives/swift-example", "primitives")
+        self.assertEqual(spec.docs_umbrella_module, "Example")
+        self.assertEqual(spec.docs_exclude_modules, "Internal")
+        regenerated = generate(spec)
+        self.assertIn("docs-umbrella-module: Example", regenerated)
+        self.assertIn("docs-exclude-modules: Internal", regenerated)
 
     def test_invalid_layer_is_rejected_at_construction(self):
         with self.assertRaises(ValueError):
@@ -231,11 +256,27 @@ jobs:
         with self.assertRaises(UnknownCustomization):
             self._parse(text)
 
-    def test_missing_docs_job_is_rejected(self):
+    def test_single_job_legacy_shape_without_bridge_input_parses_clean(self):
+        # A caller already reduced to one ci: job (no separate docs) is
+        # admissible for terminal regeneration; the bridge input is
+        # generator-owned, so its absence in the input is not a defect.
         text = """\
 jobs:
   ci:
     uses: swift-primitives/.github/.github/workflows/swift-ci.yml@main
+    secrets: inherit
+"""
+        spec = self._parse(text)
+        self.assertEqual(spec.layer, "primitives")
+
+    def test_cross_wrapper_docs_route_is_rejected(self):
+        text = """\
+jobs:
+  ci:
+    uses: swift-primitives/.github/.github/workflows/swift-ci.yml@main
+    secrets: inherit
+  docs:
+    uses: swift-standards/.github/.github/workflows/swift-docs.yml@main
     secrets: inherit
 """
         with self.assertRaises(UnknownCustomization):
