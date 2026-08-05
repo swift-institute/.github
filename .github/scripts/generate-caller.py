@@ -1,74 +1,52 @@
 #!/usr/bin/env python3
-"""
-generate-caller.py — the canonical typed generator for per-package
-`.github/workflows/ci.yml` files (Task 5-01, swift-institute/.github#276,
-#282).
+"""generate-caller.py — the canonical typed generator for per-package
+`.github/workflows/ci.yml` files (Task 5-01 → TX2, swift-institute/.github#276,
+#282; CI/CD Completion Programme §5.1/§8.8).
 
-Builds a caller from a small typed spec (repository, Workspace-supplied
-layer, and every approved typed input this repository legitimately
-declares) and renders it as canonical, deterministic YAML text — string
-templating, not a generic YAML dump, so byte-identical output regardless
-of the input field order is true by construction rather than something a
-serializer's key-ordering has to be trusted to preserve.
+TERMINAL FORM (TX6 pass A, "integrated docs bridge"). This generator now
+emits the terminal caller the Completion Programme §5.1 prescribes for
+every ordinary package repository:
+
+  - exactly ONE `ci` job calling the semantic layer wrapper `@main`;
+  - `integrated-docs: true` (the [temp-integrated-docs-4-01] bridge input
+    — TX8 elides it once TX7 makes central docs unconditional);
+  - NO separate `docs:` job (the universal chain runs DocC exactly once);
+  - canonical events: push `main` + tags `'*'` (all ordinary classes,
+    same-org and cross-org — §5.1 "same canonical contract"),
+    pull_request `main`, workflow_dispatch;
+  - top-level `permissions: actions: read / contents: read`;
+  - concurrency `ci-${{ github.ref }}`, cancel-in-progress;
+  - `secrets: inherit` same-org, the closed CI-059 four-secret forward
+    set cross-org.
 
 The companion `parse_existing_caller()` reads a repository's CURRENT
-`ci.yml` and either recovers the typed spec that would regenerate it
-byte-for-byte, or raises `UnknownCustomization` naming exactly what it
-does not recognize. Per the task's Change item 5: an unknown input, local
-`runs-on:`/`steps:`, an extra workflow, or any other bespoke logic is
-NEVER silently erased or overwritten — generation refuses and routes the
-repository to typed-exception review instead.
-
-Grounded in real fetched callers (not invented in the abstract), sampled
-during this task's authoring:
-
-  - same-org (`swift-primitives/swift-array-primitives`,
-    `swift-standards/swift-domain-standard`,
-    `swift-foundations/swift-copy-on-write`): `secrets: inherit`,
-    `push.tags: ['*']` present.
-  - cross-org (`swift-ietf/swift-rfc-3986`,
-    `swift-linux-foundation/swift-linux-standard`,
-    `swift-microsoft/swift-windows-32`, `swift-iso/swift-iso-9945`): the
-    closed four-secret [CI-059] explicit-forward set, `push.tags` ABSENT
-    — a real, consistent, 4-for-4 same-org/cross-org split, not
-    incidental drift. Represented here as the two typed classes Change
-    item 6 anticipates ("if live characterization proves a repository
-    class lawfully differs, represent that as a typed class rather than
-    silently copying drift"), not silently unified.
-  - `platform-support` typed input (`swift-linux-foundation/
-    swift-linux-standard` -> "apple,linux", `swift-microsoft/
-    swift-windows-32` -> "windows", `swift-iso/swift-iso-9945` ->
-    "apple,linux"): preserved by exact key/value; comments explaining
-    WHY a package declares a given value are repository-owned prose the
-    generator does not attempt to reproduce or require.
-
-Every sampled caller also carries a separate `docs:` job calling
-`swift-docs.yml` — Change item 8 ("new callers enable integrated docs
-and omit the separate docs job") describes a migration-compatibility
-input that does not exist in `swift-ci.yml`/`swift-docs.yml` yet (checked
-directly against the shipped workflow at authoring time: no
-`docs-integrated`-shaped input is declared). This generator therefore
-emits the two-job shape every real caller in the sample actually uses
-today; `INTEGRATED_DOCS_SUPPORTED` is the single switch to flip once that
-compatibility input lands, so this file is the one place that changes,
-not a second migration in every caller.
+`ci.yml` — either the legacy two-job (`ci` + `docs`) form or an
+already-terminal single-job form — and recovers the typed spec, or raises
+`UnknownCustomization` naming exactly what it does not recognize. A
+legacy caller's `docs:` job `with:` overrides are recovered onto the
+spec's `docs-*` pass-through inputs (the wrapper forwards them verbatim
+to the universal's nested docs call). An unknown input, inline
+`runs-on:`/`steps:`, an extra job, a cross-wrapper docs reference, or
+any other bespoke logic is NEVER silently erased — generation refuses
+and routes the repository to typed-exception review instead.
 
 Usage:
   python3 .github/scripts/generate-caller.py generate <spec.json>
-  python3 .github/scripts/generate-caller.py parse <ci.yml>
+  python3 .github/scripts/generate-caller.py parse <ci.yml> <owner/repo>
 """
 
 from __future__ import annotations
 
 import json
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import yaml
 
-# Flip once swift-ci.yml/swift-docs.yml ship the migration-compatibility
-# input this depends on (Change item 8). See module docstring.
-INTEGRATED_DOCS_SUPPORTED = False
+# The migration-compatibility docs contract is live in swift-ci.yml and all
+# three layer wrappers ([temp-integrated-docs-4-01]); the terminal caller
+# passes `integrated-docs: true` until TX8 elides it after TX7.
+INTEGRATED_DOCS_SUPPORTED = True
 
 LAYER_WRAPPER_ORG = {
     "primitives": "swift-primitives",
@@ -86,18 +64,46 @@ CI059_SECRET_NAMES = (
     "SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY",
 )
 
-# The exact set of `with:` keys this generator knows how to preserve.
-# Anything else discovered in an existing caller is an UnknownCustomization
-# — never silently dropped or passed through unexamined.
-APPROVED_TYPED_INPUTS = ("platform-support", "enable-private-repos", "test-filter")
+# The exact set of caller-supplied `with:` keys this generator preserves,
+# in canonical emission order. `integrated-docs` is generator-owned (always
+# emitted `true`), never caller-supplied state. Anything else discovered in
+# an existing caller is an UnknownCustomization — never silently dropped.
+APPROVED_TYPED_INPUTS = (
+    "platform-support",
+    "embedded-target",
+    "swift-version",
+    "enable-private-repos",
+    "test-filter",
+    "docs-umbrella-module",
+    "docs-umbrella-display-name",
+    "docs-umbrella-bundle-id",
+    "docs-umbrella-docc-path",
+    "docs-exclude-modules",
+    "docs-swift-version",
+)
+
+# Legacy separate-docs-job `with:` keys → the terminal caller's `docs-*`
+# pass-through inputs on the single `ci` job (the wrapper forwards each
+# verbatim into the universal's nested swift-docs.yml call).
+LEGACY_DOCS_INPUT_MAP = {
+    "umbrella-module": "docs-umbrella-module",
+    "umbrella-display-name": "docs-umbrella-display-name",
+    "umbrella-bundle-id": "docs-umbrella-bundle-id",
+    "umbrella-docc-path": "docs-umbrella-docc-path",
+    "exclude-modules": "docs-exclude-modules",
+    "swift-version": "docs-swift-version",
+}
+
+_SPEC_FIELD_FOR_INPUT = {key: key.replace("-", "_") for key in APPROVED_TYPED_INPUTS}
 
 
 class UnknownCustomization(Exception):
     """Raised when an existing caller carries something this generator does
     not recognize: an unapproved `with:` key, inline `runs-on:`/`steps:`,
-    an extra job, or any workflow file this generator does not own the
-    shape of. The caller carrying it is NOT a defect — it is a typed
-    exception this generator refuses to silently regenerate over."""
+    an extra job, a cross-wrapper docs reference, or any workflow shape
+    this generator does not own. The caller carrying it is NOT a defect —
+    it is a typed exception this generator refuses to silently regenerate
+    over."""
 
 
 @dataclass(frozen=True)
@@ -105,8 +111,16 @@ class CallerSpec:
     repository: str  # "owner/name"
     layer: str  # one of LAYER_WRAPPER_ORG's keys
     platform_support: str | None = None
+    embedded_target: str | None = None
+    swift_version: str | None = None
     enable_private_repos: bool | None = None
     test_filter: str | None = None
+    docs_umbrella_module: str | None = None
+    docs_umbrella_display_name: str | None = None
+    docs_umbrella_bundle_id: str | None = None
+    docs_umbrella_docc_path: str | None = None
+    docs_exclude_modules: str | None = None
+    docs_swift_version: str | None = None
 
     def __post_init__(self):
         if self.layer not in LAYER_WRAPPER_ORG:
@@ -129,20 +143,24 @@ class CallerSpec:
         # Structural fact once layer is known (never inferred FROM the
         # org — the org is compared AGAINST the layer's canonical wrapper
         # org, which is the opposite direction and the one Task 1-03 item
-        # 10 and this task both require).
+        # 10 and TX2 both require).
         return self.owner == self.wrapper_org
 
     @property
     def with_lines(self) -> list[str]:
-        lines = []
-        if self.platform_support:
-            lines.append(f"      platform-support: {self.platform_support}")
-        if self.enable_private_repos is not None:
-            lines.append(
-                f"      enable-private-repos: {str(self.enable_private_repos).lower()}"
-            )
-        if self.test_filter:
-            lines.append(f"      test-filter: {self.test_filter}")
+        # `integrated-docs: true` is unconditional in the terminal bridge
+        # form and leads the block; caller-preserved typed inputs follow
+        # in canonical APPROVED_TYPED_INPUTS order.
+        lines = ["      integrated-docs: true"]
+        for key in APPROVED_TYPED_INPUTS:
+            value = getattr(self, _SPEC_FIELD_FOR_INPUT[key])
+            if value is None or value == "":
+                continue
+            if isinstance(value, bool):
+                rendered = str(value).lower()
+            else:
+                rendered = str(value)
+            lines.append(f"      {key}: {rendered}")
         return lines
 
 
@@ -156,19 +174,24 @@ def _secrets_block(spec: CallerSpec, indent: str = "    ") -> list[str]:
 
 
 def generate(spec: CallerSpec) -> str:
-    """Render the canonical `ci.yml` text for one caller spec."""
-    lines = ["name: CI", "", "on:", "  push:", "    branches:", "      - main"]
-    if spec.same_org:
-        # Change item 6 / real-sample finding: same-org callers carry a
-        # tag-push trigger (release boundary reached without a cross-org
-        # credential hop); cross-org callers observed in the fleet sample
-        # do not.
-        lines += ["    tags:", "      - '*'"]
-    lines += [
+    """Render the canonical terminal `ci.yml` text for one caller spec."""
+    lines = [
+        "name: CI",
+        "",
+        "on:",
+        "  push:",
+        "    branches:",
+        "      - main",
+        "    tags:",
+        "      - '*'",
         "  pull_request:",
         "    branches:",
         "      - main",
         "  workflow_dispatch:",
+        "",
+        "permissions:",
+        "  actions: read",
+        "  contents: read",
         "",
         "concurrency:",
         "  group: ci-${{ github.ref }}",
@@ -177,79 +200,118 @@ def generate(spec: CallerSpec) -> str:
         "jobs:",
         "  ci:",
         f"    uses: {spec.wrapper_org}/.github/.github/workflows/swift-ci.yml@main",
+        "    with:",
     ]
-    with_lines = spec.with_lines
-    if with_lines:
-        lines.append("    with:")
-        lines += with_lines
+    lines += spec.with_lines
     lines += _secrets_block(spec)
-
-    if not INTEGRATED_DOCS_SUPPORTED:
-        lines += [
-            "",
-            "  docs:",
-            f"    uses: {spec.wrapper_org}/.github/.github/workflows/swift-docs.yml@main",
-        ]
-        lines += _secrets_block(spec)
-
     return "\n".join(lines) + "\n"
+
+
+def _job_uses_or_raise(job_id: str, job: dict) -> str:
+    if "steps" in job or "runs-on" in job:
+        raise UnknownCustomization(
+            f"'{job_id}' job carries inline steps/runs-on, not a thin caller"
+        )
+    if "uses" not in job:
+        raise UnknownCustomization(
+            f"'{job_id}' job has no uses: — not a reusable-workflow call"
+        )
+    return job["uses"]
 
 
 def parse_existing_caller(text: str, repository: str, layer: str) -> CallerSpec:
     """Recover the typed spec that models `text`, or raise
-    UnknownCustomization naming exactly what does not fit the generator's
-    known shape.
+    UnknownCustomization naming exactly what does not fit.
 
-    This is a SEMANTIC recovery, not a byte-identical one: every real
-    caller sampled while building this generator carries free-form
-    explanatory prose comments (why THIS package declares THIS
-    platform-support value, why THIS layer's wrapper is referenced) that
-    are legitimately repository-owned and that this generator has no
-    business inventing or overwriting. The round-trip check below
-    compares the STRUCTURED shape a second parse of the regenerated text
-    produces against the original's structured shape — value-for-value,
-    key-for-key — not the raw bytes. A real difference in job set,
-    `uses:`, `with:` keys/values, or secrets shape still fails closed;
-    only comment/whitespace formatting is allowed to differ.
-    """
+    Two admissible input shapes:
+
+      - legacy two-job (`ci` + separate `docs`): the docs job must call
+        the SAME wrapper org's swift-docs.yml; its `with:` overrides are
+        mapped onto the spec's `docs-*` inputs;
+      - terminal single-job (`ci` with `integrated-docs: true`): already
+        this generator's own output shape; parsed for idempotent resume.
+
+    Comment/whitespace formatting is allowed to differ; a real difference
+    in job set, `uses:`, `with:` keys/values, or secrets shape fails
+    closed."""
     document = yaml.safe_load(text)
     jobs = document.get("jobs") or {}
+    wrapper_org = LAYER_WRAPPER_ORG[layer]
 
-    expected_job_names = {"ci"} if INTEGRATED_DOCS_SUPPORTED else {"ci", "docs"}
-    if set(jobs) != expected_job_names:
+    if set(jobs) == {"ci", "docs"}:
+        legacy = True
+    elif set(jobs) == {"ci"}:
+        legacy = False
+    else:
         raise UnknownCustomization(
-            f"unexpected job set {sorted(jobs)}, expected {sorted(expected_job_names)}"
+            f"unexpected job set {sorted(jobs)}, expected ['ci'] or ['ci', 'docs']"
         )
 
-    for job_id, job in jobs.items():
-        if "steps" in job or "runs-on" in job:
-            raise UnknownCustomization(f"'{job_id}' job carries inline steps/runs-on, not a thin caller")
-        if "uses" not in job:
-            raise UnknownCustomization(f"'{job_id}' job has no uses: — not a reusable-workflow call")
+    ci_uses = _job_uses_or_raise("ci", jobs["ci"])
+    expected_ci_uses = f"{wrapper_org}/.github/.github/workflows/swift-ci.yml@main"
+    if ci_uses != expected_ci_uses:
+        raise UnknownCustomization(
+            f"ci uses {ci_uses!r}, expected {expected_ci_uses!r} for layer {layer!r}"
+        )
 
-    with_block = jobs["ci"].get("with") or {}
+    fields: dict[str, object] = {}
+    with_block = dict(jobs["ci"].get("with") or {})
+    # `integrated-docs` in an existing caller is the bridge input itself,
+    # not caller state — accept `true`, refuse anything else.
+    if "integrated-docs" in with_block:
+        if with_block.pop("integrated-docs") is not True:
+            raise UnknownCustomization("integrated-docs is present but not true")
     unknown_keys = set(with_block) - set(APPROVED_TYPED_INPUTS)
     if unknown_keys:
         raise UnknownCustomization(f"unapproved with: keys {sorted(unknown_keys)}")
+    for key, value in with_block.items():
+        fields[_SPEC_FIELD_FOR_INPUT[key]] = value
 
-    spec = CallerSpec(
-        repository=repository,
-        layer=layer,
-        platform_support=with_block.get("platform-support"),
-        enable_private_repos=with_block.get("enable-private-repos"),
-        test_filter=with_block.get("test-filter"),
-    )
-
-    # Structural round-trip: re-parse the freshly generated text and
-    # compare its `jobs` shape to the original's. If they differ,
-    # something about this caller is NOT representable by this generator
-    # yet — refuse rather than claim a false match.
-    regenerated_document = yaml.safe_load(generate(spec))
-    if regenerated_document.get("jobs") != jobs:
-        raise UnknownCustomization(
-            "recovered spec does not regenerate this caller's job structure "
-            "identically (a customization this generator does not yet model)"
+    if legacy:
+        docs_uses = _job_uses_or_raise("docs", jobs["docs"])
+        expected_docs_uses = (
+            f"{wrapper_org}/.github/.github/workflows/swift-docs.yml@main"
         )
+        if docs_uses != expected_docs_uses:
+            raise UnknownCustomization(
+                f"docs uses {docs_uses!r}, expected {expected_docs_uses!r} "
+                f"(cross-wrapper docs routes are typed exceptions)"
+            )
+        docs_with = dict(jobs["docs"].get("with") or {})
+        unknown_docs_keys = set(docs_with) - set(LEGACY_DOCS_INPUT_MAP)
+        if unknown_docs_keys:
+            raise UnknownCustomization(
+                f"unapproved docs with: keys {sorted(unknown_docs_keys)}"
+            )
+        for key, value in docs_with.items():
+            terminal_key = LEGACY_DOCS_INPUT_MAP[key]
+            field = _SPEC_FIELD_FOR_INPUT[terminal_key]
+            if field in fields and fields[field] != value:
+                raise UnknownCustomization(
+                    f"docs job {key!r} conflicts with ci job {terminal_key!r}"
+                )
+            fields[field] = value
+
+    spec = CallerSpec(repository=repository, layer=layer, **fields)
+
+    # Structural round-trip on the TERMINAL regeneration: re-parse the
+    # freshly generated text and require its recovered spec to equal this
+    # one. (Byte equality with a LEGACY input is impossible by design —
+    # the terminal form is the point — so the invariant is spec-level.)
+    regenerated = yaml.safe_load(generate(spec))
+    regenerated_jobs = regenerated.get("jobs") or {}
+    if not legacy:
+        # The bridge input is generator-owned: normalize its (lawful)
+        # absence in the input before demanding structural equality.
+        normalized = {"ci": dict(jobs["ci"])}
+        ci_with = dict(normalized["ci"].get("with") or {})
+        ci_with["integrated-docs"] = True
+        normalized["ci"]["with"] = ci_with
+        if regenerated_jobs != normalized:
+            raise UnknownCustomization(
+                "single-job caller does not match the canonical terminal shape "
+                "(a customization this generator does not yet model)"
+            )
     return spec
 
 
@@ -280,17 +342,10 @@ def _cli_parse(caller_path: str, repository: str) -> int:
     except UnknownCustomization as e:
         print(f"::error::{e}", file=sys.stderr)
         return 1
-    json.dump(
-        {
-            "layer": spec.layer,
-            "same_org": spec.same_org,
-            "platform_support": spec.platform_support,
-            "enable_private_repos": spec.enable_private_repos,
-            "test_filter": spec.test_filter,
-        },
-        sys.stdout,
-        indent=2,
-    )
+    payload = {"layer": spec.layer, "same_org": spec.same_org}
+    for key in APPROVED_TYPED_INPUTS:
+        payload[_SPEC_FIELD_FOR_INPUT[key]] = getattr(spec, _SPEC_FIELD_FOR_INPUT[key])
+    json.dump(payload, sys.stdout, indent=2)
     sys.stdout.write("\n")
     return 0
 

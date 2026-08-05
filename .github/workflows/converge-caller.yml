@@ -32,7 +32,17 @@
 # is created or anything is committed — never after, and never only in
 # the driver's own local copy.
 #
-# This workflow does not approve or merge. Approval is a separate,
+# TERMINAL WAVE (R28.1 / TX6A, CI/CD Completion Programme): `mode:
+# direct-push` commits the regenerated terminal caller straight to the
+# target's default branch as the bot, through the R28-authorized App
+# bypass actor on the compatibility ruleset. Rollback pre-image capture
+# stays BEFORE the push; the landed blob is read back and byte-compared
+# before the run reports success. `preserve-existing-inputs` recovers
+# each target's approved typed inputs from its live caller via the
+# generator's own parse mode, so a bespoke caller fails closed to
+# typed-exception review instead of being overwritten.
+#
+# In pr mode this workflow does not approve or merge. Approval is a separate,
 # distinct-identity step the driver performs as `coenttb` (R11: the bot
 # authors and pushes; a reviewer that did not author the change approves)
 # — folding it in here would make the pusher and the approver
@@ -51,6 +61,27 @@ on:
         description: 'Workspace semantic layer: primitives | standards | institute.'
         required: true
         type: string
+      mode:
+        description: >-
+          pr (default): open a bot-authored candidate PR for distinct-identity
+          review. direct-push (R28.1, terminal wave): commit the regenerated
+          terminal caller straight to the default branch as the bot, through
+          the R28-authorized App bypass window; rollback pre-image capture
+          stays BEFORE the push, and the landed blob is read back and
+          byte-compared before the run reports success.
+        required: false
+        type: string
+        default: 'pr'
+      preserve-existing-inputs:
+        description: >-
+          Recover the target's approved typed inputs (platform-support,
+          docs-* overrides, …) from its CURRENT ci.yml via the landed
+          generator's own parse mode, instead of trusting dispatch inputs.
+          An unparseable/bespoke caller fails the run (typed-exception
+          route), never gets overwritten.
+        required: false
+        type: boolean
+        default: true
       platform-support:
         description: 'Approved typed input: platform-support value, or empty.'
         required: false
@@ -172,18 +203,29 @@ jobs:
           TEST_FILTER: ${{ inputs.test-filter }}
           DELETE_STANDALONE: ${{ inputs.delete-standalone-format-lint }}
           TASK_ISSUE: ${{ inputs.task-issue }}
+          MODE: ${{ inputs.mode }}
+          PRESERVE_EXISTING: ${{ inputs.preserve-existing-inputs }}
         run: |
           set -euo pipefail
 
-          # Idempotency: never open a second convergence PR onto an existing
-          # open one for the same repository (retry/resume safety).
-          existing=$(gh api "repos/${TARGET_REPOSITORY}/pulls?state=open" \
-            --jq '[.[] | select(.head.ref | startswith("bot/5-02-converge-caller-"))] | .[0].number // empty')
-          if [[ -n "$existing" ]]; then
-            echo "::notice::${TARGET_REPOSITORY} already has an open convergence PR #${existing}; not opening a second one."
-            echo "outcome=already-open" >> "$GITHUB_OUTPUT"
-            echo "pr-number=${existing}" >> "$GITHUB_OUTPUT"
-            exit 0
+          if [[ "$MODE" != "pr" && "$MODE" != "direct-push" ]]; then
+            echo "::error::mode must be 'pr' or 'direct-push', got '${MODE}'."
+            exit 1
+          fi
+
+          # Idempotency (pr mode): never open a second convergence PR onto
+          # an existing open one for the same repository (retry/resume
+          # safety). direct-push mode instead relies on the byte-identity
+          # short-circuit below.
+          if [[ "$MODE" == "pr" ]]; then
+            existing=$(gh api "repos/${TARGET_REPOSITORY}/pulls?state=open" \
+              --jq '[.[] | select(.head.ref | startswith("bot/5-02-converge-caller-"))] | .[0].number // empty')
+            if [[ -n "$existing" ]]; then
+              echo "::notice::${TARGET_REPOSITORY} already has an open convergence PR #${existing}; not opening a second one."
+              echo "outcome=already-open" >> "$GITHUB_OUTPUT"
+              echo "pr-number=${existing}" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
           fi
 
           workdir=$(mktemp -d)
@@ -235,21 +277,46 @@ jobs:
           cp "$rollback" "$GITHUB_WORKSPACE/rollback/${TARGET_REPOSITORY//\//__}.json"
 
           # ---- Canonical content, from the ONE landed generator -----------
+          # With preserve-existing-inputs (the terminal-wave default), the
+          # target's CURRENT caller is parsed by the generator's own parse
+          # mode: its approved typed inputs (platform-support, docs-*
+          # overrides, …) are recovered rather than trusted from dispatch
+          # inputs, and a bespoke/unparseable caller FAILS the run (typed
+          # exception route) instead of being overwritten.
           spec="$workdir/spec.json"
-          jq -n \
-            --arg repository "$TARGET_REPOSITORY" \
-            --arg layer "$LAYER" \
-            --arg platform_support "$PLATFORM_SUPPORT" \
-            --arg enable_private_repos "$ENABLE_PRIVATE_REPOS" \
-            --arg test_filter "$TEST_FILTER" \
-            '{
-              repository: $repository,
-              layer: $layer
-            }
-            + (if $platform_support != "" then {platform_support: $platform_support} else {} end)
-            + (if $enable_private_repos != "" then {enable_private_repos: ($enable_private_repos == "true")} else {} end)
-            + (if $test_filter != "" then {test_filter: $test_filter} else {} end)
-            ' > "$spec"
+          if [[ "$PRESERVE_EXISTING" == "true" && -f .github/workflows/ci.yml ]]; then
+            parsed="$workdir/parsed.json"
+            if ! python3 "$GITHUB_WORKSPACE/institute-github/.github/scripts/generate-caller.py" \
+                parse .github/workflows/ci.yml "$TARGET_REPOSITORY" > "$parsed"; then
+              echo "::error::${TARGET_REPOSITORY}: existing ci.yml is not a shape the canonical generator models; routing to typed-exception review, not overwriting."
+              echo "outcome=unknown-customization" >> "$GITHUB_OUTPUT"
+              exit 1
+            fi
+            parsed_layer=$(jq -r '.layer' "$parsed")
+            if [[ "$parsed_layer" != "$LAYER" ]]; then
+              echo "::error::${TARGET_REPOSITORY}: live caller resolves layer '${parsed_layer}' but dispatch said '${LAYER}'; stopping."
+              echo "outcome=layer-mismatch" >> "$GITHUB_OUTPUT"
+              exit 1
+            fi
+            jq --arg repository "$TARGET_REPOSITORY" \
+              'del(.same_org) | with_entries(select(.value != null)) + {repository: $repository}' \
+              "$parsed" > "$spec"
+          else
+            jq -n \
+              --arg repository "$TARGET_REPOSITORY" \
+              --arg layer "$LAYER" \
+              --arg platform_support "$PLATFORM_SUPPORT" \
+              --arg enable_private_repos "$ENABLE_PRIVATE_REPOS" \
+              --arg test_filter "$TEST_FILTER" \
+              '{
+                repository: $repository,
+                layer: $layer
+              }
+              + (if $platform_support != "" then {platform_support: $platform_support} else {} end)
+              + (if $enable_private_repos != "" then {enable_private_repos: ($enable_private_repos == "true")} else {} end)
+              + (if $test_filter != "" then {test_filter: $test_filter} else {} end)
+              ' > "$spec"
+          fi
 
           python3 "$GITHUB_WORKSPACE/institute-github/.github/scripts/generate-caller.py" generate "$spec" \
             > /tmp/generated-ci.yml
@@ -260,7 +327,9 @@ jobs:
             exit 0
           fi
 
-          git checkout -b "$BRANCH"
+          if [[ "$MODE" != "direct-push" ]]; then
+            git checkout -b "$BRANCH"
+          fi
           mkdir -p .github/workflows
           cp /tmp/generated-ci.yml .github/workflows/ci.yml
           git add .github/workflows/ci.yml
@@ -275,11 +344,41 @@ jobs:
             done
           fi
 
-          commit_msg=$(printf 'ci: converge %s to the canonical caller (Task 5-02)\n\nGenerated by generate-caller.py (Task 5-01, swift-institute/.github#282)\nfrom the typed spec {layer=%s}. Relates to swift-institute/.github#282.\n' \
+          commit_msg=$(printf 'ci: converge %s to the canonical terminal caller (TX6A, #276)\n\nGenerated by generate-caller.py (TX2, swift-institute/.github#282)\nfrom the typed spec {layer=%s}. Relates to swift-institute/.github#276.\n' \
             "$TARGET_REPOSITORY" "$LAYER")
           git -c user.name='swift-institute-bot' \
               -c user.email='swift-institute-bot@users.noreply.github.com' \
               commit -q -m "$commit_msg"
+
+          if [[ "$MODE" == "direct-push" ]]; then
+            # R28.1 terminal-wave path: the bot pushes the regenerated
+            # caller straight to the default branch through the authorized
+            # App bypass window. The rollback pre-image above was captured
+            # BEFORE this push (R28.1's binding ordering). The landed blob
+            # is read back through the API and byte-compared before this
+            # run may report success.
+            git push -q origin "HEAD:${DEFAULT_BRANCH}"
+            head_sha=$(git rev-parse HEAD)
+            gh api \
+              "repos/${TARGET_REPOSITORY}/contents/.github/workflows/ci.yml?ref=${DEFAULT_BRANCH}" \
+              --jq '.content' | tr -d '\n' | base64 -d > /tmp/landed-ci.yml
+            if ! cmp -s /tmp/landed-ci.yml /tmp/generated-ci.yml; then
+              echo "::error::${TARGET_REPOSITORY}: post-push readback of ci.yml does not match the generated bytes; investigate before trusting this convergence."
+              echo "outcome=readback-mismatch" >> "$GITHUB_OUTPUT"
+              exit 1
+            fi
+            jq --arg head_sha "$head_sha" '. + {mode: "direct-push", head_sha: $head_sha}' \
+              "$rollback" > "$rollback.tmp" && mv "$rollback.tmp" "$rollback"
+            cp "$rollback" "$GITHUB_WORKSPACE/rollback/${TARGET_REPOSITORY//\//__}.json"
+            echo "outcome=pushed" >> "$GITHUB_OUTPUT"
+            {
+              echo "## converge-caller (direct-push): ${TARGET_REPOSITORY}"
+              echo "base: ${base_sha}"
+              echo "head: ${head_sha}"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
           git push -q --set-upstream origin "$BRANCH"
           head_sha=$(git rev-parse HEAD)
 
