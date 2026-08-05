@@ -515,16 +515,41 @@ class TokenBoundaryTests(unittest.TestCase):
     def _uses_local_reusable_workflow(self, entry):
         return isinstance(entry["runner"], str) and entry["runner"].startswith("./")
 
+    # swift-institute/.github#276 Task 6-01: ci-ok reads its own run object
+    # (GET /repos/.../actions/runs/{run_id}) to emit the effective-runtime
+    # receipt, which needs `actions: read` — still read-only, granting no
+    # write capability anywhere, but no longer identical to every other
+    # job's bare `{contents: read}`. A typed, named exception (one job id,
+    # one extra read-only scope), not a general widening: every job NOT
+    # named here still carries exactly `{contents: read}`.
+    PERMISSIONS_EXCEPTIONS = {
+        "ci-ok": {"contents": "read", "actions": "read"},
+    }
+
     def test_every_inline_job_permissions_is_exactly_contents_read(self):
         for job_id, entry in self.universal["jobs"].items():
             if self._uses_local_reusable_workflow(entry):
                 continue
+            expected = self.PERMISSIONS_EXCEPTIONS.get(job_id, {"contents": "read"})
             with self.subTest(job=job_id):
                 self.assertEqual(
                     entry["permissions"],
-                    {"contents": "read"},
-                    f"{job_id} does not carry the uniform read-only permissions floor",
+                    expected,
+                    f"{job_id} does not carry its expected read-only permissions",
                 )
+
+    def test_detector_catches_an_unlisted_job_gaining_a_scope(self):
+        """Positive control: a job outside PERMISSIONS_EXCEPTIONS that
+        somehow carries `actions: read` (or anything beyond bare
+        `contents: read`) must still fail the assertion above — proven by
+        checking a job NOT in the exceptions map against the read-only
+        floor directly."""
+        hazardous = {"contents": "read", "actions": "read"}
+        job_id = next(
+            j for j in self.universal["jobs"] if j not in self.PERMISSIONS_EXCEPTIONS
+        )
+        expected = self.PERMISSIONS_EXCEPTIONS.get(job_id, {"contents": "read"})
+        self.assertNotEqual(hazardous, expected)
 
     def test_local_reusable_workflow_jobs_declare_no_call_site_permissions(self):
         expected = {
@@ -604,19 +629,22 @@ class TokenBoundaryTests(unittest.TestCase):
         )
 
     def test_control_plane_checkout_of_own_repo_is_deliberately_excluded(self):
-        """The 2 checkouts of `swift-institute/.github` at
+        """The 3 checkouts of `swift-institute/.github` at
         `job.workflow_sha` are this repository's own trusted code, not
         subject code, and carry no `persist-credentials` requirement.
-        Pinned at exactly 2 so a THIRD site quietly appearing (which would
-        silently narrow the subject-checkout population above) is caught
-        here rather than nowhere."""
+        Pinned at exactly 3 (the third being ci-ok's "Checkout this workflow
+        revision" step, vendoring this exact revision so the
+        effective-runtime receipt — Task 6-01, swift-institute/.github#276
+        — can extract this run's own action coordinates) so a FOURTH site
+        quietly appearing (which would silently narrow the subject-checkout
+        population above) is caught here rather than nowhere."""
         control_plane = [
             (job_id, step) for job_id, step in self._checkout_steps()
             if (step.get("with", {}) or {}).get("ref") == "${{ job.workflow_sha }}"
         ]
         self.assertEqual(
-            len(control_plane), 2,
-            f"expected exactly 2 own-repository checkouts at job.workflow_sha, found {len(control_plane)}",
+            len(control_plane), 3,
+            f"expected exactly 3 own-repository checkouts at job.workflow_sha, found {len(control_plane)}",
         )
         for job_id, step in control_plane:
             with self.subTest(job=job_id, step=step.get("name", "<unnamed>")):

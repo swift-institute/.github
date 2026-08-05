@@ -179,13 +179,17 @@
         ],
         "nested_test_detection": false,
         "permissions": {
+          "actions": "read",
           "contents": "read"
         },
         "posture": "aggregate",
         "private_guarded": true,
         "runner": "ubuntu-latest",
         "step_names": [
-          "Aggregate required-job results"
+          "Aggregate required-job results",
+          "Checkout this workflow revision",
+          "Emit effective-runtime receipt",
+          "Upload effective-runtime receipt"
         ],
         "wave": 2
       },
@@ -641,7 +645,7 @@
       "skipped"
     ],
     "required_check_context": "ci / ci-ok",
-    "source_sha256": "41251a4e6d15157cf88dad31f27a3190936cfde7a839e573d0551d1b088b55a1"
+    "source_sha256": "8ff680b73174f98da067c87949085492118cc96cf822db08371a8a2623511666"
   },
   "wrappers": {
     "foundations": {

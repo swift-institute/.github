@@ -177,6 +177,32 @@ jobs:
           set -euo pipefail
           python3 .github/scripts/tests/test-verdict-inventory.py 2>&1 | tee /tmp/verdict-inventory-controls.txt
 
+      # Task 6-01 (swift-institute/.github#276, #43): the effective-runtime
+      # receipt's action-coordinate extractor, tested against the real
+      # shipped swift-ci.yml (self-scanning regression control — an earlier
+      # draft's text-regex approach matched its own embedded script) plus
+      # synthetic documents for every classification it can produce.
+      - name: Run action-coordinate extractor controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/tests/test-extract-action-coordinates.py 2>&1 | tee /tmp/extract-action-coordinates-controls.txt
+
+      # Task 6-01 reclaim (swift-institute/.github#276, predicate 20): the
+      # effective-runtime receipt's empty-referenced_workflows decision,
+      # extracted from inline shell into compute-referenced-workflows.py so
+      # it is independently testable. #43 claimed this behaviour was tested;
+      # no file in this directory mentioned referenced_workflows at all.
+      # This suite proves both directions (empty -> UNMEASURED, non-empty ->
+      # measured) and was observed failing against a broken variant that
+      # silently substituted a measured-looking value for the empty case
+      # before being shipped.
+      - name: Run referenced-workflows receipt controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/tests/test-compute-referenced-workflows.py 2>&1 | tee /tmp/compute-referenced-workflows-controls.txt
+
       # Task 5-01 (swift-institute/.github#276, #304): the canonical caller
       # generator, proven against seven real fetched callers (same-org/
       # cross-org × Primitives/Standards/Foundations, the three known
@@ -379,6 +405,18 @@ jobs:
             echo
             echo '```'
             tail -n 30 /tmp/verdict-inventory-controls.txt 2>/dev/null || echo "(controls produced no output)"
+            echo '```'
+            echo
+            echo "### Action-coordinate extractor controls"
+            echo
+            echo '```'
+            tail -n 20 /tmp/extract-action-coordinates-controls.txt 2>/dev/null || echo "(controls produced no output)"
+            echo '```'
+            echo
+            echo "### Referenced-workflows receipt controls"
+            echo
+            echo '```'
+            tail -n 20 /tmp/compute-referenced-workflows-controls.txt 2>/dev/null || echo "(controls produced no output)"
             echo '```'
             echo
             echo "### Caller generator controls"
