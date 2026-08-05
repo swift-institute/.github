@@ -167,10 +167,13 @@ jobs:
           git -C "$subject_dir" -c http.extraheader="$auth_header" fetch --quiet --depth 1 \
             "https://github.com/${SUBJECT_OWNER}/${SUBJECT_NAME}.git" "$SUBJECT_HEAD"
           git -C "$subject_dir" checkout --quiet FETCH_HEAD
-          # Remove every credential trace from the on-disk checkout — no
-          # stored remote URL, no leftover header — before subject-supplied
-          # build tooling can run.
-          git -C "$subject_dir" remote remove origin 2>/dev/null || true
+          # The seal reads the subject's origin URL to establish identity,
+          # and this init+fetch recipe never creates one — its absence made
+          # every seal refuse ("cannot read the subject's origin remote",
+          # reproduced locally; with a clean origin the same checkout seals
+          # verified). The URL below carries no credential: the token rode a
+          # transient HTTP header on the fetch only, never the remote URL.
+          git -C "$subject_dir" remote add origin "https://github.com/${SUBJECT_OWNER}/${SUBJECT_NAME}.git"
           unset GH_APP_TOKEN auth_header
           observed_head=$(git -C "$subject_dir" rev-parse HEAD)
           test "$observed_head" = "$SUBJECT_HEAD"
