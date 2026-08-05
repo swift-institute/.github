@@ -1,0 +1,43 @@
+{
+  "adjudicatedAt": "2026-08-05T17:45:00Z",
+  "adjudicatedBy": "CI/CD completion coordinator session (Claude, session 3c420ad2)",
+  "authority": "CI-CD-COMPLETION-PROGRAMME.md §10 (sha256 62e315c4…), predicates P1–P28",
+  "summary": {
+    "MET": 23,
+    "DESCOPED": 1,
+    "BLOCKED": 2,
+    "PENDING_E1_R1": 2
+  },
+  "predicates": {
+    "P1": {"state": "MET", "evidence": "final issue graph; TX11 Skills landed; #107 closed not-planned, #91 closed"},
+    "P2": {"state": "MET", "evidence": "sole resolver at terminal head; invalid-ref and Plan fail-closed fixtures; TX7/TX10 runs"},
+    "P3": {"state": "MET", "evidence": "terminal-head full-tier revalidation via TX12 canaries (runs 31009606407 fulltier, 31009687887 forkpr)"},
+    "P4": {"state": "MET", "evidence": "R24.2 findings-separation route; bot-issue ownership verified post-TX2/TX5"},
+    "P5": {"state": "MET", "evidence": "TX2 population repair; expected/actual cell equality on the 12 validators; prior MET remains invalid and is not cited"},
+    "P6": {"state": "MET", "evidence": "G0/TX1 canonical root; final live census 449/449 with visibility separation and explicit UNMEASURED lanes"},
+    "P7": {"state": "MET", "evidence": "TX1 effective-inventory CLI (Workspace #135, 49fad76); missing==0 with positive control"},
+    "P8": {"state": "MET", "evidence": "TX9A-C/TX10 wrapper-path negative execution; absent/invalid/zero fail hard"},
+    "P9": {"state": "MET", "evidence": "TX7/TX9 limb-by-limb: universal owns gates; reachable-skip refusal fixtures; zero-compile rejected"},
+    "P10": {"state": "MET", "evidence": "TX12 nested full-tier + distinct fork-origin PR at terminal head; probe deleted with 404 readback after Class A capture"},
+    "P11": {"state": "MET", "evidence": "fresh 24-installation readback 2026-08-05 (review-inputs/v1-app-permission-readback.tsv); 17 sweep orgs identical grants"},
+    "P12": {"state": "BLOCKED", "evidence": "Workspace seal/check contract exists and passes locally at pinned 49fad76 (verified, 3 operations; check consistent); the complete live rejection set awaits the first green CI run — swift-institute/.github#349"},
+    "P13": {"state": "BLOCKED", "evidence": "automatic enqueue, R10-controlled enumeration, fail-closed publish (zero false successes), and invalid-payload refusal proven live; exact-head pass truth awaits #349's green-run citation"},
+    "P14": {"state": "MET", "evidence": "final ruleset census: 449/449 public exactly 'ci / matrix / ci-ok'; control/meta typed separately; TX4/TX5 sequence complete"},
+    "P15": {"state": "MET", "evidence": "census zero 'ci / ci-ok' requirers; all three outer aggregates deleted (TX9A-C)"},
+    "P16": {"state": "MET", "evidence": "docs exactly once through universal; migration inputs deleted (TX8/TX10); fleet source census zero survivors"},
+    "P17": {"state": "MET", "evidence": "449/449 accessible ordinary callers terminal at default branch, byte/structurally verified (review-inputs/v1-final-census-result.json)"},
+    "P18": {"state": "MET", "evidence": "fail-closed registry; TX-R/TX11 dispositions; zero unexplained workflows at terminal census"},
+    "P19": {"state": "MET", "evidence": "terminal receipt run 31010155651/1, digest a649e0883d1b2abb12474a723917c469d855afe28fab3370501cf4d3fe52db9b, readiness accepted (review-inputs/runtime-receipts/)"},
+    "P20": {"state": "MET", "evidence": "empty referenced_workflows test landed with producer; broken false-success variant observed failing (test suite, 12 tests)"},
+    "P21": {"state": "DESCOPED", "evidence": "R22.1/R24.3 principal-authorized descope; absence controls recorded; the receipt table row is present"},
+    "P22": {"state": "MET", "evidence": "#319 + TX3/TX7b token graph; no untrusted subject write token or persisted credential; G1 verify job read-only by construction"},
+    "P23": {"state": "MET", "evidence": "every §8.12 compatibility surface deleted with zero-use proof; G0 baselines retained"},
+    "P24": {"state": "MET", "evidence": "all programme PRs carry the #113 exemption; controlled matcher re-run over the final PR graph"},
+    "P25": {"state": "MET", "evidence": "V1 source/settings/event audit: no forbidden pin/tier/daemon/cache; no external tag/release/visibility/SPI/announcement mutation"},
+    "P26": {"state": "MET", "evidence": "TX11 three-Skill terminal consistency; stale-term search clean"},
+    "P27": {"state": "PENDING_E1_R1", "evidence": "receipt candidate material exists; the immutable §6.3 receipt is an R1 output by construction"},
+    "P28": {"state": "PENDING_E1_R1", "evidence": "requires E1 acceptance and the §2.4 amendment's two-phase closure; cannot precede them"}
+  },
+  "openIssues": ["swift-institute/.github#349", "swift-institute/.github#340", "swift-institute/Workspace#136"],
+  "note": "P12/P13 flip to MET on #349's green-run citation plus the live rejection set; no other predicate depends on it."
+}
