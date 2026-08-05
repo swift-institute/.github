@@ -201,28 +201,39 @@ jobs:
           # contents+pull_requests read for enumeration; `checks` carries
           # checks:write ONLY, preserving the read/write mint separation
           # per organization. Every value is masked before first use.
-          org_token() {
+          # org_token_ensure mints, masks, and caches; it must be called as a
+          # plain statement (NEVER inside command substitution) so its
+          # `::add-mask::` line reaches the runner on the step's real stdout
+          # instead of being captured into a variable — the exact defect that
+          # made every minted token invalid on the first repaired pass.
+          org_token_ensure() {
             local org="$1" class="$2" cache="${tokens_dir}/${1}-${2}"
-            if [[ ! -s "$cache" ]]; then
-              local jwt inst perms token
-              jwt=$(app_jwt)
-              inst=$(curl -sf -H "Authorization: Bearer $jwt" \
-                -H "Accept: application/vnd.github+json" \
-                "https://api.github.com/orgs/${org}/installation" | jq -r '.id // empty')
-              [[ -n "$inst" ]] || return 1
-              if [[ "$class" == "checks" ]]; then
-                perms='{"permissions":{"checks":"write"}}'
-              else
-                perms='{"permissions":{"contents":"read","pull_requests":"read","checks":"read"}}'
-              fi
-              token=$(curl -sf -X POST -H "Authorization: Bearer $jwt" \
-                -H "Accept: application/vnd.github+json" \
-                -d "$perms" \
-                "https://api.github.com/app/installations/${inst}/access_tokens" | jq -r '.token // empty')
-              [[ -n "$token" ]] || return 1
-              echo "::add-mask::${token}"
-              (umask 077 && printf '%s' "$token" > "$cache")
+            [[ -s "$cache" ]] && return 0
+            local jwt inst perms token
+            jwt=$(app_jwt)
+            inst=$(curl -sf -H "Authorization: Bearer $jwt" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/orgs/${org}/installation" | jq -r '.id // empty')
+            [[ -n "$inst" ]] || return 1
+            if [[ "$class" == "checks" ]]; then
+              perms='{"permissions":{"checks":"write"}}'
+            else
+              perms='{"permissions":{"contents":"read","pull_requests":"read","checks":"read"}}'
             fi
+            token=$(curl -sf -X POST -H "Authorization: Bearer $jwt" \
+              -H "Accept: application/vnd.github+json" \
+              -d "$perms" \
+              "https://api.github.com/app/installations/${inst}/access_tokens" | jq -r '.token // empty')
+            [[ -n "$token" ]] || return 1
+            echo "::add-mask::${token}"
+            (umask 077 && printf '%s' "$token" > "$cache")
+          }
+
+          # org_token is substitution-safe: it only reads the cache written by
+          # a prior plain-statement org_token_ensure for the same (org, class).
+          org_token() {
+            local cache="${tokens_dir}/${1}-${2}"
+            [[ -s "$cache" ]] || return 1
             cat "$cache"
           }
 
@@ -318,11 +329,12 @@ jobs:
             # mint or listing is recorded UNMEASURED, never silently
             # written as an empty file (the exact R10 false-zero this
             # sweep shipped with).
-            if ! org_tok=$(org_token "$org" read); then
+            if ! org_token_ensure "$org" read || ! org_token_ensure "$org" checks; then
               echo "::warning::${org}: installation token mint failed — private population UNMEASURED this pass"
               unmeasured_orgs="${unmeasured_orgs} ${org}"
               continue
             fi
+            org_tok=$(org_token "$org" read)
             repo_list_file="${RUNNER_TEMP}/repos-${org}.jsonl"
             if ! GH_TOKEN="$org_tok" gh api "orgs/${org}/repos?type=private&per_page=100" --paginate \
               --jq '.[] | select(.archived == false and .disabled == false) | {name: .full_name, default_branch: .default_branch}' \
