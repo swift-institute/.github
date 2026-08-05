@@ -1,0 +1,31 @@
+{
+  "frozenAt": "2026-08-05T17:45:00Z",
+  "frozenBy": "CI/CD completion coordinator session (Claude, session 3c420ad2)",
+  "governingHeads": {
+    "swift-institute/.github": "1705d2aa89949a84c933359e14e6189fbde3e887",
+    "swift-primitives/.github": "ea9c55330d496f0b276f9c9a9030c15ce1f07122",
+    "swift-standards/.github": "904ddb4c5e67be436a772332eef1b16acfbe1765",
+    "swift-foundations/.github": "84ac0109aab50db70c46fdba11729a58126f530c",
+    "swift-institute/Workspace": "49fad76bed2cc34da62de1b733600e725b6ae2e1",
+    "swift-institute/Skills": "a4c752911015e8c7ea1cd5fe6f3f8e586e9f55c4"
+  },
+  "authorityDocuments": {
+    "CI-CD-REFACTOR-PROGRAMME.md": {
+      "commit": "bb3fa49c416be6ce55c6c828a0b2cfbb6bea8119",
+      "blob": "f6556f1f704b854cb2fdff23788cfb02fd270216",
+      "sha256": "184db8ef230cd7e532f9aeb167a51508bc897f8221ec935cb5a776ca1eaf62ef",
+      "bytes": 158327,
+      "lines": 2747
+    },
+    "CI-CD-COMPLETION-PROGRAMME.md": {
+      "commit": "1705d2aa89949a84c933359e14e6189fbde3e887",
+      "sha256": "62e315c42f6ec6b34320af560697fc8bfb772ab655ddc4c65456ff04cd90d21f",
+      "bytes": 246838,
+      "lines": 1422
+    }
+  },
+  "noteOnDigestAttribution": "Earlier execution records misattributed 184db8ef… to the completion programme; independently re-verified 2026-08-05: 184db8ef… is the refactor programme blob f6556f1f at bb3fa49c (exact byte and line match), and 62e315c4… is the completion programme as committed at 1705d2aa.",
+  "openEvidenceItems": [
+    "swift-institute/.github#349 — G1 private-verification end-to-end green not yet observed in CI at freeze time; a confirming canary (run 31027146280, head 3297291d) was queued when heads froze. A later green run citing #349 closes it without moving any frozen head (a verification run mutates no repository content)."
+  ]
+}
