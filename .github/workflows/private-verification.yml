@@ -255,8 +255,20 @@ jobs:
             || run_status=$?
 
           if [[ ! -s "$receipt_path" ]]; then
+            # Surface ONLY leak-safe diagnostics: the exit status integer,
+            # and a coarse classification of the run log derived from fixed
+            # literal patterns (never log content itself). Without these,
+            # a toolchain that cannot even build on this runner and a seal
+            # refusal produce the identical opaque "noReceiptProduced".
+            log_class="empty"
+            if [[ -s "$run_log" ]]; then
+              if grep -q "error: " "$run_log" 2>/dev/null; then log_class="toolchain-error"
+              elif grep -q "refusing to seal" "$run_log" 2>/dev/null; then log_class="seal-refusal"
+              else log_class="other"
+              fi
+            fi
             echo "outcome=unavailable" >> "$GITHUB_OUTPUT"
-            echo "reason=noReceiptProduced" >> "$GITHUB_OUTPUT"
+            echo "reason=noReceiptProduced(runStatus=${run_status},log=${log_class})" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
