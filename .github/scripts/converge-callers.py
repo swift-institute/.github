@@ -78,8 +78,10 @@ import json
 import random
 import subprocess
 import sys
+import threading
 import time
 import urllib.parse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -167,6 +169,14 @@ class RateLimitedGh:
     def __init__(self, *, dry_run_reads: bool = False) -> None:
         self.calls_made = 0
         self.dry_run_reads = dry_run_reads
+        # Bounded concurrency (coordinator instruction, 2026-08-05): every
+        # `subprocess.run` call is independently thread-safe, but
+        # `self.calls_made` is a shared counter multiple worker threads
+        # increment concurrently — without a lock, concurrent `+= 1`s can
+        # lose an update (read-modify-write race), which would silently
+        # under-report the run's own honest call count (R6 applies to this
+        # instrument's self-reporting too, not only to evidence commands).
+        self._calls_made_lock = threading.Lock()
 
     def _run(self, args: list[str]) -> str:
         # Retryable classes: secondary rate limit / abuse detection (quota-
@@ -190,7 +200,8 @@ class RateLimitedGh:
             proc = subprocess.run(
                 ["gh"] + args, capture_output=True, text=True, timeout=120
             )
-            self.calls_made += 1
+            with self._calls_made_lock:
+                self.calls_made += 1
             if proc.returncode == 0:
                 return proc.stdout
             stderr_lower = proc.stderr.lower()
@@ -811,6 +822,24 @@ def persist_rollback_blob(receipts_dir: Path, repository: str, blob: dict) -> Pa
     return out
 
 
+def _load_rollback_blob(receipts_dir: Path, repository: str) -> Optional[dict]:
+    """The read half of `persist_rollback_blob()` — same path convention.
+    Lets `converge_one()` recover a repository's pre-image WITHOUT a fresh
+    dispatch when resuming into an already-open PR from a prior, killed
+    invocation of the same `--receipts` directory (coordinator
+    instruction, 2026-08-05: durability across restarts is load-bearing,
+    not merely within-run). An unreadable file is treated as absent, not
+    fatal — the caller's own 'rollback-blob-missing-after-merge' outcome
+    already exists to surface that honestly."""
+    path = receipts_dir / "rollback" / f"{repository.replace('/', '__')}.json"
+    if path.is_file():
+        try:
+            return json.loads(path.read_text())
+        except (json.JSONDecodeError, OSError):
+            return None
+    return None
+
+
 # ─────────────────────────────────────────────────────────────────────────
 # Dispatch / poll / self-verify / approve / merge / read back.
 # Real logic, gated behind `--execute` in main(); never invoked against a
@@ -1134,56 +1163,73 @@ def converge_one(
     recorded as a typed exception, never silently skipped.'
     """
     owner, name = disposition.repository.split("/", 1)
-    since = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     try:
-        dispatch_convergence(gh, disposition, run_suffix=run_suffix)
-        run = poll_run_to_completion(gh, since_iso=since)
-        if run is None or run.get("status") != "completed":
-            return {"repository": disposition.repository, "outcome": "unmeasured",
-                     "detail": f"converge-caller.yml run did not complete within the poll window (last seen: {run})"}
-        if run.get("conclusion") != "success":
-            return {"repository": disposition.repository, "outcome": "typed-exception",
-                     "reason_code": "dispatch-run-failed",
-                     "detail": f"converge-caller.yml concluded {run.get('conclusion')!r} ({run.get('html_url')})"}
-
-        # CORRECTED ORDERING (2026-08-05, live incident): find the actual
-        # PR this dispatch produced FIRST, independent of whether the
-        # rollback artifact can be downloaded. The original ordering
-        # checked artifact availability before ever looking at the PR's
-        # own state, so a download-path defect (a real one, fixed
-        # separately in converge-caller.yml — `tr '/' '__'` silently
-        # collapses to a single underscore, not the double underscore the
-        # artifact's own NAME and this function both expect) masked a
-        # genuine `startup_failure` on the caller's own CI behind an
-        # unrelated, less alarming 'rollback-blob-missing' label. A
-        # mislabelled failure is worse than a loud one: it looks like a
-        # containable, well-understood exception class instead of what it
-        # actually was, a fleet-wide outage. The rollback artifact is
-        # still fetched here, but its absence is recorded and DEFERRED —
-        # never allowed to stand in front of the PR's real check-run
-        # verdict, which is authoritative and is read via
-        # approve_and_merge() below regardless of artifact availability.
+        # RESUME-BEFORE-DISPATCH (coordinator instruction, 2026-08-05):
+        # a repository with an open, unmerged bot/5-02-* PR from a PRIOR,
+        # possibly-killed invocation of this same `--receipts` directory
+        # must be resumed, never re-dispatched. Checked FIRST — this is
+        # also what makes restart cheap after a kill: no wasted
+        # converge-caller.yml run for work a prior invocation already did.
+        # The durable rollback record from that prior invocation is
+        # recovered the same way (`_load_rollback_blob`, the read half of
+        # `persist_rollback_blob`), so a resumed repository never loses
+        # its pre-image just because this process didn't dispatch it.
         open_prs = gh.api(f"repos/{disposition.repository}/pulls?state=open")
         matching = [p for p in open_prs if p["head"]["ref"].startswith("bot/5-02-converge-caller-")]
         pr_number = matching[0]["number"] if matching else None
+        rollback_blob = _load_rollback_blob(receipts, disposition.repository)
 
-        rollback_path = download_rollback_artifact(run["id"], owner, name, receipts / "rollback-artifacts")
-        rollback_blob = None
-        if rollback_path is not None:
-            rollback_blob = json.loads(rollback_path.read_text())
-            persist_rollback_blob(receipts, disposition.repository, rollback_blob)
+        if pr_number is not None:
+            print(f"[resume] {disposition.repository}: reusing open PR #{pr_number} from a prior invocation, no new dispatch.")
+        else:
+            since = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            dispatch_convergence(gh, disposition, run_suffix=run_suffix)
+            run = poll_run_to_completion(gh, since_iso=since)
+            if run is None or run.get("status") != "completed":
+                return {"repository": disposition.repository, "outcome": "unmeasured",
+                         "detail": f"converge-caller.yml run did not complete within the poll window (last seen: {run})"}
+            if run.get("conclusion") != "success":
+                return {"repository": disposition.repository, "outcome": "typed-exception",
+                         "reason_code": "dispatch-run-failed",
+                         "detail": f"converge-caller.yml concluded {run.get('conclusion')!r} ({run.get('html_url')})"}
 
-        if pr_number is None:
-            if rollback_blob is not None and rollback_blob.get("pr_number") is None:
-                # converge-caller.yml itself decided there was nothing to
-                # change (already-canonical) — a real, positive outcome,
-                # not a failure to find something that should exist.
-                return {"repository": disposition.repository, "outcome": "converged",
-                         "detail": "already canonical; no PR opened."}
-            return {"repository": disposition.repository, "outcome": "unmeasured",
-                     "detail": f"run {run.get('html_url')} succeeded but no open bot/5-02-* PR and no "
-                               f"rollback record was found for this repository — genuinely inconclusive, "
-                               f"never silently folded into either 'converged' or a specific exception class."}
+            # CORRECTED ORDERING (2026-08-05, live incident): find the actual
+            # PR this dispatch produced FIRST, independent of whether the
+            # rollback artifact can be downloaded. The original ordering
+            # checked artifact availability before ever looking at the PR's
+            # own state, so a download-path defect (a real one, fixed
+            # separately in converge-caller.yml — `tr '/' '__'` silently
+            # collapses to a single underscore, not the double underscore the
+            # artifact's own NAME and this function both expect) masked a
+            # genuine `startup_failure` on the caller's own CI behind an
+            # unrelated, less alarming 'rollback-blob-missing' label. A
+            # mislabelled failure is worse than a loud one: it looks like a
+            # containable, well-understood exception class instead of what it
+            # actually was, a fleet-wide outage. The rollback artifact is
+            # still fetched here, but its absence is recorded and DEFERRED —
+            # never allowed to stand in front of the PR's real check-run
+            # verdict, which is authoritative and is read via
+            # approve_and_merge() below regardless of artifact availability.
+            open_prs = gh.api(f"repos/{disposition.repository}/pulls?state=open")
+            matching = [p for p in open_prs if p["head"]["ref"].startswith("bot/5-02-converge-caller-")]
+            pr_number = matching[0]["number"] if matching else None
+
+            rollback_path = download_rollback_artifact(run["id"], owner, name, receipts / "rollback-artifacts")
+            if rollback_path is not None:
+                rollback_blob = json.loads(rollback_path.read_text())
+                persist_rollback_blob(receipts, disposition.repository, rollback_blob)
+
+            if pr_number is None:
+                if rollback_blob is not None and rollback_blob.get("pr_number") is None:
+                    # converge-caller.yml itself decided there was nothing to
+                    # change (already-canonical) — a real, positive outcome,
+                    # not a failure to find something that should exist.
+                    return {"repository": disposition.repository, "outcome": "converged",
+                             "detail": "already canonical; no PR opened."}
+                return {"repository": disposition.repository, "outcome": "unmeasured",
+                         "detail": f"run {run.get('html_url')} succeeded but no open bot/5-02-* PR and no "
+                                   f"rollback record was found for this repository — genuinely inconclusive, "
+                                   f"never silently folded into either 'converged' or a specific exception class."}
 
         ok, verify_detail = self_verify(repo_root, generate_caller, disposition.spec or {}, disposition.layer)
         if not ok:
@@ -1237,21 +1283,64 @@ def converge_fleet(
     generate_caller,
     receipts: Path,
     targets: list[Disposition],
+    *,
+    max_concurrency: int = 6,
 ) -> list[dict]:
     """R23a's 'continues automatically through the remainder without human
     input': called ONLY after the self-verifying first target (the canary
-    in `cmd_run`) has already succeeded. One rate-limit checkpoint before
-    each repository — deliberately per-repository here, unlike census's
-    per-organization cadence, because each repository in this loop makes a
-    write-adjacent request budget (dispatch + poll + review + merge +
-    read-back), not a single batched GraphQL read."""
+    in `cmd_run`) has already succeeded, alone, serially — concurrency
+    applies only after that (coordinator instruction, 2026-08-05).
+
+    BOUNDED CONCURRENCY, not unlimited fan-out. The dominant per-repository
+    cost is wall-clock time waiting for that repository's own CI to
+    complete — genuinely idle time from this process's point of view, not
+    CPU or memory pressure — so running several repositories' pipelines
+    concurrently is what takes a run that would otherwise need ~4.8
+    minutes/repository serially (measured; ~465 repositories serially is
+    on the order of 36 hours) inside a SINGLE process lifetime instead of
+    needing dozens of restarts across a harness that has already been
+    observed to kill a long-lived background process outright (a real
+    incident: a prior invocation of this exact function died silently
+    after ~62 minutes serial, leaving one PR opened but never reviewed).
+    `max_concurrency` defaults to 6, the coordinator's own suggested
+    figure, exposed as a parameter rather than hardcoded so it can be
+    tuned without another code change.
+
+    Each `disposition` is independent — different repository, different
+    branch, different PR — so `converge_one()` needs no additional
+    locking beyond what `RateLimitedGh` itself already provides
+    (`_calls_made_lock` around the shared call counter). Results are
+    collected in COMPLETION order, not submission order; every downstream
+    consumer of this list aggregates by outcome/reason_code, never by
+    position, so this does not lose information."""
     results: list[dict] = []
-    for disposition in targets:
-        gh.checkpoint()
-        run_suffix = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
-        result = converge_one(gh, repo_root, generate_caller, receipts, disposition, run_suffix=run_suffix)
-        results.append(result)
-        print(f"[converge] {disposition.repository}: {result['outcome']} — {result.get('detail', '')}")
+    if max_concurrency <= 1:
+        for disposition in targets:
+            gh.checkpoint()
+            run_suffix = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
+            result = converge_one(gh, repo_root, generate_caller, receipts, disposition, run_suffix=run_suffix)
+            results.append(result)
+            print(f"[converge] {disposition.repository}: {result['outcome']} — {result.get('detail', '')}")
+        return results
+
+    with ThreadPoolExecutor(max_workers=max_concurrency) as pool:
+        futures = {}
+        for disposition in targets:
+            gh.checkpoint()  # paced at submission time, not at completion
+            run_suffix = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f") + f"-{disposition.repository.replace('/', '-')}"
+            future = pool.submit(
+                converge_one, gh, repo_root, generate_caller, receipts, disposition, run_suffix=run_suffix
+            )
+            futures[future] = disposition
+        for future in as_completed(futures):
+            disposition = futures[future]
+            try:
+                result = future.result()
+            except Exception as e:  # a worker thread must never silently vanish a repository
+                result = {"repository": disposition.repository, "outcome": "typed-exception",
+                          "reason_code": "pipeline-error", "detail": f"worker thread raised: {e}"}
+            results.append(result)
+            print(f"[converge] {disposition.repository}: {result['outcome']} — {result.get('detail', '')}")
     return results
 
 
@@ -1417,7 +1506,10 @@ def cmd_run(args: argparse.Namespace) -> int:
     )
 
     remaining = [d for d in targets if d.repository != canary.repository]
-    fleet_results = converge_fleet(gh, repo_root, generate_caller, receipts, remaining)
+    print(f"[fleet] converging {len(remaining)} repositories with max_concurrency={args.max_concurrency}.")
+    fleet_results = converge_fleet(
+        gh, repo_root, generate_caller, receipts, remaining, max_concurrency=args.max_concurrency
+    )
     all_results = [canary_result] + fleet_results
     (receipts / "fleet-results.json").write_text(json.dumps(all_results, indent=2))
 
@@ -1470,6 +1562,9 @@ def build_parser() -> argparse.ArgumentParser:
     prun.add_argument("--canary", default=None, help="Repository for the self-verifying first target.")
     prun.add_argument("--execute", action="store_true", help="Actually dispatch (canary only, first).")
     prun.add_argument("--max-repos", type=int, default=None, help="Cap the census-derived target list (testing).")
+    prun.add_argument("--max-concurrency", type=int, default=6,
+                       help="Repositories converged in flight simultaneously after the canary (default 6, "
+                            "coordinator's own figure). 1 runs the original fully-serial loop.")
     prun.set_defaults(func=cmd_run)
 
     return p
