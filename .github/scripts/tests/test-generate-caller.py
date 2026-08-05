@@ -149,24 +149,34 @@ class GeneratorTests(unittest.TestCase):
         text = generate(spec)
         self.assertIn("platform-support: apple,linux", text)
 
-    def test_with_block_carries_only_integrated_docs_when_no_typed_input_is_set(self):
+    def test_no_with_block_when_no_typed_input_is_set(self):
+        # TX8: the bridge input is elided; a caller with no typed inputs
+        # carries no with: block at all.
         spec = CallerSpec(repository="swift-standards/swift-example", layer="standards")
         text = generate(spec)
-        self.assertIn("    with:\n      integrated-docs: true\n    secrets:", text)
+        self.assertNotIn("with:", text)
+        self.assertNotIn("integrated-docs", text)
 
-    def test_terminal_form_is_single_job_with_integrated_docs_and_permissions(self):
-        self.assertTrue(
-            generate_caller.INTEGRATED_DOCS_SUPPORTED,
-            "the terminal bridge form requires the live integrated-docs "
-            "contract in swift-ci.yml and all three layer wrappers",
-        )
+    def test_terminal_form_is_single_job_with_permissions_and_no_bridge_input(self):
         spec = CallerSpec(repository="swift-primitives/swift-example", layer="primitives")
         text = generate(spec)
         self.assertIn("  ci:", text)
         self.assertNotIn("  docs:", text)
         self.assertNotIn("swift-docs.yml", text)
-        self.assertIn("integrated-docs: true", text)
+        self.assertNotIn("integrated-docs", text)
         self.assertIn("permissions:\n  actions: read\n  contents: read\n", text)
+
+    def test_bridge_input_in_an_existing_caller_parses_clean_and_is_elided(self):
+        text = """\
+jobs:
+  ci:
+    uses: swift-primitives/.github/.github/workflows/swift-ci.yml@main
+    with:
+      integrated-docs: true
+    secrets: inherit
+"""
+        spec = parse_existing_caller(text, "swift-primitives/swift-example", "primitives")
+        self.assertNotIn("integrated-docs", generate(spec))
 
     def test_legacy_docs_job_with_overrides_maps_onto_docs_inputs(self):
         text = """\

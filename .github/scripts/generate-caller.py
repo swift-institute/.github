@@ -3,13 +3,13 @@
 `.github/workflows/ci.yml` files (Task 5-01 → TX2, swift-institute/.github#276,
 #282; CI/CD Completion Programme §5.1/§8.8).
 
-TERMINAL FORM (TX6 pass A, "integrated docs bridge"). This generator now
-emits the terminal caller the Completion Programme §5.1 prescribes for
-every ordinary package repository:
+TERMINAL FORM (TX8 pass B, bridge input elided). This generator emits
+the terminal caller the Completion Programme §5.1 prescribes for every
+ordinary package repository:
 
   - exactly ONE `ci` job calling the semantic layer wrapper `@main`;
-  - `integrated-docs: true` (the [temp-integrated-docs-4-01] bridge input
-    — TX8 elides it once TX7 makes central docs unconditional);
+  - NO `integrated-docs` input (TX7 made central docs unconditional; the
+    input is an ignored no-op there until TX10 deletes it);
   - NO separate `docs:` job (the universal chain runs DocC exactly once);
   - canonical events: push `main` + tags `'*'` (all ordinary classes,
     same-org and cross-org — §5.1 "same canonical contract"),
@@ -43,9 +43,10 @@ from dataclasses import dataclass
 
 import yaml
 
-# The migration-compatibility docs contract is live in swift-ci.yml and all
-# three layer wrappers ([temp-integrated-docs-4-01]); the terminal caller
-# passes `integrated-docs: true` until TX8 elides it after TX7.
+# Integrated docs are unconditional in swift-ci.yml (TX7); the terminal
+# caller no longer sends the bridge input (TX8). The constant remains as
+# the migration marker validate-integrated-docs-compat.py greps for until
+# TX10 deletes the input declaration everywhere.
 INTEGRATED_DOCS_SUPPORTED = True
 
 LAYER_WRAPPER_ORG = {
@@ -148,10 +149,10 @@ class CallerSpec:
 
     @property
     def with_lines(self) -> list[str]:
-        # `integrated-docs: true` is unconditional in the terminal bridge
-        # form and leads the block; caller-preserved typed inputs follow
-        # in canonical APPROVED_TYPED_INPUTS order.
-        lines = ["      integrated-docs: true"]
+        # TX8: the migration bridge input is elided — central docs are
+        # unconditional (TX7), so the terminal caller sends only its own
+        # typed inputs, in canonical APPROVED_TYPED_INPUTS order.
+        lines = []
         for key in APPROVED_TYPED_INPUTS:
             value = getattr(self, _SPEC_FIELD_FOR_INPUT[key])
             if value is None or value == "":
@@ -200,9 +201,11 @@ def generate(spec: CallerSpec) -> str:
         "jobs:",
         "  ci:",
         f"    uses: {spec.wrapper_org}/.github/.github/workflows/swift-ci.yml@main",
-        "    with:",
     ]
-    lines += spec.with_lines
+    with_lines = spec.with_lines
+    if with_lines:
+        lines.append("    with:")
+        lines += with_lines
     lines += _secrets_block(spec)
     return "\n".join(lines) + "\n"
 
@@ -301,12 +304,16 @@ def parse_existing_caller(text: str, repository: str, layer: str) -> CallerSpec:
     regenerated = yaml.safe_load(generate(spec))
     regenerated_jobs = regenerated.get("jobs") or {}
     if not legacy:
-        # The bridge input is generator-owned: normalize its (lawful)
-        # absence in the input before demanding structural equality.
+        # The bridge input is generator-owned (and elided at TX8):
+        # normalize its lawful presence-or-absence in the input before
+        # demanding structural equality.
         normalized = {"ci": dict(jobs["ci"])}
         ci_with = dict(normalized["ci"].get("with") or {})
-        ci_with["integrated-docs"] = True
-        normalized["ci"]["with"] = ci_with
+        ci_with.pop("integrated-docs", None)
+        if ci_with:
+            normalized["ci"]["with"] = ci_with
+        else:
+            normalized["ci"].pop("with", None)
         if regenerated_jobs != normalized:
             raise UnknownCustomization(
                 "single-job caller does not match the canonical terminal shape "
