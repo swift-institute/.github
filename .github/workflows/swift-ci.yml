@@ -2735,6 +2735,7 @@ jobs:
           path: institute-receipt
 
       - name: Produce preterminal effective runtime receipt
+        id: receipt
         if: ${{ always() }}
         shell: bash
         env:
@@ -2744,6 +2745,12 @@ jobs:
           SUBJECT_SHA: ${{ needs.plan.outputs.subject-sha }}
         run: |
           set -euo pipefail
+          # A sweep run carries one ci-ok — and so one receipt — PER swept
+          # subject inside the same run; the artifact name must be unique
+          # per subject or the collector's exactly-one lookup fails
+          # (observed live: run 31009088381 produced two same-named
+          # artifacts).
+          echo "subject-slug=${SUBJECT_REPOSITORY//\//__}" >> "$GITHUB_OUTPUT"
           gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
             > "$RUNNER_TEMP/run.json"
           gh api --paginate \
@@ -2764,7 +2771,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: effective-runtime-receipt-${{ github.run_id }}-${{ github.run_attempt }}
+          name: effective-runtime-receipt-${{ github.run_id }}-${{ github.run_attempt }}-${{ steps.receipt.outputs.subject-slug }}
           path: ${{ runner.temp }}/receipt/
           if-no-files-found: warn
           retention-days: 90
