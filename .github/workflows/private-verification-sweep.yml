@@ -103,25 +103,20 @@ jobs:
           permission-pull-requests: read
           permission-checks: read
 
-      - name: Mint a fleet-scoped, checks-write-only token for the in_progress mark
-        id: mark-token
+      # G1 repair: per-org read and checks-write tokens are minted inside
+      # the sweep step via the App JWT (create-github-app-token cannot mint
+      # cross-org tokens in one call — without `owner:` it scopes to THIS
+      # repository). This mint carries only the central-repository
+      # contents:write the repository_dispatch POST needs; the checks-write
+      # separation from read tokens is preserved per organization inside
+      # the step.
+      - name: Mint a central-repository dispatch token (contents write, this repo only)
+        id: dispatch-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
           private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
-          # Deliberately separate from the read-only token above rather
-          # than one combined mint: this token carries `checks: write` and
-          # nothing else, scoped to the whole fleet only because point A.6
-          # ("marks the trusted check in_progress... without running
-          # subject code") is the ONE write action this workflow performs,
-          # done once per candidate for the duration of this sweep pass —
-          # never persisted, never handed to subject code, and never
-          # widened to statuses or contents write. The
-          # success/failure/cancelled transition is a SEPARATE mint, done
-          # only after independent validation, in private-verification.yml's
-          # `publish` job (point C.4) — this token can never produce that
-          # transition because it is never given to that job.
-          permission-checks: write
+          permission-contents: write
 
       - name: Resolve the pinned Workspace revision this sweep will require
         id: workspace
@@ -141,8 +136,21 @@ jobs:
         id: sweep
         shell: bash
         env:
+          # G1 repair (swift-institute/.github#276): the two step-minted
+          # tokens above are scoped to THIS repository only
+          # (create-github-app-token without `owner:` scopes to the current
+          # repository, not the fleet), so cross-org private enumeration
+          # silently returned nothing and every cross-org check-run write
+          # would have 403'd. Per-org read and checks-write tokens are now
+          # minted inside this step via the App JWT; the repository-scoped
+          # GH_TOKEN below remains only for central-repository reads, and
+          # CENTRAL_DISPATCH_TOKEN (contents:write on the central
+          # repository alone) carries the repository_dispatch POST the
+          # read-only token never could.
           GH_TOKEN: ${{ steps.token.outputs.token }}
-          MARK_TOKEN: ${{ steps.mark-token.outputs.token }}
+          CENTRAL_DISPATCH_TOKEN: ${{ steps.dispatch-token.outputs.token }}
+          APP_CLIENT_ID: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+          APP_PRIVATE_KEY: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
           ORGS_JSON: ${{ steps.orgs.outputs.orgs }}
           WORKSPACE_REVISION: ${{ steps.workspace.outputs.revision }}
           # Identifies the receipt schema/policy generation this sweep
@@ -166,14 +174,64 @@ jobs:
           # an atomic counter, safe under MAX_CONCURRENT-way parallelism.
           candidates_dir="${RUNNER_TEMP}/candidates"
           dispatched_dir="${RUNNER_TEMP}/dispatched"
+          tokens_dir="${RUNNER_TEMP}/org-tokens"
           mkdir -p "$candidates_dir" "$dispatched_dir"
+          (umask 077 && mkdir -p "$tokens_dir")
           running=0
 
           candidate_count() { find "$candidates_dir" -type f | wc -l | tr -d ' '; }
 
+          # ---- Per-org App installation tokens (G1 repair) ---------------
+          key_file="${RUNNER_TEMP}/app-key.pem"
+          (umask 077 && printf '%s' "$APP_PRIVATE_KEY" > "$key_file")
+
+          app_jwt() {
+            local now header payload unsigned sig
+            now=$(date +%s)
+            b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
+            header=$(printf '{"alg":"RS256","typ":"JWT"}' | b64url)
+            payload=$(printf '{"iat":%d,"exp":%d,"iss":"%s"}' "$((now-60))" "$((now+540))" "$APP_CLIENT_ID" | b64url)
+            unsigned="${header}.${payload}"
+            sig=$(printf '%s' "$unsigned" | openssl dgst -sha256 -sign "$key_file" -binary | b64url)
+            printf '%s.%s' "$unsigned" "$sig"
+          }
+
+          # org_token <org> <read|checks> — mints (and caches, 0600) one
+          # installation token per (org, class). `read` carries
+          # contents+pull_requests read for enumeration; `checks` carries
+          # checks:write ONLY, preserving the read/write mint separation
+          # per organization. Every value is masked before first use.
+          org_token() {
+            local org="$1" class="$2" cache="${tokens_dir}/${1}-${2}"
+            if [[ ! -s "$cache" ]]; then
+              local jwt inst perms token
+              jwt=$(app_jwt)
+              inst=$(curl -sf -H "Authorization: Bearer $jwt" \
+                -H "Accept: application/vnd.github+json" \
+                "https://api.github.com/orgs/${org}/installation" | jq -r '.id // empty')
+              [[ -n "$inst" ]] || return 1
+              if [[ "$class" == "checks" ]]; then
+                perms='{"permissions":{"checks":"write"}}'
+              else
+                perms='{"permissions":{"contents":"read","pull_requests":"read","checks":"read"}}'
+              fi
+              token=$(curl -sf -X POST -H "Authorization: Bearer $jwt" \
+                -H "Accept: application/vnd.github+json" \
+                -d "$perms" \
+                "https://api.github.com/app/installations/${inst}/access_tokens" | jq -r '.token // empty')
+              [[ -n "$token" ]] || return 1
+              echo "::add-mask::${token}"
+              (umask 077 && printf '%s' "$token" > "$cache")
+            fi
+            cat "$cache"
+          }
+
           dispatch_one() {
             local repository="$1" head="$2" default_branch="$3" visibility="$4" layer="$5"
             local inventory_digest="$6"
+            local org="${repository%%/*}" read_tok mark_tok
+            read_tok=$(org_token "$org" read) || return 0
+            mark_tok=$(org_token "$org" checks) || return 0
 
             local policy_id
             policy_id=$(printf '%s|%s|%s' "$repository" "$head" "$POLICY_REVISION" \
@@ -186,7 +244,7 @@ jobs:
             # nothing to do — never launches a duplicate run for the same
             # key (the wave-mode duplicate-dispatch positive control).
             local existing_state
-            existing_state=$(POLICY_ID="$policy_id" gh api \
+            existing_state=$(POLICY_ID="$policy_id" GH_TOKEN="$read_tok" gh api \
               "repos/${repository}/commits/${head}/check-runs?per_page=100" \
               --jq '[.check_runs[] | select(.name == "verification / workspace" and .external_id == env.POLICY_ID)]
                     | if length == 0 then "absent"
@@ -210,10 +268,10 @@ jobs:
             # token that also carries contents or statuses write. Every
             # `gh api` call in this function defaults to `GH_TOKEN`
             # (`gh`'s standard resolution order), so the write call below
-            # passes `GH_TOKEN=$MARK_TOKEN` explicitly for just this one
+            # passes the per-org checks-write token explicitly for this one
             # invocation rather than mutating the function's ambient
             # environment.
-            GH_TOKEN="$MARK_TOKEN" gh api --method POST "repos/${repository}/check-runs" \
+            GH_TOKEN="$mark_tok" gh api --method POST "repos/${repository}/check-runs" \
               -f name="verification / workspace" \
               -f head_sha="${head}" \
               -f external_id="${policy_id}" \
@@ -224,7 +282,7 @@ jobs:
             # run's own log or summary — it is read only from
             # `github.event.client_payload` inside the triggered run, and
             # this step never echoes it either.
-            gh api --method POST "repos/${CENTRAL_REPOSITORY}/dispatches" \
+            GH_TOKEN="$CENTRAL_DISPATCH_TOKEN" gh api --method POST "repos/${CENTRAL_REPOSITORY}/dispatches" \
               -f event_type="private-verification" \
               -f "client_payload[repository]=${repository}" \
               -f "client_payload[head]=${head}" \
@@ -250,32 +308,48 @@ jobs:
           org_list_file="${RUNNER_TEMP}/orgs.jsonl"
           echo "$ORGS_JSON" | jq -c '.[]' > "$org_list_file"
 
+          enumerated_private=0
+          unmeasured_orgs=""
           while IFS= read -r org_raw; do
             org=$(jq -r '.' <<<"$org_raw")
             [[ "$(candidate_count)" -lt "$MAX_TOTAL" ]] || break
 
+            # G1 repair: loud, typed enumeration. A failed per-org token
+            # mint or listing is recorded UNMEASURED, never silently
+            # written as an empty file (the exact R10 false-zero this
+            # sweep shipped with).
+            if ! org_tok=$(org_token "$org" read); then
+              echo "::warning::${org}: installation token mint failed — private population UNMEASURED this pass"
+              unmeasured_orgs="${unmeasured_orgs} ${org}"
+              continue
+            fi
             repo_list_file="${RUNNER_TEMP}/repos-${org}.jsonl"
-            gh api "orgs/${org}/repos?type=private&per_page=100" --paginate \
+            if ! GH_TOKEN="$org_tok" gh api "orgs/${org}/repos?type=private&per_page=100" --paginate \
               --jq '.[] | select(.archived == false and .disabled == false) | {name: .full_name, default_branch: .default_branch}' \
-              > "$repo_list_file" 2>/dev/null || : > "$repo_list_file"
+              > "$repo_list_file" 2>/dev/null; then
+              echo "::warning::${org}: private repository listing failed — population UNMEASURED this pass"
+              unmeasured_orgs="${unmeasured_orgs} ${org}"
+              continue
+            fi
+            enumerated_private=$((enumerated_private + $(wc -l < "$repo_list_file" | tr -d ' ')))
 
             while IFS= read -r repo_raw; do
               [[ "$(candidate_count)" -lt "$MAX_TOTAL" ]] || break
               repository=$(jq -r '.name' <<<"$repo_raw")
               default_branch=$(jq -r '.default_branch' <<<"$repo_raw")
 
-              has_manifest=$(gh api "repos/${repository}/contents/Package.swift?ref=${default_branch}" \
+              has_manifest=$(GH_TOKEN="$org_tok" gh api "repos/${repository}/contents/Package.swift?ref=${default_branch}" \
                 --jq '.type == "file"' 2>/dev/null || echo "false")
               [[ "$has_manifest" == "true" ]] || continue
 
-              layer=$(gh api "repos/${repository}/topics" \
+              layer=$(GH_TOKEN="$org_tok" gh api "repos/${repository}/topics" \
                 --jq '[.names[] | select(startswith("layer-"))] | first // "layer-applications" | sub("^layer-"; "")' \
                 2>/dev/null || echo "applications")
 
-              default_head=$(gh api "repos/${repository}/commits/${default_branch}" --jq '.sha' 2>/dev/null || echo "")
+              default_head=$(GH_TOKEN="$org_tok" gh api "repos/${repository}/commits/${default_branch}" --jq '.sha' 2>/dev/null || echo "")
               [[ -n "$default_head" ]] || continue
 
-              open_pr_heads=$(gh api "repos/${repository}/pulls?state=open&per_page=100" \
+              open_pr_heads=$(GH_TOKEN="$org_tok" gh api "repos/${repository}/pulls?state=open&per_page=100" \
                 --jq '[.[].head.sha]' 2>/dev/null || echo '[]')
 
               for head in "$default_head" $(jq -r '.[]' <<<"$open_pr_heads"); do
@@ -291,9 +365,20 @@ jobs:
           done < "$org_list_file"
           wait
 
+          # Positive control (R10): the fleet census records a large private
+          # population, so a pass that enumerated zero private repositories
+          # is a broken instrument, never a clean sweep. Partial
+          # unmeasured-org residue is loud but non-fatal; TOTAL zero fails.
+          if [[ "$enumerated_private" -eq 0 ]]; then
+            echo "::error::enumerated zero private repositories across every org — the enumeration instrument is broken (R10 false-zero); refusing to report a clean sweep. Unmeasured orgs:${unmeasured_orgs:- none}"
+            exit 1
+          fi
+
           {
             echo "candidates=$(find "$candidates_dir" -type f | wc -l | tr -d ' ')"
             echo "dispatched=$(find "$dispatched_dir" -type f | wc -l | tr -d ' ')"
+            echo "enumerated-private=${enumerated_private}"
+            echo "unmeasured-orgs=${unmeasured_orgs:-}"
           } >> "$GITHUB_OUTPUT"
 
       - name: Summary
