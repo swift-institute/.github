@@ -185,6 +185,21 @@ class RateLimitedGh:
                 "secondary rate limit" in stderr_lower
                 or "abuse" in stderr_lower
                 or any(f"http {code}" in stderr_lower for code in (502, 503, 504))
+                # Live-caught, 2026-08-05: an empty or truncated response
+                # body is a THIRD retryable class, distinct from both of
+                # the above — it fails `gh`'s own JSON parse before any
+                # status-based branch is reached, so it never carries an
+                # HTTP code or a rate-limit phrase in stderr. Confirmed
+                # not a quota signal (core/graphql both had thousands of
+                # calls of headroom at the moment of failure) — this is
+                # GitHub returning a genuinely incomplete body, which a
+                # retry resolves the same way a 502 does. Never silently
+                # return a short/partial result for this class: every
+                # branch here either retries or raises, there is no
+                # third path that swallows the error and returns
+                # `proc.stdout` anyway.
+                or "unexpected end of json input" in stderr_lower
+                or "unexpected end of json" in stderr_lower
             )
             if retryable:
                 continue  # retry with backoff
@@ -192,7 +207,8 @@ class RateLimitedGh:
                 f"gh {' '.join(args)} failed (exit {proc.returncode}): {proc.stderr.strip()}"
             )
         raise GhCallFailed(
-            f"gh {' '.join(args)} exhausted retries on a retryable failure class"
+            f"gh {' '.join(args)} exhausted retries on a retryable failure class "
+            f"(cursor/args: {' '.join(args)})"
         )
 
     def api(self, path: str, *, jq: Optional[str] = None, paginate: bool = False) -> Any:
@@ -672,20 +688,96 @@ def classify_repo(node: dict, generate_caller) -> tuple[Optional[Disposition], O
     ), None
 
 
+def _census_checkpoint_path(receipts: Path, org: str) -> Path:
+    d = receipts / "census-checkpoint"
+    d.mkdir(parents=True, exist_ok=True)
+    return d / f"{org}.json"
+
+
+def _load_census_checkpoint(receipts: Path, org: str) -> dict:
+    path = _census_checkpoint_path(receipts, org)
+    if path.is_file():
+        try:
+            return json.loads(path.read_text())
+        except (json.JSONDecodeError, OSError):
+            # A checkpoint file itself must never become a second source
+            # of silent data loss — an unreadable checkpoint is treated
+            # as absent (restart that ONE organization from page 1),
+            # never as "done with nothing."
+            pass
+    return {"dispositions": [], "exceptions": [], "next_cursor": None, "done": False}
+
+
+def _save_census_checkpoint(receipts: Path, org: str, state: dict) -> None:
+    path = _census_checkpoint_path(receipts, org)
+    # Write-then-rename: a process killed mid-write must never leave a
+    # half-written, unparseable checkpoint file behind — that would
+    # reintroduce exactly the "silent short page" failure mode this
+    # checkpointing exists to remove, one layer up.
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(state))
+    tmp.replace(path)
+
+
 def run_census(
-    gh: RateLimitedGh, repo_root: Path, generate_caller, *, orgs: Optional[list[str]] = None
+    gh: RateLimitedGh,
+    repo_root: Path,
+    generate_caller,
+    receipts: Path,
+    *,
+    orgs: Optional[list[str]] = None,
 ) -> tuple[list[Disposition], list[ExceptionRecord]]:
+    """GraphQL-batched, checkpointed per organization AND per page.
+
+    R23a property 3, extended by a live incident (2026-08-05): this is
+    the THIRD time a full 17-organization census died partway through and
+    had to restart from page 1 — expensive not because any single page is
+    costly, but because the census is the mandatory first phase of every
+    `cmd_run` invocation, so a death at organization 12 of 17 discards 11
+    organizations' worth of already-good, already-paid-for work. Each
+    page's classified results are persisted to
+    `<receipts>/census-checkpoint/<org>.json` IMMEDIATELY after that page
+    is fetched and classified — before the next `gh` call that could fail
+    — and a fully-`done` organization is never re-fetched on a
+    subsequent invocation with the same `--receipts` directory. The
+    census is read-only and idempotent (this function mutates nothing on
+    GitHub), so resuming from a checkpoint carries none of the staleness
+    risk a resumed WRITE would.
+    """
     orgs = orgs or read_active_orgs(repo_root)
     dispositions: list[Disposition] = []
     exceptions: list[ExceptionRecord] = []
     for org in orgs:
         gh.checkpoint()
-        for node in _iter_org_repos(gh, org):
-            disposition, exception = classify_repo(node, generate_caller)
-            if disposition:
-                dispositions.append(disposition)
-            if exception:
-                exceptions.append(exception)
+        state = _load_census_checkpoint(receipts, org)
+        if not state["done"]:
+            after = state["next_cursor"] or ""
+            while True:
+                result = gh.graphql(
+                    _SEARCH_QUERY,
+                    q=f"org:{org} archived:false fork:false",
+                    after=after,
+                )
+                search = result["data"]["search"]
+                for node in search["nodes"]:
+                    disposition, exception = classify_repo(node, generate_caller)
+                    if disposition:
+                        state["dispositions"].append(asdict(disposition))
+                    if exception:
+                        state["exceptions"].append(asdict(exception))
+                if not search["pageInfo"]["hasNextPage"]:
+                    state["done"] = True
+                    state["next_cursor"] = None
+                    _save_census_checkpoint(receipts, org, state)
+                    break
+                after = search["pageInfo"]["endCursor"]
+                state["next_cursor"] = after
+                # Checkpoint after EVERY page, not only at org completion —
+                # this is the property that actually saves a partial
+                # organization, not merely the ones already fully swept.
+                _save_census_checkpoint(receipts, org, state)
+        dispositions += [Disposition(**d) for d in state["dispositions"]]
+        exceptions += [ExceptionRecord(**e) for e in state["exceptions"]]
     return dispositions, exceptions
 
 
@@ -1150,9 +1242,9 @@ def cmd_census(args: argparse.Namespace) -> int:
     generate_caller = _load_generate_caller(repo_root / ".github/scripts")
     gh = RateLimitedGh()
     orgs = [args.org] if args.org else None
-    dispositions, exceptions = run_census(gh, repo_root, generate_caller, orgs=orgs)
     receipts = Path(args.receipts)
     receipts.mkdir(parents=True, exist_ok=True)
+    dispositions, exceptions = run_census(gh, repo_root, generate_caller, receipts, orgs=orgs)
     (receipts / "census.json").write_text(
         json.dumps([asdict(d) for d in dispositions], indent=2)
     )
@@ -1210,7 +1302,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         print("::error::--execute requested but preconditions are not established; refusing.")
         return 3
 
-    dispositions, exceptions = run_census(gh, repo_root, generate_caller)
+    dispositions, exceptions = run_census(gh, repo_root, generate_caller, receipts)
     (receipts / "census.json").write_text(json.dumps([asdict(d) for d in dispositions], indent=2))
     (receipts / "exceptions.json").write_text(json.dumps([asdict(e) for e in exceptions], indent=2))
 
