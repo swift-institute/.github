@@ -134,6 +134,19 @@ class GhCallFailed(RuntimeError):
     pass
 
 
+class PreExistingRedError(RuntimeError):
+    """A required context is red for a reason that has nothing to do with
+    the converged caller — the target repository's own build/lint/tests
+    were already failing before this run touched it (live example:
+    swift-ietf/swift-rfc-3986#6's SwiftLint `superfluous_disable_command`,
+    reproduced identically on unconverged `main`). Raised distinctly from
+    plain `RuntimeError` so `converge_one()` records it as its own typed-
+    exception reason_code (`blocked-by-pre-existing-red`) rather than
+    lumping it in with a genuine caller/pipeline defect — coordinator
+    instruction, 2026-08-05: 'a single undifferentiated failure count
+    would make the fleet result unreadable.'"""
+
+
 class RateLimitedGh:
     """Wraps `gh api` (REST and GraphQL) with:
 
@@ -949,7 +962,9 @@ def _required_contexts(gh: RateLimitedGh, repository: str) -> list[str]:
     return contexts
 
 
-def _checks_ready_and_green(gh: RateLimitedGh, repository: str, head: str) -> tuple[bool, bool, str]:
+def _checks_ready_and_green(
+    gh: RateLimitedGh, repository: str, head: str
+) -> tuple[bool, bool, str, list[tuple[str, str]]]:
     """One snapshot read of check-runs at `head`, scoped to the
     repository's own live REQUIRED contexts — never "every check-run
     whatsoever."
@@ -971,15 +986,24 @@ def _checks_ready_and_green(gh: RateLimitedGh, repository: str, head: str) -> tu
     live via `_required_contexts()` — never the full check-run set, and
     never a hardcoded name.
 
-    Returns (ready, ok, detail): `ready` is False while any REQUIRED
-    context is missing at this exact head or still non-terminal (Trap A:
-    only current-head runs count). `ok` is only meaningful when `ready`
-    is True, and requires literal `success` on every REQUIRED context
-    (Trap B: `skipped` is terminal but is not success, so a required
-    context that skipped never satisfies this gate)."""
+    Returns (ready, ok, detail, unsuccessful): `ready` is False while any
+    REQUIRED context is missing at this exact head or still non-terminal
+    (Trap A: only current-head runs count). `ok` is only meaningful when
+    `ready` is True, and requires literal `success` on every REQUIRED
+    context (Trap B: `skipped` is terminal but is not success, so a
+    required context that skipped never satisfies this gate).
+    `unsuccessful` is the exact `[(name, conclusion), ...]` list behind a
+    `False` `ok` — empty whenever `ok` is `True` — so a caller can
+    classify WHY without a second fetch: coordinator instruction,
+    2026-08-05, distinguishing a target repository's own pre-existing red
+    (a required context that ran to completion and genuinely failed,
+    conclusion `failure`) from a structural caller/chain defect (anything
+    else non-terminal-successful: `startup_failure`, `cancelled`,
+    `timed_out`, `skipped`) is required so the fleet's own output stays
+    readable rather than one undifferentiated failure count."""
     required = _required_contexts(gh, repository)
     if not required:
-        return False, False, f"could not determine required status-check contexts for {repository} (empty ruleset read)"
+        return False, False, f"could not determine required status-check contexts for {repository} (empty ruleset read)", []
     checks = gh.api(f"repos/{repository}/commits/{head}/check-runs?per_page=100")
     current_by_name: dict[str, list[dict]] = {}
     for r in checks.get("check_runs", []):
@@ -987,20 +1011,20 @@ def _checks_ready_and_green(gh: RateLimitedGh, repository: str, head: str) -> tu
             current_by_name.setdefault(r["name"], []).append(r)
     missing = [name for name in required if name not in current_by_name]
     if missing:
-        return False, False, f"required context(s) not yet reported at head {head}: {missing}"
+        return False, False, f"required context(s) not yet reported at head {head}: {missing}", []
     non_terminal = [
         (name, r["status"]) for name in required for r in current_by_name[name]
         if r["status"] != "completed"
     ]
     if non_terminal:
-        return False, False, f"required check(s) still non-terminal at head {head}: {non_terminal}"
+        return False, False, f"required check(s) still non-terminal at head {head}: {non_terminal}", []
     unsuccessful = [
         (name, r["conclusion"]) for name in required for r in current_by_name[name]
         if r["conclusion"] != "success"
     ]
     if unsuccessful:
-        return True, False, f"not every REQUIRED check-run at head {head} is 'success': {unsuccessful}"
-    return True, True, f"all {len(required)} required context(s) 'success' at head {head}: {required}"
+        return True, False, f"not every REQUIRED check-run at head {head} is 'success': {unsuccessful}", unsuccessful
+    return True, True, f"all {len(required)} required context(s) 'success' at head {head}: {required}", []
 
 
 def approve_and_merge(
@@ -1048,15 +1072,27 @@ def approve_and_merge(
     head = pr["headRefOid"]
 
     deadline = time.time() + checks_timeout_seconds
-    ready, ok, detail = False, False, "no check-run read yet"
+    ready, ok, detail, unsuccessful = False, False, "no check-run read yet", []
     while time.time() < deadline:
-        ready, ok, detail = _checks_ready_and_green(gh, repository, head)
+        ready, ok, detail, unsuccessful = _checks_ready_and_green(gh, repository, head)
         if ready:
             break
         time.sleep(poll_interval)
     if not ready:
         raise RuntimeError(f"{repository}#{pr_number}: checks did not reach a terminal state within the poll window ({detail}).")
     if not ok:
+        # Classify WHY, per the coordinator's instruction (2026-08-05): a
+        # required context that ran to completion and genuinely failed
+        # (conclusion == "failure", every single one) is the target
+        # repository's OWN pre-existing red — live example:
+        # swift-ietf/swift-rfc-3986#6's SwiftLint failure, reproduced
+        # identically on unconverged main. Anything else in the mix
+        # (`startup_failure`, `cancelled`, `timed_out`, `skipped` on a
+        # REQUIRED context) is treated as a structural caller/chain
+        # defect and stays a plain RuntimeError — that class needs
+        # investigation, not a shrug.
+        if unsuccessful and all(conclusion == "failure" for _, conclusion in unsuccessful):
+            raise PreExistingRedError(f"{repository}#{pr_number}: {detail}")
         raise RuntimeError(f"{repository}#{pr_number}: {detail}")
 
     subprocess.run(
@@ -1181,6 +1217,15 @@ def converge_one(
 
         return {"repository": disposition.repository, "outcome": "converged",
                 "pr_number": pr_number, **merge_result}
+    except PreExistingRedError as e:
+        # Distinct label, per the coordinator's instruction (2026-08-05):
+        # this repository's own build/lint/tests were already broken
+        # before this run touched it — not a defect in the generated
+        # caller, and not something retrying would fix. Caught BEFORE the
+        # general RuntimeError handler below (PreExistingRedError is a
+        # RuntimeError subclass; Python matches except clauses in order).
+        return {"repository": disposition.repository, "outcome": "typed-exception",
+                "reason_code": "blocked-by-pre-existing-red", "detail": str(e)}
     except (GhCallFailed, RuntimeError, subprocess.CalledProcessError) as e:
         return {"repository": disposition.repository, "outcome": "typed-exception",
                 "reason_code": "pipeline-error", "detail": str(e)}
@@ -1373,14 +1418,33 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     remaining = [d for d in targets if d.repository != canary.repository]
     fleet_results = converge_fleet(gh, repo_root, generate_caller, receipts, remaining)
-    (receipts / "fleet-results.json").write_text(
-        json.dumps([canary_result] + fleet_results, indent=2)
-    )
+    all_results = [canary_result] + fleet_results
+    (receipts / "fleet-results.json").write_text(json.dumps(all_results, indent=2))
+
+    # Coordinator instruction (2026-08-05): "Do not let a repository's
+    # pre-existing red be recorded as a convergence failure ... a single
+    # undifferentiated failure count would make the fleet result
+    # unreadable." by_outcome alone collapses every typed-exception into
+    # one bucket; by_label further splits on reason_code so
+    # "converged" / "blocked-by-pre-existing-red" (the target's own build
+    # was already broken, not our defect) / every other typed-exception
+    # class / unmeasured are each named and counted separately.
     by_outcome: dict[str, int] = {}
-    for r in [canary_result] + fleet_results:
+    by_label: dict[str, int] = {}
+    for r in all_results:
         by_outcome[r["outcome"]] = by_outcome.get(r["outcome"], 0) + 1
-    print(json.dumps({"fleet_run_summary": by_outcome, "gh_calls_made": gh.calls_made}, indent=2))
-    return 0 if by_outcome.get("typed-exception", 0) == 0 and by_outcome.get("unmeasured", 0) == 0 else 8
+        label = r["outcome"] if r["outcome"] != "typed-exception" else f"typed-exception / {r.get('reason_code', 'unlabelled')}"
+        by_label[label] = by_label.get(label, 0) + 1
+    print(json.dumps({
+        "fleet_run_summary_by_outcome": by_outcome,
+        "fleet_run_summary_by_label": by_label,
+        "gh_calls_made": gh.calls_made,
+    }, indent=2))
+    genuine_problems = sum(
+        count for label, count in by_label.items()
+        if label != "converged" and label != "typed-exception / blocked-by-pre-existing-red"
+    )
+    return 0 if genuine_problems == 0 else 8
 
 
 def build_parser() -> argparse.ArgumentParser:
