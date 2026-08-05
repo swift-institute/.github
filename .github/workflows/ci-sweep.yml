@@ -252,45 +252,13 @@ jobs:
       target-repo: ${{ matrix.repo }}
       tier: full
 
-  # ─── DocC rotation (Team Lead ruling 2026-07-29) ─────────────────────────
-  # DocC came off per-push in swift-docs.yml — it was 34.2% of a layer org's
-  # entire daily CI compute for 244 runner acquisitions a day
-  # (swift-institute/Workspace#47). This is where the coverage it used to
-  # provide comes back: the same nightly slice, so every public repo gets a
-  # DocC validation at least once per rotation period (weekly at slices=7).
-  #
-  # It rides `select` rather than carrying its own fleet enumeration on
-  # purpose. Two copies of "which repos are in the fleet", with nothing
-  # holding them together, is this repository's cheapest silent drop
-  # (Internal/VALIDATOR-DISCIPLINE.md §3) — the CI rotation and the docs
-  # rotation must cover the same repos by construction, not by agreement.
-  #
-  # Budget: like `sweep`, these jobs run under swift-institute/.github's own
-  # 20-slot org quota, so the rotation never competes with consumer-push
-  # queues in the layer orgs. max-parallel is higher than `sweep`'s 3 because
-  # a docs call schedules ONE Linux job, not five macOS ones; 6 keeps both
-  # legs of this workflow inside the shared 20 with room to spare.
-  docs-sweep:
-    name: docs (${{ matrix.repo }})
-    needs: select
-    if: ${{ needs.select.outputs.repos != '[]' && needs.select.outputs.repos != '' }}
-    strategy:
-      fail-fast: false
-      max-parallel: 6
-      matrix:
-        repo: ${{ fromJSON(needs.select.outputs.repos) }}
-    # Pure `uses:` routing job ([CI-080] carve-out; [CI-105] no
-    # continue-on-error on a `uses:` job). [CI-106]: grant >= the called
-    # reusable's per-job needs.
-    permissions:
-      contents: read
-    uses: ./.github/workflows/swift-docs.yml
-    secrets: inherit
-    with:
-      target-repo: ${{ matrix.repo }}
-
+  # TX7 (swift-institute/.github#276): the separate DocC rotation job was
+  # deleted here — universal integrated docs are now unconditional in
+  # swift-ci.yml's own chain, so the `sweep` leg already carries exactly-once
+  # DocC coverage for every swept repo. The report below still matches the
+  # historical "docs (" prefix so any residual docs-named jobs stay visible.
   report:
-    needs: [select, sweep, docs-sweep]
+    needs: [select, sweep]
     if: ${{ always() && needs.select.result == 'success' && !github.event.repository.private }}     # [CI-032]
     runs-on: ubuntu-latest
     timeout-minutes: 20

@@ -192,7 +192,7 @@
       "docs": {
         "continue_on_error": false,
         "has_matrix": false,
-        "if": "${{ !cancelled() && !github.event.repository.private && inputs.integrated-docs == true\n    && (inputs.job == 'docs' || (inputs.job == '' && (\n          startsWith(github.ref, 'refs/tags/')\n          || github.event_name == 'workflow_dispatch'\n          || github.event_name == 'schedule'\n          || contains(github.event.head_commit.message, '[ci docs]')\n        ))) }}",
+        "if": "${{ !cancelled() && !github.event.repository.private\n    && (inputs.job == 'docs' || (inputs.job == '' && (\n          startsWith(github.ref, 'refs/tags/')\n          || github.event_name == 'workflow_dispatch'\n          || github.event_name == 'schedule'\n          || contains(github.event.head_commit.message, '[ci docs]')\n        ))) }}",
         "matrix_axes": {},
         "needs": [
           "plan"
@@ -641,7 +641,7 @@
       "skipped"
     ],
     "required_check_context": "ci / ci-ok",
-    "source_sha256": "41251a4e6d15157cf88dad31f27a3190936cfde7a839e573d0551d1b088b55a1"
+    "source_sha256": "f44cbccf9ddd7f7009e4cff840eb8ff7d0e3f00bf1e8f04e7b577443845d34c0"
   },
   "wrappers": {
     "foundations": {
