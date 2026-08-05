@@ -92,11 +92,46 @@ extension RepositoryPolicy {
         /// temporary `ci / ci-ok` aggregate and the universal chain's own
         /// `ci / matrix / ci-ok` aggregate, required together so a wave
         /// stays reversible while both producers exist (Task 3-02 step 3).
+        ///
+        /// This is the one payload class that may declare the programme
+        /// bypass window (`BypassAllowance.organizationAdminAlways`, below).
+        /// It is still fail-closed: an empty list stays valid, the single
+        /// authorized organization-admin actor is admitted by exact shape,
+        /// and anything else — a second actor, a different `actor_type`, a
+        /// different `actor_id`, or `bypass_mode: pull_request` — is
+        /// rejected exactly as before.
         public static func protectedMainPublicCompatibilityPayload(from url: URL) throws -> Data {
             try protectedMainPackagePayload(
                 from: url,
-                requiredContexts: ["ci / ci-ok", "ci / matrix / ci-ok"]
+                requiredContexts: ["ci / ci-ok", "ci / matrix / ci-ok"],
+                bypassAllowance: .organizationAdminAlways
             )
+        }
+
+        /// What a payload class is permitted to declare in `bypass_actors`.
+        ///
+        /// `none` is the standing Institute contract and the default: no
+        /// actor may bypass protected main, which is why admin merge and
+        /// admin direct push both fail (verified live —
+        /// `current_user_can_bypass: "never"`).
+        ///
+        /// `organizationAdminAlways` additionally admits **exactly one**
+        /// actor — the organization-admin role, in `always` mode — and
+        /// nothing else. It exists for the bounded programme window in which
+        /// the fleet's `.github/workflows/ci.yml` callers are converged by
+        /// direct push (swift-institute/.github#276 Task 5-02, #282; Ruling
+        /// R26 supersedes R22.2). `pull_request` mode is deliberately NOT
+        /// admitted: it permits merging without review, which is a weakening
+        /// of the review contract, while `always` permits the push this
+        /// window actually needs.
+        ///
+        /// This is an admission of a named, authorized shape — not a
+        /// relaxation of the guard. Every other payload class keeps `none`,
+        /// and the window is closed by restoring the empty list in the
+        /// policy file and reverting this allowance.
+        public enum BypassAllowance {
+            case none
+            case organizationAdminAlways
         }
 
         /// The private contract: exactly `verification / workspace`, the
@@ -118,11 +153,13 @@ extension RepositoryPolicy {
         /// Swift-only or JSON-only edit fails this guard.
         private static func protectedMainPackagePayload(
             from url: URL,
-            requiredContexts: Set<String>
+            requiredContexts: Set<String>,
+            bypassAllowance: BypassAllowance = .none
         ) throws -> Data {
             let (object, rules) = try identity(
                 from: url,
-                expectedName: "Institute protected main"
+                expectedName: "Institute protected main",
+                bypassAllowance: bypassAllowance
             )
             guard
                 Set(rules.compactMap { $0["type"] as? String }) == [
@@ -185,7 +222,8 @@ extension RepositoryPolicy {
         /// class-specific rule validation.
         private static func identity(
             from url: URL,
-            expectedName: String
+            expectedName: String,
+            bypassAllowance: BypassAllowance = .none
         ) throws -> (object: [String: Any], rules: [[String: Any]]) {
             let source = try Data(contentsOf: url)
             guard var object = try JSONSerialization.jsonObject(with: source) as? [String: Any]
@@ -201,9 +239,10 @@ extension RepositoryPolicy {
             else {
                 throw ConfigurationError("protected-main ruleset identity is invalid")
             }
-            guard let bypass = object["bypass_actors"] as? [Any], bypass.isEmpty else {
-                throw ConfigurationError("protected-main ruleset permits a bypass actor")
+            guard let bypass = object["bypass_actors"] as? [Any] else {
+                throw ConfigurationError("protected-main ruleset must declare bypass_actors")
             }
+            try validateBypassActors(bypass, allowance: bypassAllowance)
             guard let conditions = object["conditions"] as? [String: Any],
                 let reference = conditions["ref_name"] as? [String: Any],
                 (reference["include"] as? [String]) == ["refs/heads/main"],
@@ -217,6 +256,34 @@ extension RepositoryPolicy {
                 )
             }
             return (object, rules)
+        }
+
+        /// Fail-closed `bypass_actors` validation. An empty list is always
+        /// valid. A non-empty list is valid ONLY under
+        /// `.organizationAdminAlways`, and only as exactly one entry whose
+        /// three fields match the authorized shape exactly — an extra key,
+        /// an extra actor, a different role, or `pull_request` mode is
+        /// rejected. The default remains "no bypass actor at all", so a
+        /// payload class that does not opt in cannot acquire one by edit.
+        private static func validateBypassActors(
+            _ bypass: [Any],
+            allowance: BypassAllowance
+        ) throws {
+            if bypass.isEmpty { return }
+            guard case .organizationAdminAlways = allowance else {
+                throw ConfigurationError("protected-main ruleset permits a bypass actor")
+            }
+            guard bypass.count == 1, let actor = bypass[0] as? [String: Any],
+                actor.count == 3,
+                actor["actor_id"] as? Int == 1,
+                actor["actor_type"] as? String == "OrganizationAdmin",
+                actor["bypass_mode"] as? String == "always"
+            else {
+                throw ConfigurationError(
+                    "protected-main ruleset declares a bypass actor outside the one authorized "
+                        + "organization-admin always-mode window"
+                )
+            }
         }
 
         /// The pull-request transaction both contract classes pin identically.
