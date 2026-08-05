@@ -230,11 +230,14 @@ jobs:
           # GitHub command-file variable and disable tracing before it runs.
           set +x
           run_status=0
-          # lint is requested but NOT required: the subject sits outside any
-          # Workspace layer root and the runner installs no swift-linter, so
-          # lint lands honestly `unmeasured` — a required unmeasured operation
-          # makes `seal` refuse (noReceiptProduced), which nulled every run
-          # of the first live batch.
+          # lint is NOT requested at all: on this runner it can only land
+          # `unmeasured`, and its reason text embeds the subject's absolute
+          # path, which the receipt's redaction guard refuses to seal
+          # ("captured evidence operation lint finding carries an absolute
+          # machine path" — reproduced locally at Workspace 49fad76). Making
+          # it non-required (#341) was insufficient for the same reason.
+          # Private lint stays a Workspace-local measurement, not this
+          # verifier's.
           env -u GITHUB_ENV -u GITHUB_OUTPUT -u GITHUB_PATH -u GITHUB_STEP_SUMMARY -u ACTIONS_STEP_DEBUG \
             swift run --package-path "${WORKSPACE_DIR}/Application" -c release workspace verification seal \
               --package-path "$SUBJECT_DIR" \
@@ -245,7 +248,7 @@ jobs:
               --inventory-digest "$INVENTORY_DIGEST" \
               --workspace-revision "$WORKSPACE_REVISION" \
               --policy-revision "$POLICY_REVISION" \
-              --step build --step test --step nested-tests --step lint \
+              --step build --step test --step nested-tests \
               --required-step build --required-step test --required-step nested-tests \
               --receipt "$receipt_path" \
               > "$run_log" 2>&1 \
