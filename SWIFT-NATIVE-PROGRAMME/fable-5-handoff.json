@@ -1,0 +1,30 @@
+{
+ "status": "READY AFTER R1 BASELINE GATE + FT1 RATIFICATION (per final edition \u00a723 joint protocol)",
+ "firstMutationGate": [
+  "Goal #276 closed completed",
+  "immutable \u00a76.3 receipt exists and linked",
+  "post-finalization validator passed",
+  "no completion writer/branch/PR/settings transaction/cleanup active",
+  "post-R1 governing heads recut",
+  "Judgment A CB-1/CB-2 remediated and #349 closed (prerequisites of R1 itself)"
+ ],
+ "entry": "CI-CD-FINAL-REVIEW-AND-SWIFT-NATIVE-PROGRAMME.md \u00a717-\u00a723",
+ "transactions": "follow-up-transactions.json",
+ "order": "follow-up-transaction-edges.csv",
+ "rules": [
+  "workspace package only; --fresh for evidence",
+  "R27 exact-head live-caller canaries before central changes",
+  "no raw SwiftPM/xcodebuild",
+  "principal-only destructive actions",
+  "UNMEASURED over silence",
+  "no released binaries/tags",
+  "move-fast posture per Addendum 4: collapse parity windows, delete incumbents at activation, no compatibility tails"
+ ],
+ "posture": "move-fast (principal ruling 2026-08-05): pre-release, no backwards compatibility, no intermittent states; single measured cutovers; deletion joins activation; no compatibility surfaces; safety and evidence rules unwaived",
+ "handoffComposition": [
+  "SWIFT-NATIVE-PROGRAMME/PROGRAMME.md (parallel-review final edition 2026-08-05T20:00:38Z): architecture, FT1->F18, stops, canaries \u2014 CONTROLLING for structure",
+  "SWIFT-NATIVE-PROGRAMME/naming-annex-nest-name.md: CONTROLLING for all module/target/type/file spellings",
+  "Move-fast posture (MOVE-FAST-POSTURE.md): CONTROLLING for migration mechanics"
+ ],
+ "namingRule": "All /github work objects and executioner-facing artifacts quote spellings from naming-annex-nest-name.md only; flat compound spellings in the final edition are superseded"
+}
