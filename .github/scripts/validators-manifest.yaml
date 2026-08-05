@@ -547,8 +547,8 @@ validators:
   # Not a numbered [CI-NNN] rule — no /promote-rule pilot slot claimed by
   # this task. INTEGRATED-DOCS-ADMISSION composes into validate-thin-
   # callers.py per the shared per-package-caller domain (same pattern as
-  # CI-030/CI-059 above); MARKER-MISSING/MARKER-ORPHANED are a new
-  # repo-local self-check script.
+  # CI-030/CI-059 above). The MARKER-MISSING/MARKER-ORPHANED repo-local
+  # self-check retired with the integrated-docs input at TX10.
 
   - rule-id: INTEGRATED-DOCS-ADMISSION
     validator-script: .github/scripts/validate-thin-callers.py
@@ -558,12 +558,3 @@ validators:
     discovery-mode: per-package-org-sweep
     rule-id-regex: '^INTEGRATED-DOCS-ADMISSION'
     migrate-to-base: 'no (chain-C; see CI-REVIEW-PHASE-B-DESIGN §5)'
-
-  - rule-id: MARKER-MISSING
-    validator-script: .github/scripts/validate-integrated-docs-compat.py
-    workflow-file: ''
-    status: active
-    self-firing: active
-    discovery-mode: single-target
-    rule-id-regex: '^MARKER-(MISSING|ORPHANED)'
-    migrate-to-base: 'no (repo-local self-check of the universal workflow plus the vendored layer-wrapper snapshots under fixtures/wrappers/ — a fixed 4-file population, not a fleet per-repo scan; validate-base.yml''s per-package-org-sweep shape does not apply)'

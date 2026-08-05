@@ -70,45 +70,30 @@ on:
         type: string
         default: ""
         description: "Optional target to build for Embedded with default traits disabled. Empty preserves the full-package Embedded build. Forwarded to the universal reusable's own `embedded-target` input, consulted only by its `embedded` job (`lint-bundle == 'primitives'`)."
-      # ─── TEMPORARY MIGRATION-ONLY INPUT [temp-integrated-docs-4-01] ─────
-      # CI/CD refactor programme Task 4-01 (swift-institute/.github#276,
-      # swift-primitives/.github#13). Pure pass-through to the universal
-      # reusable's own `integrated-docs` input — see that input's
-      # description (swift-institute/.github/.github/workflows/swift-ci.yml)
-      # for the full contract. NOT a package-owned policy knob: a caller's
-      # `ci:` job may carry this in `with:` ONLY with the exact
-      # bot-generated literal `true` during the migration window
-      # (validate-thin-callers.py's INTEGRATED-DOCS-ADMISSION check).
-      # Deleted at Task 5-03 once fleet convergence proves zero remaining
-      # false/default callers.
-      integrated-docs:
-        type: boolean
-        default: false
-        description: "TEMPORARY migration-only compatibility pass-through [temp-integrated-docs-4-01] (swift-institute/.github#276 Task 4-01, swift-primitives/.github#13). Forwarded verbatim to the universal reusable; see its own `integrated-docs` input for the full contract."
       docs-umbrella-module:
         type: string
         default: ""
-        description: "Pass-through override forwarded to the universal reusable's `docs-umbrella-module` input; consulted only when `integrated-docs` is true."
+        description: "Pass-through override forwarded to the universal reusable's `docs-umbrella-module` input (TX9: universal integrated docs are unconditional)."
       docs-umbrella-display-name:
         type: string
         default: ""
-        description: "Pass-through override forwarded to the universal reusable's `docs-umbrella-display-name` input; consulted only when `integrated-docs` is true."
+        description: "Pass-through override forwarded to the universal reusable's `docs-umbrella-display-name` input (TX9: universal integrated docs are unconditional)."
       docs-umbrella-bundle-id:
         type: string
         default: ""
-        description: "Pass-through override forwarded to the universal reusable's `docs-umbrella-bundle-id` input; consulted only when `integrated-docs` is true."
+        description: "Pass-through override forwarded to the universal reusable's `docs-umbrella-bundle-id` input (TX9: universal integrated docs are unconditional)."
       docs-umbrella-docc-path:
         type: string
         default: ""
-        description: "Pass-through override forwarded to the universal reusable's `docs-umbrella-docc-path` input; consulted only when `integrated-docs` is true."
+        description: "Pass-through override forwarded to the universal reusable's `docs-umbrella-docc-path` input (TX9: universal integrated docs are unconditional)."
       docs-exclude-modules:
         type: string
         default: ""
-        description: "Pass-through override forwarded to the universal reusable's `docs-exclude-modules` input; consulted only when `integrated-docs` is true."
+        description: "Pass-through override forwarded to the universal reusable's `docs-exclude-modules` input (TX9: universal integrated docs are unconditional)."
       docs-swift-version:
         type: string
         default: "6.3"
-        description: "Pass-through override forwarded to the universal reusable's `docs-swift-version` input; consulted only when `integrated-docs` is true."
+        description: "Pass-through override forwarded to the universal reusable's `docs-swift-version` input (TX9: universal integrated docs are unconditional)."
     secrets:
       PRIVATE_REPO_TOKEN:
         required: false
@@ -137,11 +122,12 @@ on:
           Counterpart of SWIFT_INSTITUTE_BOT_APP_CLIENT_ID.
 
 jobs:
-  # Universal matrix delegated to the ecosystem-wide reusable. This is now
-  # this wrapper's ONLY job besides the temporary `ci-ok` compatibility
-  # aggregate below (CI/CD refactor programme Task 1-04): every job this
-  # wrapper used to define itself (embedded, embedded-wasm-sdk,
-  # android-build, static-linux-musl-build) now lives there, selected by
+  # Universal matrix delegated to the ecosystem-wide reusable. This is
+  # this wrapper's ONLY job (TX9 deleted the temporary `ci-ok`
+  # compatibility aggregate once zero rulesets required `ci / ci-ok`):
+  # every job this wrapper used to define itself (embedded,
+  # embedded-wasm-sdk, android-build, static-linux-musl-build) lives
+  # there, selected by
   # `lint-bundle: primitives` and kept in the same non-gating,
   # `continue-on-error: true` posture (Task 1-03, swift-institute/.github#302).
   matrix:
@@ -153,9 +139,6 @@ jobs:
       macos-runner: ${{ inputs.macos-runner }}
       platform-support: ${{ inputs.platform-support }}
       embedded-target: ${{ inputs.embedded-target }}
-      # [temp-integrated-docs-4-01] pure pass-through, Task 4-01. Deleted
-      # alongside the input declarations above at Task 5-03.
-      integrated-docs: ${{ inputs.integrated-docs }}
       docs-umbrella-module: ${{ inputs.docs-umbrella-module }}
       docs-umbrella-display-name: ${{ inputs.docs-umbrella-display-name }}
       docs-umbrella-bundle-id: ${{ inputs.docs-umbrella-bundle-id }}
@@ -184,33 +167,3 @@ jobs:
       SWIFT_INSTITUTE_BOT_APP_ID: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
       SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
 
-  # ─── Conclusion aggregator ────────────────────────────────────────────────
-  # Single required-status-check name for branch protection on swift-primitives
-  # consumer repos. Mirrors the universal swift-ci.yml's ci-ok job; here, the
-  # only need is `matrix` (which itself reflects the universal workflow's
-  # success aggregate — universal's ci-ok ensures macos-release / linux-release
-  # / windows-release / format / lint all passed before matrix succeeds).
-  #
-  # TEMPORARY, compatibility-only (CI/CD refactor programme Task 1-04,
-  # swift-institute/.github#276): this aggregate exists solely to keep
-  # producing the `ci / ci-ok` required-status-check name consumer
-  # rulesets already reference, until Phase 3 converges required contexts
-  # to `ci / matrix / ci-ok` and deletes it. No new logic belongs here.
-  # Deletion tracked at swift-primitives/.github#12.
-  ci-ok:
-    if: ${{ always() && !github.event.repository.private }}
-    needs:
-      - matrix
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    permissions:
-      contents: read
-    steps:
-      - name: Aggregate required-job results
-        env:
-          NEEDS_JSON: ${{ toJson(needs) }}
-        run: |
-          set -euo pipefail
-          # The reusable aggregate must succeed. A skipped matrix is not
-          # execution evidence and therefore cannot satisfy this gate.
-          jq --exit-status 'all(.result == "success")' <<< "$NEEDS_JSON"

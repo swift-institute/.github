@@ -311,7 +311,9 @@ jobs:
 """
         self.assertEqual(self.run_validator(workflow), [])
 
-    def test_bot_generated_true_is_admitted(self) -> None:
+    def test_residual_true_fires_after_tx10(self) -> None:
+        """TX10 deleted the input, so even the formerly bot-generated
+        `true` is now a live undeclared-input breakage and must fire."""
         workflow = """name: CI
 on: [push]
 jobs:
@@ -321,7 +323,9 @@ jobs:
       integrated-docs: true
     secrets: inherit
 """
-        self.assertEqual(self.run_validator(workflow), [])
+        findings = self.run_validator(workflow)
+        self.assertEqual(len(findings), 1)
+        self.assertIn("INTEGRATED-DOCS-ADMISSION", findings[0])
 
     def test_explicit_false_fires(self) -> None:
         """Positive control: false is redundant with the default and is

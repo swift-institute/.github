@@ -237,18 +237,6 @@ jobs:
           python3 .github/scripts/tests/test-validate-thin-callers.py 2>&1 | tee /tmp/thin-caller-controls.txt
 
       # Task 4-01 (swift-institute/.github#276, #284): the TEMPORARY
-      # `integrated-docs` migration input's mechanical-deletability
-      # controls — marker consistency across the universal workflow and
-      # every vendored layer wrapper (synthetic + live-files assertions),
-      # plus the layer-docs-wrapper-reference predicate Task 5-03
-      # transports to the live fleet, proven here on synthetic fixtures
-      # since no such population is reachable from this repository.
-      - name: Run integrated-docs compatibility controls
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 .github/scripts/tests/test-validate-integrated-docs-compat.py 2>&1 | tee /tmp/integrated-docs-compat-controls.txt
-
       # The file-naming validator's diagnostic-precedence rules operate on
       # synthetic module trees the unit suite builds itself, a surface run.sh's
       # repo-shaped fixtures do not exercise; until 2026-07-30 this suite

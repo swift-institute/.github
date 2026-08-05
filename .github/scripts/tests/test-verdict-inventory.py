@@ -276,10 +276,14 @@ class OuterInnerAggregateTests(unittest.TestCase):
     def setUp(self):
         self.inventory = current_inventory()
 
-    def test_every_wrapper_ci_ok_needs_only_matrix(self):
+    def test_every_wrapper_has_no_ci_ok_aggregate(self):
+        # TX9 deleted every wrapper's temporary ci-ok compatibility
+        # aggregate; `matrix` is each wrapper's only job.
         for layer, w in self.inventory["wrappers"].items():
             with self.subTest(layer=layer):
-                self.assertEqual(w["ci_ok_needs"], ["matrix"])
+                self.assertEqual(w["ci_ok_needs"], [])
+                self.assertNotIn("ci-ok", w["jobs"])
+                self.assertIn("matrix", w["jobs"])
 
     def test_apple_simulator_build_is_the_only_inner_matrix_job(self):
         universal = self.inventory["universal"]
@@ -653,10 +657,13 @@ class RequiredCheckContextTests(unittest.TestCase):
     def test_ci_ok_job_id_matches_the_ruleset_policy_literal(self):
         self.assertTrue(RULESET_SOURCE.exists(), RULESET_SOURCE)
         source = RULESET_SOURCE.read_text(encoding="utf-8")
-        self.assertIn('"ci / ci-ok"', source)
+        # Terminal contract (TX5): the caller-path context, and no
+        # residual old-producer context anywhere in the policy source.
+        self.assertIn('"ci / matrix / ci-ok"', source)
+        self.assertNotIn('"ci / ci-ok"', source)
         universal = current_inventory()["universal"]
         self.assertIn("ci-ok", universal["jobs"])
-        self.assertEqual(universal["required_check_context"], "ci / ci-ok")
+        self.assertEqual(universal["required_check_context"], "ci / matrix / ci-ok")
 
     def test_detector_catches_a_renamed_ci_ok_job(self):
         """Positive control: if the job id changed, the literal context
