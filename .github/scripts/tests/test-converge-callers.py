@@ -334,53 +334,156 @@ class PreconditionTests(unittest.TestCase):
         self.assertEqual(result.status, "unmeasured")
 
 
+def _rulesets_and_checks_gh(required_contexts, check_runs):
+    """Build a mock `gh` whose `.api(path)` dispatches on the path, so
+    `_checks_ready_and_green()`'s TWO endpoints (rulesets, then
+    check-runs) can be exercised together without brittle call-ordering
+    assumptions."""
+    gh = mock.Mock()
+
+    def api(path, **kwargs):
+        if path.endswith("/rulesets"):
+            return [{"id": 1}]
+        if "/rulesets/" in path:
+            return {"rules": [{"type": "required_status_checks",
+                                "parameters": {"required_status_checks":
+                                                [{"context": c} for c in required_contexts]}}]}
+        if "/check-runs" in path:
+            return {"check_runs": check_runs}
+        raise AssertionError(f"unexpected path: {path}")
+
+    gh.api.side_effect = api
+    return gh
+
+
 class ChecksReadyAndGreenTests(unittest.TestCase):
-    """R6 Trap A/B, exercised directly against the predicate function."""
+    """R6 Trap A/B, exercised directly against the predicate function.
 
-    def test_stale_head_run_does_not_block_or_satisfy(self):
-        gh = mock.Mock()
-        gh.api.return_value = {
-            "check_runs": [
-                {"name": "ci-ok", "head_sha": "OLDSHA", "status": "in_progress", "conclusion": None},
-            ]
-        }
+    CORRECTED (2026-08-05, caught live on
+    swift-primitives/swift-array-primitives#11 before re-firing): the
+    predicate must be scoped to the repository's own REQUIRED contexts,
+    never 'every check-run whatsoever' — a real matrix run legitimately
+    carries many skipped conditional legs and can carry unrelated
+    advisory-leg failures the ruleset does not require."""
+
+    def test_stale_head_run_does_not_block_or_satisfy_but_missing_required_context_blocks(self):
+        gh = _rulesets_and_checks_gh(
+            ["ci / ci-ok"],
+            [{"name": "ci / ci-ok", "head_sha": "OLDSHA", "status": "in_progress", "conclusion": None}],
+        )
         ready, ok, detail = converge_callers._checks_ready_and_green(gh, "o/r", "NEWSHA")
-        self.assertTrue(ready)  # nothing AT the current head, so nothing pending
-        self.assertTrue(ok)  # vacuously — no current-head runs to fail
+        # The only report of the required context is at a STALE head, so
+        # it is treated as never having reported at the current head —
+        # not ready (never vacuously "ok" the way the unscoped version
+        # once did), and the detail must name it as missing.
+        self.assertFalse(ready)
+        self.assertIn("ci / ci-ok", detail)
 
-    def test_non_terminal_current_head_run_is_not_ready(self):
-        gh = mock.Mock()
-        gh.api.return_value = {
-            "check_runs": [{"name": "ci-ok", "head_sha": "NEWSHA", "status": "in_progress", "conclusion": None}]
-        }
+    def test_non_terminal_required_context_is_not_ready(self):
+        gh = _rulesets_and_checks_gh(
+            ["ci / ci-ok"],
+            [{"name": "ci / ci-ok", "head_sha": "NEWSHA", "status": "in_progress", "conclusion": None}],
+        )
         ready, ok, detail = converge_callers._checks_ready_and_green(gh, "o/r", "NEWSHA")
         self.assertFalse(ready)
 
-    def test_skipped_is_terminal_but_not_success(self):
-        """Trap B, named explicitly."""
-        gh = mock.Mock()
-        gh.api.return_value = {
-            "check_runs": [{"name": "ci-ok", "head_sha": "NEWSHA", "status": "completed", "conclusion": "skipped"}]
-        }
+    def test_skipped_required_context_is_terminal_but_not_success(self):
+        """Trap B, named explicitly, now correctly scoped: a SKIPPED
+        context is only a problem when it is one of the REQUIRED ones."""
+        gh = _rulesets_and_checks_gh(
+            ["ci / ci-ok"],
+            [{"name": "ci / ci-ok", "head_sha": "NEWSHA", "status": "completed", "conclusion": "skipped"}],
+        )
         ready, ok, detail = converge_callers._checks_ready_and_green(gh, "o/r", "NEWSHA")
         self.assertTrue(ready)
         self.assertFalse(ok)
-        self.assertIn("skipped", str(detail) + "")
+        self.assertIn("skipped", detail)
 
-    def test_all_success_at_current_head_is_ready_and_ok(self):
-        gh = mock.Mock()
-        gh.api.return_value = {
-            "check_runs": [
-                {"name": "ci-ok", "head_sha": "NEWSHA", "status": "completed", "conclusion": "success"},
-                {"name": "lint", "head_sha": "NEWSHA", "status": "completed", "conclusion": "success"},
-            ]
-        }
+    def test_all_required_contexts_success_is_ready_and_ok(self):
+        gh = _rulesets_and_checks_gh(
+            ["ci / ci-ok", "ci / matrix / ci-ok"],
+            [
+                {"name": "ci / ci-ok", "head_sha": "NEWSHA", "status": "completed", "conclusion": "success"},
+                {"name": "ci / matrix / ci-ok", "head_sha": "NEWSHA", "status": "completed", "conclusion": "success"},
+            ],
+        )
         ready, ok, _ = converge_callers._checks_ready_and_green(gh, "o/r", "NEWSHA")
         self.assertTrue(ready)
         self.assertTrue(ok)
 
+    def test_non_required_advisory_failure_does_not_block_merge(self):
+        """THE regression test for the live incident:
+        swift-primitives/swift-array-primitives#11 had both real required
+        contexts `success` and one unrelated advisory leg (an Embedded
+        Wasm SDK build) `failure`, plus ten legitimately `skipped` legs.
+        The original unscoped predicate would have refused this PR —
+        this pins that it must not."""
+        gh = _rulesets_and_checks_gh(
+            ["ci / ci-ok", "ci / matrix / ci-ok"],
+            [
+                {"name": "ci / ci-ok", "head_sha": "NEWSHA", "status": "completed", "conclusion": "success"},
+                {"name": "ci / matrix / ci-ok", "head_sha": "NEWSHA", "status": "completed", "conclusion": "success"},
+                {"name": "ci / matrix / Ubuntu (Swift 6.3, Embedded Wasm SDK build)",
+                 "head_sha": "NEWSHA", "status": "completed", "conclusion": "failure"},
+                {"name": "ci / matrix / Windows (Swift 6.3, debug)",
+                 "head_sha": "NEWSHA", "status": "completed", "conclusion": "skipped"},
+            ],
+        )
+        ready, ok, detail = converge_callers._checks_ready_and_green(gh, "o/r", "NEWSHA")
+        self.assertTrue(ready)
+        self.assertTrue(ok, detail)
+
+    def test_empty_required_contexts_is_never_ready(self):
+        """Negative control: an empty/unreadable ruleset must not be
+        treated as 'nothing required, therefore trivially green' — that
+        would admit any PR regardless of its real checks."""
+        gh = _rulesets_and_checks_gh([], [])
+        ready, ok, detail = converge_callers._checks_ready_and_green(gh, "o/r", "NEWSHA")
+        self.assertFalse(ready)
+        self.assertFalse(ok)
+
 
 class RateLimitedGhTests(unittest.TestCase):
+    def test_graphql_variables_use_capital_F_never_lowercase_f(self):
+        """Regression test for a real, live-caught defect (2026-08-05): the
+        fleet run's own canary hit `gh: Variable $number of type Int! was
+        provided invalid value` because graphql() sent every variable via
+        `-f` (`gh api --help`: '-f/--raw-field ... Add a STRING parameter'),
+        which cannot satisfy a `$number: Int!` GraphQL variable no matter
+        what Python type or string form the value takes — the wire
+        representation is controlled by the FLAG, not by the caller's
+        Python-side formatting. `-F/--field` is required for correct typed
+        conversion. This test would have failed on the original `-f`-based
+        implementation and pins the flag directly, rather than only the
+        query-time behavior (which needs live network access to check)."""
+        gh = converge_callers.RateLimitedGh()
+        captured = []
+
+        def fake_run(cmd, capture_output, text, timeout):
+            captured.append(cmd)
+            proc = mock.Mock()
+            proc.returncode = 0
+            proc.stdout = "{}"
+            proc.stderr = ""
+            return proc
+
+        with mock.patch.object(subprocess, "run", side_effect=fake_run):
+            gh.graphql("query($n:Int!){x}", n=11, owner="swift-primitives")
+
+        args = captured[0]
+        # The query text itself is intentionally still `-f` (it is
+        # GraphQL query TEXT, not a variable value, and must never be
+        # type-converted).
+        query_index = args.index("-f")
+        self.assertTrue(args[query_index + 1].startswith("query="))
+        # Every actual variable must be paired with `-F`, never `-f`.
+        self.assertIn("-F", args)
+        self.assertIn("n=11", args)
+        self.assertIn("owner=swift-primitives", args)
+        lowercase_f_values = [args[i + 1] for i, a in enumerate(args) if a == "-f"]
+        self.assertTrue(all(v.startswith("query=") for v in lowercase_f_values),
+                         f"a non-query value was sent via -f (always-string): {lowercase_f_values}")
+
     def test_secondary_rate_limit_response_is_retried_not_raised(self):
         gh = converge_callers.RateLimitedGh()
         calls = []
