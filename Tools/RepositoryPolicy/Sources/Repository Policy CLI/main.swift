@@ -17,6 +17,10 @@ enum Main {
                 try await compact(CompactionArguments(Array(CommandLine.arguments.dropFirst(2))))
             } else if CommandLine.arguments.dropFirst().first == "ruleset" {
                 try ruleset(RulesetArguments(Array(CommandLine.arguments.dropFirst(2))))
+            } else if CommandLine.arguments.dropFirst().first == "census" {
+                try census(Array(CommandLine.arguments.dropFirst(2)))
+            } else if CommandLine.arguments.dropFirst().first == "capability-records" {
+                try capabilityRecords(Array(CommandLine.arguments.dropFirst(2)))
             } else if CommandLine.arguments.dropFirst().first == "ruleset-convergence" {
                 try rulesetConvergence(
                     RulesetConvergenceArguments(Array(CommandLine.arguments.dropFirst(2)))
