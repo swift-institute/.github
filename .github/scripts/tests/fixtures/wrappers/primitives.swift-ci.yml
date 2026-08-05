@@ -132,6 +132,14 @@ jobs:
   # `continue-on-error: true` posture (Task 1-03, swift-institute/.github#302).
   matrix:
     if: ${{ !github.event.repository.private }}
+    # TX7b receipt contract (swift-institute/.github#276): forward the
+    # actions: read grant the universal ci-ok aggregate needs to read its
+    # own run/jobs objects. Reusable-call permissions intersect down the
+    # chain; a called job requesting a scope its caller lacks is rejected
+    # at run creation.
+    permissions:
+      contents: read
+      actions: read
     uses: swift-institute/.github/.github/workflows/swift-ci.yml@main
     with:
       swift-version: ${{ inputs.swift-version }}

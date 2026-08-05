@@ -246,6 +246,9 @@ jobs:
     # reusable's per-job needs.
     permissions:
       contents: read
+      # TX7b: forward the actions:read grant the universal ci-ok aggregate
+      # needs to read its own run/jobs objects (receipt contract).
+      actions: read
     uses: ./.github/workflows/swift-ci.yml
     secrets: inherit
     with:

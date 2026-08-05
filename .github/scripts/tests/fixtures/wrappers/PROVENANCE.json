@@ -1,32 +1,32 @@
 {
-  "_comment": "Vendored snapshots of the three layer wrappers' .github/workflows/swift-ci.yml, byte-for-byte at the commit below. Point-in-time evidence, not a live sync: test-verdict-inventory.py builds the committed verdict-inventory.json from these bytes plus this repository's own live swift-ci.yml, and a drift test catches the LOCAL file changing out from under the committed inventory. A wrapper edit in its own repository does not retrigger this repository's CI; re-vending these three files (and re-running the builder) is a manual step the next lane touching this area must perform. TX9 (swift-institute/.github#276) re-vended all three from main after the wrapper reductions landed (ci-ok aggregate, integrated-docs pass-through, and swift-docs.yml deleted; matrix is each wrapper's only job).",
+  "_comment": "Vendored snapshots of the three layer wrappers' .github/workflows/swift-ci.yml, byte-for-byte at the commit below. Point-in-time evidence, not a live sync: test-verdict-inventory.py builds the committed verdict-inventory.json from these bytes plus this repository's own live swift-ci.yml, and a drift test catches the LOCAL file changing out from under the committed inventory. A wrapper edit in its own repository does not retrigger this repository's CI; re-vending these three files (and re-running the builder) is a manual step the next lane touching this area must perform. TX9/TX7b (swift-institute/.github#276) re-vended all three from main after the wrapper reductions landed (ci-ok aggregate, integrated-docs pass-through, and swift-docs.yml deleted; matrix is each wrapper's only job).",
   "wrappers": {
     "primitives": {
       "repository": "swift-primitives/.github",
       "path": ".github/workflows/swift-ci.yml",
       "ref": "main",
-      "commit_sha": "d9a4792053643877b95c8a154275194bcbb13e89",
-      "blob_sha256": "68f3146e5b20f4a25bb9476da1e8393170018eac34fe5fe7c574cf7b96aea667",
+      "commit_sha": "ea9c55330d496f0b276f9c9a9030c15ce1f07122",
+      "blob_sha256": "658250a8130fb5b7a960abb1cde6a17e68a4ece630b3d2b650a02f9f435fb4f8",
       "fetched": "2026-08-05",
-      "pull_request": "swift-primitives/.github#18"
+      "pull_request": "swift-primitives/.github#19"
     },
     "standards": {
       "repository": "swift-standards/.github",
       "path": ".github/workflows/swift-ci.yml",
       "ref": "main",
-      "commit_sha": "ea2aec90b17092833e1b7c427b15209ff33f3b3b",
-      "blob_sha256": "86686b62b07d8b2584c919a143d9ef439c57b5757912e4de7d8657329a417494",
+      "commit_sha": "904ddb4c5e67be436a772332eef1b16acfbe1765",
+      "blob_sha256": "b8b365f4c8eaa039e436feea19c5ecc4b20c04d063355d9595a375442d17e49b",
       "fetched": "2026-08-05",
-      "pull_request": "swift-standards/.github#12"
+      "pull_request": "swift-standards/.github#13"
     },
     "foundations": {
       "repository": "swift-foundations/.github",
       "path": ".github/workflows/swift-ci.yml",
       "ref": "main",
-      "commit_sha": "24a851763774f27a5a5869acca74e451dc828104",
-      "blob_sha256": "2085b5806d44f71ddb4a9e69e606373c903fb617b5ce479fa46b8a18b1103527",
+      "commit_sha": "84ac0109aab50db70c46fdba11729a58126f530c",
+      "blob_sha256": "9ef7128529f1d21643601a7c9e3bffc3ce323c2f3ef4547e69d9f71dae9898f6",
       "fetched": "2026-08-05",
-      "pull_request": "swift-foundations/.github#11"
+      "pull_request": "swift-foundations/.github#12"
     }
   }
 }
