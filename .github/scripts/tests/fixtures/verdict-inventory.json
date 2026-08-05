@@ -179,13 +179,17 @@
         ],
         "nested_test_detection": false,
         "permissions": {
+          "actions": "read",
           "contents": "read"
         },
         "posture": "aggregate",
         "private_guarded": true,
         "runner": "ubuntu-latest",
         "step_names": [
-          "Aggregate required-job results"
+          "Aggregate required-job results",
+          "Checkout swift-institute/.github (receipt helper at this workflow's own ref)",
+          "Produce preterminal effective runtime receipt",
+          "Upload effective runtime receipt artifact"
         ],
         "wave": 2
       },
@@ -641,7 +645,7 @@
       "skipped"
     ],
     "required_check_context": "ci / matrix / ci-ok",
-    "source_sha256": "63cc7c9cac3ae155101c6df02d54d903dffb9dc8ee8ad0ef2a8c7c246888a22f"
+    "source_sha256": "063b86d97935b1b187958b596ef2463ffba6c6cbb3241bdb8ad933ba13820633"
   },
   "wrappers": {
     "foundations": {
