@@ -640,72 +640,51 @@
       "cancelled",
       "skipped"
     ],
-    "required_check_context": "ci / ci-ok",
-    "source_sha256": "f44cbccf9ddd7f7009e4cff840eb8ff7d0e3f00bf1e8f04e7b577443845d34c0"
+    "required_check_context": "ci / matrix / ci-ok",
+    "source_sha256": "63cc7c9cac3ae155101c6df02d54d903dffb9dc8ee8ad0ef2a8c7c246888a22f"
   },
   "wrappers": {
     "foundations": {
-      "ci_ok_needs": [
-        "matrix"
-      ],
-      "job_count": 2,
+      "ci_ok_needs": [],
+      "job_count": 1,
       "jobs": {
-        "ci-ok": {
-          "continue_on_error": false,
-          "in_ci_ok_needs": false,
-          "runner": "ubuntu-latest"
-        },
         "matrix": {
           "continue_on_error": false,
-          "in_ci_ok_needs": true,
+          "in_ci_ok_needs": false,
           "runner": "swift-institute/.github/.github/workflows/swift-ci.yml@main"
         }
       },
       "layer": "foundations",
       "layer_required_jobs_outside_universal_verdict": [],
-      "source_sha256": "dfe37ba078b33114d7cc338712de5bc31e1a41e39e2521246c768a19c0554f49"
+      "source_sha256": "2085b5806d44f71ddb4a9e69e606373c903fb617b5ce479fa46b8a18b1103527"
     },
     "primitives": {
-      "ci_ok_needs": [
-        "matrix"
-      ],
-      "job_count": 2,
+      "ci_ok_needs": [],
+      "job_count": 1,
       "jobs": {
-        "ci-ok": {
-          "continue_on_error": false,
-          "in_ci_ok_needs": false,
-          "runner": "ubuntu-latest"
-        },
         "matrix": {
           "continue_on_error": false,
-          "in_ci_ok_needs": true,
+          "in_ci_ok_needs": false,
           "runner": "swift-institute/.github/.github/workflows/swift-ci.yml@main"
         }
       },
       "layer": "primitives",
       "layer_required_jobs_outside_universal_verdict": [],
-      "source_sha256": "e6bdbad1cacdfdbc274b046a50fd38db9b79d10360d7662c24bbd1a9d0c9c1be"
+      "source_sha256": "68f3146e5b20f4a25bb9476da1e8393170018eac34fe5fe7c574cf7b96aea667"
     },
     "standards": {
-      "ci_ok_needs": [
-        "matrix"
-      ],
-      "job_count": 2,
+      "ci_ok_needs": [],
+      "job_count": 1,
       "jobs": {
-        "ci-ok": {
-          "continue_on_error": false,
-          "in_ci_ok_needs": false,
-          "runner": "ubuntu-latest"
-        },
         "matrix": {
           "continue_on_error": false,
-          "in_ci_ok_needs": true,
+          "in_ci_ok_needs": false,
           "runner": "swift-institute/.github/.github/workflows/swift-ci.yml@main"
         }
       },
       "layer": "standards",
       "layer_required_jobs_outside_universal_verdict": [],
-      "source_sha256": "0e548a2e0233d588e8f5fdca5c60a5b592be1ab9c95ad52777ae6599a2c3b48a"
+      "source_sha256": "86686b62b07d8b2584c919a143d9ef439c57b5757912e4de7d8657329a417494"
     }
   }
 }

@@ -1,32 +1,32 @@
 {
-  "_comment": "Vendored snapshots of the three layer wrappers' .github/workflows/swift-ci.yml, byte-for-byte as fetched from each repository at the commit below. Task 1-01 (swift-institute/.github#276, #281) characterizes the wrapper/universal relationship, which requires reading all three wrappers at exact heads (programme precondition) even though this repository's own CI cannot check out sibling repositories. These are point-in-time evidence, not a live sync: test-verdict-inventory.py builds the committed verdict-inventory.json from these bytes plus this repository's own live swift-ci.yml, and a drift test catches the LOCAL file changing out from under the committed inventory. A wrapper edit in its own repository does not retrigger this repository's CI; re-vending these three files (and re-running the builder) is a manual step the next lane touching this area must perform, exactly like re-deriving any other moving head in the programme. Task 4-01 (swift-institute/.github#276, #284) re-vended all three from their OPEN task-4-01-integrated-docs-compat PR branches (not yet main — R6 honesty: `ref` names the actual fetched branch, not main, until each PR merges) after adding the integrated-docs pass-through; the next lane to touch this area should re-vend from main once those PRs land.",
+  "_comment": "Vendored snapshots of the three layer wrappers' .github/workflows/swift-ci.yml, byte-for-byte at the commit below. Point-in-time evidence, not a live sync: test-verdict-inventory.py builds the committed verdict-inventory.json from these bytes plus this repository's own live swift-ci.yml, and a drift test catches the LOCAL file changing out from under the committed inventory. A wrapper edit in its own repository does not retrigger this repository's CI; re-vending these three files (and re-running the builder) is a manual step the next lane touching this area must perform. TX9 (swift-institute/.github#276) re-vended all three from main after the wrapper reductions landed (ci-ok aggregate, integrated-docs pass-through, and swift-docs.yml deleted; matrix is each wrapper's only job).",
   "wrappers": {
     "primitives": {
       "repository": "swift-primitives/.github",
       "path": ".github/workflows/swift-ci.yml",
-      "ref": "task-4-01-integrated-docs-compat",
-      "commit_sha": "f0cd3a8b56e1dfe77aee1a187e4134e13f982631",
-      "blob_sha256": "e6bdbad1cacdfdbc274b046a50fd38db9b79d10360d7662c24bbd1a9d0c9c1be",
-      "fetched": "2026-08-04",
-      "pull_request": "swift-primitives/.github#17"
+      "ref": "main",
+      "commit_sha": "d9a4792053643877b95c8a154275194bcbb13e89",
+      "blob_sha256": "68f3146e5b20f4a25bb9476da1e8393170018eac34fe5fe7c574cf7b96aea667",
+      "fetched": "2026-08-05",
+      "pull_request": "swift-primitives/.github#18"
     },
     "standards": {
       "repository": "swift-standards/.github",
       "path": ".github/workflows/swift-ci.yml",
-      "ref": "task-4-01-integrated-docs-compat",
-      "commit_sha": "a4bd01c2bedab5b1a0e818e04ddf4de3aeeecc3a",
-      "blob_sha256": "0e548a2e0233d588e8f5fdca5c60a5b592be1ab9c95ad52777ae6599a2c3b48a",
-      "fetched": "2026-08-04",
-      "pull_request": "swift-standards/.github#11"
+      "ref": "main",
+      "commit_sha": "ea2aec90b17092833e1b7c427b15209ff33f3b3b",
+      "blob_sha256": "86686b62b07d8b2584c919a143d9ef439c57b5757912e4de7d8657329a417494",
+      "fetched": "2026-08-05",
+      "pull_request": "swift-standards/.github#12"
     },
     "foundations": {
       "repository": "swift-foundations/.github",
       "path": ".github/workflows/swift-ci.yml",
-      "ref": "task-4-01-integrated-docs-compat",
-      "commit_sha": "8812a06381defbe6cac6e5cd5bfbe1e6712b8fba",
-      "blob_sha256": "dfe37ba078b33114d7cc338712de5bc31e1a41e39e2521246c768a19c0554f49",
-      "fetched": "2026-08-04",
-      "pull_request": "swift-foundations/.github#10"
+      "ref": "main",
+      "commit_sha": "24a851763774f27a5a5869acca74e451dc828104",
+      "blob_sha256": "2085b5806d44f71ddb4a9e69e606373c903fb617b5ce479fa46b8a18b1103527",
+      "fetched": "2026-08-05",
+      "pull_request": "swift-foundations/.github#11"
     }
   }
 }

@@ -79,20 +79,17 @@ Rules checked:
                 owner exercise the sub-org branch (same convention family as
                 validate-sub-org-wrappers' `.github-as-sub-org` marker).
 
-  INTEGRATED-DOCS-ADMISSION (Task 4-01, swift-institute/.github#276, #284;
+  INTEGRATED-DOCS-ADMISSION (Task 4-01 → TX10, swift-institute/.github#276;
                 not a numbered [CI-NNN] rule — no /promote-rule pilot slot
                 claimed by this task):
 
-                During the docs-integration migration window, a caller's
-                `ci:` job MAY carry `integrated-docs` in its `with:` block,
-                but ONLY the exact bot-generated literal `true`. `false`
-                (redundant with the universal/wrapper default) and any
-                other literal or expression fire — the compatibility input
-                is not a package-owned policy knob a maintainer hand-tunes;
-                Task 5-02's migration bot is the only writer. A caller that
-                omits the key entirely (the pre-migration, and current,
-                shape of every caller) is unaffected — absence is not a
-                finding.
+                TX10 deleted the temporary `integrated-docs` migration
+                input from the universal reusable and every layer wrapper.
+                A caller whose `ci:` job still carries the key in `with:`
+                (ANY value) fires: GitHub rejects an undeclared input at
+                run time, so its presence is a live breakage, not a style
+                nit. Absence — the terminal shape of every caller — is not
+                a finding.
 
 Both CI-030 and CI-059 inherit the GH-REPO-074 file-level carve-out: workflows
 that are themselves reusables (`on: workflow_call:`) are exempt — the rules
@@ -311,10 +308,11 @@ def _with_block_value(job_body: str, key: str) -> str | None:
 
 
 def check_integrated_docs_admission(repo: str, text: str) -> int:
-    """INTEGRATED-DOCS-ADMISSION (Task 4-01, swift-institute/.github#276,
-    #284): a caller's `ci:` job may carry `integrated-docs` in `with:`
-    ONLY with the exact bot-generated literal `true`. See the module
-    docstring's INTEGRATED-DOCS-ADMISSION section for the full rule.
+    """INTEGRATED-DOCS-ADMISSION (Task 4-01 → TX10,
+    swift-institute/.github#276): the temporary `integrated-docs` input
+    was deleted at TX10, so a caller's `ci:` job carrying the key in
+    `with:` (any value) is a live undeclared-input breakage. See the
+    module docstring's INTEGRATED-DOCS-ADMISSION section.
     """
     findings = 0
     for job_name, job_body in iter_jobs(text):
@@ -322,20 +320,17 @@ def check_integrated_docs_admission(repo: str, text: str) -> int:
             continue
         value = _with_block_value(job_body, "integrated-docs")
         if value is None:
-            continue  # absence is the pre-migration shape — not a finding
-        if value != "true":
-            emit(
-                repo,
-                "INTEGRATED-DOCS-ADMISSION",
-                f".github/workflows/ci.yml 'ci' job `with: integrated-docs: {value}` "
-                f"— during the migration window this TEMPORARY compatibility "
-                f"input [temp-integrated-docs-4-01] (swift-institute/.github#276 "
-                f"Task 4-01/5-02) admits only the exact bot-generated value "
-                f"`true`. `false` is redundant with the default and any other "
-                f"literal or expression is not a value the migration bot "
-                f"emits; hand-authoring this input is not permitted.",
-            )
-            findings += 1
+            continue  # absence is the terminal shape — not a finding
+        emit(
+            repo,
+            "INTEGRATED-DOCS-ADMISSION",
+            f".github/workflows/ci.yml 'ci' job `with: integrated-docs: {value}` "
+            f"— TX10 (swift-institute/.github#276) deleted this temporary "
+            f"migration input from the universal reusable and every layer "
+            f"wrapper; GitHub rejects an undeclared input, so this caller "
+            f"fails at run time. Regenerate it with generate-caller.py.",
+        )
+        findings += 1
     return findings
 
 

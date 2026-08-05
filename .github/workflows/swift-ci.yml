@@ -157,55 +157,30 @@ on:
         type: string
         default: ""
         description: "Optional target to build for Embedded with default traits disabled, consulted only by the `embedded` job (`lint-bundle == 'primitives'`). Empty preserves the full-package Embedded build. Relocated verbatim from the Primitives layer wrapper (swift-institute/.github#276 Task 1-03) so an existing consumer's `with: { embedded-target: ... }` keeps meaning the same thing after the wrapper forwards it here; every other layer/consumer never sets it and is unaffected."
-      # ─── TEMPORARY MIGRATION-ONLY INPUT [temp-integrated-docs-4-01] ─────
-      # CI/CD refactor programme Task 4-01 (swift-institute/.github#276,
-      # #284). NOT a package-owned policy knob — a caller's `ci:` job may
-      # carry this in `with:` ONLY with the exact bot-generated literal
-      # `true` during the migration window (enforced by
-      # validate-thin-callers.py's INTEGRATED-DOCS-ADMISSION check); hand-
-      # authoring any other value is refused. `false` (the default) is the
-      # legacy state and is never written explicitly by the migration bot
-      # — it is simply what an unconverted caller omits.
-      #
-      # DELETION PREDICATE (Task 5-03, mechanical, not a judgement call):
-      # once a live census shows every accessible ordinary caller has
-      # either migrated (this input `true`, no separate package `docs:`
-      # job) or is a typed exception, delete this input, the `docs` job's
-      # `inputs.integrated-docs == true` guard (folding the job's
-      # remaining scheduling guard into an unconditional one), every layer
-      # wrapper's forwarding copy, and the legacy layer `swift-docs.yml`
-      # wrappers themselves. `validate-integrated-docs-compat.py` carries
-      # the marker grep and the layer-docs-wrapper-reference predicate
-      # Task 5-03 runs against the fleet census to prove the "zero
-      # remaining legacy callers" precondition.
-      integrated-docs:
-        type: boolean
-        default: false
-        description: "IGNORED NO-OP [temp-integrated-docs-4-01 -> TX7] (swift-institute/.github#276). Integrated docs are now unconditional in this chain (the `docs` job's own scheduling guard is the only gate); this input is retained solely so migrated callers that still send `integrated-docs: true` do not fail on an undeclared input. Deleted at TX10 after the TX8 caller pass elides it fleet-wide."
       docs-umbrella-module:
         type: string
         default: ""
-        description: "Pass-through override forwarded to the nested swift-docs.yml call's `umbrella-module` input; consulted only when `integrated-docs` is true. See swift-docs.yml for the discovery default this overrides."
+        description: "Pass-through override forwarded to the nested swift-docs.yml call's `umbrella-module` input (TX10: integrated docs are unconditional). See swift-docs.yml for the discovery default this overrides."
       docs-umbrella-display-name:
         type: string
         default: ""
-        description: "Pass-through override forwarded to the nested swift-docs.yml call's `umbrella-display-name` input; consulted only when `integrated-docs` is true."
+        description: "Pass-through override forwarded to the nested swift-docs.yml call's `umbrella-display-name` input (TX10: integrated docs are unconditional)."
       docs-umbrella-bundle-id:
         type: string
         default: ""
-        description: "Pass-through override forwarded to the nested swift-docs.yml call's `umbrella-bundle-id` input; consulted only when `integrated-docs` is true."
+        description: "Pass-through override forwarded to the nested swift-docs.yml call's `umbrella-bundle-id` input (TX10: integrated docs are unconditional)."
       docs-umbrella-docc-path:
         type: string
         default: ""
-        description: "Pass-through override forwarded to the nested swift-docs.yml call's `umbrella-docc-path` input; consulted only when `integrated-docs` is true."
+        description: "Pass-through override forwarded to the nested swift-docs.yml call's `umbrella-docc-path` input (TX10: integrated docs are unconditional)."
       docs-exclude-modules:
         type: string
         default: ""
-        description: "Pass-through override forwarded to the nested swift-docs.yml call's `exclude-modules` input; consulted only when `integrated-docs` is true."
+        description: "Pass-through override forwarded to the nested swift-docs.yml call's `exclude-modules` input (TX10: integrated docs are unconditional)."
       docs-swift-version:
         type: string
         default: "6.3"
-        description: "Swift toolchain version for the nested swift-docs.yml call's DocC build container; consulted only when `integrated-docs` is true. Independent of this workflow's own `swift-version` input (a Linux-container axis for the release/nightly legs) — mirrors swift-docs.yml's own default so an integrated caller that never overrides either stays in lockstep with the standalone wrapper path."
+        description: "Swift toolchain version for the nested swift-docs.yml call's DocC build container (TX10: integrated docs are unconditional). Independent of this workflow's own `swift-version` input (a Linux-container axis for the release/nightly legs) — mirrors swift-docs.yml's own default so an integrated caller that never overrides either stays in lockstep with the standalone wrapper path."
     secrets:
       PRIVATE_REPO_TOKEN:
         required: false
@@ -2429,7 +2404,7 @@ jobs:
   # CI/CD refactor programme Task 4-01 (swift-institute/.github#276, #284).
   # Invokes THIS repository's own swift-docs.yml through the FULL COORDINATE
   # (never a relative `./` ref, per the task's Change item 1) so a package
-  # migrated onto `integrated-docs: true` gets DocC validation once inside
+  # migrated onto the terminal caller gets DocC validation once inside
   # this chain instead of through its own separate `docs:` job. Depth
   # arithmetic: package ci.yml (1) -> layer swift-ci.yml wrapper (2) ->
   # this workflow (3) -> swift-docs.yml (4) — exactly the workflow_call
@@ -2437,7 +2412,7 @@ jobs:
   # documents ("within the workflow_call 4-level limit"); there is no
   # remaining headroom for a further hop in this path.
   #
-  # Gate: [temp-integrated-docs-4-01] `inputs.integrated-docs == true` PLUS
+  # Gate (TX10: input deleted; docs unconditional):
   # the identical scheduling predicate swift-docs.yml's own `docs` job
   # enforces (see that file's SCHEDULING header comment for the measurement
   # and the ruling this reproduces) — tag ref, workflow_dispatch, schedule,
@@ -2553,7 +2528,7 @@ jobs:
       # tier/legs system), so this entry reports `skipped` on every run
       # this job's own gate doesn't select, same shape as any other
       # advisory leg a given run doesn't select. Deleted alongside `docs`
-      # at Task 5-03 [temp-integrated-docs-4-01].
+      # at TX10.
       - docs
     runs-on: ubuntu-latest
     timeout-minutes: 60

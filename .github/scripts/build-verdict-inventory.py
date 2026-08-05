@@ -207,7 +207,9 @@ def build_universal_inventory(path: Path) -> dict:
         },
         "cache_steps": cache_steps,
         "possible_job_conclusions": POSSIBLE_JOB_CONCLUSIONS,
-        "required_check_context": "ci / ci-ok",
+        # Terminal contract (TX5, swift-institute/.github#276): caller job
+        # `ci` -> wrapper `matrix` -> this workflow's own `ci-ok`.
+        "required_check_context": "ci / matrix / ci-ok",
     }
 
 
