@@ -300,6 +300,7 @@ jobs:
           RECEIPT_PATH: ${{ steps.run.outputs.receipt-path }}
           RUN_STATUS: ${{ steps.run.outputs.run-status }}
           CHECK_STATUS: ${{ steps.run.outputs.check-status }}
+          SEAL_REASON: ${{ steps.run.outputs.reason }}
           REQUEST_ID: ${{ github.event.client_payload.requestId }}
           NONCE: ${{ github.event.client_payload.nonce }}
           SUBJECT_REPOSITORY: ${{ github.event.client_payload.repository }}
@@ -311,7 +312,7 @@ jobs:
           envelope_path="${RUNNER_TEMP}/envelope-${REQUEST_ID}.json"
 
           if [[ -z "${RECEIPT_PATH:-}" || ! -s "$RECEIPT_PATH" ]]; then
-            jq -n --arg requestId "$REQUEST_ID" --arg reason "noReceiptProduced" '
+            jq -n --arg requestId "$REQUEST_ID" --arg reason "${SEAL_REASON:-noReceiptProduced}" '
               { schemaVersion: 1, requestId: $requestId, outcome: "unavailable", reason: $reason }
             ' > "$envelope_path"
             echo "outcome=unavailable" >> "$GITHUB_OUTPUT"
