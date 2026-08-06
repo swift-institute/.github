@@ -56,6 +56,9 @@ struct RepositoryPolicyCallerTests {
         #expect(!text.contains("secrets"))
         // K-12 property transfer: the layer's lint bundle rides the leaf.
         #expect(text.contains("    with:\n      lint-bundle: primitives"))
+        // R-08 context preservation: the dead wrapper hop's display
+        // segment rides the job name, keeping `ci / matrix / <job>`.
+        #expect(text.contains("  ci:\n    name: ci / matrix\n    uses:"))
         let withSecrets = Repository.Policy.Caller.Render.direct(
             caller, privateDependencyClosure: true)
         #expect(withSecrets.contains(

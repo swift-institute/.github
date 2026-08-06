@@ -82,6 +82,15 @@ extension Repository.Policy.Caller {
                 "",
                 "jobs:",
                 "  ci:",
+                // The required check context is the measured incumbent
+                // family `ci / matrix / <job>` (caller job `ci` → wrapper
+                // job `matrix` → universal). The wrapper hop dies in the
+                // direct form, so its display segment transfers here: the
+                // job's display name carries both segments and GitHub
+                // concatenates display names into nested check names.
+                // Context migration is refused (R-08); K-11 measures this
+                // on a hosted canary before any fleet activation.
+                "    name: ci / matrix",
                 "    uses: swift-institute/.github/.github/workflows/swift-ci.yml@main",
             ]
             // lint-bundle is a LAYER property the wrapper used to own
