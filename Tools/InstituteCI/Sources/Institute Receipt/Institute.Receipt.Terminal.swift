@@ -21,7 +21,7 @@ extension Institute.Receipt {
             var findings: [FailureClass] = []
             if baseReceiptDigest == nil {
                 findings.append(.stageNotTerminal(field: "baseReceiptDigest"))
-            } else if let digest = baseReceiptDigest, !Self.isHex64(digest) {
+            } else if let digest = baseReceiptDigest, !Institute.Receipt.isLowercaseHex(digest, digits: 64) {
                 findings.append(.shortSha(field: "baseReceiptDigest", value: digest))
             }
             let typed = Set(base.unmeasured.map(\.field))
@@ -30,18 +30,18 @@ extension Institute.Receipt {
             } else if base.run.conclusion == nil && !typed.contains("run.conclusion") {
                 findings.append(.nullTerminalField(field: "run.conclusion"))
             }
-            if !Self.isFullSha(base.run.headSha) {
+            if !Institute.Receipt.isLowercaseHex(base.run.headSha, digits: 40) {
                 findings.append(.shortSha(field: "run.headSha", value: base.run.headSha))
             }
             if base.subjectRepository.isEmpty || base.subjectSha.isEmpty {
                 findings.append(.emptySubject)
-            } else if !Self.isFullSha(base.subjectSha) {
+            } else if !Institute.Receipt.isLowercaseHex(base.subjectSha, digits: 40) {
                 findings.append(.shortSha(field: "subjectSha", value: base.subjectSha))
             }
             if base.referencedWorkflows.isEmpty && !typed.contains("referencedWorkflows") {
                 findings.append(.emptyIdentityFamily(field: "referencedWorkflows"))
             }
-            for hop in base.referencedWorkflows where !Self.isFullSha(hop.sha) {
+            for hop in base.referencedWorkflows where !Institute.Receipt.isLowercaseHex(hop.sha, digits: 40) {
                 findings.append(.shortSha(field: "referencedWorkflows[\(hop.path)]", value: hop.sha))
             }
             for job in base.jobs where job.mandatory {
@@ -64,14 +64,6 @@ extension Institute.Receipt {
                 findings.append(.jobsPaginationIncomplete(total: total, present: base.jobs.count))
             }
             return findings
-        }
-
-        static func isFullSha(_ value: String) -> Bool {
-            value.count == 40 && value.allSatisfy { $0.isHexDigit && !$0.isUppercase }
-        }
-
-        static func isHex64(_ value: String) -> Bool {
-            value.count == 64 && value.allSatisfy { $0.isHexDigit && !$0.isUppercase }
         }
     }
 }

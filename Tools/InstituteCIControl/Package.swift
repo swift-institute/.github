@@ -32,6 +32,8 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/swift-foundations/swift-github.git", branch: "main"),
         .package(url: "https://github.com/swift-foundations/swift-github-http.git", branch: "main"),
+        .package(url: "https://github.com/swift-primitives/swift-byte-primitives.git", branch: "main"),
+        .package(url: "https://github.com/swift-primitives/swift-binary-base-primitives.git", branch: "main"),
     ],
     targets: [
         .target(
@@ -49,7 +51,11 @@ let package = Package(
             dependencies: ["Fleet Inventory"]
         ),
         .target(
-            name: "Private Verification"
+            name: "Private Verification",
+            dependencies: [
+                .product(name: "Byte Primitives", package: "swift-byte-primitives"),
+                .product(name: "Binary Base Primitives", package: "swift-binary-base-primitives"),
+            ]
         ),
         .target(
             name: "Institute CI Control Application",

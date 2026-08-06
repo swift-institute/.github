@@ -20,8 +20,7 @@ extension Private.Verification {
             requiredOperations: [String] = ["build", "test", "nested-tests", "lint", "inventory"]
         ) throws(Error) {
             guard !requestId.isEmpty else { throw .emptyRequestId }
-            guard claimedHeadSha.count == 40,
-                  claimedHeadSha.allSatisfy({ $0.isHexDigit && !$0.isUppercase }) else {
+            guard Private.Verification.isLowercaseHex(claimedHeadSha, digits: 40) else {
                 throw .claimedHeadNotFullSha(claimedHeadSha)
             }
             self.requestId = requestId
