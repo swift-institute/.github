@@ -58,13 +58,82 @@ struct RepositoryPolicyCallerTests {
         #expect(text.contains("    with:\n      lint-bundle: primitives"))
         // R-08 context preservation: the dead wrapper hop's display
         // segment rides the job name, keeping `ci / matrix / <job>`.
-        #expect(text.contains("  ci:\n    name: ci / matrix\n    uses:"))
+        #expect(text.contains(
+            "  ci:\n    if: ${{ !github.event.repository.private }}\n    name: ci / matrix\n    uses:"))
         let withSecrets = Repository.Policy.Caller.Render.direct(
             caller, privateDependencyClosure: true)
         #expect(withSecrets.contains(
             "      SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}"))
         #expect(!withSecrets.contains("PRIVATE_REPO_TOKEN"))
         #expect(!withSecrets.contains("secrets: inherit"))
+    }
+
+    /// Visibility gate (#358 comment 5205099233): the terminal caller is
+    /// one uniform artifact for public and private repositories alike,
+    /// and privacy is expressed by a gate rather than by per-repository
+    /// provisioning. EVERY job of the direct form must carry it — a
+    /// renderer that gated only the `ci` job would still emit valid YAML
+    /// and still pass every other test in this suite, so the assertion is
+    /// made over the parsed job set rather than over one known job id.
+    @Test
+    func everyDirectFormJobCarriesTheVisibilityGate() throws {
+        let gate = "!github.event.repository.private"
+        var corpus: [String] = []
+        for layer in Repository.Policy.Caller.Layer.allCases {
+            let ordinary = try Repository.Policy.Caller(
+                repository: "\(layer.wrapperOrganization)/swift-demo", layer: layer)
+            corpus.append(Repository.Policy.Caller.Render.direct(ordinary))
+            corpus.append(Repository.Policy.Caller.Render.direct(
+                ordinary, privateDependencyClosure: true))
+        }
+        for repository in Repository.Policy.Caller.linterRulePackRepositories {
+            let layer: Repository.Policy.Caller.Layer =
+                repository.hasPrefix("swift-primitives/") ? .primitives
+                : repository.hasPrefix("swift-standards/") ? .standards : .institute
+            corpus.append(Repository.Policy.Caller.Render.direct(
+                try Repository.Policy.Caller(repository: repository, layer: layer)))
+        }
+
+        var totalJobs = 0
+        for text in corpus {
+            let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
+            let jobsIndex = try #require(lines.firstIndex(of: "jobs:"))
+            var current: (id: Substring, gated: Bool)?
+            var jobs: [(id: Substring, gated: Bool)] = []
+            for line in lines[lines.index(after: jobsIndex)...] {
+                if line.hasPrefix("  ") && !line.hasPrefix("    ") && line.hasSuffix(":") {
+                    if let job = current { jobs.append(job) }
+                    current = (id: line.dropFirst(2).dropLast(), gated: false)
+                } else if line.contains(gate) {
+                    current?.gated = true
+                }
+            }
+            if let job = current { jobs.append(job) }
+
+            // Positive control: the parse found jobs at all, so a clean
+            // sweep below is a measurement and not an empty corpus.
+            #expect(!jobs.isEmpty)
+            #expect(jobs.contains { $0.id == "ci" })
+            totalJobs += jobs.count
+            for job in jobs {
+                #expect(job.gated, "job \(job.id) is not visibility-gated")
+            }
+        }
+        // Absence control on the parser itself: the rule-pack leaf really
+        // does contribute a second job, so `jobs` above is not always a
+        // one-element list that a `ci`-only gate would satisfy.
+        #expect(totalJobs > corpus.count)
+    }
+
+    /// The gate belongs to the terminal (`direct`) form only. `current`
+    /// is held at byte parity with the incumbent generator by the F3
+    /// fixture corpus, so it must NOT acquire the gate.
+    @Test
+    func parityFormDoesNotCarryTheVisibilityGate() throws {
+        let caller = try Repository.Policy.Caller(
+            repository: "swift-primitives/swift-bool-primitives", layer: .primitives)
+        #expect(!Repository.Policy.Caller.Render.current(caller)
+            .contains("github.event.repository.private"))
     }
 
     @Test
@@ -97,7 +166,9 @@ struct RepositoryPolicyCallerTests {
             let caller = try Repository.Policy.Caller(repository: repository, layer: layer)
             let text = Repository.Policy.Caller.Render.direct(caller)
             #expect(text.contains("  notify-linter-republish:"))
-            #expect(text.contains("if: github.event_name == 'push' && github.ref == 'refs/heads/main'"))
+            #expect(text.contains(
+                "if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main'"
+                    + " && !github.event.repository.private }}"))
             #expect(text.contains("uses: swift-institute/.github/.github/workflows/notify-linter-republish.yml@main"))
             #expect(text.contains("      SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}"))
             #expect(!text.contains("SWIFT_INSTITUTE_BOT_APP_CLIENT_ID"))
