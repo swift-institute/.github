@@ -1,3 +1,5 @@
+import Byte_Primitives
+import FIPS_180_4
 import Foundation
 
 extension RepositoryPolicy {
@@ -104,7 +106,7 @@ extension RepositoryPolicy.Issue {
             guard grammarVersion == 1 else {
                 throw Error.unsupportedVersion(grammarVersion)
             }
-            guard !source.isEmpty, digest.count == 40, digest.allSatisfy(\.isHexDigit) else {
+            guard !source.isEmpty, FIPS_180_4.SHA1.isDigestHex(digest) else {
                 throw Error.invalidCheckpoint
             }
             self.grammarVersion = grammarVersion
@@ -122,7 +124,7 @@ extension RepositoryPolicy.Issue {
             guard grammarVersion == 1 else {
                 throw Error.unsupportedVersion(grammarVersion)
             }
-            guard revision.count == 40, revision.allSatisfy(\.isHexDigit), !verification.isEmpty
+            guard FIPS_180_4.SHA1.isDigestHex(revision), !verification.isEmpty
             else {
                 throw Error.invalidReceipt
             }
@@ -338,7 +340,9 @@ extension RepositoryPolicy.Issue {
             self.native = native
         }
 
-        public var digest: String { Digest.sha1(body) }
+        public var digest: String {
+            FIPS_180_4.SHA1.digest(Array(body.utf8).map(Byte.init)).hex
+        }
     }
 
     /// The sole pair of guards accepted by an apply operation. Both must
@@ -348,7 +352,7 @@ extension RepositoryPolicy.Issue {
         public let digest: String
 
         public init(revision: String, digest: String) throws {
-            guard !revision.isEmpty, digest.count == 40, digest.allSatisfy(\.isHexDigit) else {
+            guard !revision.isEmpty, FIPS_180_4.SHA1.isDigestHex(digest) else {
                 throw Error.invalidDigest
             }
             self.revision = revision
@@ -428,67 +432,5 @@ extension RepositoryPolicy.Issue {
             \(checkpoint.digest)
             """
         }
-    }
-
-    private enum Digest {
-        static func sha1(_ value: String) -> String {
-            var bytes = Array(value.utf8)
-            let bitCount = UInt64(bytes.count) * 8
-            bytes.append(0x80)
-            while bytes.count % 64 != 56 { bytes.append(0) }
-            bytes += withUnsafeBytes(of: bitCount.bigEndian, Array.init)
-
-            var hash: [UInt32] = [
-                0x6745_2301, 0xEFCD_AB89, 0x98BA_DCFE, 0x1032_5476, 0xC3D2_E1F0,
-            ]
-            for block in stride(from: bytes.startIndex, to: bytes.endIndex, by: 64) {
-                var words = [UInt32](repeating: 0, count: 80)
-                for index in 0..<16 {
-                    let offset = block + (index * 4)
-                    words[index] =
-                        (UInt32(bytes[offset]) << 24)
-                        | (UInt32(bytes[offset + 1]) << 16)
-                        | (UInt32(bytes[offset + 2]) << 8)
-                        | UInt32(bytes[offset + 3])
-                }
-                for index in 16..<80 {
-                    words[index] =
-                        (words[index - 3] ^ words[index - 8] ^ words[index - 14] ^ words[index - 16])
-                        .rotatedLeft(1)
-                }
-                var a = hash[0]
-                var b = hash[1]
-                var c = hash[2]
-                var d = hash[3]
-                var e = hash[4]
-                for index in 0..<80 {
-                    let (f, k): (UInt32, UInt32) =
-                        switch index {
-                        case 0..<20: ((b & c) | (~b & d), 0x5A82_7999)
-                        case 20..<40: (b ^ c ^ d, 0x6ED9_EBA1)
-                        case 40..<60: ((b & c) | (b & d) | (c & d), 0x8F1B_BCDC)
-                        default: (b ^ c ^ d, 0xCA62_C1D6)
-                        }
-                    let next = a.rotatedLeft(5) &+ f &+ e &+ k &+ words[index]
-                    e = d
-                    d = c
-                    c = b.rotatedLeft(30)
-                    b = a
-                    a = next
-                }
-                hash[0] &+= a
-                hash[1] &+= b
-                hash[2] &+= c
-                hash[3] &+= d
-                hash[4] &+= e
-            }
-            return hash.map { String(format: "%08x", $0) }.joined()
-        }
-    }
-}
-
-extension UInt32 {
-    fileprivate func rotatedLeft(_ count: UInt32) -> UInt32 {
-        (self << count) | (self >> (32 - count))
     }
 }
