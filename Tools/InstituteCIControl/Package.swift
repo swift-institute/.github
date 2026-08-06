@@ -8,6 +8,10 @@ let package = Package(
         .macOS(.v26)
     ],
     products: [
+        .executable(
+            name: "institute-ci-control",
+            targets: ["Institute CI Control Command"]
+        ),
         .library(
             name: "GitHub Control",
             targets: ["GitHub Control"]
@@ -46,6 +50,17 @@ let package = Package(
         ),
         .target(
             name: "Private Verification"
+        ),
+        .target(
+            name: "Institute CI Control Application",
+            dependencies: [
+                "GitHub Control", "Fleet Inventory", "Fleet Convergence",
+                "Private Verification",
+            ]
+        ),
+        .executableTarget(
+            name: "Institute CI Control Command",
+            dependencies: ["Institute CI Control Application"]
         ),
         .testTarget(
             name: "Fleet Convergence Tests",
