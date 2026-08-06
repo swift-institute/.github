@@ -104,7 +104,7 @@ extension RepositoryPolicy.Issue {
             guard grammarVersion == 1 else {
                 throw Error.unsupportedVersion(grammarVersion)
             }
-            guard !source.isEmpty, digest.count == 40, digest.allSatisfy(\.isHexDigit) else {
+            guard !source.isEmpty, RepositoryPolicy.isLowercaseHex(digest, digits: 40) else {
                 throw Error.invalidCheckpoint
             }
             self.grammarVersion = grammarVersion
@@ -122,7 +122,7 @@ extension RepositoryPolicy.Issue {
             guard grammarVersion == 1 else {
                 throw Error.unsupportedVersion(grammarVersion)
             }
-            guard revision.count == 40, revision.allSatisfy(\.isHexDigit), !verification.isEmpty
+            guard RepositoryPolicy.isLowercaseHex(revision, digits: 40), !verification.isEmpty
             else {
                 throw Error.invalidReceipt
             }
@@ -348,7 +348,7 @@ extension RepositoryPolicy.Issue {
         public let digest: String
 
         public init(revision: String, digest: String) throws {
-            guard !revision.isEmpty, digest.count == 40, digest.allSatisfy(\.isHexDigit) else {
+            guard !revision.isEmpty, RepositoryPolicy.isLowercaseHex(digest, digits: 40) else {
                 throw Error.invalidDigest
             }
             self.revision = revision
