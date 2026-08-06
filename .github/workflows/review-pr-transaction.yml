@@ -426,9 +426,9 @@ jobs:
                 }
               }
             ' > producer-input.json
-          swift run --package-path Tools/PullRequestTransaction pr-transaction produce producer-input.json \
+          swift run --package-path Tools/pull-request-transaction pr-transaction produce producer-input.json \
             > transaction.json
-          swift run --package-path Tools/PullRequestTransaction pr-transaction review transaction.json
+          swift run --package-path Tools/pull-request-transaction pr-transaction review transaction.json
           # The plan already passed the closed-union `verification` gate
           # above, so its sole top-level key is exactly one of the four
           # known profile names — safe to interpolate into the approval

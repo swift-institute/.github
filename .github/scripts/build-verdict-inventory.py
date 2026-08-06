@@ -26,7 +26,7 @@ for the CURRENT shipped bytes:
   - the token/permissions boundary (every job's `permissions:` block);
   - the cache policy (which paths are cached; confirms `.build/` never is);
   - the required-check context string, cross-checked against
-    `Tools/RepositoryPolicy`'s source-controlled ruleset policy;
+    `Tools/repository-policy`'s source-controlled ruleset policy;
   - each layer wrapper's layer-required jobs that sit OUTSIDE the universal
     verdict, and whether the wrapper's own `ci-ok` gates on them.
 

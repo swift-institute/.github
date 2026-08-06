@@ -35,7 +35,7 @@ reach:
   - cache policy: the one `actions/cache` step caches the SwiftLint
     binary, keyed on its pinned version — never `.build/`;
   - the required-check context string (`ci / ci-ok`), cross-checked against
-    Tools/RepositoryPolicy's source-controlled ruleset policy;
+    Tools/repository-policy's source-controlled ruleset policy;
   - each layer wrapper's layer-required jobs that sit OUTSIDE the universal
     verdict and outside the wrapper's own `ci-ok`: NONE today for any of
     the three layers. Primitives' four such jobs (`embedded`,
@@ -655,7 +655,7 @@ class RequiredCheckContextTests(unittest.TestCase):
     repos/swift-primitives/swift-array-primitives/rulesets during this
     task's execution; see the receipt) is the caller's own job id (`ci`,
     per every consuming package's `.github/workflows/ci.yml` convention)
-    joined with THIS workflow's `ci-ok` job id. Tools/RepositoryPolicy's
+    joined with THIS workflow's `ci-ok` job id. Tools/repository-policy's
     source-controlled ruleset policy hard-codes the same literal
     independently; this test is the cross-file consistency check that a
     rename of the `ci-ok` job id here would silently break.

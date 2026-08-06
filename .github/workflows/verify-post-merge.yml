@@ -40,7 +40,7 @@
 #
 # DESIGN NOTE — classification lives in Swift, dispatch stays bash glue
 # (swift-institute/.github#213): red/green/lost classification and the Bug
-# title/body are PullRequest.Transaction.PostMerge (Tools/PullRequestTransaction), tested with
+# title/body are PullRequest.Transaction.PostMerge (Tools/pull-request-transaction), tested with
 # fixtures per the deny-by-default discipline — the same engine the
 # wave-mode admission predicate lives in. The dispatch-and-poll machinery
 # around it (workflow_dispatch, discovery, status polling) has no decision
@@ -113,8 +113,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          swift build --package-path "Tools/PullRequestTransaction" --product pr-transaction
-          bin_path=$(swift build --package-path "Tools/PullRequestTransaction" --product pr-transaction --show-bin-path)
+          swift build --package-path "Tools/pull-request-transaction" --product pr-transaction
+          bin_path=$(swift build --package-path "Tools/pull-request-transaction" --product pr-transaction --show-bin-path)
           echo "bin-path=${bin_path}" >> "$GITHUB_OUTPUT"
 
       - name: Resolve exact drained repository
@@ -302,7 +302,7 @@ jobs:
             fallback_body=$(cat <<EOF
           ### Observed behavior
 
-          The mandatory post-merge full-tier verification watch on \`${TARGET_REPOSITORY}\` at \`${EXPECTED_HEAD}\` could not be classified: verify-post-merge.yml's own Swift classifier (Tools/PullRequestTransaction) failed to build or run in this job.
+          The mandatory post-merge full-tier verification watch on \`${TARGET_REPOSITORY}\` at \`${EXPECTED_HEAD}\` could not be classified: verify-post-merge.yml's own Swift classifier (Tools/pull-request-transaction) failed to build or run in this job.
 
           ### Expected behavior
 
