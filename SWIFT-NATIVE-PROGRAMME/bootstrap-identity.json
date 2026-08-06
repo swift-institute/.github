@@ -1,0 +1,91 @@
+{
+ "goal": "swift-institute/.github#358",
+ "keyOwner": "Institute.Receipt.Bootstrap.Identity.digest via FIPS_180_4.SHA256 (R37 witness); host YAML performs no hashing",
+ "limbs": {
+  "linux": {
+   "identity": {
+    "architecture": "x86_64",
+    "key": "6447cdee398d6de67e5f1c51c7d27877fe901336c65c21f39d653eaeacda7f4d",
+    "operatingSystem": "linux",
+    "provisioning": [
+     "uuid-dev"
+    ],
+    "sourcesRevision": "64394818c1185ae84d72fedd9ce278f69eb14da8",
+    "toolchain": "swift-6.3.3-release-bookworm",
+    "workspaceRevision": "6e3861935041c9a92d873f0e444da1dd5b666fdb"
+   },
+   "manifest": {
+    "executables": [
+     {
+      "digest": "f5c3c7664074e1aa8511ee06e45a6715ea8d2856bc7ed962414ece7cc59e6920",
+      "path": "bin/institute-ci"
+     }
+    ],
+    "identity": {
+     "architecture": "x86_64",
+     "operatingSystem": "linux",
+     "provisioning": [
+      "uuid-dev"
+     ],
+     "sourcesRevision": "64394818c1185ae84d72fedd9ce278f69eb14da8",
+     "toolchain": "swift-6.3.3-release-bookworm",
+     "workspaceRevision": "6e3861935041c9a92d873f0e444da1dd5b666fdb"
+    },
+    "key": "6447cdee398d6de67e5f1c51c7d27877fe901336c65c21f39d653eaeacda7f4d",
+    "producerRun": "31080609758"
+   },
+   "runs": {
+    "cold-K20": 31079163874,
+    "green-iteration": 31080609758
+   }
+  },
+  "macos": {
+   "manifest": {
+    "executables": [
+     {
+      "digest": "ca8b50992f8b42d74536081cf2eec1d5dfc3db4d5bd8af3dde2ac870fadd7a72",
+      "path": "bin/institute-ci"
+     }
+    ],
+    "identity": {
+     "architecture": "arm64",
+     "operatingSystem": "macos",
+     "provisioning": [
+      "none"
+     ],
+     "sourcesRevision": "64394818c1185ae84d72fedd9ce278f69eb14da8",
+     "toolchain": "xcode-macos-26",
+     "workspaceRevision": "6e3861935041c9a92d873f0e444da1dd5b666fdb"
+    },
+    "key": "3ac905ed82ed19116493c5d9a58a6e0912424e956c6236b73b604682d092046b",
+    "producerRun": "31080609758"
+   },
+   "run": 31080609758
+  },
+  "windows": {
+   "cause": "swift-iso/swift-iso-9945 declares platform-support: apple,linux (platform-identity exclusion); Workspace Application graph requires it unconditionally, so Workspace bootstrap fails compiling ISO 9945 Core on Windows",
+   "measurement": {
+    "job": 92543784267,
+    "run": 31079163874
+   },
+   "resumeOwner": "Workspace (platform-conditioned graph)",
+   "state": "STOP-F10-BOOTSTRAP"
+  }
+ },
+ "packageInputs": {
+  "provisioning": [
+   "uuid-dev"
+  ],
+  "sourcesRevision": "64394818c1185ae84d72fedd9ce278f69eb14da8",
+  "toolchains": {
+   "linux": "swift-6.3.3-release-bookworm (R38 released pin)",
+   "macos": "xcode-macos-26",
+   "windows": "STOP-F10-BOOTSTRAP \u2014 see limbs.windows"
+  },
+  "workspaceRevision": "6e3861935041c9a92d873f0e444da1dd5b666fdb"
+ },
+ "responsibleIdentity": "Claude (Fable 5) implementation session fab35f14, authenticated as coenttb",
+ "schemaVersion": 1,
+ "subIssue": "swift-institute/.github#380",
+ "transaction": "F10"
+}
