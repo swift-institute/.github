@@ -84,7 +84,15 @@ extension Repository.Policy.Caller {
                 "  ci:",
                 "    uses: swift-institute/.github/.github/workflows/swift-ci.yml@main",
             ]
-            lines += withLines(caller)
+            // lint-bundle is a LAYER property the wrapper used to own
+            // (its literal per layer; a package cannot elect a weaker
+            // bundle). The direct form transfers it here explicitly:
+            // without this line, a package with no root Lint.swift would
+            // silently fall to the universal's `institute` default (K-12
+            // property transfer, Goal swift-institute/.github#358).
+            lines.append("    with:")
+            lines.append("      lint-bundle: \(caller.layer.lintBundle)")
+            lines += orderedInputLines(caller)
             if privateDependencyClosure {
                 lines.append("    secrets:")
                 lines.append("      SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}")
@@ -112,11 +120,15 @@ extension Repository.Policy.Caller {
         ]
 
         static func withLines(_ caller: Repository.Policy.Caller) -> [String] {
-            let ordered = Repository.Policy.Caller.approvedTypedInputs.compactMap { key in
-                caller.inputs.first { $0.key == key }.map { "      \(key): \($0.value)" }
-            }
+            let ordered = orderedInputLines(caller)
             guard !ordered.isEmpty else { return [] }
             return ["    with:"] + ordered
+        }
+
+        static func orderedInputLines(_ caller: Repository.Policy.Caller) -> [String] {
+            Repository.Policy.Caller.approvedTypedInputs.compactMap { key in
+                caller.inputs.first { $0.key == key }.map { "      \(key): \($0.value)" }
+            }
         }
     }
 }
