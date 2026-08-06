@@ -19,7 +19,6 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/swift-primitives/swift-byte-primitives", branch: "main"),
-        .package(url: "https://github.com/swift-primitives/swift-binary-base-primitives", branch: "main"),
         .package(url: "https://github.com/swift-standards/swift-fips-180-4", branch: "main"),
     ],
     targets: [
@@ -27,7 +26,6 @@ let package = Package(
             name: "Repository Policy",
             dependencies: [
                 .product(name: "Byte Primitives", package: "swift-byte-primitives"),
-                .product(name: "Binary Base Primitives", package: "swift-binary-base-primitives"),
                 .product(name: "FIPS 180-4", package: "swift-fips-180-4"),
             ]
         ),

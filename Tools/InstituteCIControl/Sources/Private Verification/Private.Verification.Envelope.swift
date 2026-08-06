@@ -1,3 +1,5 @@
+import FIPS_180_4
+
 extension Private.Verification {
     /// The public-safe envelope over a raw verification receipt. The raw
     /// receipt is destroyed after envelope construction by design; the
@@ -41,7 +43,7 @@ extension Private.Verification {
             inventoryDigest: String, inventoryDigestCause: String? = nil,
             requiredOperations: [String]
         ) throws(Error) {
-            guard Private.Verification.isLowercaseHex(bindingDigest, digits: 64) else {
+            guard FIPS_180_4.SHA256.isDigestHex(bindingDigest) else {
                 throw .bindingDigestNotHex64(bindingDigest)
             }
             for (field, value) in [("requestId", requestId), ("policyDigest", policyDigest)] {

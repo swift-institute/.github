@@ -1,3 +1,5 @@
+import FIPS_180_4
+
 extension Private.Verification {
     /// One private-verification request: an opaque request id and the
     /// exact head to verify. Public artifacts carry the request id only;
@@ -20,7 +22,7 @@ extension Private.Verification {
             requiredOperations: [String] = ["build", "test", "nested-tests", "lint", "inventory"]
         ) throws(Error) {
             guard !requestId.isEmpty else { throw .emptyRequestId }
-            guard Private.Verification.isLowercaseHex(claimedHeadSha, digits: 40) else {
+            guard FIPS_180_4.SHA1.isDigestHex(claimedHeadSha) else {
                 throw .claimedHeadNotFullSha(claimedHeadSha)
             }
             self.requestId = requestId
