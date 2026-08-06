@@ -20,6 +20,10 @@ let package = Package(
             name: "Fleet Convergence",
             targets: ["Fleet Convergence"]
         ),
+        .library(
+            name: "Private Verification",
+            targets: ["Private Verification"]
+        ),
     ],
     dependencies: [
         .package(url: "https://github.com/swift-foundations/swift-github.git", branch: "main"),
@@ -40,9 +44,16 @@ let package = Package(
             name: "Fleet Convergence",
             dependencies: ["Fleet Inventory"]
         ),
+        .target(
+            name: "Private Verification"
+        ),
         .testTarget(
             name: "Fleet Convergence Tests",
             dependencies: ["Fleet Convergence"]
+        ),
+        .testTarget(
+            name: "Private Verification Tests",
+            dependencies: ["Private Verification"]
         ),
     ],
     swiftLanguageModes: [.v6]

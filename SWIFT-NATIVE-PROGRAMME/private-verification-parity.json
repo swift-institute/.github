@@ -1,0 +1,22 @@
+{
+ "activation": "NOT activated. STOP-F8-G1 gate armed: full-contract G1 (lint required + verified inventory digest, per R34) is the private-verification activation gate and requires a fresh live run with K-14/K-15 hosted canaries.",
+ "goal": "swift-institute/.github#358",
+ "owner": "Private Verification (Tools/InstituteCIControl)",
+ "publicTypes": [
+  "Private.Verification.Request",
+  "Private.Verification.Envelope",
+  "Private.Verification.Verify",
+  "Private.Verification.Publish"
+ ],
+ "schemaVersion": 1,
+ "semantics": {
+  "envelope": "public-safe surviving coordinate over a destroyed raw receipt; refuses machine-local path leaks, missing required operations, untyped unmeasured inventoryDigest (R34 shape)",
+  "publish": "refuses replay, stale-head publication, unaccepted verify (K-15); publisher never holds the dependency credential",
+  "request": "opaque request id + exact claimed head (full SHA); private coordinates stay opaque in public artifacts (R33)",
+  "verify": "refuses head drift, live credential at candidate execution, unmeasured required operations (K-14)"
+ },
+ "stop": "no stop fired; the activation gate remains the recorded obligation",
+ "subIssue": "swift-institute/.github#375",
+ "tests": "4/4 green via workspace package test --fresh",
+ "transaction": "F8 (models)"
+}
