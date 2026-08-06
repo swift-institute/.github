@@ -325,7 +325,9 @@ jobs:
     # bypass for those two checks specifically.
     if: ${{ !github.event.repository.private }}
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 60: the F12 cold bootstrap (Workspace source build of institute-ci)
+    # runs here on a cache miss (~30 min); warm-cache runs stay seconds.
+    timeout-minutes: 60
     permissions:
       contents: read
     outputs:
@@ -482,6 +484,24 @@ jobs:
           repository: swift-institute/.github
           ref: ${{ job.workflow_sha }}
           path: .ci-scripts
+      # F12 (Goal swift-institute/.github#358): the fast-check below drops
+      # .ci-scripts before scanning, so the Institute CI sources and their
+      # exact content identity are stashed here first — same trust anchor
+      # (this checkout at job.workflow_sha), no additional checkout.
+      # sourcesRevision is the git tree OID of Tools/InstituteCI: exact
+      # content identity that does not churn on unrelated commits. An OID
+      # that is not 40-hex refuses fail-closed rather than minting a
+      # malformed cache key.
+      - name: Institute CI source identity
+        if: ${{ inputs.job == '' }}
+        id: institute-ci-identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCES_TREE="$(git -C "${GITHUB_WORKSPACE}/.ci-scripts" rev-parse "HEAD:Tools/InstituteCI")"
+          [[ "$SOURCES_TREE" =~ ^[0-9a-f]{40}$ ]] || { echo "refusing malformed Institute CI tree OID: '$SOURCES_TREE'" >&2; exit 1; }
+          cp -R "${GITHUB_WORKSPACE}/.ci-scripts/Tools/InstituteCI" "${RUNNER_TEMP}/institute-ci-sources"
+          echo "sources-tree=$SOURCES_TREE" >> "$GITHUB_OUTPUT"
       - name: Identity-conflict fast-check
         if: ${{ inputs.job == '' }}
         shell: bash
@@ -523,6 +543,80 @@ jobs:
             --orgs-file "${RUNNER_TEMP}/orgs.yaml" \
             --baseline "${RUNNER_TEMP}/branch-pin-baseline"
 
+      # ─── F12: Institute CI bootstrap (Goal swift-institute/.github#358) ───
+      # The plan and ci-ok decisions execute in the Swift owner
+      # (institute-ci: CI Contract + Institute Receipt), built at exact
+      # sources through the sanctioned Workspace coordinate (F10). The
+      # cache is acceleration only: every restored entry is provenance-
+      # verified by `bootstrap-verify` before any trust (corrupt or
+      # wrong-identity entries refuse fail-closed, run 31080609758).
+      # Cache-key transport is the raw identity tuple (each component an
+      # exact 40-hex revision or frozen literal) because the witness
+      # digest is computed by institute-ci itself and cannot exist before
+      # the binary does on a cold consumer; the digest identity is still
+      # minted into, and verified against, the entry manifest. Recorded
+      # as a typed deviation on #390. The sources and their tree OID were
+      # stashed by "Institute CI source identity" above, before the
+      # identity-conflict fast-check dropped the scripts checkout.
+      - name: Restore Institute CI (exact key, acceleration only)
+        if: ${{ inputs.job == '' }}
+        id: institute-ci-restore
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .institute-ci-entry
+          key: institute-ci-${{ steps.institute-ci-identity.outputs.sources-tree }}-6e3861935041c9a92d873f0e444da1dd5b666fdb-linux-x86_64-swift-6.3-static
+      - name: Swift toolchain (cold bootstrap only)
+        if: ${{ inputs.job == '' && steps.institute-ci-restore.outputs.cache-hit != 'true' }}
+        uses: SwiftyLab/setup-swift@38f54a76b70d989321de9dc7c840618c08cf56e9  # v1.14.0
+        with:
+          swift-version: "6.3"
+      - name: Checkout Workspace at exact main pin (cold bootstrap only)
+        if: ${{ inputs.job == '' && steps.institute-ci-restore.outputs.cache-hit != 'true' }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: swift-institute/Workspace
+          # Advance with pin-advance flow; must stay a full SHA (branch-pin guard).
+          ref: 6e3861935041c9a92d873f0e444da1dd5b666fdb
+          path: .workspace
+          persist-credentials: false
+      - name: Cold bootstrap through the sanctioned Workspace coordinate
+        if: ${{ inputs.job == '' && steps.institute-ci-restore.outputs.cache-hit != 'true' }}
+        shell: bash
+        env:
+          SOURCES_TREE: ${{ steps.institute-ci-identity.outputs.sources-tree }}
+        run: |
+          set -euo pipefail
+          # uuid-dev: the typed F2/F10 provisioning input (swift-linux-standard's
+          # CLinuxKernelShim includes uuid/uuid.h); absent on the bare runner.
+          sudo apt-get update -qq && sudo apt-get install -qq -y uuid-dev
+          swift run --package-path .workspace/Application workspace package build --package-path "${RUNNER_TEMP}/institute-ci-sources" --argument=--static-swift-stdlib
+          mkdir -p .institute-ci-entry/bin
+          cp "$(find "${RUNNER_TEMP}/institute-ci-sources/.build" -name institute-ci -type f -perm /111 | head -1)" .institute-ci-entry/bin/institute-ci
+          .institute-ci-entry/bin/institute-ci bootstrap-manifest --workspace-revision 6e3861935041c9a92d873f0e444da1dd5b666fdb --sources-revision "$SOURCES_TREE" --toolchain swift-6.3 --os linux --arch x86_64 --provisioning uuid-dev,static-swift-stdlib --root .institute-ci-entry --executables bin/institute-ci --producer-run "$GITHUB_RUN_ID" > .institute-ci-entry/manifest.json
+      - name: Save Institute CI cache entry (cold bootstrap only)
+        if: ${{ inputs.job == '' && steps.institute-ci-restore.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .institute-ci-entry
+          key: institute-ci-${{ steps.institute-ci-identity.outputs.sources-tree }}-6e3861935041c9a92d873f0e444da1dd5b666fdb-linux-x86_64-swift-6.3-static
+      - name: Verify Institute CI provenance before trust (fail closed)
+        if: ${{ inputs.job == '' }}
+        shell: bash
+        env:
+          SOURCES_TREE: ${{ steps.institute-ci-identity.outputs.sources-tree }}
+        run: |
+          set -euo pipefail
+          .institute-ci-entry/bin/institute-ci bootstrap-verify --workspace-revision 6e3861935041c9a92d873f0e444da1dd5b666fdb --sources-revision "$SOURCES_TREE" --toolchain swift-6.3 --os linux --arch x86_64 --provisioning uuid-dev,static-swift-stdlib --root .institute-ci-entry --manifest .institute-ci-entry/manifest.json
+      # Body executed by the Swift owner since F12 (Goal
+      # swift-institute/.github#358): tier/leg/gating selection is
+      # CI.Contract.Plan in institute-ci, differentially proven against the
+      # retired shell (F4 16+11 cases; F11 443+20 cases + 2 live replays,
+      # zero unexplained differences, SWIFT-NATIVE-PROGRAMME/
+      # shadow-parity.json at 2c74d326). One deliberate tightening: an
+      # unknown forced tier now refuses up front even on refs/heads/main,
+      # where the shell rewrote it to `full` before validating. The jq
+      # calls below are direct typed output mapping (three fields of the
+      # plan JSON to step outputs), not policy.
       - name: Classify tier
         id: classify
         shell: bash
@@ -534,187 +628,10 @@ jobs:
           LINT_BUNDLE: ${{ inputs.lint-bundle }}
         run: |
           set -euo pipefail
-          # swift-institute/.github#276 Task 1-03: `lint-bundle` is the one
-          # existing layer-selection channel (set by the layer wrapper, never
-          # by a package) and is now also read here — before ANY job,
-          # gating or advisory, provisions anything — to decide which
-          # Primitives-only advisory legs this run selects. Validated here
-          # too, redundantly with the swift-linter job's own later check
-          # (that job's comment already documents this as "the fast half of
-          # a fail-closed pair, not the only guard"): an invalid token must
-          # not let the Primitives cross-compile legs spin up containers
-          # before failing.
-          case "$LINT_BUNDLE" in
-            primitives|standards|institute) ;;
-            *)
-              echo "::error::lint-bundle '$LINT_BUNDLE' is not one of primitives|standards|institute. This selects which layer-specific advisory legs this run selects; refusing to guess one."
-              exit 1
-              ;;
-          esac
-          # The CI subject (repository/ref/SHA this run attests) is resolved
-          # exactly once, above, by "Resolve CI subject" — this step no
-          # longer computes or re-derives it; see that step's outputs
-          # (`needs.plan.outputs.subject-repository` / `subject-ref` /
-          # `subject-sha`) for the single source of truth.
-          if [ -n "$PLATFORM_SUPPORT" ]; then
-            REMAINING_FAMILIES="$PLATFORM_SUPPORT"
-            SEEN_FAMILIES=","
-            while [ -n "$REMAINING_FAMILIES" ]; do
-              case "$REMAINING_FAMILIES" in
-                *,*)
-                  FAMILY="${REMAINING_FAMILIES%%,*}"
-                  REMAINING_FAMILIES="${REMAINING_FAMILIES#*,}"
-                  ;;
-                *)
-                  FAMILY="$REMAINING_FAMILIES"
-                  REMAINING_FAMILIES=""
-                  ;;
-              esac
-              case "$FAMILY" in
-                apple|linux|windows) ;;
-                *)
-                  echo "::error::invalid platform-support family '$FAMILY' in '$PLATFORM_SUPPORT'"
-                  exit 1
-                  ;;
-              esac
-              case "$SEEN_FAMILIES" in
-                *",$FAMILY,"*)
-                  echo "::error::duplicate platform-support family '$FAMILY' in '$PLATFORM_SUPPORT'"
-                  exit 1
-                  ;;
-              esac
-              SEEN_FAMILIES="${SEEN_FAMILIES}${FAMILY},"
-            done
-            case "$PLATFORM_SUPPORT" in
-              *,)
-                echo "::error::platform-support contains an empty trailing family: '$PLATFORM_SUPPORT'"
-                exit 1
-                ;;
-            esac
-          fi
-          TIER="$FORCED_TIER"
-          # Retired 2026-07-28. Reject rather than silently promote to build:
-          # a caller still passing 'lint' believes it is getting a cheap run
-          # and should learn that the cheap run no longer exists.
-          if [ "$TIER" = "lint" ]; then
-            echo "::error::tier 'lint' was retired 2026-07-28. It selected no build leg, and ci-ok counted the resulting skips as passes, so it reported success over a run that compiled nothing. Pass 'build' (or nothing) or 'full'."
-            exit 1
-          fi
-          # Tag refs always get the full platform contract (release boundary).
-          if [ -z "$TIER" ]; then
-            case "$GITHUB_REF" in refs/tags/*) TIER="full" ;; esac
-          fi
-          # Commit-token override (push events; HEAD_MSG empty on PR events).
-          # '[ci lint]' is deliberately absent: it now falls through to build.
-          if [ -z "$TIER" ]; then
-            case "$HEAD_MSG" in
-              *"[ci full]"*)  TIER="full" ;;
-              *"[ci build]"*) TIER="build" ;;
-            esac
-          fi
-          # Manual consumer dispatch = final qualification → full. Pull
-          # requests exercise the build tier before merge; a separate manual
-          # full run is reserved for the integration/landing boundary.
-          #
-          # The classifier and gating set are also covered by
-          # .github/scripts/tests/test-ci-ok-aggregate.py, which extracts this
-          # script and runs it directly against the event and tier boundaries.
-          # Keep those controls in lockstep with this policy.
-          if [ -z "$TIER" ] && [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            TIER="full"
-          fi
-          # The integration branch needs the complete platform contract. An
-          # input may request extra coverage elsewhere, but it may never weaken
-          # this evidence boundary.
-          if [ "$GITHUB_REF" = "refs/heads/main" ]; then
-            TIER="full"
-          fi
-          [ -n "$TIER" ] || TIER="build"
-          case "$TIER" in
-            build)
-              case ",$PLATFORM_SUPPORT," in
-                ",,"|*,linux,*) PRIMARY_BUILD="linux-release" ;;
-                *,windows,*) PRIMARY_BUILD="windows-release" ;;
-                *,apple,*) PRIMARY_BUILD="macos-release" ;;
-                *)
-                  echo "::error::platform-support has no recognized platform family: '$PLATFORM_SUPPORT'"
-                  exit 1
-                  ;;
-              esac
-              # linux-6-4 rides the build tier as of 2026-07-28 so every
-              # ordinary push produces a Swift 6.4 result, instead of only the
-              # nightly full-tier sweep. It stays ADVISORY — see the job.
-              LEGS="format,lint,swift-linter,$PRIMARY_BUILD,linux-6-4"
-              ;;
-            full)  LEGS="format,lint,swift-linter,linux-release,macos-release,windows-release,linux-nightly,linux-6-4,apple-simulator-build,lint-yaml,lint-broken-symlink,lint-license-header,lint-test-support-spine,advisory-summary" ;;
-            *) echo "::error::Unknown tier '$TIER' (expected build|full)"; exit 1 ;;
-          esac
-          # swift-institute/.github#276 Task 1-03 (relocation, not promotion):
-          # the four Primitives-layer cross-compile legs, moved here from the
-          # Primitives wrapper's own job list. Appended in BOTH tiers,
-          # mirroring linux-6-4's precedent immediately above ("rides every
-          # ordinary push, stays advisory") — the wrapper's own copies of
-          # these jobs previously ran unconditionally on every trigger with
-          # no tier concept at all, so riding both tiers here is what
-          # preserves that existing behavior rather than narrowing it to
-          # full-tier-only. None of the four is mandatory by the layer's own
-          # documented criteria (nightly-instability precedent for
-          # `embedded`; an explicit, currently-unmet soak exit criterion for
-          # `embedded-wasm-sdk`/`android-build`; no flip criterion ever
-          # defined for `static-linux-musl-build` — see
-          # swift-institute/Research/wasm-ci-strategy-and-sdk-toolchain-coupling.md
-          # and the Task 1-01 receipt), so they stay OUT of `GATING` below —
-          # the case arms there are unchanged, and these four job ids match
-          # none of them, which is what keeps them advisory automatically.
-          if [ "$LINT_BUNDLE" = "primitives" ]; then
-            LEGS="${LEGS},embedded,embedded-wasm-sdk,android-build,static-linux-musl-build"
-          fi
-          # Apply the platform-support exclusion to `legs` itself, so `legs`
-          # is the ONE list of what this run expects to execute. The build
-          # tier already picked a supported primary; this is what narrows the
-          # full tier.
-          if [ -n "$PLATFORM_SUPPORT" ]; then
-            KEPT=""
-            for LEG in $(tr ',' ' ' <<< "$LEGS"); do
-              case "$LEG" in
-                macos-release|apple-simulator-build) FAMILY="apple" ;;
-                linux-release|linux-nightly|linux-6-4) FAMILY="linux" ;;
-                windows-release) FAMILY="windows" ;;
-                *) FAMILY="" ;;
-              esac
-              if [ -n "$FAMILY" ]; then
-                case ",$PLATFORM_SUPPORT," in
-                  *",$FAMILY,"*) ;;
-                  *) continue ;;
-                esac
-              fi
-              KEPT="${KEPT:+$KEPT,}$LEG"
-            done
-            LEGS="$KEPT"
-          fi
-          # The gating subset — exactly ci-ok's needs minus `plan`. ci-ok
-          # requires each of these to have SUCCEEDED and every other gating
-          # job to have SKIPPED, which is what makes a leg that quietly stops
-          # running a failure instead of a green.
-          GATING=""
-          BUILD_LEGS=""
-          for LEG in $(tr ',' ' ' <<< "$LEGS"); do
-            case "$LEG" in
-              format|lint|swift-linter)
-                GATING="${GATING:+$GATING,}$LEG" ;;
-              macos-release|linux-release|windows-release)
-                GATING="${GATING:+$GATING,}$LEG"
-                BUILD_LEGS="${BUILD_LEGS:+$BUILD_LEGS,}$LEG" ;;
-            esac
-          done
-          # Fail closed on a build-free plan. Unreachable while both tiers
-          # carry a release leg; it is here so that a future tier, or a
-          # platform-support value that filters every build leg away, cannot
-          # quietly reintroduce the vacuous green this replaced.
-          if [ -z "$BUILD_LEGS" ]; then
-            echo "::error::tier '$TIER' with platform-support '$PLATFORM_SUPPORT' selected no gating build leg. ci-ok would attest a run that compiled nothing; refusing to plan it."
-            exit 1
-          fi
+          PLAN_JSON="$(.institute-ci-entry/bin/institute-ci plan --tier "$FORCED_TIER" --ref "$GITHUB_REF" --head-message "$HEAD_MSG" --event "$EVENT_NAME" --platform-support "$PLATFORM_SUPPORT" --lint-bundle "$LINT_BUNDLE")"
+          TIER="$(jq -r '.tier' <<< "$PLAN_JSON")"
+          LEGS="$(jq -r '.legs' <<< "$PLAN_JSON")"
+          GATING="$(jq -r '.gating' <<< "$PLAN_JSON")"
           echo "tier=$TIER" >> "$GITHUB_OUTPUT"
           echo "legs=$LEGS" >> "$GITHUB_OUTPUT"
           echo "gating=$GATING" >> "$GITHUB_OUTPUT"
@@ -722,13 +639,11 @@ jobs:
           echo "legs: $LEGS"
           echo "gating: $GATING"
           {
-            echo "## CI tier: \`$TIER\`"
+            echo "## CI tier: \`$TIER\` (planned by institute-ci)"
             echo ""
             echo "Selected legs: \`$LEGS\`"
             echo ""
-            echo "Gating legs (every one must SUCCEED for \`ci-ok\`): \`$GATING\`"
-            echo ""
-            echo "Tags, '[ci full]', ci-sweep, and consumer workflow_dispatch force the full platform contract. \`ci-ok\` attests the SELECTED tier and names it — a gating leg that is skipped without appearing here fails the run (2026-07-28)."
+            echo "Gating: \`$GATING\`. \`ci-ok\` attests the SELECTED tier and names it — a gating leg that is skipped without appearing here fails the run (2026-07-28)."
           } >> "$GITHUB_STEP_SUMMARY"
 
   macos-release:
@@ -2608,7 +2523,8 @@ jobs:
       - lint
       - swift-linter
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # 60: same cold-bootstrap allowance as plan (F12).
+    timeout-minutes: 60
     permissions:
       contents: read
       # TX7 receipt contract (swift-institute/.github#276 §8.9): this
@@ -2621,6 +2537,68 @@ jobs:
       # .github/scripts/tests/test-ci-ok-aggregate.py — which extracts it from
       # THIS file so the bytes under test are the bytes that ship. Keep the
       # step name stable; the extractor keys on it and fails if it is gone.
+      - name: Checkout swift-institute/.github (receipt helper at this workflow's own ref)
+        if: ${{ always() }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: swift-institute/.github
+          ref: ${{ job.workflow_sha }}
+          path: institute-receipt
+
+      # ─── F12: Institute CI bootstrap (see plan job comment; #358/#390).
+      # Plan ran first in this same workflow run, so the exact-key entry is
+      # normally warm; the cold path is byte-identical to plan's.
+      - name: Institute CI source identity
+        id: institute-ci-identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "sources-tree=$(git -C institute-receipt rev-parse "HEAD:Tools/InstituteCI")" >> "$GITHUB_OUTPUT"
+      - name: Restore Institute CI (exact key, acceleration only)
+        id: institute-ci-restore
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .institute-ci-entry
+          key: institute-ci-${{ steps.institute-ci-identity.outputs.sources-tree }}-6e3861935041c9a92d873f0e444da1dd5b666fdb-linux-x86_64-swift-6.3-static
+      - name: Swift toolchain (cold bootstrap only)
+        if: ${{ steps.institute-ci-restore.outputs.cache-hit != 'true' }}
+        uses: SwiftyLab/setup-swift@38f54a76b70d989321de9dc7c840618c08cf56e9  # v1.14.0
+        with:
+          swift-version: "6.3"
+      - name: Checkout Workspace at exact main pin (cold bootstrap only)
+        if: ${{ steps.institute-ci-restore.outputs.cache-hit != 'true' }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: swift-institute/Workspace
+          ref: 6e3861935041c9a92d873f0e444da1dd5b666fdb
+          path: .workspace
+          persist-credentials: false
+      - name: Cold bootstrap through the sanctioned Workspace coordinate
+        if: ${{ steps.institute-ci-restore.outputs.cache-hit != 'true' }}
+        shell: bash
+        env:
+          SOURCES_TREE: ${{ steps.institute-ci-identity.outputs.sources-tree }}
+        run: |
+          set -euo pipefail
+          # uuid-dev: the typed F2/F10 provisioning input (swift-linux-standard's
+          # CLinuxKernelShim includes uuid/uuid.h); absent on the bare runner.
+          sudo apt-get update -qq && sudo apt-get install -qq -y uuid-dev
+          swift run --package-path .workspace/Application workspace package build --package-path "$GITHUB_WORKSPACE/institute-receipt/Tools/InstituteCI" --argument=--static-swift-stdlib
+          mkdir -p .institute-ci-entry/bin
+          cp "$(find institute-receipt/Tools/InstituteCI/.build -name institute-ci -type f -perm /111 | head -1)" .institute-ci-entry/bin/institute-ci
+          .institute-ci-entry/bin/institute-ci bootstrap-manifest --workspace-revision 6e3861935041c9a92d873f0e444da1dd5b666fdb --sources-revision "$SOURCES_TREE" --toolchain swift-6.3 --os linux --arch x86_64 --provisioning uuid-dev,static-swift-stdlib --root .institute-ci-entry --executables bin/institute-ci --producer-run "$GITHUB_RUN_ID" > .institute-ci-entry/manifest.json
+      - name: Verify Institute CI provenance before trust (fail closed)
+        shell: bash
+        env:
+          SOURCES_TREE: ${{ steps.institute-ci-identity.outputs.sources-tree }}
+        run: |
+          set -euo pipefail
+          .institute-ci-entry/bin/institute-ci bootstrap-verify --workspace-revision 6e3861935041c9a92d873f0e444da1dd5b666fdb --sources-revision "$SOURCES_TREE" --toolchain swift-6.3 --os linux --arch x86_64 --provisioning uuid-dev,static-swift-stdlib --root .institute-ci-entry --manifest .institute-ci-entry/manifest.json
+      # Body executed by the Swift owner since F12 (#358/#390):
+      # CI.Contract.AggregateVerdict in institute-ci, differentially proven
+      # against the retired shell (F4/F11, exit-status equality across all
+      # 20 aggregate shapes). Its exit status is the verdict; findings go
+      # to stderr and the summary below.
       - name: Aggregate required-job results
         shell: bash
         env:
@@ -2632,90 +2610,27 @@ jobs:
           REQUIRE_FULL_TIER: ${{ github.ref == 'refs/heads/main' }}
         run: |
           set -euo pipefail
-          # ubuntu-latest pre-installs jq.
-          RC=0
-
-          PLAN_RESULT="$(jq -r '.plan.result' <<< "$NEEDS_JSON")"
-          if [ "$PLAN_RESULT" != "success" ]; then
-            echo "::error::plan did not succeed (result: $PLAN_RESULT) — no verification tier was established, so there is nothing to attest."
-            RC=1
-          fi
-          if [ -z "${PLANNED_GATING:-}" ]; then
-            echo "::error::the plan named no gating legs. A run with nothing required cannot report success."
-            RC=1
-          fi
-          # Non-empty is the only check here. This step used to also
-          # recompute an independent "expected" subject from raw event
-          # context and fail on any mismatch — but that recomputation never
-          # accounted for `inputs.target-repo`/`inputs.ref`, so it disagreed
-          # with Plan's correctly resolved subject on EVERY dispatched run
-          # (ci-sweep.yml, ci-dispatch.yml) and would have turned every such
-          # run red by construction. Plan is the single subject-resolution
-          # authority (see "Resolve CI subject"); re-deriving a second
-          # opinion here reintroduces exactly the class of bug this task
-          # closes. Plan already fails closed on an empty/unresolvable
-          # subject and every leg checkout verifies its own checked-out HEAD
-          # against Plan's subject-sha, so there is nothing left for a
-          # second, independent recomputation to usefully catch.
-          if [ -z "${PLANNED_SUBJECT_REPOSITORY:-}" ] || [ -z "${PLANNED_SUBJECT_SHA:-}" ]; then
-            echo "::error::the plan named an empty CI subject; ci-ok cannot attest an unspecified revision."
-            RC=1
-          fi
+          FLAGS=()
           if [ "$REQUIRE_FULL_TIER" = "true" ]; then
-            if [ "$PLANNED_TIER" != "full" ]; then
-              echo "::error::main integration evidence requires the full tier; got '${PLANNED_TIER:-empty}'. Every selected full gating leg must succeed below."
-              RC=1
-            fi
+            FLAGS+=(--require-full-tier)
           fi
-
-          BUILT=""
-          RESULTS=""
-          while IFS= read -r JOB; do
-            if [ -z "$JOB" ] || [ "$JOB" = "plan" ]; then
-              continue
-            fi
-            RESULT="$(jq -r --arg j "$JOB" '.[$j].result' <<< "$NEEDS_JSON")"
-            case ",${PLANNED_GATING:-}," in
-              *",$JOB,"*) EXPECTED="success" ;;
-              *)          EXPECTED="skipped" ;;
-            esac
-            if [ "$RESULT" != "$EXPECTED" ]; then
-              if [ "$EXPECTED" = "success" ]; then
-                echo "::error::gating leg '$JOB' was selected by the plan but its result is '$RESULT', not 'success'. A selected leg that does not pass — including one that silently skips — fails this run."
-              else
-                echo "::error::gating leg '$JOB' ran (result '$RESULT') without the plan selecting it. The plan and the job guards have drifted apart; one of them is wrong."
-              fi
-              RC=1
-            fi
-            case "$JOB" in
-              macos-release|linux-release|windows-release)
-                if [ "$RESULT" = "success" ]; then
-                  BUILT="${BUILT:+$BUILT,}$JOB"
-                fi
-                ;;
-            esac
-            RESULTS="${RESULTS}| \`$JOB\` | $EXPECTED | $RESULT |"$'\n'
-          done < <(jq -r 'keys[]' <<< "$NEEDS_JSON")
-
-          if [ -z "$BUILT" ]; then
-            echo "::error::no gating build leg succeeded — this run compiled nothing. ci-ok attests a build, not a lint pass."
-            RC=1
-          fi
-
+          RC=0
+          VERDICT="$(.institute-ci-entry/bin/institute-ci aggregate --needs-json "$NEEDS_JSON" --gating "$PLANNED_GATING" --subject-repository "$PLANNED_SUBJECT_REPOSITORY" --subject-sha "$PLANNED_SUBJECT_SHA" --tier "$PLANNED_TIER" "${FLAGS[@]}" 2> >(tee /tmp/aggregate-findings.txt >&2))" || RC=$?
           {
             if [ "$RC" -eq 0 ]; then
-              echo "## ci-ok: pass (tier \`${PLANNED_TIER:-unknown}\`)"
+              echo "## ci-ok: pass (tier \`${PLANNED_TIER:-unknown}\`, aggregated by institute-ci)"
             else
-              echo "## ci-ok: FAIL (tier \`${PLANNED_TIER:-unknown}\`)"
+              echo "## ci-ok: FAIL (tier \`${PLANNED_TIER:-unknown}\`, aggregated by institute-ci)"
             fi
             echo ""
-            echo "Attested: built on \`${BUILT:-nothing}\`. Gating legs selected by the plan: \`${PLANNED_GATING:-none}\`."
-            echo ""
-            echo "| Gating job | Expected | Result |"
-            echo "| --- | --- | --- |"
-            printf '%s' "$RESULTS"
+            echo "Gating legs selected by the plan: \`${PLANNED_GATING:-none}\`. Verdict: \`${VERDICT:-none}\`."
+            if [ -s /tmp/aggregate-findings.txt ]; then
+              echo ""
+              echo '```'
+              cat /tmp/aggregate-findings.txt
+              echo '```'
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
-
           exit "$RC"
 
       # ─── Effective runtime receipt (TX7, swift-institute/.github#276 §8.9) ──
@@ -2726,14 +2641,6 @@ jobs:
       # run is in progress. The post-completion collector
       # (augment-effective-runtime-receipt.py) is invoked from repository
       # root after status=completed, never from this job.
-      - name: Checkout swift-institute/.github (receipt helper at this workflow's own ref)
-        if: ${{ always() }}
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: swift-institute/.github
-          ref: ${{ job.workflow_sha }}
-          path: institute-receipt
-
       - name: Produce preterminal effective runtime receipt
         id: receipt
         if: ${{ always() }}
