@@ -536,9 +536,9 @@
           "Checkout subject",
           "Verify checked-out subject HEAD",
           "Checkout CI scripts",
+          "Institute CI source identity",
           "Identity-conflict fast-check",
           "Branch-pin guard",
-          "Institute CI source identity",
           "Restore Institute CI (exact key, acceleration only)",
           "Swift toolchain (cold bootstrap only)",
           "Checkout Workspace at exact main pin (cold bootstrap only)",
@@ -643,7 +643,7 @@
       "skipped"
     ],
     "required_check_context": "ci / matrix / ci-ok",
-    "source_sha256": "114d694fafafc81b5a21ae0f42ac3f2b8cb02f88f910c74b2c1692f514f8c626"
+    "source_sha256": "ee60810e02449f91040f511fd555b841f1dc6e7e72f65693ea27aba2bc966dcb"
   },
   "wrappers": {
     "foundations": {
