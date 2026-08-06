@@ -484,6 +484,24 @@ jobs:
           repository: swift-institute/.github
           ref: ${{ job.workflow_sha }}
           path: .ci-scripts
+      # F12 (Goal swift-institute/.github#358): the fast-check below drops
+      # .ci-scripts before scanning, so the Institute CI sources and their
+      # exact content identity are stashed here first — same trust anchor
+      # (this checkout at job.workflow_sha), no additional checkout.
+      # sourcesRevision is the git tree OID of Tools/InstituteCI: exact
+      # content identity that does not churn on unrelated commits. An OID
+      # that is not 40-hex refuses fail-closed rather than minting a
+      # malformed cache key.
+      - name: Institute CI source identity
+        if: ${{ inputs.job == '' }}
+        id: institute-ci-identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCES_TREE="$(git -C "${GITHUB_WORKSPACE}/.ci-scripts" rev-parse "HEAD:Tools/InstituteCI")"
+          [[ "$SOURCES_TREE" =~ ^[0-9a-f]{40}$ ]] || { echo "refusing malformed Institute CI tree OID: '$SOURCES_TREE'" >&2; exit 1; }
+          cp -R "${GITHUB_WORKSPACE}/.ci-scripts/Tools/InstituteCI" "${RUNNER_TEMP}/institute-ci-sources"
+          echo "sources-tree=$SOURCES_TREE" >> "$GITHUB_OUTPUT"
       - name: Identity-conflict fast-check
         if: ${{ inputs.job == '' }}
         shell: bash
@@ -537,16 +555,9 @@ jobs:
       # digest is computed by institute-ci itself and cannot exist before
       # the binary does on a cold consumer; the digest identity is still
       # minted into, and verified against, the entry manifest. Recorded
-      # as a typed deviation on #390. sourcesRevision is the git tree OID
-      # of Tools/InstituteCI at the resolved workflow revision — exact
-      # content identity that does not churn on unrelated commits.
-      - name: Institute CI source identity
-        if: ${{ inputs.job == '' }}
-        id: institute-ci-identity
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo "sources-tree=$(git -C .ci-scripts rev-parse "HEAD:Tools/InstituteCI")" >> "$GITHUB_OUTPUT"
+      # as a typed deviation on #390. The sources and their tree OID were
+      # stashed by "Institute CI source identity" above, before the
+      # identity-conflict fast-check dropped the scripts checkout.
       - name: Restore Institute CI (exact key, acceleration only)
         if: ${{ inputs.job == '' }}
         id: institute-ci-restore
@@ -578,9 +589,9 @@ jobs:
           # uuid-dev: the typed F2/F10 provisioning input (swift-linux-standard's
           # CLinuxKernelShim includes uuid/uuid.h); absent on the bare runner.
           sudo apt-get update -qq && sudo apt-get install -qq -y uuid-dev
-          swift run --package-path .workspace/Application workspace package build --package-path "$GITHUB_WORKSPACE/.ci-scripts/Tools/InstituteCI"
+          swift run --package-path .workspace/Application workspace package build --package-path "${RUNNER_TEMP}/institute-ci-sources"
           mkdir -p .institute-ci-entry/bin
-          cp "$(find .ci-scripts/Tools/InstituteCI/.build -name institute-ci -type f -perm /111 | head -1)" .institute-ci-entry/bin/institute-ci
+          cp "$(find "${RUNNER_TEMP}/institute-ci-sources/.build" -name institute-ci -type f -perm /111 | head -1)" .institute-ci-entry/bin/institute-ci
           .institute-ci-entry/bin/institute-ci bootstrap-manifest --workspace-revision 6e3861935041c9a92d873f0e444da1dd5b666fdb --sources-revision "$SOURCES_TREE" --toolchain swift-6.3 --os linux --arch x86_64 --provisioning uuid-dev --root .institute-ci-entry --executables bin/institute-ci --producer-run "$GITHUB_RUN_ID" > .institute-ci-entry/manifest.json
       - name: Save Institute CI cache entry (cold bootstrap only)
         if: ${{ inputs.job == '' && steps.institute-ci-restore.outputs.cache-hit != 'true' }}
