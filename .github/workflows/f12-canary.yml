@@ -5,7 +5,9 @@
 name: f12-canary
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - f12-central-swift
 
 permissions:
   contents: read
