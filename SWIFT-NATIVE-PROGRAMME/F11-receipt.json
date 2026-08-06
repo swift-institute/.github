@@ -1,0 +1,109 @@
+{
+ "schemaVersion": 1,
+ "transaction": "F11",
+ "goal": "swift-institute/.github#358",
+ "subIssue": "swift-institute/.github#388",
+ "responsibleIdentity": "independent verifier lane, session fab35f14",
+ "head": "7bf60943204e453064213010617a90d6162be44b",
+ "worktree": "independent worktree of swift-institute/.github at origin/main; branch f11-shadow-parity",
+ "build": "workspace package build --package-path Tools/InstituteCI (Build complete!); binary Tools/InstituteCI/.build/out/Products/Debug/institute-ci",
+ "independence": "prior F4 parity claims (ci-contract-parity.json: 16 plan + 11 aggregate cases, 0 divergences) were NOT trusted; the extraction, corpus, and comparison were reimplemented from the workflow bytes at head and rerun from scratch",
+ "corpus": {
+  "planCases": 443,
+  "planDesign": "cross grids over event (push/pull_request/workflow_dispatch) x ref (main/feature/tag) x forced tier (''/build/full/lint/bogus) x head-message markers (''/[ci full]/[ci build]/both/[ci lint]); platform-support x lint-bundle grid at both tiers covering every family combination plus invalid, duplicate, trailing-comma, leading-comma, bare-comma, embedded-space, uppercase, and mixed-invalid tokens; lint-bundle primitives/standards/institute/''/bogus/Primitives; main-ref narrowing, dispatch and tag with filters, primitives advisory legs at both tiers, marker on PR event, newline-embedded and near-miss ('[ci fullish]') messages",
+  "aggregateCases": 20,
+  "aggregateDesign": "green build/full/main shapes; main-on-build-tier refusal; gating leg skipped/failure/cancelled; unselected leg ran; plan failure/cancelled/empty-result; empty gating; empty subject repository/sha; short sha; lint-only gating with zero build legs; empty tier under --require-full-tier; windows-only build; everything-empty; full tier with one platform leg skipped"
+ },
+ "divergences": {
+  "plan": {
+   "total": 15,
+   "explained": 15,
+   "unexplained": 0,
+   "classes": [
+    {
+     "class": "unknown-forced-tier-on-main",
+     "count": 15,
+     "cause": "shell rejects an unknown forced tier only after the refs/heads/main override has rewritten TIER to full (swift-ci.yml:629, :650); CI.Contract.Plan.swift:73 refuses the token first. Replacement strictly fail-closed; unreachable for every known caller.",
+     "coordinates": [
+      ".github/workflows/swift-ci.yml:595",
+      ".github/workflows/swift-ci.yml:629",
+      ".github/workflows/swift-ci.yml:650",
+      "Tools/InstituteCI/Sources/CI Contract/CI.Contract.Plan.swift:66-74"
+     ]
+    }
+   ]
+  },
+  "aggregate": {
+   "total": 0,
+   "explained": 0,
+   "unexplained": 0
+  }
+ },
+ "liveReplay": {
+  "runs": 2,
+  "matches": 2,
+  "details": [
+   {
+    "run": "swift-standards/swift-fips-180-4#31082498282 (push/main, full tier)",
+    "planMatch": true,
+    "ciOkMatch": "success == pass/0"
+   },
+   {
+    "run": "swift-primitives/swift-percent-primitives#30970350247 (pull_request, build tier, primitives bundle)",
+    "planMatch": true,
+    "ciOkMatch": "failure == fail/1 (lint leg failed)"
+   }
+  ]
+ },
+ "hazardLedger": [
+  {
+   "hazard": "positive fixtures (valid exact-input plans and green aggregates succeed)",
+   "status": "measured",
+   "coordinate": "shadow-parity.json planDifferential rows grid/* status 0 pairs; aggregateDifferential green-build/green-full/green-full-main"
+  },
+  {
+   "hazard": "negative fixtures (invalid lint-bundle, invalid/duplicate platform family, retired lint tier, plan failure, empty gating/subject refuse)",
+   "status": "measured",
+   "coordinate": "shadow-parity.json rows ps/*/lb=bogus, ps=bogus, tier=lint; aggregate plan-failed/empty-gating/empty-subject-*"
+  },
+  {
+   "hazard": "edge fixtures (empty inputs, trailing/leading/bare comma, everything-empty aggregate, empty tier under require-full-tier)",
+   "status": "measured",
+   "coordinate": "shadow-parity.json rows ps=apple,/,apple/','; aggregate everything-empty, empty-tier-required-full"
+  },
+  {
+   "hazard": "near-miss fixtures (same-spelling: '[ci fullish]' substring, 'Primitives' capitalization, 'APPLE', short subject sha)",
+   "status": "measured",
+   "coordinate": "shadow-parity.json rows head-marker-substring, lb=Primitives, ps=APPLE; aggregate short-sha (both sides accept: length is unvalidated in both implementations, parity holds)"
+  },
+  {
+   "hazard": "exemption fixtures (primitives advisory legs ride both tiers but never enter gating; advisory legs excluded from ci-ok)",
+   "status": "measured",
+   "coordinate": "shadow-parity.json rows prim-build/*, prim-full: embedded/embedded-wasm-sdk/android-build/static-linux-musl-build in legs, absent from gating on both sides"
+  },
+  {
+   "hazard": "hostile fixtures (garbage forced tier, newline-embedded head message, mixed valid+invalid family list)",
+   "status": "measured",
+   "coordinate": "shadow-parity.json rows tier=bogus (the one explained divergence class), head-with-newline, ps=apple,bogus"
+  },
+  {
+   "hazard": "deterministic shuffle / order-independence",
+   "status": "measured",
+   "coordinate": "each corpus case executes in an isolated process with a fresh GITHUB_OUTPUT/GITHUB_STEP_SUMMARY temp dir; the corpus is a deterministic cross-product grid, so no case's verdict can depend on execution order"
+  },
+  {
+   "hazard": "hosted behavior (no source inspection substitutes for hosted behavior)",
+   "status": "measured",
+   "coordinate": "live replay of runs 31082498282 and 30970350247; decision-step bytes at their workflow SHAs (14b3d048, 2a6a39af) proven byte-equal to head 7bf60943 before replay"
+  },
+  {
+   "hazard": "Windows bootstrap limb",
+   "status": "UNMEASURED",
+   "cause": "rides swift-institute/Workspace#140; no Windows host in this lane and the bootstrap limb is out of the plan/aggregate decision surface exercised here"
+  }
+ ],
+ "stop": "STOP-F11-DIFF did not fire: 15 divergences, all one explained class, zero unexplained",
+ "verdict": {
+  "zeroUnexplainedDifferences": true
+ }
+}
