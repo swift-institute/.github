@@ -89,8 +89,27 @@ extension Repository.Policy.Caller {
                 lines.append("    secrets:")
                 lines.append("      SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}")
             }
+            if Repository.Policy.Caller.linterRulePackRepositories.contains(caller.repository) {
+                lines += notifyLinterRepublishJob
+            }
             return lines.joined(separator: "\n") + "\n"
         }
+
+        /// The ruled second job for the five rule-pack repositories
+        /// (principal ruling 2026-08-06, #358): on a main push, dispatch
+        /// the central linter-republish pipeline for instant [CI-116]
+        /// freshness. Emits the terminal secret shape — the app id rides
+        /// each org's `SWIFT_INSTITUTE_BOT_APP_ID` variable, so only the
+        /// private key crosses as a secret; notify-linter-republish.yml
+        /// itself moves to this profile in the same caller wave.
+        static let notifyLinterRepublishJob: [String] = [
+            "",
+            "  notify-linter-republish:",
+            "    if: github.event_name == 'push' && github.ref == 'refs/heads/main'",
+            "    uses: swift-institute/.github/.github/workflows/notify-linter-republish.yml@main",
+            "    secrets:",
+            "      SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}",
+        ]
 
         static func withLines(_ caller: Repository.Policy.Caller) -> [String] {
             let ordered = Repository.Policy.Caller.approvedTypedInputs.compactMap { key in

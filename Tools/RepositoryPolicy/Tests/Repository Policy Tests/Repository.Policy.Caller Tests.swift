@@ -63,6 +63,33 @@ struct RepositoryPolicyCallerTests {
     }
 
     @Test
+    func rulePackRepositoriesCarryTheNotifyJob() throws {
+        for repository in Repository.Policy.Caller.linterRulePackRepositories {
+            let layer: Repository.Policy.Caller.Layer =
+                repository.hasPrefix("swift-primitives/") ? .primitives
+                : repository.hasPrefix("swift-standards/") ? .standards : .institute
+            let caller = try Repository.Policy.Caller(repository: repository, layer: layer)
+            let text = Repository.Policy.Caller.Render.direct(caller)
+            #expect(text.contains("  notify-linter-republish:"))
+            #expect(text.contains("if: github.event_name == 'push' && github.ref == 'refs/heads/main'"))
+            #expect(text.contains("uses: swift-institute/.github/.github/workflows/notify-linter-republish.yml@main"))
+            #expect(text.contains("      SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}"))
+            #expect(!text.contains("SWIFT_INSTITUTE_BOT_APP_CLIENT_ID"))
+        }
+    }
+
+    @Test
+    func ordinaryRepositoriesDoNotCarryTheNotifyJob() throws {
+        let caller = try Repository.Policy.Caller(
+            repository: "swift-primitives/swift-bool-primitives", layer: .primitives)
+        #expect(!Repository.Policy.Caller.Render.direct(caller).contains("notify-linter-republish"))
+        // Near miss: a similarly named repo NOT in the exact-coordinate set.
+        let nearMiss = try Repository.Policy.Caller(
+            repository: "swift-primitives/swift-linter-rules-tools", layer: .primitives)
+        #expect(!Repository.Policy.Caller.Render.direct(nearMiss).contains("notify-linter-republish"))
+    }
+
+    @Test
     func malformedRepositoryRefuses() {
         #expect(throws: Repository.Policy.Caller.Error.self) {
             try Repository.Policy.Caller(repository: "no-slash", layer: .primitives)

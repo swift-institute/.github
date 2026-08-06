@@ -42,6 +42,19 @@ extension Repository.Policy {
             "SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY",
         ]
 
+        /// The five linter rule-pack repositories whose leaf carries the
+        /// ruled second job (notify-linter-republish: instant [CI-116]
+        /// rule-pack freshness; principal ruling 2026-08-06 on #358).
+        /// Exact coordinates — a new rule-pack repo is added here by an
+        /// express edit, never inferred from its name.
+        public static let linterRulePackRepositories: [String] = [
+            "swift-primitives/swift-primitives-linter-rules",
+            "swift-primitives/swift-linter-primitives",
+            "swift-standards/swift-standards-linter-rules",
+            "swift-foundations/swift-institute-linter-rules",
+            "swift-foundations/swift-linter-rules",
+        ]
+
         /// The terminal two-name secret profile (FT1-frozen).
         public static let terminalSecretNames: [String] = [
             "SWIFT_INSTITUTE_BOT_APP_ID",
