@@ -68,10 +68,36 @@ extension Repository.Policy {
             "swift-foundations/swift-linter-rules",
         ]
 
-        /// The terminal two-name secret profile (FT1-frozen).
+        /// The terminal two-name credential profile is split across two
+        /// GitHub contexts, not two secrets (plan §15; #394 comments
+        /// 5204107123 and 5204206801, provisioned and read back
+        /// 2026-08-06). The App id crosses as an org Actions **variable**
+        /// and the private key as the only forwarded secret, so a
+        /// generated leaf never names an id-shaped secret anywhere.
+        ///
+        /// The names a caller may forward under `secrets:`. Exactly one.
+        /// The historical two-name spelling of this constant listed
+        /// `SWIFT_INSTITUTE_BOT_APP_ID` here; that reading was measured
+        /// FAIL at F13 (run 31097725224, job 92603630599 — the id was
+        /// withheld from the secrets context because it is not a secret)
+        /// and is superseded by the vars profile below, not withdrawn.
         public static let terminalSecretNames: [String] = [
-            "SWIFT_INSTITUTE_BOT_APP_ID",
             "SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY",
+        ]
+
+        /// The names delivered through the `vars` context rather than
+        /// `secrets`. Each of the four orgs that hosts a terminal caller
+        /// carries this as an org Actions variable with the same value
+        /// (the App's public client id) and `visibility: all`; F14
+        /// asserts that invariant before any caller regeneration rather
+        /// than assuming it (F13-receipt.json successor obligation).
+        ///
+        /// Equal values across orgs are what make the resolution safe
+        /// while the K-01 cross-org `vars` hop stays UNMEASURED: caller-
+        /// org and callee-org resolution cannot be distinguished by
+        /// outcome when both resolve to the same literal.
+        public static let terminalVariableNames: [String] = [
+            "SWIFT_INSTITUTE_BOT_APP_ID",
         ]
 
         public let repository: String
