@@ -573,10 +573,13 @@ jobs:
           SOURCES_TREE: ${{ steps.institute-ci-identity.outputs.sources-tree }}
         run: |
           set -euo pipefail
+          # uuid-dev: the typed F2/F10 provisioning input (swift-linux-standard's
+          # CLinuxKernelShim includes uuid/uuid.h); absent on the bare runner.
+          sudo apt-get update -qq && sudo apt-get install -qq -y uuid-dev
           swift run --package-path .workspace/Application workspace package build --package-path "$GITHUB_WORKSPACE/.ci-scripts/Tools/InstituteCI"
           mkdir -p .institute-ci-entry/bin
           cp "$(find .ci-scripts/Tools/InstituteCI/.build -name institute-ci -type f -perm /111 | head -1)" .institute-ci-entry/bin/institute-ci
-          .institute-ci-entry/bin/institute-ci bootstrap-manifest --workspace-revision 6e3861935041c9a92d873f0e444da1dd5b666fdb --sources-revision "$SOURCES_TREE" --toolchain swift-6.3 --os linux --arch x86_64 --provisioning none --root .institute-ci-entry --executables bin/institute-ci --producer-run "$GITHUB_RUN_ID" > .institute-ci-entry/manifest.json
+          .institute-ci-entry/bin/institute-ci bootstrap-manifest --workspace-revision 6e3861935041c9a92d873f0e444da1dd5b666fdb --sources-revision "$SOURCES_TREE" --toolchain swift-6.3 --os linux --arch x86_64 --provisioning uuid-dev --root .institute-ci-entry --executables bin/institute-ci --producer-run "$GITHUB_RUN_ID" > .institute-ci-entry/manifest.json
       - name: Save Institute CI cache entry (cold bootstrap only)
         if: ${{ inputs.job == '' && steps.institute-ci-restore.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -590,7 +593,7 @@ jobs:
           SOURCES_TREE: ${{ steps.institute-ci-identity.outputs.sources-tree }}
         run: |
           set -euo pipefail
-          .institute-ci-entry/bin/institute-ci bootstrap-verify --workspace-revision 6e3861935041c9a92d873f0e444da1dd5b666fdb --sources-revision "$SOURCES_TREE" --toolchain swift-6.3 --os linux --arch x86_64 --provisioning none --root .institute-ci-entry --manifest .institute-ci-entry/manifest.json
+          .institute-ci-entry/bin/institute-ci bootstrap-verify --workspace-revision 6e3861935041c9a92d873f0e444da1dd5b666fdb --sources-revision "$SOURCES_TREE" --toolchain swift-6.3 --os linux --arch x86_64 --provisioning uuid-dev --root .institute-ci-entry --manifest .institute-ci-entry/manifest.json
       # Body executed by the Swift owner since F12 (Goal
       # swift-institute/.github#358): tier/leg/gating selection is
       # CI.Contract.Plan in institute-ci, differentially proven against the
@@ -2563,17 +2566,20 @@ jobs:
           SOURCES_TREE: ${{ steps.institute-ci-identity.outputs.sources-tree }}
         run: |
           set -euo pipefail
+          # uuid-dev: the typed F2/F10 provisioning input (swift-linux-standard's
+          # CLinuxKernelShim includes uuid/uuid.h); absent on the bare runner.
+          sudo apt-get update -qq && sudo apt-get install -qq -y uuid-dev
           swift run --package-path .workspace/Application workspace package build --package-path "$GITHUB_WORKSPACE/institute-receipt/Tools/InstituteCI"
           mkdir -p .institute-ci-entry/bin
           cp "$(find institute-receipt/Tools/InstituteCI/.build -name institute-ci -type f -perm /111 | head -1)" .institute-ci-entry/bin/institute-ci
-          .institute-ci-entry/bin/institute-ci bootstrap-manifest --workspace-revision 6e3861935041c9a92d873f0e444da1dd5b666fdb --sources-revision "$SOURCES_TREE" --toolchain swift-6.3 --os linux --arch x86_64 --provisioning none --root .institute-ci-entry --executables bin/institute-ci --producer-run "$GITHUB_RUN_ID" > .institute-ci-entry/manifest.json
+          .institute-ci-entry/bin/institute-ci bootstrap-manifest --workspace-revision 6e3861935041c9a92d873f0e444da1dd5b666fdb --sources-revision "$SOURCES_TREE" --toolchain swift-6.3 --os linux --arch x86_64 --provisioning uuid-dev --root .institute-ci-entry --executables bin/institute-ci --producer-run "$GITHUB_RUN_ID" > .institute-ci-entry/manifest.json
       - name: Verify Institute CI provenance before trust (fail closed)
         shell: bash
         env:
           SOURCES_TREE: ${{ steps.institute-ci-identity.outputs.sources-tree }}
         run: |
           set -euo pipefail
-          .institute-ci-entry/bin/institute-ci bootstrap-verify --workspace-revision 6e3861935041c9a92d873f0e444da1dd5b666fdb --sources-revision "$SOURCES_TREE" --toolchain swift-6.3 --os linux --arch x86_64 --provisioning none --root .institute-ci-entry --manifest .institute-ci-entry/manifest.json
+          .institute-ci-entry/bin/institute-ci bootstrap-verify --workspace-revision 6e3861935041c9a92d873f0e444da1dd5b666fdb --sources-revision "$SOURCES_TREE" --toolchain swift-6.3 --os linux --arch x86_64 --provisioning uuid-dev --root .institute-ci-entry --manifest .institute-ci-entry/manifest.json
       # Body executed by the Swift owner since F12 (#358/#390):
       # CI.Contract.AggregateVerdict in institute-ci, differentially proven
       # against the retired shell (F4/F11, exit-status equality across all
