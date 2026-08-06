@@ -41,8 +41,7 @@ extension Private.Verification {
             inventoryDigest: String, inventoryDigestCause: String? = nil,
             requiredOperations: [String]
         ) throws(Error) {
-            guard bindingDigest.count == 64,
-                  bindingDigest.allSatisfy({ $0.isHexDigit && !$0.isUppercase }) else {
+            guard Private.Verification.isLowercaseHex(bindingDigest, digits: 64) else {
                 throw .bindingDigestNotHex64(bindingDigest)
             }
             for (field, value) in [("requestId", requestId), ("policyDigest", policyDigest)] {

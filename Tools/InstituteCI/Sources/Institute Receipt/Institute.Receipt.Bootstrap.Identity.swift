@@ -48,7 +48,7 @@ extension Institute.Receipt.Bootstrap.Identity {
             ("workspaceRevision", workspaceRevision),
             ("sourcesRevision", sourcesRevision),
         ] {
-            guard value.count == 40, value.allSatisfy(\.isHexDigit) else {
+            guard Institute.Receipt.isLowercaseHex(value.lowercased(), digits: 40) else {
                 throw .revisionNotFullSha(field: field, value: value)
             }
         }
