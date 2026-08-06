@@ -82,6 +82,27 @@ extension Repository.Policy.Caller {
                 "",
                 "jobs:",
                 "  ci:",
+                // Visibility gate (principal decision, #358 comment
+                // 5205099233). The terminal caller is UNIFORM across
+                // every repository, public and private: a private
+                // repository skips all work here rather than being
+                // provisioned with per-repo secrets or variables, so the
+                // `one secret, one variable` org end state holds. The
+                // idiom is the one every control-plane workflow already
+                // uses (e.g. notify-linter-republish.yml).
+                //
+                // On a PUBLIC repository the expression is constant-true,
+                // so the job set and the whole `ci / matrix / <job>`
+                // check-context family are unchanged — an `if` alters
+                // neither job ids nor display names, and `ci-ok` lives
+                // inside the callee, where it is unaffected. On a PRIVATE
+                // repository the job (and with it every nested context)
+                // is simply never created; there is no required-check
+                // surface there to strand, since private repositories
+                // cannot carry branch rulesets on the current plan
+                // (R33) and converge through `verification / workspace`
+                // instead.
+                "    if: ${{ !github.event.repository.private }}",
                 // The required check context is the measured incumbent
                 // family `ci / matrix / <job>` (caller job `ci` → wrapper
                 // job `matrix` → universal). The wrapper hop dies in the
@@ -125,7 +146,7 @@ extension Repository.Policy.Caller {
         static let notifyLinterRepublishJob: [String] = [
             "",
             "  notify-linter-republish:",
-            "    if: github.event_name == 'push' && github.ref == 'refs/heads/main'",
+            "    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && !github.event.repository.private }}",
             "    uses: swift-institute/.github/.github/workflows/notify-linter-republish.yml@main",
             "    secrets:",
         ] + terminalSecretLines
