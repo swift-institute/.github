@@ -54,12 +54,35 @@ struct RepositoryPolicyCallerTests {
         #expect(!text.contains("tags:"))
         #expect(text.contains("uses: swift-institute/.github/.github/workflows/swift-ci.yml@main"))
         #expect(!text.contains("secrets"))
+        // K-12 property transfer: the layer's lint bundle rides the leaf.
+        #expect(text.contains("    with:\n      lint-bundle: primitives"))
         let withSecrets = Repository.Policy.Caller.Render.direct(
             caller, privateDependencyClosure: true)
         #expect(withSecrets.contains(
             "      SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}"))
         #expect(!withSecrets.contains("PRIVATE_REPO_TOKEN"))
         #expect(!withSecrets.contains("secrets: inherit"))
+    }
+
+    @Test
+    func directFormTransfersEachLayersLintBundle() throws {
+        for (layer, bundle) in [
+            (Repository.Policy.Caller.Layer.primitives, "primitives"),
+            (.standards, "standards"),
+            (.institute, "institute"),
+        ] {
+            let caller = try Repository.Policy.Caller(
+                repository: "\(layer.wrapperOrganization)/swift-demo", layer: layer)
+            let text = Repository.Policy.Caller.Render.direct(caller)
+            #expect(text.contains("      lint-bundle: \(bundle)"))
+        }
+        // Caller inputs follow the layer-owned line in canonical order.
+        let withInputs = try Repository.Policy.Caller(
+            repository: "swift-standards/swift-demo", layer: .standards,
+            inputs: [(key: "platform-support", value: "macos-linux")])
+        let text = Repository.Policy.Caller.Render.direct(withInputs)
+        #expect(text.contains(
+            "    with:\n      lint-bundle: standards\n      platform-support: macos-linux"))
     }
 
     @Test

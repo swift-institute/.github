@@ -18,6 +18,19 @@ extension Repository.Policy {
                 case .institute: "swift-foundations"
                 }
             }
+
+            /// The layer's lint bundle — the literal the layer wrapper
+            /// used to own, transferred into the direct leaf by the
+            /// renderer (K-12 property transfer). Same tokens as the
+            /// universal's `lint-bundle` input and Workspace's
+            /// `Workspace.Lint.Bundle`.
+            public var lintBundle: String {
+                switch self {
+                case .primitives: "primitives"
+                case .standards: "standards"
+                case .institute: "institute"
+                }
+            }
         }
 
         public enum Error: Swift.Error, Equatable {
