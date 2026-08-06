@@ -8,7 +8,7 @@
 # repository after its drain completes, not per PR), dispatch invokes the
 # drained repository's own full-tier CI (the `workflow_dispatch` run of its
 # `ci.yml` thin caller — the same run the Swift verification in
-# PR.Transaction+Verification.swift synthesizes as a `full-tier` check for
+# PullRequest.Transaction+Verification.swift synthesizes as a `full-tier` check for
 # the `package` profile) against the exact expected main head, waits for its
 # conclusion, and reports on the outcome.
 #
@@ -40,7 +40,7 @@
 #
 # DESIGN NOTE — classification lives in Swift, dispatch stays bash glue
 # (swift-institute/.github#213): red/green/lost classification and the Bug
-# title/body are PRTransaction.PostMerge (Tools/PRTransaction), tested with
+# title/body are PullRequest.Transaction.PostMerge (Tools/PullRequestTransaction), tested with
 # fixtures per the deny-by-default discipline — the same engine the
 # wave-mode admission predicate lives in. The dispatch-and-poll machinery
 # around it (workflow_dispatch, discovery, status polling) has no decision
@@ -113,8 +113,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          swift build --package-path "Tools/PRTransaction" --product pr-transaction
-          bin_path=$(swift build --package-path "Tools/PRTransaction" --product pr-transaction --show-bin-path)
+          swift build --package-path "Tools/PullRequestTransaction" --product pr-transaction
+          bin_path=$(swift build --package-path "Tools/PullRequestTransaction" --product pr-transaction --show-bin-path)
           echo "bin-path=${bin_path}" >> "$GITHUB_OUTPUT"
 
       - name: Resolve exact drained repository
@@ -174,7 +174,7 @@ jobs:
 
           # The full tier is the workflow_dispatch run of the fleet thin
           # caller, which every package repository names `CI` — the exact
-          # same convention PR.Transaction.Snapshot.Source.swift relies on
+          # same convention PullRequest.Transaction.Snapshot.Source.swift relies on
           # to synthesize the `full-tier` check for the `package` profile.
           dispatched_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           gh workflow run ci.yml --repo "$repository" --ref "$default_branch"
@@ -281,7 +281,7 @@ jobs:
               lostReason: (if ($lostReason | length) > 0 then $lostReason else null end)
             }' > "$watch_file"
 
-          # The classifier is Swift (PRTransaction.PostMerge, tested with
+          # The classifier is Swift (PullRequest.Transaction.PostMerge, tested with
           # fixtures — swift-institute/.github#213); if it cannot even run,
           # that must still produce a Bug rather than silently aborting this
           # step, so this is the one place a generic fallback report exists.
@@ -302,7 +302,7 @@ jobs:
             fallback_body=$(cat <<EOF
           ### Observed behavior
 
-          The mandatory post-merge full-tier verification watch on \`${TARGET_REPOSITORY}\` at \`${EXPECTED_HEAD}\` could not be classified: verify-post-merge.yml's own Swift classifier (Tools/PRTransaction) failed to build or run in this job.
+          The mandatory post-merge full-tier verification watch on \`${TARGET_REPOSITORY}\` at \`${EXPECTED_HEAD}\` could not be classified: verify-post-merge.yml's own Swift classifier (Tools/PullRequestTransaction) failed to build or run in this job.
 
           ### Expected behavior
 

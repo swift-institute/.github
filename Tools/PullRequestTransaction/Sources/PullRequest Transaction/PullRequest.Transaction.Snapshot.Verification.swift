@@ -1,4 +1,4 @@
-extension PRTransaction.Snapshot {
+extension PullRequest.Transaction.Snapshot {
     /// The exact-head checks an accepted pull-request transaction requires.
     public enum Verification: Codable, Equatable, Sendable {
         /// Requires successful exact-head `ci / matrix / ci-ok` and

@@ -1,6 +1,6 @@
 import Foundation
 
-extension PRTransaction {
+extension PullRequest.Transaction {
     /// The file-backed command boundary used by the `pr-transaction` executable.
     public enum Command {
         /// Executes one guarded operation against a serialized transaction snapshot.
@@ -25,9 +25,9 @@ extension PRTransaction {
             let snapshot = try JSONDecoder().decode(Snapshot.self, from: data)
             let verdict: Verdict
             switch operation {
-            case "review": verdict = try PRTransaction.review(snapshot)
-            case "merge": verdict = try PRTransaction.merge(snapshot)
-            case "complete": verdict = try PRTransaction.complete(snapshot)
+            case "review": verdict = try PullRequest.Transaction.review(snapshot)
+            case "merge": verdict = try PullRequest.Transaction.merge(snapshot)
+            case "complete": verdict = try PullRequest.Transaction.complete(snapshot)
             default: throw Error.usage
             }
             return "pr-transaction: \(verdict.rawValue) head=\(snapshot.head)"

@@ -1,16 +1,16 @@
 import Foundation
 import Testing
 
-@testable import PR_Transaction
+@testable import PullRequest_Transaction
 
-extension PRTransaction.Transaction {
+extension PullRequest.Transaction.Test {
     @Suite struct Producer {
         private var head: String { "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
         private var old: String { "cccccccccccccccccccccccccccccccccccccccc" }
-        private var control: PRTransaction.Snapshot.Verification {
+        private var control: PullRequest.Transaction.Snapshot.Verification {
             .control(checks: ["fixtures", "correspondence", "scan"])
         }
-        private var wave: PRTransaction.Snapshot.Verification {
+        private var wave: PullRequest.Transaction.Snapshot.Verification {
             .waveMechanical(checks: ["fixtures", "correspondence", "scan"], mechanical: true)
         }
 
@@ -27,7 +27,7 @@ extension PRTransaction.Transaction {
             #expect(snapshot.plan.verification == .package)
             #expect(snapshot.plan.payload.verification == .package)
             #expect(
-                try PRTransaction.Command.run(["review", output.path])
+                try PullRequest.Transaction.Command.run(["review", output.path])
                     == "pr-transaction: ready-for-bot-review head=\(head)"
             )
         }
@@ -36,7 +36,7 @@ extension PRTransaction.Transaction {
             let output = try produce("control-source")
             defer { try? FileManager.default.removeItem(at: output) }
 
-            let verification = PRTransaction.Snapshot.Verification.control(
+            let verification = PullRequest.Transaction.Snapshot.Verification.control(
                 checks: ["fixtures", "correspondence", "scan"]
             )
             let snapshot = try decode(output)
@@ -44,7 +44,7 @@ extension PRTransaction.Transaction {
             #expect(snapshot.plan.verification == verification)
             #expect(snapshot.plan.payload.verification == verification)
             #expect(
-                try PRTransaction.Command.run(["review", output.path])
+                try PullRequest.Transaction.Command.run(["review", output.path])
                     == "pr-transaction: ready-for-bot-review head=\(head)"
             )
         }
@@ -63,7 +63,7 @@ extension PRTransaction.Transaction {
             #expect(snapshot.plan.verification == .reviewOnly)
             #expect(snapshot.plan.payload.verification == .reviewOnly)
             #expect(
-                try PRTransaction.Command.run(["review", output.path])
+                try PullRequest.Transaction.Command.run(["review", output.path])
                     == "pr-transaction: ready-for-bot-review head=\(head)"
             )
         }
@@ -83,7 +83,7 @@ extension PRTransaction.Transaction {
             #expect(snapshot.plan.payload.verification == wave)
             #expect(!snapshot.checks.contains { $0.name == "full-tier" })
             #expect(
-                try PRTransaction.Command.run(["review", output.path])
+                try PullRequest.Transaction.Command.run(["review", output.path])
                     == "pr-transaction: ready-for-bot-review head=\(head)"
             )
         }
@@ -97,8 +97,8 @@ extension PRTransaction.Transaction {
             let output = try produce("wave-non-mechanical-source")
             defer { try? FileManager.default.removeItem(at: output) }
 
-            #expect(throws: PRTransaction.Error.profile) {
-                try PRTransaction.Command.run(["review", output.path])
+            #expect(throws: PullRequest.Transaction.Error.profile) {
+                try PullRequest.Transaction.Command.run(["review", output.path])
             }
         }
 
@@ -106,14 +106,14 @@ extension PRTransaction.Transaction {
             let output = try produce("stale-source")
             defer { try? FileManager.default.removeItem(at: output) }
 
-            #expect(throws: PRTransaction.Error.stalePlanHead(expected: head, actual: old)) {
-                try PRTransaction.Command.run(["review", output.path])
+            #expect(throws: PullRequest.Transaction.Error.stalePlanHead(expected: head, actual: old)) {
+                try PullRequest.Transaction.Command.run(["review", output.path])
             }
         }
 
         @Test func `CLI rejects a private target repository`() throws {
-            #expect(throws: PRTransaction.Error.invalidTarget) {
-                try PRTransaction.Command.run(["produce", fixture("private-target-source").path])
+            #expect(throws: PullRequest.Transaction.Error.invalidTarget) {
+                try PullRequest.Transaction.Command.run(["produce", fixture("private-target-source").path])
             }
         }
 
@@ -124,7 +124,7 @@ extension PRTransaction.Transaction {
                 target: .init(repository: "swift-foundations/swift-tests", visibility: "public")
             )
 
-            #expect(throws: PRTransaction.Error.invalidTarget) {
+            #expect(throws: PullRequest.Transaction.Error.invalidTarget) {
                 try source.snapshot()
             }
         }
@@ -135,13 +135,13 @@ extension PRTransaction.Transaction {
                 """#.utf8)
 
             #expect(throws: DecodingError.self) {
-                try JSONDecoder().decode(PRTransaction.Snapshot.Source.self, from: data)
+                try JSONDecoder().decode(PullRequest.Transaction.Snapshot.Source.self, from: data)
             }
         }
 
         @Test func `CLI rejects a legacy snapshot missing task and profiles`() throws {
             #expect(throws: DecodingError.self) {
-                try PRTransaction.Command.run(["review", fixture("legacy-snapshot").path])
+                try PullRequest.Transaction.Command.run(["review", fixture("legacy-snapshot").path])
             }
         }
 
@@ -165,8 +165,8 @@ extension PRTransaction.Transaction {
                 checks: pages([first, [check("scan", conclusion: "failure")]])
             )
 
-            #expect(throws: PRTransaction.Error.unsuccessful("scan")) {
-                try PRTransaction.review(source.snapshot())
+            #expect(throws: PullRequest.Transaction.Error.unsuccessful("scan")) {
+                try PullRequest.Transaction.review(source.snapshot())
             }
         }
 
@@ -179,8 +179,8 @@ extension PRTransaction.Transaction {
                 checks: pages([first, [check("scan", conclusion: nil)]])
             )
 
-            #expect(throws: PRTransaction.Error.nonterminal("scan")) {
-                try PRTransaction.review(source.snapshot())
+            #expect(throws: PullRequest.Transaction.Error.nonterminal("scan")) {
+                try PullRequest.Transaction.review(source.snapshot())
             }
         }
 
@@ -192,7 +192,7 @@ extension PRTransaction.Transaction {
                 checks: pages([first, [check("scan")]])
             )
 
-            #expect(try PRTransaction.review(source.snapshot()) == .readyForReview)
+            #expect(try PullRequest.Transaction.review(source.snapshot()) == .readyForReview)
         }
 
         @Test func `producer rejects a failed duplicate workflow run after the first hundred`()
@@ -206,8 +206,8 @@ extension PRTransaction.Transaction {
                 runs: pages([first, [run("CI", conclusion: "failure")]])
             )
 
-            #expect(throws: PRTransaction.Error.nonterminalFullTier) {
-                try PRTransaction.review(source.snapshot())
+            #expect(throws: PullRequest.Transaction.Error.nonterminalFullTier) {
+                try PullRequest.Transaction.review(source.snapshot())
             }
         }
 
@@ -220,8 +220,8 @@ extension PRTransaction.Transaction {
                 runs: pages([first, [run("CI", conclusion: nil)]])
             )
 
-            #expect(throws: PRTransaction.Error.nonterminalFullTier) {
-                try PRTransaction.review(source.snapshot())
+            #expect(throws: PullRequest.Transaction.Error.nonterminalFullTier) {
+                try PullRequest.Transaction.review(source.snapshot())
             }
         }
 
@@ -235,7 +235,7 @@ extension PRTransaction.Transaction {
                 runs: pages([first, [run("CI")]])
             )
 
-            #expect(try PRTransaction.review(source.snapshot()) == .readyForReview)
+            #expect(try PullRequest.Transaction.review(source.snapshot()) == .readyForReview)
         }
 
         @Test func `full tier ignores the retired swift-ci workflow name`() {
@@ -247,8 +247,8 @@ extension PRTransaction.Transaction {
                 runs: pages([[run("swift-ci")]])
             )
 
-            #expect(throws: PRTransaction.Error.nonterminalFullTier) {
-                try PRTransaction.review(source.snapshot())
+            #expect(throws: PullRequest.Transaction.Error.nonterminalFullTier) {
+                try PullRequest.Transaction.review(source.snapshot())
             }
         }
 
@@ -262,8 +262,8 @@ extension PRTransaction.Transaction {
                 runs: pages([[run("CI", event: "pull_request")]])
             )
 
-            #expect(throws: PRTransaction.Error.nonterminalFullTier) {
-                try PRTransaction.review(source.snapshot())
+            #expect(throws: PullRequest.Transaction.Error.nonterminalFullTier) {
+                try PullRequest.Transaction.review(source.snapshot())
             }
         }
 
@@ -273,7 +273,7 @@ extension PRTransaction.Transaction {
                 checks: pages([[check("ci / matrix / ci-ok")]], total: 2)
             )
 
-            #expect(throws: PRTransaction.Error.incomplete("check-runs")) {
+            #expect(throws: PullRequest.Transaction.Error.incomplete("check-runs")) {
                 try source.snapshot()
             }
         }
@@ -285,13 +285,13 @@ extension PRTransaction.Transaction {
                 runs: pages([[run("CI")]], total: 2)
             )
 
-            #expect(throws: PRTransaction.Error.incomplete("workflow-runs")) {
+            #expect(throws: PullRequest.Transaction.Error.incomplete("workflow-runs")) {
                 try source.snapshot()
             }
         }
 
-        private func decode(_ url: URL) throws -> PRTransaction.Snapshot {
-            try JSONDecoder().decode(PRTransaction.Snapshot.self, from: Data(contentsOf: url))
+        private func decode(_ url: URL) throws -> PullRequest.Transaction.Snapshot {
+            try JSONDecoder().decode(PullRequest.Transaction.Snapshot.self, from: Data(contentsOf: url))
         }
 
         private struct Review: Decodable {
@@ -325,7 +325,7 @@ extension PRTransaction.Transaction {
         private func produce(_ name: String) throws -> URL {
             let output = FileManager.default.temporaryDirectory
                 .appending(path: "pr-transaction-\(UUID().uuidString).json")
-            let json = try PRTransaction.Command.run(["produce", fixture(name).path])
+            let json = try PullRequest.Transaction.Command.run(["produce", fixture(name).path])
             try Data(json.utf8).write(to: output)
             return output
         }
@@ -333,7 +333,7 @@ extension PRTransaction.Transaction {
         private func check(
             _ name: String,
             conclusion: String? = "success"
-        ) -> PRTransaction.Snapshot.Check {
+        ) -> PullRequest.Transaction.Snapshot.Check {
             .init(name: name, head: head, conclusion: conclusion)
         }
 
@@ -341,45 +341,45 @@ extension PRTransaction.Transaction {
             _ name: String,
             event: String = "workflow_dispatch",
             conclusion: String? = "success"
-        ) -> PRTransaction.Snapshot.Source.Run {
+        ) -> PullRequest.Transaction.Snapshot.Source.Run {
             .init(name: name, event: event, head: head, conclusion: conclusion)
         }
 
         private func pages<Element: Codable & Sendable>(
             _ values: [[Element]],
             total: Int? = nil
-        ) -> [PRTransaction.Snapshot.Source.Page<Element>] {
+        ) -> [PullRequest.Transaction.Snapshot.Source.Page<Element>] {
             let declared = total ?? values.reduce(0) { $0 + $1.count }
             return values.map { .init(total: declared, values: $0) }
         }
 
-        private func requiredChecks() -> [PRTransaction.Snapshot.Check] {
+        private func requiredChecks() -> [PullRequest.Transaction.Snapshot.Check] {
             [check("fixtures"), check("correspondence"), check("scan")]
                 + (0..<97).map { check("unrelated-\($0)") }
         }
 
-        private func workflowRuns() -> [PRTransaction.Snapshot.Source.Run] {
+        private func workflowRuns() -> [PullRequest.Transaction.Snapshot.Source.Run] {
             [run("CI")]
                 + (0..<99).map { run("unrelated-workflow-\($0)") }
         }
 
         private func source(
-            verification: PRTransaction.Snapshot.Verification,
-            checks: [PRTransaction.Snapshot.Source.Page<PRTransaction.Snapshot.Check>],
-            target: PRTransaction.Snapshot.Source.Target = .init(
+            verification: PullRequest.Transaction.Snapshot.Verification,
+            checks: [PullRequest.Transaction.Snapshot.Source.Page<PullRequest.Transaction.Snapshot.Check>],
+            target: PullRequest.Transaction.Snapshot.Source.Target = .init(
                 repository: "swift-institute/.github",
                 visibility: "public"
             ),
-            runs: [PRTransaction.Snapshot.Source.Page<PRTransaction.Snapshot.Source.Run>] = [
+            runs: [PullRequest.Transaction.Snapshot.Source.Page<PullRequest.Transaction.Snapshot.Source.Run>] = [
                 .init(total: 0, values: [])
             ]
-        ) -> PRTransaction.Snapshot.Source {
-            let task = PRTransaction.Snapshot.Issue(
+        ) -> PullRequest.Transaction.Snapshot.Source {
+            let task = PullRequest.Transaction.Snapshot.Issue(
                 repository: "swift-institute/.github",
                 number: 188,
                 state: "OPEN"
             )
-            return PRTransaction.Snapshot.Source(
+            return PullRequest.Transaction.Snapshot.Source(
                 repository: "swift-institute/.github",
                 target: target,
                 pull: 189,

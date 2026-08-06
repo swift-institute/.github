@@ -1,4 +1,4 @@
-extension PRTransaction.PostMerge {
+extension PullRequest.Transaction.PostMerge {
     /// The raw signal captured by verify-post-merge.yml's dispatch-and-await
     /// step. Every field but `repository` and `expectedHead` may be absent
     /// — that absence is exactly what `classify(_:)` must turn into

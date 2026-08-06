@@ -1,4 +1,4 @@
-extension PRTransaction.Snapshot {
+extension PullRequest.Transaction.Snapshot {
     /// The live repository data and accepted plan used to produce a guarded snapshot.
     public struct Source: Codable, Sendable {
         public let repository: String
@@ -16,20 +16,20 @@ extension PRTransaction.Snapshot {
         public let merge: Merge
 
         /// Combines complete API pages and binds the plan into its preflighted payload.
-        public func snapshot() throws(PRTransaction.Error) -> PRTransaction.Snapshot {
+        public func snapshot() throws(PullRequest.Transaction.Error) -> PullRequest.Transaction.Snapshot {
             guard target.repository == repository, target.visibility == "public" else {
-                throw PRTransaction.Error.invalidTarget
+                throw PullRequest.Transaction.Error.invalidTarget
             }
             let checks = try collect(checkPages, name: "check-runs")
             let runs = try collect(runPages, name: "workflow-runs")
-            return PRTransaction.Snapshot(
+            return PullRequest.Transaction.Snapshot(
                 repository: repository,
                 pull: pull,
                 base: base,
                 head: head,
                 fixer: fixer,
                 owningTask: owningTask,
-                plan: PRTransaction.Snapshot.Plan(
+                plan: PullRequest.Transaction.Snapshot.Plan(
                     accepted: plan.accepted,
                     repository: plan.repository,
                     pull: plan.pull,
@@ -40,7 +40,7 @@ extension PRTransaction.Snapshot {
                     verification: plan.verification,
                     paths: plan.paths,
                     evidence: plan.evidence,
-                    payload: PRTransaction.Snapshot.Payload(
+                    payload: PullRequest.Transaction.Snapshot.Payload(
                         preflighted: plan.payloadPreflighted,
                         head: plan.head,
                         verification: plan.verification
@@ -58,7 +58,7 @@ extension PRTransaction.Snapshot {
                     },
                 unresolvedThreads: unresolvedThreads,
                 merge: merge,
-                receipt: PRTransaction.Snapshot.Receipt(
+                receipt: PullRequest.Transaction.Snapshot.Receipt(
                     complete: false,
                     head: head,
                     issueClosed: false,
@@ -70,14 +70,14 @@ extension PRTransaction.Snapshot {
         private func collect<Element: Codable & Sendable>(
             _ pages: [Page<Element>],
             name: String
-        ) throws(PRTransaction.Error) -> [Element] {
+        ) throws(PullRequest.Transaction.Error) -> [Element] {
             let values = pages.flatMap(\.values)
             guard let total = pages.first?.total,
                 total >= 0,
                 pages.allSatisfy({ $0.total == total }),
                 values.count == total
             else {
-                throw PRTransaction.Error.incomplete(name)
+                throw PullRequest.Transaction.Error.incomplete(name)
             }
             return values
         }

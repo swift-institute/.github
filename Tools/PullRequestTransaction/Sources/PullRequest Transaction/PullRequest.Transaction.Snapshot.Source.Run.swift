@@ -1,4 +1,4 @@
-extension PRTransaction.Snapshot.Source {
+extension PullRequest.Transaction.Snapshot.Source {
     /// One workflow run returned by the actions API, with its triggering event.
     public struct Run: Codable, Sendable {
         public let name: String

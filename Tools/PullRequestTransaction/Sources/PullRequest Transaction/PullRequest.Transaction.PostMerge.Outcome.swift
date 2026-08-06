@@ -1,4 +1,4 @@
-extension PRTransaction.PostMerge {
+extension PullRequest.Transaction.PostMerge {
     /// The exhaustive classification of one post-merge watch. A lost watch
     /// is not-green: every case other than `.green` files a Bug on the
     /// drained repository, exactly as a confirmed red run does.

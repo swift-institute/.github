@@ -1,4 +1,4 @@
-extension PRTransaction.PostMerge {
+extension PullRequest.Transaction.PostMerge {
     /// Classifies one watch. Any signal short of a confirmed `success` step
     /// outcome plus a confirmed run conclusion is `.lost` — never treated as
     /// `.green`, and never simply dropped. An explicit `lostReason` the

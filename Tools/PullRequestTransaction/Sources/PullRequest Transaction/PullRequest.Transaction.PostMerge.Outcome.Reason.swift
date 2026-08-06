@@ -1,4 +1,4 @@
-extension PRTransaction.PostMerge.Outcome {
+extension PullRequest.Transaction.PostMerge.Outcome {
     /// The specific way a post-merge watch was lost, named in the Bug body
     /// so the class — not just the fact of loss — reaches whoever triages
     /// it.

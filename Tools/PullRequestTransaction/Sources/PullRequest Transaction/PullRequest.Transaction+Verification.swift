@@ -1,4 +1,4 @@
-extension PRTransaction {
+extension PullRequest.Transaction {
     static func verify(_ snapshot: Snapshot) throws {
         switch snapshot.plan.verification {
         case .package:
