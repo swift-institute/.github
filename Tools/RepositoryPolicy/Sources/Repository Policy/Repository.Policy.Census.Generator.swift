@@ -1,3 +1,5 @@
+import Byte_Primitives
+import FIPS_180_4
 import Foundation
 
 extension Repository.Policy.Census {
@@ -8,11 +10,8 @@ extension Repository.Policy.Census {
     /// deterministic (sorted), so parity against the FT1 artifact is
     /// order-normalized via `Census.normalized`.
     ///
-    /// Excerpt digests ride the incumbent platform SHA-256 command
-    /// (`shasum -a 256` / `sha256sum`): the Institute SHA witness is
-    /// STOP-FT1-API-stopped, CryptoKit is macOS-only, and direct
-    /// swift-crypto adoption is prohibited by CO-05. DEL-07 replaces this
-    /// when the witness limb resumes.
+    /// Excerpt digests compose onto the Institute FIPS 180-4 SHA-256
+    /// witness (R37, swift-fips-180-4): pure, in-process, cross-platform.
     public struct Generator: Sendable {
         public struct Repo: Sendable {
             public let name: String
@@ -28,7 +27,6 @@ extension Repository.Policy.Census {
 
         public enum Error: Swift.Error {
             case unreadable(path: String)
-            case hasherFailed(status: Int32)
         }
 
         public let repos: [Repo]
@@ -134,7 +132,7 @@ extension Repository.Policy.Census {
                     intendedOwner: owner, disposition: "reduce", notes: notes)
             }
             rows.append(row(.file, "file:\(rel)", line: 1, engine: engine,
-                            digest: try hasher.digest(raw)))
+                            digest: hasher.digest(raw)))
             guard engine == "actions-yaml" else { return }
 
             let ns = text as NSString
@@ -160,7 +158,7 @@ extension Repository.Policy.Census {
                 rows.append(row(.expression, "expr:\(rel):\(i)",
                                 line: lineNumber(at: match.range.location),
                                 engine: "actions-expression",
-                                digest: (try? hasher.digest(Data(excerpt.utf8))) ?? ""))
+                                digest: hasher.digest(Data(excerpt.utf8))))
                 i += 1
             }
 
@@ -176,7 +174,7 @@ extension Repository.Policy.Census {
                 rows.append(row(.usesEdge, "uses:\(rel):\(i)",
                                 line: lineNumber(at: match.range.location),
                                 engine: "actions-yaml",
-                                digest: (try? hasher.digest(Data(target.utf8))) ?? "",
+                                digest: hasher.digest(Data(target.utf8)),
                                 notes: target))
                 i += 1
             }
@@ -211,7 +209,7 @@ extension Repository.Policy.Census {
                 let body = block.joined(separator: "\n")
                 rows.append(row(.runBlock, "run:\(rel):\(i)", line: startLine,
                                 engine: "shell",
-                                digest: (try? hasher.digest(Data(body.utf8))) ?? ""))
+                                digest: hasher.digest(Data(body.utf8))))
                 for (k, blockLine) in block.enumerated() {
                     let blockRange = NSRange(location: 0, length: (blockLine as NSString).length)
                     guard let commandMatch = command.firstMatch(in: blockLine, range: blockRange) else { continue }
@@ -220,7 +218,7 @@ extension Repository.Policy.Census {
                     if blockLine.trimmingCharacters(in: .whitespaces).hasPrefix("#") { continue }
                     rows.append(row(.commandReference, "cmd:\(rel):\(i):\(k)",
                                     line: startLine + 1 + k, engine: "shell",
-                                    digest: (try? hasher.digest(Data(token.utf8))) ?? "",
+                                    digest: hasher.digest(Data(token.utf8)),
                                     notes: token))
                 }
                 i += 1
@@ -272,42 +270,12 @@ extension Repository.Policy.Census {
 }
 
 extension Repository.Policy.Census.Generator {
-    /// Incumbent platform SHA-256 (see `Generator` doc); batched over one
-    /// process per generator run would be ideal, but the excerpt set is
-    /// bounded (~5k short strings), so a spawn per digest with a warm path
-    /// cache is acceptable for an evidence pass.
+    /// Excerpt SHA-256 composed onto the Institute FIPS 180-4 witness
+    /// (R37): a pure, in-process digest, so no process spawn, tool probe,
+    /// or cache is needed.
     struct Hasher {
-        private final class Cache: @unchecked Sendable {
-            var store: [Data: String] = [:]
-        }
-
-        private let cache = Cache()
-        private let tool: String = {
-            FileManager.default.isExecutableFile(atPath: "/usr/bin/shasum")
-                ? "/usr/bin/shasum" : "/usr/bin/sha256sum"
-        }()
-
-        func digest(_ data: Data) throws -> String {
-            if let hit = cache.store[data] { return hit }
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: tool)
-            process.arguments = tool.hasSuffix("shasum") ? ["-a", "256"] : []
-            let input = Pipe()
-            let output = Pipe()
-            process.standardInput = input
-            process.standardOutput = output
-            try process.run()
-            input.fileHandleForWriting.write(data)
-            input.fileHandleForWriting.closeFile()
-            let out = output.fileHandleForReading.readDataToEndOfFile()
-            process.waitUntilExit()
-            guard process.terminationStatus == 0 else {
-                throw Error.hasherFailed(status: process.terminationStatus)
-            }
-            let digest = String(decoding: out, as: UTF8.self)
-                .split(separator: " ").first.map(String.init) ?? ""
-            cache.store[data] = digest
-            return digest
+        func digest(_ data: Data) -> String {
+            FIPS_180_4.SHA256.digest([UInt8](data).map { Byte($0) }).hex
         }
     }
 }
