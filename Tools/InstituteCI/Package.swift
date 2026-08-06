@@ -26,11 +26,15 @@ let package = Package(
             name: "CI Contract"
         ),
         .target(
+            name: "Institute CI Application",
+            dependencies: ["CI Contract", "Institute Receipt"]
+        ),
+        .target(
             name: "Institute Receipt"
         ),
         .executableTarget(
             name: "Institute CI Command",
-            dependencies: ["CI Contract"]
+            dependencies: ["Institute CI Application"]
         ),
         .testTarget(
             name: "CI Contract Tests",
