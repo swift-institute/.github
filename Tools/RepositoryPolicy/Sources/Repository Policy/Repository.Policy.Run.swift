@@ -163,9 +163,20 @@ extension RepositoryPolicy {
         }
 
         var reports = [SurfaceReport]()
+        // Named exclusions rather than a silent `continue`: an archived
+        // repository is read-only, so any finding in it is unfixable by
+        // construction and must not accumulate among the actionable
+        // advisories (swift-institute/.github#247, #160).
+        var excluded = [String: Exclusion]()
         for repository in repositories.sorted(by: { $0.fullName < $1.fullName }) {
-            guard staticExclusion(of: repository) == nil else { continue }
-            guard try await client.rootManifestKind(repository.fullName) == "file" else {
+            if let reason = staticExclusion(of: repository) {
+                excluded[repository.fullName] = reason
+                continue
+            }
+            let manifestKind = try await client.rootManifestKind(repository.fullName)
+            guard manifestKind == "file" else {
+                excluded[repository.fullName] =
+                    manifestKind == nil ? .missingRootManifest : .rootManifestNotFile
                 continue
             }
             let repositoryClass =
@@ -181,7 +192,7 @@ extension RepositoryPolicy {
                 )
             )
         }
-        return SurfaceSweepReport(reports: reports)
+        return SurfaceSweepReport(reports: reports, excluded: excluded)
     }
 
     private static func verifyEnabled(
