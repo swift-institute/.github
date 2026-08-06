@@ -4,7 +4,6 @@
   "gaps owned by GitHub.Control": [
    "AppCredential (mint composed via sanctioned `workspace github token`; no signing, no key exposure)",
    "RetryPolicy (secondary-rate-limit/5xx with idempotency guard; non-idempotent never retries; primary-limit exhaustion refuses)",
-   "PageSequence (complete pagination; budget overflow is an error, never truncation)",
    "Client composition binding credential+retry+http"
   ],
   "swift-github": "witness-client domain layer (CO-03), head at resolution recorded in build log",

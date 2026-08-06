@@ -26,7 +26,7 @@ gates, and the FT1→F18 order are unchanged.
 | InstituteReceipt | `Institute Receipt` | `Institute.Receipt.*` (`Institute.Receipt.Preterminal`, `Institute.Receipt.Terminal`, `Institute.Receipt.FailureClass`) | `Institute.Receipt.<Type>.swift` |
 | InstituteCIApplication | `Institute CI Application` | `Institute.CI.Application.*` (use-case types) | `Institute.CI.Application.<UseCase>.swift` |
 | InstituteCICommand | `Institute CI Command` | CLI mapping only; owns no predicate | `Institute.CI.Command.<Verb>.swift` |
-| GitHubControl | `GitHub Control` | `GitHub.Control.*` (`GitHub.Control.Client`, `GitHub.Control.AppCredential`, `GitHub.Control.PageSequence`, `GitHub.Control.RetryPolicy`) | `GitHub.Control.<Type>.swift` |
+| GitHubControl | `GitHub Control` | `GitHub.Control.*` (`GitHub.Control.Client`, `GitHub.Control.AppCredential`, `GitHub.Control.RetryPolicy`) | `GitHub.Control.<Type>.swift` |
 | FleetInventory | `Fleet Inventory` | `Fleet.Inventory.*` (`Fleet.Inventory.Census`) | `Fleet.Inventory.<Type>.swift` |
 | FleetConvergence | `Fleet Convergence` | `Fleet.Convergence.*` (`Fleet.Convergence.Plan`, `.Apply`, `.Resume`, `.Readback`) | `Fleet.Convergence.<Type>.swift` |
 | PrivateVerification | `Private Verification` | `Private.Verification.*` (`.Request`, `.Envelope`, `.Verify`, `.Publish`) | `Private.Verification.<Type>.swift` |
