@@ -18,8 +18,23 @@
 # swift-foundations), minted per-job and downscoped to actions:write on the
 # single swift-linter repository. `github.token` cannot start workflows in
 # another repository, which is why the App token exists here at all. No
-# standing PAT is involved. Callers sit in other orgs, so per [CI-109] they
-# explicit-forward the App secrets rather than relying on `secrets: inherit`.
+# standing PAT is involved.
+#
+# Terminal two-name profile (plan §15; F14, swift-institute/.github#394):
+# the App id is NOT a secret. It is an org Actions variable,
+# `SWIFT_INSTITUTE_BOT_APP_ID`, provisioned with the App's public client id
+# and `visibility: all` in each of the four orgs that host a terminal caller
+# — swift-institute, swift-standards, swift-primitives, swift-foundations,
+# all four read back equal on 2026-08-06 (#394 comment 5204206801). Only the
+# private key crosses as a secret, and callers in other orgs explicit-forward
+# that one name per [CI-109] rather than relying on `secrets: inherit`.
+#
+# `vars.*` resolves inside this callee. Whether GitHub resolves it against
+# the caller's org or this workflow's org is UNMEASURED (K-01 cross-org vars
+# hop, F13-receipt.json) — the equal-value four-org invariant is what makes
+# the two possible resolutions indistinguishable by outcome, so F14 asserts
+# that invariant before each wave instead of assuming a resolution rule.
+# The value here is a public client id; it is never masked and never secret.
 #
 # Permissions shape: reusable ⇒ no top-level `permissions:` per [CI-090] (and
 # not deny-all per [CI-097]); the job itself drops the installation-default
@@ -30,24 +45,41 @@ name: Notify linter republish
 on:
   workflow_call:
     secrets:
-      SWIFT_INSTITUTE_BOT_APP_CLIENT_ID:
-        required: false
-        description: >
-          swift-institute-bot App Client ID (org-level secret; preferred
-          name era). Preferred over the legacy numeric App ID when both
-          are present; this job routes the chosen value into
-          create-github-app-token's `client-id` input only.
-      SWIFT_INSTITUTE_BOT_APP_ID:
-        required: false
-        description: >
-          Legacy-era numeric App ID secret name carried by some orgs
-          (e.g. swift-primitives). Fallback when _APP_CLIENT_ID is absent,
-          still routed through `client-id` — the deprecated `app-id`
-          input of create-github-app-token is never passed (#139).
       SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY:
         required: true
         description: >
-          swift-institute-bot App private key (org-level secret).
+          swift-institute-bot App private key (org-level secret). The ONLY
+          secret this workflow consumes under the terminal profile — the
+          App id is not a secret and travels as
+          `vars.SWIFT_INSTITUTE_BOT_APP_ID` instead (plan §15; F14, #394).
+
+      # DEPRECATED — declared, never read. F14 cut consumption; F15 owns
+      # the deletion.
+      #
+      # These two id-shaped names are no longer routed anywhere: the step
+      # below reads `vars.SWIFT_INSTITUTE_BOT_APP_ID`. They remain
+      # DECLARED only because a caller that passes a secret the callee
+      # does not declare is an invalid-workflow error, and all five
+      # rule-pack callers still forward both names at the time of this
+      # commit (measured 2026-08-06 against each repo's live
+      # .github/workflows/ci.yml). Deleting the declarations ahead of the
+      # caller wave would break those five on their next main push.
+      #
+      # This is the plan's own deletion gate, not a hedge: F15 deletes
+      # them after the caller wave establishes positive-controlled
+      # zero-use (K-13). Until then they are inert.
+      SWIFT_INSTITUTE_BOT_APP_CLIENT_ID:
+        required: false
+        description: >
+          DEPRECATED, unread. Legacy client-id secret spelling. Accepted
+          so pre-wave callers stay valid; deleted at F15.
+      SWIFT_INSTITUTE_BOT_APP_ID:
+        required: false
+        description: >
+          DEPRECATED, unread. Legacy numeric App ID secret spelling. The
+          id is now the org variable of the same name, which is a
+          different context — do not reintroduce this as the source.
+          Accepted so pre-wave callers stay valid; deleted at F15.
 
 jobs:
   dispatch:
@@ -65,7 +97,7 @@ jobs:
         name: Mint App token (swift-foundations/swift-linter, actions:write)
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
         with:
-          client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID || secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
+          client-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
           private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
           owner: swift-foundations
           repositories: swift-linter

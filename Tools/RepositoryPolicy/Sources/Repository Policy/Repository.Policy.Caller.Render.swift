@@ -104,7 +104,7 @@ extension Repository.Policy.Caller {
             lines += orderedInputLines(caller)
             if privateDependencyClosure {
                 lines.append("    secrets:")
-                lines.append("      SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}")
+                lines += terminalSecretLines
             }
             if Repository.Policy.Caller.linterRulePackRepositories.contains(caller.repository) {
                 lines += notifyLinterRepublishJob
@@ -113,20 +113,30 @@ extension Repository.Policy.Caller {
         }
 
         /// The ruled second job for the five rule-pack repositories
-        /// (principal ruling 2026-08-06, #358): on a main push, dispatch
-        /// the central linter-republish pipeline for instant [CI-116]
-        /// freshness. Emits the terminal secret shape — the app id rides
-        /// each org's `SWIFT_INSTITUTE_BOT_APP_ID` variable, so only the
-        /// private key crosses as a secret; notify-linter-republish.yml
-        /// itself moves to this profile in the same caller wave.
+        /// (principal ruling 2026-08-06, #358 comment 5202969590): on a
+        /// main push, dispatch the central linter-republish pipeline for
+        /// instant [CI-116] freshness. Emits the terminal credential
+        /// shape — the app id rides each org's
+        /// `SWIFT_INSTITUTE_BOT_APP_ID` **variable**, resolved inside the
+        /// callee, so the caller forwards only the private key.
+        /// notify-linter-republish.yml itself moved to this profile in
+        /// the same caller wave (F14), which is why the caller no longer
+        /// has an id-shaped secret to forward even as a fallback.
         static let notifyLinterRepublishJob: [String] = [
             "",
             "  notify-linter-republish:",
             "    if: github.event_name == 'push' && github.ref == 'refs/heads/main'",
             "    uses: swift-institute/.github/.github/workflows/notify-linter-republish.yml@main",
             "    secrets:",
-            "      SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}",
-        ]
+        ] + terminalSecretLines
+
+        /// The forwarded-secret lines, derived from the frozen terminal
+        /// profile rather than restated. An id-shaped name cannot appear
+        /// here without appearing in `terminalSecretNames` first.
+        static let terminalSecretLines: [String] =
+            Repository.Policy.Caller.terminalSecretNames.map {
+                "      \($0): ${{ secrets.\($0) }}"
+            }
 
         static func withLines(_ caller: Repository.Policy.Caller) -> [String] {
             let ordered = orderedInputLines(caller)
