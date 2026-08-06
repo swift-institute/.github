@@ -17,9 +17,17 @@ let package = Package(
             targets: ["Repository Policy CLI"]
         ),
     ],
+    dependencies: [
+        .package(url: "https://github.com/swift-primitives/swift-byte-primitives", branch: "main"),
+        .package(url: "https://github.com/swift-standards/swift-fips-180-4", branch: "main"),
+    ],
     targets: [
         .target(
-            name: "Repository Policy"
+            name: "Repository Policy",
+            dependencies: [
+                .product(name: "Byte Primitives", package: "swift-byte-primitives"),
+                .product(name: "FIPS 180-4", package: "swift-fips-180-4"),
+            ]
         ),
         .executableTarget(
             name: "Repository Policy CLI",
