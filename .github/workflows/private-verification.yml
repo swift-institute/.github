@@ -242,14 +242,29 @@ jobs:
           # GitHub command-file variable and disable tracing before it runs.
           set +x
           run_status=0
-          # lint is NOT requested at all: on this runner it can only land
-          # `unmeasured`, and its reason text embeds the subject's absolute
-          # path, which the receipt's redaction guard refuses to seal
-          # ("captured evidence operation lint finding carries an absolute
-          # machine path" — reproduced locally at Workspace 49fad76). Making
-          # it non-required (#341) was insufficient for the same reason.
-          # Private lint stays a Workspace-local measurement, not this
-          # verifier's.
+          # lint is requested again (STOP-F8-G1, swift-institute/.github#375).
+          #
+          # It had been dropped entirely because the lint leg could not be
+          # sealed at all: its findings are swift-linter's own output lines,
+          # which name the subject by the absolute path the linter was
+          # pointed at, and its unmeasured reason interpolated that same
+          # path — so the receipt's redaction guard refused every lint
+          # outcome ("operation lint finding carries an absolute machine
+          # path"). That was an instrument defect, not a property of lint,
+          # and dropping the step turned it into a silently reduced
+          # contract. Workspace now relativizes lint findings and reasons
+          # against the subject root before sealing them, and refuses with
+          # a typed, path-free reason — so the leg can land a real outcome.
+          #
+          # PRECONDITION: this line must not merge before that Workspace fix
+          # is in the revision this workflow runs. See the PR body.
+          #
+          # lint is requested but deliberately NOT required. The receipt now
+          # records what lint actually did on this runner; promoting it to
+          # `--required-step lint` is a separate, evidence-first decision to
+          # be taken once sealed receipts show the leg measuring rather than
+          # landing `unmeasured` for want of a linter installation — the
+          # same caution #341 applied, now on a leg that can report.
           env -u GITHUB_ENV -u GITHUB_OUTPUT -u GITHUB_PATH -u GITHUB_STEP_SUMMARY -u ACTIONS_STEP_DEBUG \
             swift run --package-path "${WORKSPACE_DIR}/Application" -c release workspace verification seal \
               --package-path "$SUBJECT_DIR" \
@@ -260,7 +275,7 @@ jobs:
               --inventory-digest "$INVENTORY_DIGEST" \
               --workspace-revision "$WORKSPACE_REVISION" \
               --policy-revision "$POLICY_REVISION" \
-              --step build --step test --step nested-tests \
+              --step build --step test --step nested-tests --step lint \
               --required-step build --required-step test --required-step nested-tests \
               --receipt "$receipt_path" \
               > "$run_log" 2>&1 \
