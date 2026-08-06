@@ -1,0 +1,27 @@
+# F12 candidate-ref canary (Goal swift-institute/.github#358, #390).
+# Exercises THIS branch's universal workflow (Swift plan + aggregate,
+# cold bootstrap then verified cache) against a real subject with
+# non-zero jobs, BEFORE any central merge. Deleted with the branch.
+name: f12-canary
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: f12-canary-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    uses: ./.github/workflows/swift-ci.yml
+    permissions:
+      contents: read
+      actions: read
+    with:
+      tier: build
+      lint-bundle: standards
+      target-repo: swift-standards/swift-fips-180-4
+      ref: main

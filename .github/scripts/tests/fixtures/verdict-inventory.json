@@ -186,8 +186,14 @@
         "private_guarded": true,
         "runner": "ubuntu-latest",
         "step_names": [
-          "Aggregate required-job results",
           "Checkout swift-institute/.github (receipt helper at this workflow's own ref)",
+          "Institute CI source identity",
+          "Restore Institute CI (exact key, acceleration only)",
+          "Swift toolchain (cold bootstrap only)",
+          "Checkout Workspace at exact main pin (cold bootstrap only)",
+          "Cold bootstrap through the sanctioned Workspace coordinate",
+          "Verify Institute CI provenance before trust (fail closed)",
+          "Aggregate required-job results",
           "Produce preterminal effective runtime receipt",
           "Upload effective runtime receipt artifact"
         ],
@@ -532,6 +538,13 @@
           "Checkout CI scripts",
           "Identity-conflict fast-check",
           "Branch-pin guard",
+          "Institute CI source identity",
+          "Restore Institute CI (exact key, acceleration only)",
+          "Swift toolchain (cold bootstrap only)",
+          "Checkout Workspace at exact main pin (cold bootstrap only)",
+          "Cold bootstrap through the sanctioned Workspace coordinate",
+          "Save Institute CI cache entry (cold bootstrap only)",
+          "Verify Institute CI provenance before trust (fail closed)",
           "Classify tier"
         ],
         "wave": 0
@@ -620,22 +633,7 @@
     },
     "plan": {
       "classify_step": "Classify tier",
-      "full_tier_legs": [
-        "format",
-        "lint",
-        "swift-linter",
-        "linux-release",
-        "macos-release",
-        "windows-release",
-        "linux-nightly",
-        "linux-6-4",
-        "apple-simulator-build",
-        "lint-yaml",
-        "lint-broken-symlink",
-        "lint-license-header",
-        "lint-test-support-spine",
-        "advisory-summary"
-      ],
+      "full_tier_legs": [],
       "resolve_subject_step": "Resolve CI subject"
     },
     "possible_job_conclusions": [
@@ -645,7 +643,7 @@
       "skipped"
     ],
     "required_check_context": "ci / matrix / ci-ok",
-    "source_sha256": "113d5cec4a25ace0eb16b98c98f66277fec3d25704f481f433a8849be5159bae"
+    "source_sha256": "114d694fafafc81b5a21ae0f42ac3f2b8cb02f88f910c74b2c1692f514f8c626"
   },
   "wrappers": {
     "foundations": {
