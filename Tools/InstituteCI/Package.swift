@@ -21,6 +21,10 @@ let package = Package(
             targets: ["Institute CI Command"]
         ),
     ],
+    dependencies: [
+        .package(url: "https://github.com/swift-standards/swift-fips-180-4.git", branch: "main"),
+        .package(url: "https://github.com/swift-primitives/swift-byte-primitives.git", branch: "main"),
+    ],
     targets: [
         .target(
             name: "CI Contract"
@@ -30,11 +34,19 @@ let package = Package(
             dependencies: ["CI Contract", "Institute Receipt"]
         ),
         .target(
-            name: "Institute Receipt"
+            name: "Institute Receipt",
+            dependencies: [
+                .product(name: "FIPS 180-4", package: "swift-fips-180-4"),
+                .product(name: "Byte Primitives", package: "swift-byte-primitives"),
+            ]
         ),
         .executableTarget(
             name: "Institute CI Command",
-            dependencies: ["Institute CI Application"]
+            dependencies: [
+                "Institute CI Application",
+                "Institute Receipt",
+                .product(name: "Byte Primitives", package: "swift-byte-primitives"),
+            ]
         ),
         .testTarget(
             name: "CI Contract Tests",
