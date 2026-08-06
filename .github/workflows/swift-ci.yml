@@ -325,7 +325,9 @@ jobs:
     # bypass for those two checks specifically.
     if: ${{ !github.event.repository.private }}
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 60: the F12 cold bootstrap (Workspace source build of institute-ci)
+    # runs here on a cache miss (~30 min); warm-cache runs stay seconds.
+    timeout-minutes: 60
     permissions:
       contents: read
     outputs:
@@ -2510,7 +2512,8 @@ jobs:
       - lint
       - swift-linter
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # 60: same cold-bootstrap allowance as plan (F12).
+    timeout-minutes: 60
     permissions:
       contents: read
       # TX7 receipt contract (swift-institute/.github#276 §8.9): this
