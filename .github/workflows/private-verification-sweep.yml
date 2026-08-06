@@ -92,7 +92,7 @@ jobs:
         id: token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+          client-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
           private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
           # No `owner`/`repositories`: a fleet-read token spans every
           # organization the App installation covers. Read-only, so this is
@@ -114,7 +114,7 @@ jobs:
         id: dispatch-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+          client-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
           private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
           permission-contents: write
 
@@ -149,7 +149,7 @@ jobs:
           # read-only token never could.
           GH_TOKEN: ${{ steps.token.outputs.token }}
           CENTRAL_DISPATCH_TOKEN: ${{ steps.dispatch-token.outputs.token }}
-          APP_CLIENT_ID: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+          APP_CLIENT_ID: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
           APP_PRIVATE_KEY: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
           ORGS_JSON: ${{ steps.orgs.outputs.orgs }}
           WORKSPACE_REVISION: ${{ steps.workspace.outputs.revision }}
