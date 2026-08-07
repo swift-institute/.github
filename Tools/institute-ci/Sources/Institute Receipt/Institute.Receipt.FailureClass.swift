@@ -5,7 +5,7 @@ extension Institute.Receipt {
     public enum FailureClass: Sendable, Equatable {
         case stageNotTerminal(field: String)
         case nullTerminalField(field: String)
-        case mandatoryJobNotSuccess(job: Int, conclusion: String)
+        case mandatoryJobNotSuccess(job: String, conclusion: Conclusion)
         case jobsPaginationIncomplete(total: Int, present: Int)
         case shortSha(field: String, value: String)
         case emptySubject

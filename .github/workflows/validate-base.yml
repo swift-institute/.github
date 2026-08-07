@@ -118,7 +118,12 @@ jobs:
   scan:
     if: ${{ !github.event.repository.private }}  # [CI-032]
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # 60, up from 5: the F12 cold bootstrap (a Workspace source build of
+    # institute-ci) runs in this job on a cache miss and takes ~30 minutes;
+    # warm-cache runs restore in seconds. Same allowance swift-ci.yml's plan
+    # job already carries. Measured the hard way — the first canary
+    # (run 31164499832) was killed at exactly 5 minutes mid-bootstrap.
+    timeout-minutes: 60
     permissions:
       contents: read
     outputs:
@@ -207,6 +212,25 @@ jobs:
           echo "::notice title=Validator source::swift-institute/.github@${VALIDATOR_REF} resolved to ${resolved}"
           echo "validator-ref=${VALIDATOR_REF} resolved=${resolved}"
 
+      # ─── F16 cutover (Goal swift-institute/.github#358; home issue #404) ───
+      # The validators are moving from Python to Swift class by class, and
+      # this is the one place the fleet switches over. The binary is
+      # provisioned from the SAME checkout the Python was loaded from, so
+      # `validator-ref` still pins the checker exactly — a run's result
+      # remains attributable to one revision of one tree.
+      #
+      # Cost is bounded and paid once per job: measured on the universal's
+      # plan job, a warm restore is 1-3s and the fail-closed provenance
+      # verification 9-10s. That is affordable HERE, where the scan loop
+      # already clones every target over the network; it is NOT affordable
+      # at swift-ci.yml's pre-toolchain branch-pin guard, which is why that
+      # one call site keeps its vendored Python (see the note there).
+      - name: Provision the Institute CI binary
+        id: institute-ci
+        uses: ./institute-github/.github/actions/institute-ci
+        with:
+          sources-root: ${{ github.workspace }}/institute-github
+
       - name: Resolve target repo
         id: targets
         if: ${{ inputs.discovery-mode != 'per-package-org-sweep' }}
@@ -280,6 +304,14 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.mint-token.outputs.token || github.token }}
           VALIDATOR: ${{ github.workspace }}/institute-github/${{ inputs.validator-script }}
+          # The registry key. `validator-script` names the validator's
+          # IDENTITY, not merely a file: a ported validator records the
+          # same path as its `retiredScript`, so callers need no edit when
+          # their rule crosses to Swift, and the path keeps resolving the
+          # validator after the file itself is deleted.
+          VALIDATOR_ID: ${{ inputs.validator-script }}
+          INSTITUTE_CI: ${{ steps.institute-ci.outputs.binary }}
+          INSTITUTE_CI_SUPPORT_ROOT: ${{ github.workspace }}/institute-github
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_REPO: ${{ github.repository }}
           CRASH_EXIT_MIN: ${{ inputs.crash-exit-min }}
@@ -287,6 +319,10 @@ jobs:
           set -euo pipefail
           : > /tmp/findings.tsv
           : > /tmp/attempted.txt
+          # Swift output is staged here first so an "unported" answer
+          # cannot leave a partial stream in findings.tsv before the
+          # python3 fallback appends its own.
+          : > /tmp/swift-findings.tsv
           while IFS= read -r repo; do
           [ -z "$repo" ] && continue
           echo "$repo" >> /tmp/attempted.txt
@@ -329,8 +365,38 @@ jobs:
             # missing PyYAML) — NOT that it found violations. The old `|| true`
             # swallowed such a crash and left findings.tsv empty → "Total
             # violations: 0" → false-green, exactly the gap clone-failed closes.
+            #
+            # F16 registry-driven dispatch. The Swift binary is asked
+            # first, by the validator's identity; exit 3 is its answer for
+            # "no Swift owner is registered for that script", and ONLY
+            # that code falls through to python3. Any other nonzero code
+            # is the validator's own, and is judged below exactly as
+            # before.
+            #
+            # This is what lets the port classes land and delete
+            # independently: the registry inside the binary is the single
+            # record of what has been ported, so there is no list in YAML
+            # to keep in step with it. A class that has not landed still
+            # runs its Python; the moment it lands, every caller of that
+            # validator is served by Swift with no caller edit.
+            #
+            # Under the ported contract findings no longer set the exit
+            # code (0 = ran, 2 = could not run), which composes with both
+            # `crash-exit-min` settings already in use — see the input's
+            # documentation above.
             rc=0
-            python3 "$VALIDATOR" "$repo" "$workdir" >> /tmp/findings.tsv || rc=$?
+            "$INSTITUTE_CI" validate --script "$VALIDATOR_ID" \
+              --repository "$repo" --root "$workdir" >> /tmp/swift-findings.tsv || rc=$?
+            if [ "$rc" -eq 3 ]; then
+              : > /tmp/swift-findings.tsv
+              echo "::notice title=Validator engine::${VALIDATOR_ID} is not yet ported; serving ${repo} with python3."
+              rc=0
+              python3 "$VALIDATOR" "$repo" "$workdir" >> /tmp/findings.tsv || rc=$?
+            else
+              cat /tmp/swift-findings.tsv >> /tmp/findings.tsv
+              : > /tmp/swift-findings.tsv
+              echo "::notice title=Validator engine::${VALIDATOR_ID} served by institute-ci (Swift) for ${repo}."
+            fi
             if [ "$rc" -ge "${CRASH_EXIT_MIN:-1}" ]; then
               echo "$repo	validator-crashed	-" >> /tmp/findings.tsv
             fi

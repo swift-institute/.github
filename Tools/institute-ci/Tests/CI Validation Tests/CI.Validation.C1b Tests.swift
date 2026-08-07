@@ -1,6 +1,5 @@
 import CI_Contract
 import CI_Workflow
-import Foundation
 import Testing
 
 @testable import CI_Validation
@@ -16,21 +15,16 @@ import Testing
 /// them.
 @Suite
 struct CIValidationC1bTests {
-    static func subject(_ name: String, _ contents: [String: String]) throws -> (
-        CI.Validation.Subject, URL
-    ) {
-        let root = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appendingPathComponent("c1b-\(name)-\(UUID().uuidString)")
-        for (relative, text) in contents {
-            let file = root.appendingPathComponent(relative)
-            try FileManager.default.createDirectory(
-                at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try Data(text.utf8).write(to: file)
-        }
-        return (
-            CI.Validation.Subject(
-                repository: "swift-institute-test/\(name)", root: root.path), root
-        )
+    /// A throwaway repository carrying one or more files.
+    ///
+    /// Composed over the suite-shared `TemporaryRepository` rather than
+    /// re-declaring temporary-directory handling per class: its `deinit`
+    /// owns the cleanup, which is also what keeps these controls free of
+    /// a `try?` in every `defer`.
+    static func repository(_ name: String, _ contents: [String: String]) -> TemporaryRepository {
+        let repository = TemporaryRepository(repository: "swift-institute-test/\(name)")
+        for (relative, text) in contents { repository.write(text, to: relative) }
+        return repository
     }
 
     @Suite
@@ -47,13 +41,22 @@ struct CIValidationC1bTests {
                     is CI.Validation.EnvironmentContext)
         }
 
-        @Test func `each validator names the script it retires`() {
-            let scripts = CI.Validation.Registry.validators.compactMap(\.retiredScript)
-            #expect(scripts.contains(".github/scripts/validate-ci-matrix.py"))
-            #expect(
-                scripts.contains(".github/scripts/validate-composite-action-descriptions.py"))
-            #expect(scripts.contains(".github/scripts/validate-embedded-job.py"))
-            #expect(scripts.contains(".github/scripts/validate-env-context.py"))
+        /// `validate-base.yml` dispatches by the retired script's path,
+        /// not by rule, so a caller needs no edit when its rule crosses
+        /// to Swift — and the path keeps resolving after the file is
+        /// deleted. Each of the four must answer to the exact string its
+        /// caller still declares.
+        @Test(arguments: [
+            (".github/scripts/validate-ci-matrix.py", "CI-010"),
+            (".github/scripts/validate-composite-action-descriptions.py", "CI-102"),
+            (".github/scripts/validate-embedded-job.py", "CI-021"),
+            (".github/scripts/validate-env-context.py", "CI-103"),
+        ])
+        func `each retired script resolves to its replacement`(
+            script: String, rule: CI.Validation.Rule
+        ) {
+            let validator = CI.Validation.Registry.validator(replacing: script)
+            #expect(validator?.rules.contains(rule) == true)
         }
     }
 
@@ -105,7 +108,7 @@ struct CIValidationC1bTests {
         }
 
         @Test func `one job can violate on both fields and is reported twice`() throws {
-            let (subject, root) = try CIValidationC1bTests.subject(
+            let fixture = CIValidationC1bTests.repository(
                 "both-fields",
                 [
                     ".github/workflows/ci.yml": """
@@ -121,8 +124,7 @@ struct CIValidationC1bTests {
                               - run: swift build
                         """
                 ])
-            defer { try? FileManager.default.removeItem(at: root) }
-            let findings = try Rule().findings(in: subject)
+            let findings = try Rule().findings(in: fixture.subject)
             #expect(findings.count == 2)
             #expect(findings[0].message.contains("`runs-on:`"))
             #expect(findings[1].message.contains("`container.image:`"))
@@ -137,7 +139,7 @@ struct CIValidationC1bTests {
             // to worry about; CI-021 asks whether the posture is
             // declared, and a string is not a declaration.
             for (value, satisfied) in [("true", true), ("'true'", false), ("false", false)] {
-                let (subject, root) = try CIValidationC1bTests.subject(
+                let fixture = CIValidationC1bTests.repository(
                     "embedded",
                     [
                         ".github/workflows/swift-ci.yml": """
@@ -152,8 +154,7 @@ struct CIValidationC1bTests {
                                   - run: swift build
                             """
                     ])
-                defer { try? FileManager.default.removeItem(at: root) }
-                let findings = try CI.Validation.EmbeddedJob().findings(in: subject)
+                let findings = try CI.Validation.EmbeddedJob().findings(in: fixture.subject)
                 #expect(findings.isEmpty == satisfied, "continue-on-error: \(value)")
             }
         }
@@ -162,10 +163,9 @@ struct CIValidationC1bTests {
             // Silence here means "not asked". The distinction is why the
             // corpus keeps `no-swift-ci-yml` as an edge scenario rather
             // than folding it into pass.
-            let (subject, root) = try CIValidationC1bTests.subject(
+            let fixture = CIValidationC1bTests.repository(
                 "no-swift-ci", [".github/workflows/lint.yml": "name: Lint\non:\n  push:\n"])
-            defer { try? FileManager.default.removeItem(at: root) }
-            #expect(try CI.Validation.EmbeddedJob().findings(in: subject).isEmpty)
+            #expect(try CI.Validation.EmbeddedJob().findings(in: fixture.subject).isEmpty)
         }
     }
 
@@ -177,13 +177,11 @@ struct CIValidationC1bTests {
             // what stops a misconfigured dispatch from reporting the
             // whole ecosystem as defective.
             let workflow = [".github/workflows/swift-ci.yml": "name: Swift CI\njobs: {}\n"]
-            let (wrapper, wrapperRoot) = try CIValidationC1bTests.subject(
-                "wrapper", workflow)
-            defer { try? FileManager.default.removeItem(at: wrapperRoot) }
+            let fixture = CIValidationC1bTests.repository("wrapper", workflow)
             let scoped = CI.Validation.Subject(
-                repository: "swift-primitives/.github", root: wrapper.root)
+                repository: "swift-primitives/.github", root: fixture.root)
             #expect(try CI.Validation.CIMatrix().findings(in: scoped).isEmpty)
-            #expect(!(try CI.Validation.CIMatrix().findings(in: wrapper).isEmpty))
+            #expect(!(try CI.Validation.CIMatrix().findings(in: fixture.subject).isEmpty))
         }
 
         @Test func `the two postures are reported under different rules`() throws {
@@ -191,7 +189,7 @@ struct CIValidationC1bTests {
             // Windows must not be. A validator that reported both under
             // one identifier would let a Windows regression be triaged as
             // toolchain noise.
-            let (subject, root) = try CIValidationC1bTests.subject(
+            let fixture = CIValidationC1bTests.repository(
                 "postures",
                 [
                     ".github/workflows/swift-ci.yml": """
@@ -226,13 +224,12 @@ struct CIValidationC1bTests {
                               - run: xcodebuild
                         """
                 ])
-            defer { try? FileManager.default.removeItem(at: root) }
-            let findings = try CI.Validation.CIMatrix().findings(in: subject)
+            let findings = try CI.Validation.CIMatrix().findings(in: fixture.subject)
             #expect(findings.map(\.rule) == ["CI-010", "CI-099"])
         }
 
         @Test func `a collapsed apple matrix names every missing platform in order`() throws {
-            let (subject, root) = try CIValidationC1bTests.subject(
+            let fixture = CIValidationC1bTests.repository(
                 "collapsed",
                 [
                     ".github/workflows/swift-ci.yml": """
@@ -257,15 +254,14 @@ struct CIValidationC1bTests {
                                 platform: [iOS]
                         """
                 ])
-            defer { try? FileManager.default.removeItem(at: root) }
-            let findings = try CI.Validation.CIMatrix().findings(in: subject)
+            let findings = try CI.Validation.CIMatrix().findings(in: fixture.subject)
             #expect(findings.count == 1)
             #expect(
                 findings[0].message.hasSuffix("missing: ['tvOS', 'visionOS', 'watchOS']"))
         }
 
         @Test func `a wrong runner quotes the value it read back`() throws {
-            let (subject, root) = try CIValidationC1bTests.subject(
+            let fixture = CIValidationC1bTests.repository(
                 "wrong-runner",
                 [
                     ".github/workflows/swift-ci.yml": """
@@ -290,8 +286,7 @@ struct CIValidationC1bTests {
                                 platform: [iOS, tvOS, watchOS, visionOS]
                         """
                 ])
-            defer { try? FileManager.default.removeItem(at: root) }
-            let findings = try CI.Validation.CIMatrix().findings(in: subject)
+            let findings = try CI.Validation.CIMatrix().findings(in: fixture.subject)
             #expect(findings.count == 1)
             #expect(
                 findings[0].message
@@ -305,7 +300,7 @@ struct CIValidationC1bTests {
         @Test func `an expression outside a description is left alone`() throws {
             // The edge corpora hold this line: an output's `value:` and a
             // step's `env:` are exactly where expressions belong.
-            let (subject, root) = try CIValidationC1bTests.subject(
+            let fixture = CIValidationC1bTests.repository(
                 "legit",
                 [
                     ".github/actions/legit/action.yml": """
@@ -324,12 +319,11 @@ struct CIValidationC1bTests {
                               run: echo "$REF"
                         """
                 ])
-            defer { try? FileManager.default.removeItem(at: root) }
-            #expect(try CI.Validation.CompositeActionDescriptions().findings(in: subject).isEmpty)
+            #expect(try CI.Validation.CompositeActionDescriptions().findings(in: fixture.subject).isEmpty)
         }
 
         @Test func `all three description positions are scanned in order`() throws {
-            let (subject, root) = try CIValidationC1bTests.subject(
+            let fixture = CIValidationC1bTests.repository(
                 "broken",
                 [
                     ".github/actions/broken/action.yml": """
@@ -346,8 +340,7 @@ struct CIValidationC1bTests {
                           steps: []
                         """
                 ])
-            defer { try? FileManager.default.removeItem(at: root) }
-            let findings = try CI.Validation.CompositeActionDescriptions().findings(in: subject)
+            let findings = try CI.Validation.CompositeActionDescriptions().findings(in: fixture.subject)
             #expect(findings.count == 3)
             #expect(findings[0].message.contains("top-level description"))
             #expect(findings[1].message.contains("inputs.token description"))
@@ -355,10 +348,9 @@ struct CIValidationC1bTests {
         }
 
         @Test func `a repository with no actions directory is silent`() throws {
-            let (subject, root) = try CIValidationC1bTests.subject(
+            let fixture = CIValidationC1bTests.repository(
                 "no-actions", ["README.md": "# nothing here\n"])
-            defer { try? FileManager.default.removeItem(at: root) }
-            #expect(try CI.Validation.CompositeActionDescriptions().findings(in: subject).isEmpty)
+            #expect(try CI.Validation.CompositeActionDescriptions().findings(in: fixture.subject).isEmpty)
         }
     }
 }

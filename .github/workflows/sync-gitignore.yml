@@ -150,6 +150,12 @@ jobs:
           path: institute-github
           ref: ${{ job.workflow_sha }}
 
+      - name: Provision the Institute CI binary
+        id: institute-ci
+        uses: ./institute-github/.github/actions/institute-ci
+        with:
+          sources-root: ${{ github.workspace }}/institute-github
+
       - name: Prove the renderer and the gate agree before writing anything
         # The fixture suite covers the gate; this covers the pair. A renderer
         # that emits something the validator rejects would push a fleet-wide
@@ -157,7 +163,10 @@ jobs:
         # precise failure this ordering exists to prevent.
         run: |
           set -euo pipefail
-          "${{ github.workspace }}/institute-github/.github/scripts/tests/run.sh" gh-ignore-
+          "${{ steps.institute-ci.outputs.binary }}" validate-fixtures \
+            --corpus "${{ github.workspace }}/institute-github/.github/scripts/tests/fixtures" \
+            --scripts "${{ github.workspace }}/institute-github/.github/scripts" \
+            --rule-prefix gh-ignore-
 
       - name: Resolve target repos
         id: targets
@@ -209,7 +218,10 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.mint-token.outputs.token }}
           CANON: ${{ github.workspace }}/institute-github/canon/gitignore-package.txt
-          RENDERER: ${{ github.workspace }}/institute-github/.github/scripts/render-gitignore.py
+          # F16: the renderer is `CI.Canon.Gitignore.Render` (C4). Same
+          # binary this job already provisioned for the fixture gate; no
+          # second channel, and it clears C4's renderer deletion gate.
+          INSTITUTE_CI: ${{ steps.institute-ci.outputs.binary }}
           DRY_RUN: ${{ inputs.dry-run }}
           INPUT_REPO: ${{ inputs.repo }}
           INPUT_ORG: ${{ inputs.org }}
@@ -233,7 +245,8 @@ jobs:
               echo "$repo	not-a-package	-" >> /tmp/report.tsv
               skipped=$((skipped+1)); rm -rf "$workdir"; continue
             fi
-            python3 "$RENDERER" "$CANON" "$workdir/.gitignore" > /tmp/rendered
+            "$INSTITUTE_CI" render-gitignore --canon "$CANON" \
+              --target "$workdir/.gitignore" > /tmp/rendered
             if cmp -s /tmp/rendered "$workdir/.gitignore"; then
               echo "$repo	conformant	-" >> /tmp/report.tsv
               rm -rf "$workdir"; continue
