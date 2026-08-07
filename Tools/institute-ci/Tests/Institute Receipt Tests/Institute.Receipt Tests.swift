@@ -7,7 +7,7 @@ struct InstituteReceiptTests {
     static let digest = String(repeating: "b", count: 64)
 
     func preterminal(
-        conclusion: String? = "success",
+        conclusion: Institute.Receipt.Conclusion? = .success,
         referenced: [Institute.Receipt.ReferencedWorkflow]? = nil,
         jobs: [Institute.Receipt.Job]? = nil,
         totalCount: Int? = nil,
@@ -66,7 +66,7 @@ struct InstituteReceiptTests {
 
     @Test
     func skippedOrCancelledMandatoryJobRefuses() {
-        for conclusion in ["skipped", "cancelled"] {
+        for conclusion: Institute.Receipt.Conclusion in [.skipped, .cancelled] {
             let terminal = Institute.Receipt.Terminal(
                 base: preterminal(jobs: [
                     .init(id: 1, name: "linux-release", conclusion: conclusion,
@@ -74,7 +74,7 @@ struct InstituteReceiptTests {
                 ]),
                 baseReceiptDigest: Self.digest)
             #expect(terminal.validate().contains(
-                .mandatoryJobNotSuccess(job: 1, conclusion: conclusion)))
+                .mandatoryJobNotSuccess(job: "1", conclusion: conclusion)))
         }
     }
 
