@@ -218,7 +218,10 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.mint-token.outputs.token }}
           CANON: ${{ github.workspace }}/institute-github/canon/gitignore-package.txt
-          RENDERER: ${{ github.workspace }}/institute-github/.github/scripts/render-gitignore.py
+          # F16: the renderer is `CI.Canon.Gitignore.Render` (C4). Same
+          # binary this job already provisioned for the fixture gate; no
+          # second channel, and it clears C4's renderer deletion gate.
+          INSTITUTE_CI: ${{ steps.institute-ci.outputs.binary }}
           DRY_RUN: ${{ inputs.dry-run }}
           INPUT_REPO: ${{ inputs.repo }}
           INPUT_ORG: ${{ inputs.org }}
@@ -242,7 +245,8 @@ jobs:
               echo "$repo	not-a-package	-" >> /tmp/report.tsv
               skipped=$((skipped+1)); rm -rf "$workdir"; continue
             fi
-            python3 "$RENDERER" "$CANON" "$workdir/.gitignore" > /tmp/rendered
+            "$INSTITUTE_CI" render-gitignore --canon "$CANON" \
+              --target "$workdir/.gitignore" > /tmp/rendered
             if cmp -s /tmp/rendered "$workdir/.gitignore"; then
               echo "$repo	conformant	-" >> /tmp/report.tsv
               rm -rf "$workdir"; continue
