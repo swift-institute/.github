@@ -55,7 +55,13 @@ extension CI.SymbolGraph {
             switch any {
             case is NSNull: self = .null
             case let number as NSNumber:
-                if CFGetTypeID(number) == CFBooleanGetTypeID() {
+                // objCType "c" is how a JSONSerialization boolean is
+                // distinguished from a numeric NSNumber on BOTH
+                // Foundations — the CFGetTypeID/CFBooleanGetTypeID pair
+                // this replaces exists only on Darwin, and this target
+                // must compile on the Linux runners that provision
+                // institute-ci.
+                if String(cString: number.objCType) == "c" {
                     self = .bool(number.boolValue)
                 } else {
                     self = .number(number.doubleValue)
