@@ -1,0 +1,71 @@
+{
+ "schemaVersion": 1,
+ "transaction": "G1",
+ "goal": "swift-institute/.github#358",
+ "subIssue": "swift-institute/.github#375",
+ "responsibleIdentity": "peer task g1-seal (seal), coordinator session 470123ea, authenticated as coenttb",
+ "policyRevision": "2026-08-07-1",
+ "outputs": [
+  "full-contract-G1.json"
+ ],
+ "sealedRun": {
+  "run": 31175662313,
+  "workflow": ".github/workflows/private-verification-sweep.yml",
+  "event": "workflow_dispatch",
+  "headSha": "f779bca23f1102bcc0fa754d0bb95f0d5277ebad",
+  "headBranch": "main",
+  "runAttempt": 1,
+  "createdAt": "2026-08-07T11:50:01Z",
+  "updatedAt": "2026-08-07T12:08:27Z",
+  "status": "completed",
+  "conclusion": "success",
+  "jobs": [
+   {
+    "name": "sweep",
+    "conclusion": "success",
+    "startedAt": "2026-08-07T11:52:34Z",
+    "completedAt": "2026-08-07T12:08:27Z",
+    "credentialSteps": [
+     "Mint a fleet-read installation token (metadata across every active org)",
+     "Mint a central-repository dispatch token (contents write, this repo only)"
+    ],
+    "dispatchStep": "Enumerate candidates, dedupe, mark in-progress, and dispatch"
+   }
+  ]
+ },
+ "measuredResult": {
+  "dryRun": false,
+  "candidatesLackingCurrentSuccessfulCheck": 0,
+  "dispatchedThisPass": 0,
+  "workspaceRevision": "f32665eff3d5b5eb7921b4df7654fd2fc9207a6c",
+  "inventoryDigest": "fd4d8a755aa8ee6802fa4b526784fe5ea7852f45a4c28d7710bf6028ea2be51e",
+  "reading": "The sweep's candidate predicate is keyed on the exact (repository, head, policyRevision) tuple at policyRevision 2026-08-07-1; zero candidates is this run's own measurement that every enumerated fleet head already carries a current successful verification check under this policy revision, so this pass had nothing to dispatch."
+ },
+ "fullContract": {
+  "reference": "R34 three-stage split-credential contract: sweep -> verify/publish -> `verification / workspace` check, including measured lint",
+  "elements": {
+   "sweepStage": {
+    "status": "MEASURED",
+    "evidence": "This run's sweep job: split-credential minting (fleet-read metadata installation token; central-repository contents-write dispatch token, this repo only), Workspace pinned once for the whole pass (f32665ef), enumerate/dedupe/mark-in-progress/dispatch step completed success."
+   },
+   "verifyPublishStage": {
+    "status": "UNMEASURED",
+    "reason": "This run contains only the sweep job, and this pass measured candidates=0 / dispatched=0, so no verify/publish execution is a child of run 31175662313; the verify/publish behaviour is not evidenced by this run's own jobs or steps."
+   },
+   "verificationWorkspaceCheck": {
+    "status": "MEASURED-INDIRECTLY",
+    "evidence": "The zero-candidate result is this run's measurement that a current successful check keyed to policyRevision 2026-08-07-1 exists at every enumerated head; the check runs themselves are not children of this run."
+   },
+   "measuredLint": {
+    "status": "UNMEASURED",
+    "reason": "The lint step lives inside the dispatched verification runs; this pass dispatched none, so no lint execution appears in run 31175662313's own data."
+   }
+  }
+ },
+ "supersession": {
+  "note": "The pre-fix green run 31171384472 (head a657a5b4) was ruled superseded per swift-institute/.github#375 comment 5216706754; G1 is sealed only from evidence produced at or after the PS-2 fix f779bca2. This receipt's sealed run executes at head f779bca2 itself and postdates the fix.",
+  "supersededRun": 31171384472,
+  "supersededHead": "a657a5b4",
+  "ruling": "swift-institute/.github#375 comment 5216706754"
+ }
+}
