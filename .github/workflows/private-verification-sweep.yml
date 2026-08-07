@@ -70,9 +70,8 @@ on:
 jobs:
   sweep:
     runs-on: ubuntu-latest
-    # A cold pass now also builds Workspace once, to digest the effective
-    # inventory; warm passes restore that build from the cache keyed on
-    # the Workspace revision. 30 minutes was sized for enumeration alone.
+    # Every pass builds Workspace once, to digest the effective
+    # inventory. 30 minutes was sized for enumeration alone.
     timeout-minutes: 45
     permissions:
       contents: read
@@ -138,16 +137,14 @@ jobs:
       # The effective-inventory digest is computed by Workspace itself, at
       # the same pinned revision this sweep dispatches with, from the
       # roster this step enumerates (`Workspace.Inventory.Effective.Roster`
-      # — swift-institute/Workspace#147). The build is cached on the
-      # revision alone: acceleration only, and a cold pass that cannot
-      # finish it records a typed UNMEASURED cause rather than inventing a
-      # digest.
-      - name: Restore the pinned Workspace build (acceleration only)
-        id: workspace-build-restore
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .workspace/Application/.build
-          key: workspace-build-${{ steps.workspace.outputs.revision }}-linux-x86_64-swift-6.3
+      # — swift-institute/Workspace#147). The build is NOT cached
+      # ([CI-040], PS-2): Application's branch-pinned dependencies mean a
+      # key on the Workspace revision alone is not a graph identity, and
+      # the trusted verifier must not attest against artifacts built from
+      # a different dependency graph. A pass that cannot finish the build
+      # records a typed UNMEASURED cause rather than inventing a digest.
+      # F10's digest-verified `bootstrap-verify` cache is the sanctioned
+      # acceleration path.
 
       # EXACT, not "6.3": Workspace's Application declares
       # `swift-tools-version: 6.3.3`, and a 6.3.0 toolchain refuses such a
@@ -590,13 +587,6 @@ jobs:
             echo "enumerated-private=${enumerated_private}"
             echo "unmeasured-orgs=${unmeasured_orgs:-}"
           } >> "$GITHUB_OUTPUT"
-
-      - name: Save the pinned Workspace build (acceleration only)
-        if: ${{ steps.workspace-build-restore.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .workspace/Application/.build
-          key: workspace-build-${{ steps.workspace.outputs.revision }}-linux-x86_64-swift-6.3
 
       - name: Summary
         shell: bash
