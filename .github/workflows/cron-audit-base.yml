@@ -12,8 +12,9 @@
 #
 # Phase C of the 2026-05-14 CI review (Q2=B sealed) refactored the
 # free-form `audit-step:` shell-string contract into the structured-
-# input contract below. The cron-audit-runner.py driver is the only
-# entry point; callers MUST NOT supply shell snippets. This closes the
+# input contract below. The `institute-ci-control cron-audit` driver
+# (Tools/institute-ci-control, `Fleet.Audit`) is the only entry point;
+# callers MUST NOT supply shell snippets. This closes the
 # HIGH-CONDITIONAL template-injection finding from
 # CI-REVIEW-security-2026-05-14.md (the prior `audit-step:` interpolated
 # caller-supplied bash into a job that holds a cross-org App-installation
@@ -21,20 +22,18 @@
 #
 # Each caller provides:
 #
-#   - audit-runner-path: optional override for the generic runner;
-#     default '.github/scripts/cron-audit-runner.py' is the canonical
-#     driver. All 3 current callers accept the default.
-#   - audit-script-path: per-package audit script (Python). Receives
-#     --package-dir <clone> --json <out>; produces the JSON shape its
-#     callers expect (see existing audit-license-header.py /
-#     audit-test-support-spine.py / audit-mechanical-hygiene.py).
-#   - audit-setup-script-path: optional one-time pre-loop setup
-#     (e.g. audit-setup-yamllint.py installs yamllint + writes
-#     /tmp/yamllint.yml). Empty when no setup is needed.
+#   - audit: the audit to run over each clone. A registered name
+#     ('mechanical-hygiene') selects a Swift audit; any other value is
+#     read as a path within swift-institute/.github to a Python audit
+#     script, which is how the two swift-linter-owned audits
+#     (audit-license-header.py, audit-test-support-spine.py) keep
+#     running until the CW cross-programme hold lifts. Setup for a
+#     registered audit is the runner's own (`audit-setup`); a script
+#     audit needs none.
 #   - audit-runner-args: JSON-encoded config dict consumed by the
 #     runner (json_totals_path, count_keys, extra_template,
-#     extra_when_keys, summary_label). See cron-audit-runner.py
-#     module docstring for the full schema.
+#     extra_when_keys, summary_label). Decoded into
+#     `Fleet.Audit.Configuration`; see that type for the full schema.
 #   - matrix-orgs: JSON array of org names to sweep.
 #   - container: optional swift:* image for audits that need
 #     `swift package dump-package`.
@@ -94,32 +93,18 @@ on:
           empty means run on bare ubuntu-latest. Accepts literal image
           names; env.* and matrix.* are unavailable at the container
           field per Actions context-availability rules.
-      audit-runner-path:
-        type: string
-        required: false
-        default: '.github/scripts/cron-audit-runner.py'
-        description: >
-          Path within swift-institute/.github to the per-target runner.
-          Default points at the canonical cron-audit-runner.py. Override
-          only when piloting a runner replacement (rare).
-      audit-script-path:
+      audit:
         type: string
         required: true
         description: >
-          Path within swift-institute/.github to the per-package audit
-          script (e.g. `.github/scripts/audit-license-header.py`). The
-          runner invokes it as `python3 <path> --package-dir <clone>
-          --json <tmp>`; the script's JSON output is parsed via the
-          json_totals_path + count_keys fields in audit-runner-args.
-      audit-setup-script-path:
-        type: string
-        required: false
-        default: ''
-        description: >
-          Optional path within swift-institute/.github to a one-time
-          pre-loop setup script (e.g. audit-setup-yamllint.py installs
-          the yamllint binary + writes /tmp/yamllint.yml). Empty means
-          no setup needed. The setup script receives no CLI arguments.
+          The audit to run over each clone. A registered name
+          ('mechanical-hygiene') selects a Swift audit owned by
+          `Fleet.Audit`. Any other value is read as a path within
+          swift-institute/.github to a Python audit script, invoked as
+          `python3 <path> --package-dir <clone> --json <tmp>` — the
+          shape the two swift-linter-owned audits still have while the
+          CW cross-programme hold stands. Its JSON output is read via
+          json_totals_path + count_keys, exactly as before.
       audit-runner-args:
         type: string
         required: true
@@ -127,9 +112,9 @@ on:
           JSON-encoded config object passed to the runner via
           --args-json. Required keys: count_keys (list[str]). Optional:
           json_totals_path (dotted, default 'totals'), extra_template
-          (Python str.format, names: pkg + count_keys), extra_when_keys
+          (names: pkg + count_keys), extra_when_keys
           (list[str], subset of count_keys; default = count_keys),
-          summary_label (str). See cron-audit-runner.py module docstring.
+          summary_label (str). See `Fleet.Audit.Configuration`.
           Trust contract: the value is JSON-decoded inside the runner;
           NO shell expansion ever sees this content.
       count-labels:
@@ -227,54 +212,60 @@ jobs:
           owner: ${{ matrix.org }}
           repositories: ''
 
-      - name: Fetch runner + audit + setup scripts (sparse-checkout from swift-institute/.github)
+      - name: Set up Swift (bare runner)
+        if: ${{ inputs.container == '' }}
+        uses: SwiftyLab/setup-swift@38f54a76b70d989321de9dc7c840618c08cf56e9 # v1.14.0
+        with:
+          swift-version: '6.3'
+
+      - name: Fetch the control tool + any script audit (sparse-checkout from swift-institute/.github)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: swift-institute/.github
           ref: ${{ job.workflow_sha }}
           path: .swift-institute-github
           sparse-checkout: |
-            ${{ inputs.audit-runner-path }}
-            ${{ inputs.audit-script-path }}
-            ${{ inputs.audit-setup-script-path }}
+            Tools/institute-ci-control
+            ${{ inputs.audit }}
           sparse-checkout-cone-mode: false
 
-      - name: Stage scripts at /tmp
+      - name: Build the sweep runner
         shell: bash
-        env:
-          AUDIT_RUNNER_PATH: ${{ inputs.audit-runner-path }}
-          AUDIT_SCRIPT_PATH: ${{ inputs.audit-script-path }}
-          AUDIT_SETUP_SCRIPT_PATH: ${{ inputs.audit-setup-script-path }}
         run: |
           set -euo pipefail
-          # cp rather than mv so the sparse-checkout tree stays intact.
-          cp ".swift-institute-github/${AUDIT_RUNNER_PATH}" /tmp/cron-audit-runner.py
-          chmod +x /tmp/cron-audit-runner.py
-          cp ".swift-institute-github/${AUDIT_SCRIPT_PATH}" /tmp/audit-script.py
-          chmod +x /tmp/audit-script.py
-          if [[ -n "${AUDIT_SETUP_SCRIPT_PATH}" ]]; then
-            cp ".swift-institute-github/${AUDIT_SETUP_SCRIPT_PATH}" /tmp/audit-setup.py
-            chmod +x /tmp/audit-setup.py
-          fi
+          # Built at the pinned workflow_sha's own sources, once per
+          # matrix job, before any credential is used.
+          swift build -c release \
+            --package-path .swift-institute-github/Tools/institute-ci-control \
+            --product institute-ci-control
+          bin_path="$(swift build -c release \
+            --package-path .swift-institute-github/Tools/institute-ci-control \
+            --show-bin-path)"
+          echo "${bin_path}" >> "$GITHUB_PATH"
 
       - name: Run audit
         shell: bash
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
           ORG: ${{ matrix.org }}
+          AUDIT: ${{ inputs.audit }}
           AUDIT_RUNNER_ARGS: ${{ inputs.audit-runner-args }}
         run: |
           set -euo pipefail
           # [CI-081] structured-input contract — no caller-supplied
-          # shell. AUDIT_RUNNER_ARGS is JSON-decoded inside the runner;
-          # /tmp/audit-script.py is the per-package script staged above.
-          if [[ -e /tmp/audit-setup.py ]]; then
-            python3 /tmp/audit-setup.py
-          fi
-          python3 /tmp/cron-audit-runner.py \
-            --audit-script /tmp/audit-script.py \
+          # shell. AUDIT_RUNNER_ARGS rides an env channel and is decoded
+          # inside the runner; a script audit is invoked by argument
+          # vector, never through a shell.
+          audit="${AUDIT}"
+          case "${audit}" in
+            mechanical-hygiene) ;;
+            *) audit=".swift-institute-github/${AUDIT}" ;;
+          esac
+          institute-ci-control audit-setup --audit "${audit}"
+          institute-ci-control cron-audit \
             --org "${ORG}" \
-            --args-json "${AUDIT_RUNNER_ARGS}"
+            --audit "${audit}" \
+            --artefact-dir /tmp
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

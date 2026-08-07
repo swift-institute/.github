@@ -34,7 +34,11 @@ on:
       - '.github/scripts/.branch-pin-baseline'
       - '.github/scripts/tests/**'
       - '.github/workflows/lint-validator-fixtures.yml'
-      # test-ci-ok-aggregate.py extracts its control-plane shell subjects from
+      # the embedded-shell controls and the Swift validators live here.
+      - 'Tools/institute-ci/**'
+      # the system-dependency control extracts the shipped action step.
+      - '.github/actions/install-system-deps/action.yml'
+      # the embedded-shell controls extract their subjects from
       # swift-ci.yml, so an edit there is an edit to what this suite tests.
       - '.github/workflows/swift-ci.yml'
       # CI.Validation.Drift.LintValidatorsWeekly parses this file's report
@@ -53,7 +57,11 @@ on:
       - '.github/scripts/.branch-pin-baseline'
       - '.github/scripts/tests/**'
       - '.github/workflows/lint-validator-fixtures.yml'
-      # test-ci-ok-aggregate.py extracts its control-plane shell subjects from
+      # the embedded-shell controls and the Swift validators live here.
+      - 'Tools/institute-ci/**'
+      # the system-dependency control extracts the shipped action step.
+      - '.github/actions/install-system-deps/action.yml'
+      # the embedded-shell controls extract their subjects from
       # swift-ci.yml, so an edit there is an edit to what this suite tests.
       - '.github/workflows/swift-ci.yml'
       # CI.Validation.Drift.LintValidatorsWeekly parses this file's report
@@ -167,15 +175,27 @@ jobs:
             --corpus .github/scripts/tests/fixtures \
             --scripts .github/scripts | tee /tmp/fixtures.txt
 
-      # swift-ci.yml's tier classifier, ci-ok aggregator, and configured
+      # The provisioning action above installs a toolchain only on a
+      # cold cache; the embedded-shell suites are run with `swift test`,
+      # which needs one on every run.
+      - name: Set up Swift
+        uses: SwiftyLab/setup-swift@38f54a76b70d989321de9dc7c840618c08cf56e9 # v1.14.0
+        with:
+          swift-version: '6.3'
+
+      # swift-ci.yml's ci-ok aggregator, subject resolver and configured
       # swift-linter path are shell embedded in a workflow, so the corpus'
-      # repo-shaped fixtures cannot reach them. This suite extracts the shipped
-      # step bodies and feeds them the shapes they must reject.
-      - name: Run Swift CI shell controls
+      # repo-shaped fixtures cannot reach them; the shared system-dependency
+      # action must likewise derive packages from every graph a Test step
+      # compiles, including Tests/Package.swift. Both suites extract the
+      # shipped step bodies by name and run them against hermetic shims.
+      - name: Run embedded-shell controls
         shell: bash
         run: |
           set -euo pipefail
-          python3 .github/scripts/tests/test-ci-ok-aggregate.py 2>&1 | tee /tmp/ci-ok-controls.txt
+          swift test --package-path Tools/institute-ci \
+            --filter 'ControlPlaneShellTests|SystemDependencyDerivationTests' \
+            2>&1 | tee /tmp/embedded-shell-controls.txt
 
       # The CI verdict inventory (Task 1-01, #276/#281) moved to Swift in
       # F16 class C7: `CI.Inventory` in Tools/institute-ci, with its
@@ -189,15 +209,16 @@ jobs:
       # as `Institute Receipt Tests`. It is verified by `workspace package
       # test`, not by a step here.
 
-      # The shared system-dependency action must derive packages from every
-      # package graph a Test step compiles, including Tests/Package.swift.
-      # This hermetic positive control proves a nested dependency's uuid
-      # declaration reaches apt rather than silently reporting no packages.
-      - name: Run system-dependency derivation controls
+      # The secret-transport contract (#92 ruling, enforced per #108)
+      # includes class-exactness of typed exemptions, which cannot be a
+      # second repo-shaped fixture because an exemption keys the exact
+      # repository name. These unit controls cover that surface; until
+      # 2026-07-30 this suite existed but nothing ran it.
+      - name: Run secret-transport contract controls
         shell: bash
         run: |
           set -euo pipefail
-          python3 .github/scripts/tests/test-install-system-deps.py 2>&1 | tee /tmp/system-deps-controls.txt
+          python3 .github/scripts/tests/test-validate-thin-callers.py 2>&1 | tee /tmp/thin-caller-controls.txt
 
       # Task 4-01 (swift-institute/.github#276, #284): the TEMPORARY
       # The file-naming validator's diagnostic-precedence rules operate on

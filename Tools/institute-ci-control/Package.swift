@@ -17,6 +17,10 @@ let package = Package(
             targets: ["GitHub Control"]
         ),
         .library(
+            name: "Fleet Audit",
+            targets: ["Fleet Audit"]
+        ),
+        .library(
             name: "Fleet Inventory",
             targets: ["Fleet Inventory"]
         ),
@@ -42,6 +46,12 @@ let package = Package(
                 .product(name: "GitHub HTTP", package: "swift-github-http"),
             ]
         ),
+        // The cron sweep contract: what a caller may configure, what
+        // one package's audit reports, how a sweep accumulates them.
+        // Pure — the credentialed edge is the Application's.
+        .target(
+            name: "Fleet Audit"
+        ),
         .target(
             name: "Fleet Inventory"
         ),
@@ -58,17 +68,28 @@ let package = Package(
         .target(
             name: "Institute CI Control Application",
             dependencies: [
-                "GitHub Control", "Fleet Inventory", "Fleet Convergence",
+                "GitHub Control", "Fleet Audit", "Fleet Inventory",
+                "Fleet Convergence",
                 "Private Verification",
             ]
         ),
         .executableTarget(
             name: "Institute CI Control Command",
-            dependencies: ["Institute CI Control Application"]
+            dependencies: [
+                "Institute CI Control Application", "Fleet Audit", "GitHub Control",
+            ]
+        ),
+        .testTarget(
+            name: "Fleet Audit Tests",
+            dependencies: ["Fleet Audit"]
         ),
         .testTarget(
             name: "Fleet Convergence Tests",
             dependencies: ["Fleet Convergence"]
+        ),
+        .testTarget(
+            name: "GitHub Control Tests",
+            dependencies: ["GitHub Control"]
         ),
         .testTarget(
             name: "Private Verification Tests",

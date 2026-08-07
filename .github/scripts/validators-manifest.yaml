@@ -542,6 +542,12 @@ validators:
     discovery-mode: single-target
     rule-id-regex: '^skill-'
     migrate-to-base: 'yes (single-target; landed on validate-base.yml)'
+    # F16 C9: ported to `CI.Validation.SkillHygiene`. `validator-script`
+    # is now the validator's IDENTITY rather than a file that exists —
+    # it is the key validate-base.yml resolves against the Swift
+    # registry, and the Swift owner records the same path as its
+    # `retiredScript`. The .py is deleted; the entry is not.
+    engine: swift (Tools/institute-ci, CI Validation)
 
   # ─── Task 4-01 (swift-institute/.github#276, #284) ──────────────────
   # Not a numbered [CI-NNN] rule — no /promote-rule pilot slot claimed by
@@ -558,3 +564,27 @@ validators:
     discovery-mode: per-package-org-sweep
     rule-id-regex: '^INTEGRATED-DOCS-ADMISSION'
     migrate-to-base: 'no (chain-C; see CI-REVIEW-PHASE-B-DESIGN §5)'
+
+  # ─── CW transfer marker (Foundation Programme TX-APP1W) ─────────────
+  # `validate-completion-receipt.py` is a §13.3 machine readiness gate,
+  # not a repo-shaped TSV validator: it emits a JSON receipt and is
+  # invoked by the completion programme, so it has no rule-id workflow
+  # and never joined validate-base. Check 2 nevertheless requires every
+  # `validate-*.py` on disk to be named here, and this was the manifest's
+  # sole orphan.
+  #
+  # It is recorded — not migrated — because it is one of the 21 CW
+  # predicates transferred to the Foundation Programme's TX-APP1W (ruling
+  # swift-institute/.github#358 comment 5215227317; the file carries the
+  # matching TRANSFERRED marker from #445). Its Swift owner, and the
+  # deletion that rides that owner's activation receipt, are TX-APP1W's.
+  # This row retires with the script.
+
+  - rule-id: COMPLETION-RECEIPT
+    validator-script: .github/scripts/validate-completion-receipt.py
+    workflow-file: ''
+    status: deferred
+    self-firing: deferred
+    discovery-mode: single-target
+    rule-id-regex: '^READINESS-'
+    migrate-to-base: 'no (CW-held; transferred to Foundation Programme TX-APP1W)'

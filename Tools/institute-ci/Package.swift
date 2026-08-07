@@ -29,6 +29,10 @@ let package = Package(
             targets: ["CI Inventory"]
         ),
         .library(
+            name: "CI Symbol Graph",
+            targets: ["CI Symbol Graph"]
+        ),
+        .library(
             name: "Rulebook",
             targets: ["Rulebook"]
         ),
@@ -76,6 +80,11 @@ let package = Package(
             name: "CI Inventory",
             dependencies: ["CI Contract", "CI Workflow"]
         ),
+        // Umbrella symbol-graph preparation for the DocC pipeline.
+        .target(
+            name: "CI Symbol Graph",
+            dependencies: ["CI Contract"]
+        ),
         // The rulebook checking itself: referential integrity of the
         // markdown skill corpus. Not `CI.Canon`, which owns the canonical
         // documents this control plane distributes — a different domain
@@ -100,6 +109,7 @@ let package = Package(
             dependencies: [
                 "Rulebook",
                 "Institute CI Application",
+                "CI Symbol Graph",
                 "CI Validation",
                 "CI Workflow",
                 "CI Canon",
@@ -131,6 +141,17 @@ let package = Package(
             // corpus is an expectation to regenerate and diff, and the
             // recorded run is evidence, not a resource.
             exclude: ["Fixtures"]
+        ),
+        .testTarget(
+            name: "CI Symbol Graph Tests",
+            dependencies: ["CI Symbol Graph"]
+        ),
+        // Positive controls over the shell embedded in shipped
+        // workflows and composite actions. The subject is the shipped
+        // bytes, extracted by name through `CI Workflow`.
+        .testTarget(
+            name: "Embedded Shell Tests",
+            dependencies: ["CI Workflow"]
         ),
         .testTarget(
             name: "Rulebook Tests",
