@@ -206,8 +206,10 @@ jobs:
       # The CI verdict inventory (Task 1-01, #276/#281) moved to Swift in
       # F16 class C7: `CI.Inventory` in Tools/institute-ci, with its
       # drift and live-run gates as `CI Inventory Tests`. It is verified
-      # by `workspace package test`, not by a step here, so a stale
-      # inventory fails the package rather than one workflow job.
+      # by the tools-tests.yml gate (PS-3), which runs the full
+      # institute-ci suite through `workspace package test`, not by a
+      # step here, so a stale inventory fails the package rather than
+      # one workflow job.
 
 
       # The prebuilt-linter identity gate (#43 item 4) is likewise embedded
