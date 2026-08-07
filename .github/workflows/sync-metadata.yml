@@ -622,9 +622,9 @@ jobs:
           # control-plane contract. Visibility is NOT a fourth top-level
           # RepositoryClass — it selects among the package-class payloads
           # only (swift-institute/.github#276 Task 3-01).
-          desired_package_public=$(swift run --package-path institute-ci/Tools/RepositoryPolicy repository-policy ruleset --policy institute-ci/Tools/RepositoryPolicy/Policy/protected-main-ruleset.json --class package --visibility public)
-          desired_package_private=$(swift run --package-path institute-ci/Tools/RepositoryPolicy repository-policy ruleset --policy institute-ci/Tools/RepositoryPolicy/Policy/protected-main-private-ruleset.json --class package --visibility private)
-          desired_control=$(swift run --package-path institute-ci/Tools/RepositoryPolicy repository-policy ruleset --policy institute-ci/Tools/RepositoryPolicy/Policy/protected-main-control-ruleset.json --class control-plane)
+          desired_package_public=$(swift run --package-path institute-ci/Tools/repository-policy repository-policy ruleset --policy institute-ci/Tools/repository-policy/Policy/protected-main-ruleset.json --class package --visibility public)
+          desired_package_private=$(swift run --package-path institute-ci/Tools/repository-policy repository-policy ruleset --policy institute-ci/Tools/repository-policy/Policy/protected-main-private-ruleset.json --class package --visibility private)
+          desired_control=$(swift run --package-path institute-ci/Tools/repository-policy repository-policy ruleset --policy institute-ci/Tools/repository-policy/Policy/protected-main-control-ruleset.json --class control-plane)
           normalize() {
             jq -S '{name, target, enforcement, conditions, bypass_actors, rules:(.rules | sort_by(.type) | map(if .parameters? then .parameters.required_status_checks? |= (if . then sort_by(.context) else . end) else . end))}'
           }
@@ -664,9 +664,9 @@ jobs:
           # regardless of manifest presence. Overrides are a config file
           # under source control, converged the same way as every other
           # target — never a hand-mutation of live ruleset state. See
-          # Tools/RepositoryPolicy/Policy/ruleset-class-overrides.json for
+          # Tools/repository-policy/Policy/ruleset-class-overrides.json for
           # the current override list and each entry's cited rationale.
-          override_repos=$(jq -r '.controlPlaneOverrides[].repo' institute-ci/Tools/RepositoryPolicy/Policy/ruleset-class-overrides.json)
+          override_repos=$(jq -r '.controlPlaneOverrides[].repo' institute-ci/Tools/repository-policy/Policy/ruleset-class-overrides.json)
 
           for target in "${targets[@]}"; do
             # Classify mechanically: a root Package.swift present at the
@@ -796,7 +796,7 @@ jobs:
             # scheduled-heal.
             existing_ruleset="false"
             [[ -n "$id" ]] && existing_ruleset="true"
-            decision=$(swift run --package-path institute-ci/Tools/RepositoryPolicy repository-policy ruleset-convergence --mode "$mode" --existing-ruleset "$existing_ruleset")
+            decision=$(swift run --package-path institute-ci/Tools/repository-policy repository-policy ruleset-convergence --mode "$mode" --existing-ruleset "$existing_ruleset")
             action=$(printf '%s' "$decision" | jq -r '.action')
             if [[ "$action" == "skipAbsentOnSchedule" ]]; then
               reason=$(printf '%s' "$decision" | jq -r '.reason')
@@ -950,7 +950,7 @@ jobs:
           DRY_RUN: ${{ inputs.dry-run }}
         run: |
           swift run \
-            --package-path institute-ci/Tools/RepositoryPolicy \
+            --package-path institute-ci/Tools/repository-policy \
             repository-policy \
             --repository "$INPUT_REPO" \
             --organization "$INPUT_ORG" \
