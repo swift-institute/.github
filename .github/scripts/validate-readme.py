@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
-# RETAINED (F16 residual sweep, swift-institute/.github#404): no port class
-# owns this validator. It has no Swift owner, four live RetiredValidator
-# fixture rows (readme-008/013/017/026), a live validate-readme.yml caller,
-# and its source text is READ as data by the GH-REPO-063 guard
-# (CI.Validation.SchemaCorrespondence). A faithful port is not S-class — it carries the
-# metadata-schema.json correspondence surface with it. Follow-up owner: the
-# GH-REPO-063 re-sequencing (see #404). Do not delete.
+# RETAINED (F16, swift-institute/.github#404): PORTED but not yet deletable.
+# The Swift owner is `CI.Validation.Readme` (Tools/institute-ci), which
+# records this path as its `retiredScript`, so validate-base.yml dispatch and
+# the fixture harness are served by Swift -- this script no longer runs in CI
+# dispatch. It survives solely as DATA: the GH-REPO-063 guard
+# (`CI.Validation.SchemaCorrespondence`) parses the EXEMPTIONS and FAMILIES
+# constants below as its correspondence consumer, pinning this file's
+# existence. The deletion rides GH-REPO-063's re-specification against a
+# Swift-owned consumer surface (see #404). Behavioural edits belong in the
+# Swift owner, not here.
 """validate-readme.py — verify README files per readme skill family rules.
 
 Wave 2b finalization (2026-05-10) — companion to validate-readme.yml.

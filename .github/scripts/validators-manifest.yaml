@@ -374,6 +374,16 @@ validators:
     discovery-mode: 'hybrid (single-target self-test + per-package-org-sweep weekly; Task 0B-01, swift-institute/.github#280)'
     rule-id-regex: '^README-'
     migrate-to-base: yes
+    # F16: ported to `CI.Validation.Readme`. `validator-script` is the
+    # validator's IDENTITY — the key validate-base.yml resolves against
+    # the Swift registry, and the Swift owner records the same path as
+    # its `retiredScript` — so dispatch is served by Swift. Unlike the
+    # other ported rows the .py is NOT deleted: the [GH-REPO-063] guard
+    # (`CI.Validation.SchemaCorrespondence`) reads its EXEMPTIONS and
+    # FAMILIES constants as its correspondence consumer, pinning its
+    # existence. The deletion rides GH-REPO-063's re-specification
+    # against a Swift-owned consumer surface (see #404).
+    engine: swift (Tools/institute-ci, CI Validation)
 
   - rule-id: PKG-DEP-008
     validator-script: .github/scripts/validate-package-identity.py
