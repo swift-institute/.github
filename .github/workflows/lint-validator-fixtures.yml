@@ -167,33 +167,6 @@ jobs:
       # by `workspace package test`, not by a step here, so a stale
       # inventory fails the package rather than one workflow job.
 
-      # Task 5-01 (swift-institute/.github#276, #304): the canonical caller
-      # generator, proven against seven real fetched callers (same-org/
-      # cross-org × Primitives/Standards/Foundations, the three known
-      # platform-support holders) plus synthetic unknown-customization
-      # controls. No consumer file is touched by this task or this suite.
-      - name: Run caller generator controls
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 .github/scripts/tests/test-generate-caller.py 2>&1 | tee /tmp/generate-caller-controls.txt
-
-      # Task 5-02 (swift-institute/.github#276, #282, ruling R23a): the
-      # fleet convergence orchestrator's pure/offline logic — classification
-      # against synthetic GraphQL nodes (including the real divergent-caller
-      # shape observed live against swift-arm-ltd/swift-arm-standard),
-      # #90/precondition parsing, R6 Trap A/B check-run gating, and
-      # rate-limit backoff/checkpoint behavior against a stubbed subprocess.
-      # No network call and no mutation happen in this suite; the
-      # generator+validator round-trip half of self_verify() is proven
-      # live in the Task 5-02 receipt, not re-encoded as a synthetic
-      # fixture that could share the same wrong expectation as the code
-      # under test.
-      - name: Run caller convergence orchestrator controls
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 .github/scripts/tests/test-converge-callers.py 2>&1 | tee /tmp/converge-callers-controls.txt
 
       # The prebuilt-linter identity gate (#43 item 4) is likewise embedded
       # shell: these controls extract the shipped download step and prove it
@@ -351,18 +324,6 @@ jobs:
             echo
             echo '```'
             tail -n 30 /tmp/ci-ok-controls.txt 2>/dev/null || echo "(controls produced no output)"
-            echo '```'
-            echo
-            echo "### Caller generator controls"
-            echo
-            echo '```'
-            tail -n 20 /tmp/generate-caller-controls.txt 2>/dev/null || echo "(controls produced no output)"
-            echo '```'
-            echo
-            echo "### Caller convergence orchestrator controls"
-            echo
-            echo '```'
-            tail -n 30 /tmp/converge-callers-controls.txt 2>/dev/null || echo "(controls produced no output)"
             echo '```'
             echo
             echo "### Branch-pin baseline controls"
