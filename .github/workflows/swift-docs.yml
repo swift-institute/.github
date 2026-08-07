@@ -130,7 +130,7 @@ name: Swift DocC (reusable)
 # Pipeline:
 #   1. `swift build` with symbol-graph emission (preserves @_exported doc comments)
 #   2. Pool per-module graphs, excluding caller-specified modules (e.g. Test Support)
-#   3. Isolate the umbrella graph via patch-umbrella-symbol-graph.py. This step
+#   3. Isolate the umbrella graph via `institute-ci symbol-graph-umbrella`. This step
 #      is load-bearing for in-catalog `Symbol` cross-reference resolution —
 #      passing the full pool to `docc convert` triggers cross-module
 #      ambiguity and every symbol reference fails silently. The script's
@@ -248,13 +248,6 @@ jobs:
         with:
           egress-policy: audit
 
-      - name: Install python3 (for patch-umbrella-symbol-graph.py)
-        shell: bash
-        run: |
-          set -euo pipefail
-          apt-get update -qq
-          apt-get install -qq -y python3
-
       # Package checkout. `|| github.repository` keeps the non-sweep path
       # bit-identical to the previous bare checkout. The scripts checkout
       # further down stays pinned to swift-institute/.github and is NOT
@@ -299,7 +292,7 @@ jobs:
           # name: the old kebab→TitleCase heuristic diverged from real module
           # names (e.g. derived Copy_On_Write vs actual Copy_on_Write, or
           # Svg_Standard vs SVG_Standard) and killed the docs job at
-          # patch-umbrella-symbol-graph.py ("no symbol graph found for umbrella
+          # `institute-ci symbol-graph-umbrella` ("no symbol graph found for umbrella
           # module ..."). Discovery only replaces the guessing FALLBACK — the
           # explicit umbrella-* inputs below still win when supplied.
 
@@ -424,20 +417,22 @@ jobs:
           echo "Distribution symbol graphs:"
           ls "${DOCS_WORK}/symbol-graphs/"
 
-      - name: Fetch patch-umbrella-symbol-graph.py
+      - name: Fetch the umbrella symbol-graph tool
         if: ${{ success() && env.SKIP_DOCS != 'true' }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: swift-institute/.github
           ref: ${{ job.workflow_sha }}
           path: .swift-institute-github
-          sparse-checkout: .github/scripts/patch-umbrella-symbol-graph.py
+          sparse-checkout: Tools/institute-ci
           sparse-checkout-cone-mode: false
 
       - name: Isolate umbrella symbol graph
         if: ${{ success() && env.SKIP_DOCS != 'true' }}
         run: |
-          python3 .swift-institute-github/.github/scripts/patch-umbrella-symbol-graph.py \
+          swift run -c release \
+            --package-path .swift-institute-github/Tools/institute-ci institute-ci \
+            symbol-graph-umbrella \
             --symbol-graph-dir "${DOCS_WORK}/symbol-graphs" \
             --umbrella-module "$UMBRELLA_MODULE" \
             --output-dir "${DOCS_WORK}/umbrella-symbol-graph"

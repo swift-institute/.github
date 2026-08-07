@@ -21,6 +21,10 @@ let package = Package(
             targets: ["CI Validation"]
         ),
         .library(
+            name: "CI Symbol Graph",
+            targets: ["CI Symbol Graph"]
+        ),
+        .library(
             name: "Institute Receipt",
             targets: ["Institute Receipt"]
         ),
@@ -49,6 +53,11 @@ let package = Package(
             name: "CI Validation",
             dependencies: ["CI Contract", "CI Workflow"]
         ),
+        // Umbrella symbol-graph preparation for the DocC pipeline.
+        .target(
+            name: "CI Symbol Graph",
+            dependencies: ["CI Contract"]
+        ),
         .target(
             name: "Institute CI Application",
             dependencies: ["CI Contract", "CI Validation", "Institute Receipt"]
@@ -64,6 +73,7 @@ let package = Package(
             name: "Institute CI Command",
             dependencies: [
                 "Institute CI Application",
+                "CI Symbol Graph",
                 "CI Validation",
                 "CI Workflow",
                 "Institute Receipt",
@@ -81,6 +91,17 @@ let package = Package(
         .testTarget(
             name: "CI Validation Tests",
             dependencies: ["CI Validation"]
+        ),
+        .testTarget(
+            name: "CI Symbol Graph Tests",
+            dependencies: ["CI Symbol Graph"]
+        ),
+        // Positive controls over the shell embedded in shipped
+        // workflows and composite actions. The subject is the shipped
+        // bytes, extracted by name through `CI Workflow`.
+        .testTarget(
+            name: "Embedded Shell Tests",
+            dependencies: ["CI Workflow"]
         ),
         .testTarget(
             name: "Institute Receipt Tests",
