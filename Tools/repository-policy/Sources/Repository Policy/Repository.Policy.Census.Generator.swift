@@ -150,10 +150,13 @@ extension Repository.Policy.Census {
                 pattern: "\\$\\{\\{.*?\\}\\}",
                 options: [.dotMatchesLineSeparators])
             var i = 0
-            expression.enumerateMatches(
+            // `matches(in:)` rather than `enumerateMatches`: on Linux,
+            // swift-corelibs-foundation declares the enumeration closure
+            // @escaping, which cannot capture the `inout` rows — the
+            // Darwin toolchain accepts it and CI does not.
+            for match in expression.matches(
                 in: text, range: NSRange(location: 0, length: ns.length)
-            ) { match, _, _ in
-                guard let match else { return }
+            ) {
                 let excerpt = ns.substring(with: match.range)
                 rows.append(row(.expression, "expr:\(rel):\(i)",
                                 line: lineNumber(at: match.range.location),
@@ -166,10 +169,9 @@ extension Repository.Policy.Census {
                 pattern: "^\\s*(?:-\\s+)?uses:\\s*(\\S+)",
                 options: [.anchorsMatchLines])
             i = 0
-            uses.enumerateMatches(
+            for match in uses.matches(
                 in: text, range: NSRange(location: 0, length: ns.length)
-            ) { match, _, _ in
-                guard let match else { return }
+            ) {
                 let target = ns.substring(with: match.range(at: 1))
                 rows.append(row(.usesEdge, "uses:\(rel):\(i)",
                                 line: lineNumber(at: match.range.location),
@@ -185,10 +187,9 @@ extension Repository.Policy.Census {
                 options: [.anchorsMatchLines])
             let command = try NSRegularExpression(pattern: "^\\s*([A-Za-z0-9_.\\/-]+)")
             i = 0
-            runPattern.enumerateMatches(
+            for match in runPattern.matches(
                 in: text, range: NSRange(location: 0, length: ns.length)
-            ) { match, _, _ in
-                guard let match else { return }
+            ) {
                 let startLine = lineNumber(at: match.range.location)
                 let indent = match.range(at: 1).length
                 var block: [String] = []
