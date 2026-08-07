@@ -72,7 +72,7 @@ jobs:
     secrets: inherit
     with:
       matrix-orgs: ${{ needs.config.outputs.orgs }}
-      audit-script-path: .github/scripts/audit-license-header.py
+      audit: .github/scripts/audit-license-header.py
       audit-runner-args: |
         {
           "json_totals_path": "totals",

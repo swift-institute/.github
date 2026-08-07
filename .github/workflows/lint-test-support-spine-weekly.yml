@@ -71,7 +71,7 @@ jobs:
     with:
       matrix-orgs: ${{ needs.config.outputs.orgs }}
       container: 'swift:6.3'
-      audit-script-path: .github/scripts/audit-test-support-spine.py
+      audit: .github/scripts/audit-test-support-spine.py
       audit-runner-args: |
         {
           "json_totals_path": "aggregate.totals",

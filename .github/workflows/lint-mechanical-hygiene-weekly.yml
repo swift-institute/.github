@@ -76,8 +76,7 @@ jobs:
     secrets: inherit
     with:
       matrix-orgs: ${{ needs.config.outputs.orgs }}
-      audit-script-path: .github/scripts/audit-mechanical-hygiene.py
-      audit-setup-script-path: .github/scripts/audit-setup-yamllint.py
+      audit: mechanical-hygiene
       audit-runner-args: |
         {
           "json_totals_path": "totals",
