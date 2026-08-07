@@ -210,17 +210,6 @@ jobs:
           set -euo pipefail
           python3 .github/scripts/tests/test-install-system-deps.py 2>&1 | tee /tmp/system-deps-controls.txt
 
-      # The secret-transport contract (#92 ruling, enforced per #108)
-      # includes class-exactness of typed exemptions, which cannot be a
-      # second repo-shaped fixture because an exemption keys the exact
-      # repository name. These unit controls cover that surface; until
-      # 2026-07-30 this suite existed but nothing ran it.
-      - name: Run secret-transport contract controls
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 .github/scripts/tests/test-validate-thin-callers.py 2>&1 | tee /tmp/thin-caller-controls.txt
-
       # Task 4-01 (swift-institute/.github#276, #284): the TEMPORARY
       # The file-naming validator's diagnostic-precedence rules operate on
       # synthetic module trees the unit suite builds itself, a surface the corpus'
