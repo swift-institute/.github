@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+# RETAINED (F16 residual sweep, swift-institute/.github#404): its Swift owner
+# `CI.Validation.ManifestBinding` is live and registered, but
+# validate-manifest-binding.yml is a BESPOKE workflow (self-validation +
+# cross-repo sweep legs) that still invokes this file unconditionally
+# (`python3 "$VALIDATOR"`) rather than through validate-base.yml's
+# registry-driven dispatch. The cutover did not reach it. Deletion gates on
+# repointing that workflow; until then this file is the live validator.
 """validate-manifest-binding.py — verify [CI-MANIFEST-BINDING] internal-consistency binding.
 
 Phase B-1 of CI-REVIEW-PHASE-B-DESIGN-2026-05-14 §3 (checks 2 + 4);

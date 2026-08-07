@@ -18,11 +18,12 @@ name: alert-scheduled-workflow-failure
 # itself a drift surface: a scheduled workflow added or renamed without a
 # matching entry here would silently fall back outside observability, the
 # same failure class this file exists to close. That risk is what
-# check-scheduled-workflow-alert-parity.py guards: it discovers every
-# schedule:-triggered workflow from the repository's own workflow files
-# and fails closed the moment this list diverges from that set, in either
-# direction. Run via lint-validator-fixtures.yml's fixture suite
-# (test-scheduled-workflow-alert-drift.py), the same wiring #117 uses for
+# `CI.Validation.Drift.ScheduledWorkflowAlert` guards (F16 class C5, the
+# port of the retired check-scheduled-workflow-alert-parity.py): it
+# discovers every schedule:-triggered workflow from the repository's own
+# workflow files and fails closed the moment this list diverges from that
+# set, in either direction. Its controls are `CI.Validation.Drift Tests`,
+# run by `workspace package test` — the same wiring #117 uses for
 # lint-validators-weekly.yml's report-surface drift.
 #
 # The rejected alternative — a scheduled API sweep over recent

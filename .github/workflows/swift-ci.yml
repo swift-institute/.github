@@ -524,8 +524,9 @@ jobs:
       # absent from the baseline fails the run in <1s, before any toolchain
       # is installed. Same vendored-script trust anchor as the identity
       # fast-check — no new checkout, no run-time code fetch. The guard's
-      # own failing controls live in lint-validator-fixtures.yml
-      # (test-validate-branch-pins.py + the branch-pin-001 fixture ladder).
+      # own failing controls are `CI.Validation.BranchPins Tests` (the F16
+      # class C2 port of test-validate-branch-pins.py) plus the
+      # branch-pin-001 fixture ladder in the corpus.
       #
       # ─── F16: a TYPED, PERMANENT exception to the Swift-purity end state
       # (Goal #358; home issue #404; coordinator adjudication at #404
@@ -2665,8 +2666,9 @@ jobs:
       # canonicalizer resolved from THIS workflow's own ref; it never calls
       # GitHub itself and never asserts a terminal conclusion while this
       # run is in progress. The post-completion collector
-      # (augment-effective-runtime-receipt.py) is invoked from repository
-      # root after status=completed, never from this job.
+      # (`institute-ci runtime-receipt-augment`, the F16 class C6 port of the
+      # retired augment-effective-runtime-receipt.py) is invoked from
+      # repository root after status=completed, never from this job.
       - name: Produce preterminal effective runtime receipt
         id: receipt
         if: ${{ always() }}

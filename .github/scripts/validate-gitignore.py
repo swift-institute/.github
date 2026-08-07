@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+# RETAINED (F16 residual sweep, swift-institute/.github#404): its Swift owner
+# `CI.Validation.Gitignore` is live and registered, but validate-gitignore.yml
+# is a BESPOKE sweep workflow that still invokes this file unconditionally
+# (`python3 "$VALIDATOR"`) rather than through validate-base.yml's
+# registry-driven dispatch. The cutover did not reach it. Deletion gates on
+# repointing that workflow to `institute-ci validate --script`; until then this
+# file is the live validator and must not be deleted.
 """validate-gitignore.py — verify the canonical package `.gitignore`.
 
 Companion to validate-gitignore.yml. Canon lives at `canon/gitignore-package.txt`

@@ -1,4 +1,12 @@
 #!/usr/bin/env python3
+# RETAINED (F16 residual sweep, swift-institute/.github#404): no port class
+# owns this guard. It has no Swift owner and TWO live unconditional callers
+# (validate-schema-correspondence.yml and validate-github-metadata.yml), and
+# it reads both metadata-schema.json and validate-readme.py's source text. A
+# faithful port is not S-class: the correspondence it checks spans the schema,
+# the README validator's constants, and the settings keys. Follow-up owner:
+# GH-REPO-063 re-specification, which must be re-sequenced to follow the
+# validate-readme.py port rather than precede it (see #404). Do not delete.
 """[GH-REPO-063] metadata-schema.json <-> consumer correspondence guard.
 
 A key or enum value the schema declares but no consumer reads is a silent
