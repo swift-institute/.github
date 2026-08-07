@@ -26,6 +26,7 @@ extension CI.Validation {
             Drift.ScheduledWorkflowAlert(),
             EmbeddedJob(),
             EnvironmentContext(),
+            GitHubMetadata(),
             Gitignore(),
             HardenRunner(),
             InputDefaults(),

@@ -3,7 +3,11 @@
 # Reusable workflow. For the given `org` (or single `repo`), enumerates
 # non-archived repos, fetches each repo's .github/metadata.yaml from main
 # (cheaper than full clone), and validates against
-# `swift-institute/.github/metadata-schema.json` via the companion script.
+# `swift-institute/.github/metadata-schema.json` via the Swift owner —
+# `institute-ci validate --script .github/scripts/validate-github-metadata.py`
+# (`CI.Validation.GitHubMetadata`; the retired script's path stays the
+# validator's registry key after its deletion, per the cutover mechanism
+# on `Registry.validator(replacing:)`).
 #
 # Wave 2b finalization (2026-05-10) — Decision 6 architectural pivot
 # replaced the prior topic-registry.json lookup with this single-source
@@ -83,8 +87,11 @@ jobs:
   scan:
     if: ${{ !github.event.repository.private }}
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    container: swift:6.3
+    # 60, up from 20: the F12 cold bootstrap (a Workspace source build of
+    # institute-ci) runs in this job on a cache miss and takes ~30 minutes;
+    # warm-cache runs restore in seconds. Same allowance validate-gitignore.yml
+    # carries, measured the hard way on run 31164499832.
+    timeout-minutes: 60
     defaults:
       run:
         shell: bash
@@ -98,13 +105,13 @@ jobs:
         with:
           egress-policy: audit
 
-      - name: Install Python tooling
-        shell: bash
+      - name: Provision PyYAML for the settings-key guard
+        # validate-schema-workflow-keys.py is the one remaining Python
+        # consumer in this job; the metadata validation itself is Swift.
         run: |
           set -euo pipefail
-          apt-get update -qq
-          apt-get install -y -qq python3 python3-pip python3-yaml curl jq
-          pip3 install --break-system-packages --quiet jsonschema
+          python3 -c 'import yaml' 2>/dev/null \
+            || sudo apt-get install -y -qq python3-yaml
 
       - name: Mint installation token (swift-institute-bot)
         id: mint-token
@@ -127,13 +134,11 @@ jobs:
             institute-github/metadata-schema.json \
             institute-github/.github/workflows/sync-metadata.yml
 
-      - name: Set up gh
-        env:
-          GH_TOKEN: ${{ steps.mint-token.outputs.token }}
-        run: |
-          # gh ships in the swift:6.3 container's apt sources.list.d via the
-          # CI-092 install pattern. Fail loudly if not present.
-          which gh || (apt-get install -y -qq gh)
+      - name: Provision the Institute CI binary
+        id: institute-ci
+        uses: ./institute-github/.github/actions/institute-ci
+        with:
+          sources-root: ${{ github.workspace }}/institute-github
 
       - name: Resolve target repos
         id: targets
@@ -160,7 +165,8 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.mint-token.outputs.token }}
           SCHEMA: ${{ github.workspace }}/institute-github/metadata-schema.json
-          VALIDATOR: ${{ github.workspace }}/institute-github/.github/scripts/validate-github-metadata.py
+          INSTITUTE_CI: ${{ steps.institute-ci.outputs.binary }}
+          VALIDATOR_ID: .github/scripts/validate-github-metadata.py
         run: |
           set -euo pipefail
           mkdir -p /tmp/findings
@@ -169,17 +175,27 @@ jobs:
           while IFS= read -r repo; do
             [ -z "$repo" ] && continue
 
-            tmpyaml=$(mktemp --suffix=.yaml)
+            workdir=$(mktemp -d)
+            mkdir -p "$workdir/.github"
             if ! gh api "repos/${repo}/contents/.github/metadata.yaml" \
                   --jq '.content' 2>/dev/null \
-                  | base64 -d > "$tmpyaml"; then
+                  | base64 -d > "$workdir/.github/metadata.yaml"; then
               echo "${repo}	metadata-missing	repo has no .github/metadata.yaml on default branch" >> /tmp/findings/all.tsv
-              rm -f "$tmpyaml"
+              rm -rf "$workdir"
               continue
             fi
 
-            python3 "$VALIDATOR" "$repo" "$tmpyaml" "$SCHEMA" >> /tmp/findings/all.tsv || true
-            rm -f "$tmpyaml"
+            # 0 = ran (findings travel on stdout), 2 = the machine could
+            # not be asked. The ported contract no longer sets the exit
+            # code from findings, so anything above 1 is a crash sentinel.
+            rc=0
+            "$INSTITUTE_CI" validate --script "$VALIDATOR_ID" \
+              --repository "$repo" --root "$workdir" --schema "$SCHEMA" \
+              >> /tmp/findings/all.tsv || rc=$?
+            if [ "$rc" -gt 1 ]; then
+              echo "${repo}	validator-crashed	-" >> /tmp/findings/all.tsv
+            fi
+            rm -rf "$workdir"
           done < /tmp/targets.txt
 
       - name: Aggregate findings
@@ -189,6 +205,7 @@ jobs:
           total_repos=$(wc -l < /tmp/targets.txt | tr -d ' ')
           violations=$(grep -cE "	(GH-REPO|README|metadata-)" /tmp/findings/all.tsv) || violations=0
           repos_with_violations=$(awk -F'\t' '$2 ~ /^(GH-REPO|README|metadata-)/{print $1}' /tmp/findings/all.tsv | sort -u | wc -l | tr -d ' ')
+          validator_crashes=$(awk -F'\t' '$2 == "validator-crashed"' /tmp/findings/all.tsv | wc -l | tr -d ' ')
 
           echo "repos-scanned=$total_repos" >> "$GITHUB_OUTPUT"
           echo "repos-with-violations=$repos_with_violations" >> "$GITHUB_OUTPUT"
@@ -201,6 +218,13 @@ jobs:
             echo "Repos with violations: $repos_with_violations"
             echo "Total violations: $violations"
             echo
+            if [ "$validator_crashes" -gt 0 ]; then
+              echo "> [!CAUTION]"
+              echo "> ${validator_crashes} target(s) crashed the validator — those repos were NOT scanned, so the count above is a floor, not a total. Treat this run as failed."
+              echo
+              awk -F'\t' '$2 == "validator-crashed" { printf("- `%s`\n", $1) }' /tmp/findings/all.tsv
+              echo
+            fi
             if [ "$violations" -gt 0 ]; then
               echo "### Per-repo findings"
               echo
@@ -213,6 +237,10 @@ jobs:
             fi
           } > "$GITHUB_STEP_SUMMARY"
 
+          if [ "$validator_crashes" -gt 0 ]; then
+            echo "::error::${validator_crashes} validator crash(es) — those targets were never scanned, so a green result here would be false."
+            exit 1
+          fi
           if [ "$violations" -gt 0 ] && [ "${{ inputs.dry-run }}" != "true" ]; then
             exit 1
           fi
