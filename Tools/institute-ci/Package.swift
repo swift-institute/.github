@@ -104,7 +104,15 @@ let package = Package(
         ),
         .testTarget(
             name: "Institute Receipt Tests",
-            dependencies: ["Institute Receipt"]
+            dependencies: [
+                "Institute Receipt",
+                // The installer suite reads the shipped `swift-ci.yml`
+                // step through the same workflow reader every validator
+                // uses, rather than a second YAML implementation.
+                "CI Workflow",
+                "CI Contract",
+                .product(name: "Byte Primitives", package: "swift-byte-primitives"),
+            ]
         ),
     ],
     swiftLanguageModes: [.v6]
