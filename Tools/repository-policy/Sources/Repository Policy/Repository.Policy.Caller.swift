@@ -35,6 +35,17 @@ extension Repository.Policy {
 
         public enum Error: Swift.Error, Equatable {
             case malformedRepository(String)
+
+            /// A rendered caller carries something `Parse` does not model
+            /// — an unapproved `with:` key, an inline `runs-on:`/`steps:`,
+            /// an extra job, a cross-wrapper docs route. The associated
+            /// value names exactly what did not fit.
+            ///
+            /// The caller carrying it is not a defect. It is a typed
+            /// exception for review, which is why `Parse` refuses rather
+            /// than regenerating over it (`UnknownCustomization` in the
+            /// retired generate-caller.py).
+            case unknownCustomization(String)
         }
 
         /// Caller-supplied `with:` keys, in canonical emission order.
