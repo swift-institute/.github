@@ -593,11 +593,17 @@ jobs:
         env:
           CANDIDATES: ${{ steps.sweep.outputs.candidates }}
           DISPATCHED: ${{ steps.sweep.outputs.dispatched }}
+          ENUMERATED_PRIVATE: ${{ steps.sweep.outputs.enumerated-private }}
           DRY_RUN: ${{ inputs.dry-run || 'false' }}
         run: |
           {
             echo "## private-verification-sweep"
             echo ""
+            # The enumerated total is the positive control for the candidate
+            # count (G1-1, #358): candidates=0 over a non-zero enumerated
+            # population is a clean sweep; over zero it is a broken
+            # instrument, and the receipt must carry that distinction itself.
+            echo "- private repositories enumerated: ${ENUMERATED_PRIVATE:-0}"
             echo "- candidates lacking a current successful check: ${CANDIDATES:-0}"
             echo "- dispatched this pass: ${DISPATCHED:-0}"
             echo "- dry-run: ${DRY_RUN}"
