@@ -9,8 +9,9 @@
 # checkout + App-token scope that fed them) was retired by principal ruling
 # on swift-institute/.github#229 (comment 5166115277, 2026-08-03): the
 # 2026-07-28 Skills-corpus rebuild dropped every bracket-form citation the
-# corpus carried, so the check had no convention left to enforce. See
-# validate-manifest-binding.py's module docstring for the full rationale.
+# corpus carried, so the check had no convention left to enforce. See the
+# Swift owner's doc comment (Tools/institute-ci/Sources/CI Validation/
+# CI.Validation.ManifestBinding.swift) for the full rationale.
 #
 # Single checkout now (validator host only); no longer needs the
 # validate-base.yml dual-checkout accommodation that motivated staying
@@ -41,16 +42,16 @@ on:
     branches: [main]
     paths:
       - '.github/scripts/validators-manifest.yaml'
-      - '.github/scripts/validate-manifest-binding.py'
       - '.github/scripts/validate-*.py'
       - '.github/workflows/validate-manifest-binding.yml'
+      - 'Tools/institute-ci/Sources/CI Validation/CI.Validation.ManifestBinding.swift'
 
   pull_request:
     paths:
       - '.github/scripts/validators-manifest.yaml'
-      - '.github/scripts/validate-manifest-binding.py'
       - '.github/scripts/validate-*.py'
       - '.github/workflows/validate-manifest-binding.yml'
+      - 'Tools/institute-ci/Sources/CI Validation/CI.Validation.ManifestBinding.swift'
 
   workflow_call:
     inputs:
@@ -85,7 +86,11 @@ jobs:
   scan:
     if: ${{ !github.event.repository.private }}  # [CI-032]
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # 60, up from 5: the F12 cold bootstrap (a Workspace source build of
+    # institute-ci) runs in this job on a cache miss and takes ~30 minutes;
+    # warm-cache runs restore in seconds. Same allowance
+    # validate-gitignore.yml already carries.
+    timeout-minutes: 60
     permissions:
       contents: read
     outputs:
@@ -114,6 +119,12 @@ jobs:
           token: ${{ steps.mint-token.outputs.token }}
           ref: ${{ job.workflow_sha }}
 
+      - name: Provision the Institute CI binary
+        id: institute-ci
+        uses: ./institute-github/.github/actions/institute-ci
+        with:
+          sources-root: ${{ github.workspace }}/institute-github
+
       - name: Resolve target repo
         id: targets
         env:
@@ -130,31 +141,36 @@ jobs:
         id: check
         env:
           GH_TOKEN: ${{ steps.mint-token.outputs.token }}
-          VALIDATOR: ${{ github.workspace }}/institute-github/.github/scripts/validate-manifest-binding.py
+          INSTITUTE_CI: ${{ steps.institute-ci.outputs.binary }}
           HOST_CHECKOUT: ${{ github.workspace }}/institute-github
           INPUT_REPO: ${{ inputs.repo }}
         run: |
           set -euo pipefail
           : > /tmp/findings.tsv
           repo="$(cat /tmp/target.txt)"
+          # The Swift owner is CI.Validation.ManifestBinding; the --script
+          # value is its registry IDENTITY (the retired script's path), not
+          # a file on disk. Ported contract: findings ride the TSV, never
+          # the exit code — a nonzero rc means the validator could not
+          # answer, and `set -e` fails the step rather than reporting a
+          # false zero (the retired `|| true` swallowed exactly that).
           if [ -z "$INPUT_REPO" ] && [ "${GITHUB_REPOSITORY:-}" = "swift-institute/.github" ]; then
             # Self-validation: no foreign target requested and the run is
             # hosted by the repo the checkout contains, so the checkout is at
             # the event revision — validate it directly. Cloning here would
             # validate the default branch and miss the revision under review
             # (#256).
-            python3 "$VALIDATOR" "$repo" "$HOST_CHECKOUT" >> /tmp/findings.tsv || true
+            "$INSTITUTE_CI" validate --script .github/scripts/validate-manifest-binding.py \
+              --repository "$repo" --root "$HOST_CHECKOUT" >> /tmp/findings.tsv
           else
             # Cross-repo sweep: clone the requested target's default branch.
             workdir=$(mktemp -d)
-            (
-              cd "$workdir"
-              if ! gh repo clone "$repo" . -- --depth 1 --quiet 2>/dev/null; then
-                echo "$repo	clone-failed	-" >> /tmp/findings.tsv
-                exit 0
-              fi
-              python3 "$VALIDATOR" "$repo" "$workdir" >> /tmp/findings.tsv || true
-            )
+            if ! gh repo clone "$repo" "$workdir" -- --depth 1 --quiet 2>/dev/null; then
+              echo "$repo	clone-failed	-" >> /tmp/findings.tsv
+            else
+              "$INSTITUTE_CI" validate --script .github/scripts/validate-manifest-binding.py \
+                --repository "$repo" --root "$workdir" >> /tmp/findings.tsv
+            fi
             rm -rf "$workdir"
           fi
 

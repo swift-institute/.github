@@ -2,8 +2,11 @@
 # [GH-IGNORE-001] [GH-IGNORE-002].
 #
 # Reusable workflow. For the given `org` (or single `repo`), enumerates
-# non-archived repos, clones each (shallow), and runs
-# `.github/scripts/validate-gitignore.py` against the cloned tree.
+# non-archived repos, clones each (shallow), and runs the Swift validator
+# (`institute-ci validate --script .github/scripts/validate-gitignore.py` —
+# the script path is the validator's registry IDENTITY, not a file; the
+# Swift owner is `CI.Validation.Gitignore` and the .py is deleted) against
+# the cloned tree.
 #
 # Canon: `canon/gitignore-package.txt` in this repository, propagated by
 # sync-gitignore.yml. This workflow is the enforcement half of that pair —
@@ -136,6 +139,11 @@ jobs:
         # itself once.
         run: |
           set -euo pipefail
+          # From the control-plane checkout: the registered Gitignore
+          # validator resolves canon/gitignore-package.txt by walking up
+          # from the working directory, and the workspace root does not
+          # carry it.
+          cd "${{ github.workspace }}/institute-github"
           "${{ steps.institute-ci.outputs.binary }}" validate-fixtures \
             --corpus "${{ github.workspace }}/institute-github/.github/scripts/tests/fixtures" \
             --scripts "${{ github.workspace }}/institute-github/.github/scripts" \
@@ -163,29 +171,34 @@ jobs:
         id: check
         env:
           GH_TOKEN: ${{ steps.mint-token.outputs.token }}
-          VALIDATOR: ${{ github.workspace }}/institute-github/.github/scripts/validate-gitignore.py
+          INSTITUTE_CI: ${{ steps.institute-ci.outputs.binary }}
         run: |
           set -euo pipefail
           : > /tmp/findings.tsv
+          # cwd is the control-plane checkout, deliberately: the Swift
+          # Gitignore validator resolves canon/gitignore-package.txt by
+          # walking up from the working directory (the retired script's
+          # `__file__`-relative resolution has no Swift equivalent — a
+          # built binary is not in the checkout it validates).
+          cd "${{ github.workspace }}/institute-github"
           while IFS= read -r repo; do
             [ -z "$repo" ] && continue
             workdir=$(mktemp -d)
-            (
-              cd "$workdir"
-              if ! gh repo clone "$repo" . -- --depth 1 --quiet 2>/dev/null; then
-                echo "$repo	clone-failed	-" >> /tmp/findings.tsv
-                exit 0
-              fi
-              # rc 1 means "found violations", rc >= 2 means the validator
-              # itself broke. Treating rc 1 as a crash marks every repo WITH
-              # findings as unscanned — see the same note in
-              # validate-file-naming.yml.
-              rc=0
-              python3 "$VALIDATOR" "$repo" "$workdir" >> /tmp/findings.tsv || rc=$?
-              if [ "$rc" -gt 1 ]; then
-                echo "$repo	validator-crashed	-" >> /tmp/findings.tsv
-              fi
-            )
+            if ! gh repo clone "$repo" "$workdir" -- --depth 1 --quiet 2>/dev/null; then
+              echo "$repo	clone-failed	-" >> /tmp/findings.tsv
+              rm -rf "$workdir"
+              continue
+            fi
+            # Ported contract: findings ride the TSV, never the exit code —
+            # 0 means "ran" (with or without findings), anything else means
+            # the validator could not answer (missing canon, git failure),
+            # so every nonzero rc is a crash, not a verdict.
+            rc=0
+            "$INSTITUTE_CI" validate --script .github/scripts/validate-gitignore.py \
+              --repository "$repo" --root "$workdir" >> /tmp/findings.tsv || rc=$?
+            if [ "$rc" -ne 0 ]; then
+              echo "$repo	validator-crashed	-" >> /tmp/findings.tsv
+            fi
             rm -rf "$workdir"
           done < /tmp/targets.txt
 
@@ -193,7 +206,7 @@ jobs:
         id: aggregate
         run: |
           set -euo pipefail
-          # RULE_RE must list EVERY rule validate-gitignore.py can emit. The
+          # RULE_RE must list EVERY rule the Gitignore validator can emit. The
           # cost of getting this wrong is not a smaller number — it is findings
           # that were scanned, found, and then dropped from both the count and
           # the table, which is how validate-file-naming reported success over
