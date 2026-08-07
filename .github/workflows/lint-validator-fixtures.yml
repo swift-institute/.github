@@ -2,7 +2,7 @@
 #
 # The suite in .github/scripts/tests/ asserts that every validator still fires
 # on the inputs it is supposed to reject: each fixture under fail/ MUST produce
-# a finding, each under pass/ and edge/ MUST produce none, and run.sh exits
+# a finding, each under pass/ and edge/ MUST produce none, and the gate exits
 # nonzero if any of that stops being true. It also fails on a silent SKIP, so a
 # fixture directory that no longer resolves to a registered validator is an
 # error rather than quiet attrition.
@@ -124,7 +124,7 @@ jobs:
 
       # swiftlint-witness-exemption fixtures need the real binary; the
       # validator exits 2 (environment defect, not a finding) when it is
-      # absent, which run.sh's fail/ fixtures would otherwise misreport as
+      # absent, which the fail/ fixtures would otherwise misreport as
       # the exemption predicate itself being broken.
       - name: Install SwiftLint ${{ env.SWIFTLINT_VERSION }}
         if: steps.cache-swiftlint.outputs.cache-hit != 'true'
@@ -145,14 +145,31 @@ jobs:
         shell: bash
         run: swiftlint --version
 
+      - name: Provision the Institute CI binary
+        id: institute-ci
+        uses: ./.github/actions/institute-ci
+        with:
+          sources-root: ${{ github.workspace }}
+
+      # F16: the corpus gate is `institute-ci validate-fixtures` — C0's
+      # Swift owner of the retired `tests/run.sh`. `--scripts` arms the
+      # transitional fallback, so a rule directory whose validator is not
+      # ported yet is still exercised through its retired script and a
+      # directory NEITHER engine owns fails the run. That is the invariant
+      # run.sh enforced through its SKIP count, and it is why run.sh could
+      # not survive the first Python deletion: a deleted script dangles its
+      # dispatch arm, and removing the arm turns the directory into a
+      # counted skip.
       - name: Run fixture suite
         shell: bash
         run: |
           set -euo pipefail
-          bash .github/scripts/tests/run.sh | tee /tmp/fixtures.txt
+          "${{ steps.institute-ci.outputs.binary }}" validate-fixtures \
+            --corpus .github/scripts/tests/fixtures \
+            --scripts .github/scripts | tee /tmp/fixtures.txt
 
       # swift-ci.yml's tier classifier, ci-ok aggregator, and configured
-      # swift-linter path are shell embedded in a workflow, so run.sh's
+      # swift-linter path are shell embedded in a workflow, so the corpus'
       # repo-shaped fixtures cannot reach them. This suite extracts the shipped
       # step bodies and feeds them the shapes they must reject.
       - name: Run Swift CI shell controls
@@ -228,7 +245,7 @@ jobs:
 
       # Task 4-01 (swift-institute/.github#276, #284): the TEMPORARY
       # The file-naming validator's diagnostic-precedence rules operate on
-      # synthetic module trees the unit suite builds itself, a surface run.sh's
+      # synthetic module trees the unit suite builds itself, a surface the corpus'
       # repo-shaped fixtures do not exercise; until 2026-07-30 this suite
       # existed but nothing ran it.
       - name: Run file-naming validator controls
@@ -249,7 +266,7 @@ jobs:
 
       # The branch-pin guard's contract surface (baseline suppression, the
       # exit code the swift-ci fast-check keys on, --orgs-file resolution)
-      # is not reachable through run.sh's repo-shaped fixtures.
+      # is not reachable through the corpus' repo-shaped fixtures.
       - name: Run branch-pin baseline controls
         shell: bash
         run: |

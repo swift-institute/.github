@@ -89,24 +89,24 @@ on:
     paths:
       - '.github/scripts/validate-skill-hygiene.py'
       - '.github/scripts/tests/fixtures/skill-**'
-      - '.github/scripts/tests/run.sh'
+      - 'Tools/institute-ci/**'
       - '.github/workflows/validate-skill-hygiene.yml'
   pull_request:
     paths:
       - '.github/scripts/validate-skill-hygiene.py'
       - '.github/scripts/tests/fixtures/skill-**'
-      - '.github/scripts/tests/run.sh'
+      - 'Tools/institute-ci/**'
       - '.github/workflows/validate-skill-hygiene.yml'
 
 jobs:
   # Proves each check can still fail. Every skill-* fixture under fail/ must
   # produce a finding and every pass/ and edge/ fixture must produce none;
-  # run.sh exits nonzero otherwise. Scoped to the `skill-` prefix so this job
+  # the gate exits nonzero otherwise. Scoped to the `skill-` prefix so this job
   # gates only the rules it owns.
   #
   # Runs only when no target repo is named, which is exactly the in-repo case.
   # The fixtures live beside the validator here, so on a consumer's call the
-  # checkout would be the CONSUMER's tree and run.sh would not exist. The guard
+  # checkout would be the CONSUMER's tree and the corpus would not exist. The guard
   # is the mirror of the scan job's: exactly one of the two runs per invocation.
   self-test:
     if: ${{ !github.event.repository.private && inputs.repo == '' }}
@@ -125,11 +125,19 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: Provision the Institute CI binary
+        id: institute-ci
+        uses: ./.github/actions/institute-ci
+        with:
+          sources-root: ${{ github.workspace }}
+
       - name: Run skill-hygiene fixtures
         shell: bash
         run: |
           set -euo pipefail
-          bash .github/scripts/tests/run.sh skill- | tee /tmp/fixtures.txt
+          "${{ steps.institute-ci.outputs.binary }}" validate-fixtures \
+            --corpus .github/scripts/tests/fixtures \
+            --scripts .github/scripts --rule-prefix skill- | tee /tmp/fixtures.txt
 
       - name: Step summary
         if: always()
