@@ -409,7 +409,14 @@ validators:
     self-firing: 'yes'
     discovery-mode: single-target
     rule-id-regex: '^GH-REPO-063'
-    migrate-to-base: 'no (takes three file paths and emits prose, not the <repo> <repo-root> TSV convention validate-base.yml and tests/run.sh assume)'
+    migrate-to-base: 'no (repo-local self-check of swift-institute/.github''s own schema and consumers, not a fleet per-repo scan; its corpus keeps three files flat per scenario rather than the repository shape validate-base.yml assumes)'
+    # F16 port: ported to `CI.Validation.SchemaCorrespondence`.
+    # `validator-script` is now the validator's IDENTITY rather than a
+    # file that exists — the Swift owner records the same path as its
+    # `retiredScript`. The .py is deleted; the entry is not. Unlike the
+    # retired script the Swift owner speaks the C0 contract: findings as
+    # TSV on stdout, exit 0 = ran / 2 = could not run.
+    engine: swift (Tools/institute-ci, CI Validation)
     # Was `self-firing: deferred` until 2026-07-28. The guard ran only inside
     # validate-github-metadata.yml, which has no push/pull_request trigger and
     # checks out `ref: main`, so a pull request introducing the exact drift it

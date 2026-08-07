@@ -2,15 +2,24 @@
 
 These sit beside `fixtures/`, not inside it, on purpose.
 
-`tests/run.sh` walks `fixtures/<rule-id>/{pass,fail,edge}/<scenario>/` and
-invokes each validator as `<validator> <repo> <repo-root>`, counting findings by
-their TSV rule prefix. `validate-schema-workflow-keys.py` takes three *file*
-paths and reports in prose, so registering it there would have meant adding a
-second execution mode to a runner whose single convention is the reason it is
+The fixture harness walks `fixtures/<rule-id>/{pass,fail,edge}/<scenario>/`
+as repository-shaped subjects, counting findings by their TSV rule prefix.
+This guard takes three *file* paths — each scenario here is the trio flat in
+one directory — so registering it there would have meant adding a second
+execution mode to a runner whose single convention is the reason it is
 readable. Placing the fixtures under `fixtures/` without registering them was
-not an option either: `run.sh` fails on a silent SKIP, and it was right to.
+not an option either: the harness fails on an unowned rule directory, and it
+was right to.
 
-They are executed by `.github/workflows/validate-schema-correspondence.yml`,
+F16 port: the guard is Swift-owned — `CI.Validation.SchemaCorrespondence` in
+`Tools/institute-ci`, retiring `validate-schema-workflow-keys.py`. Its
+`--schema/--sync-workflow/--readme-validator` face carries the same
+three-file shape, and `Tools/institute-ci/Tests/CI Validation Tests` runs
+every scenario below in-process. These fixtures are corpus DATA, pinned by
+exact membership in the ManifestBinding stub guard; they are not edited
+alongside the validator.
+
+They are also executed by `.github/workflows/validate-schema-correspondence.yml`,
 which runs every scenario on every push and pull request touching the
 correspondence, and treats "found no scenarios" as a failure rather than a pass.
 

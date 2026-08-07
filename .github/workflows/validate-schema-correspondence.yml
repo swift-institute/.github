@@ -19,8 +19,15 @@
 #
 # This workflow triggers on push and pull_request over exactly the files the
 # correspondence spans, and checks out the ref under review rather than main.
-# validate-github-metadata.yml keeps its embedded call: that one is the sweep's
-# view of `main`, this one is the gate on the change.
+# validate-github-metadata.yml keeps its embedded check (now its
+# `correspondence` job): that one is the sweep's view of `main`, this one is
+# the gate on the change.
+#
+# F16 port: the guard is Swift-owned — `CI.Validation.SchemaCorrespondence`
+# in Tools/institute-ci, retiring `validate-schema-workflow-keys.py`. The
+# contract changed with the owner: findings travel on stdout as TSV and the
+# exit code answers only "did the validator run?" (0 = ran, 2 = could not),
+# so both steps below judge findings by the TSV, not the exit code.
 #
 # THE POSITIVE CONTROL IS THE FIRST STEP, NOT AN AFTERTHOUGHT
 #
@@ -31,15 +38,17 @@
 # and its FAILING direction never had been.
 #
 # So the fixture step runs first and gates the live step: every scenario under
-# tests/schema-correspondence/fail/ must exit 1 and the pass/ scenario must exit 0,
-# checked here, on every run. If the guard ever stops being able to fail, this
-# job goes red before it has a chance to report a reassuring green on the live
-# files. A run in which the fixtures did not execute is a failure, not a pass.
+# tests/schema-correspondence/fail/ must produce at least one finding and the
+# pass/ scenario must produce none, checked here, on every run. If the guard
+# ever stops being able to fail, this job goes red before it has a chance to
+# report a reassuring green on the live files. A run in which the fixtures did
+# not execute is a failure, not a pass.
 #
 # The fixtures live outside the validator-fixture corpus because that runner
-# assumes the `<repo> <repo-root>` TSV-emitting validator convention, and this
-# guard takes three file paths and emits prose. Registering it there would have
-# meant bending one of the two conventions out of shape.
+# assumes repository-shaped scenarios, and this guard takes three file paths.
+# Registering it there would have meant bending one of the two conventions out
+# of shape; the validator's `--schema/--sync-workflow/--readme-validator`
+# face names the three files instead.
 #
 # Standalone workflow with no workflow_call trigger, so per [CI-090] it carries
 # a deny-all permissions floor with an explicit per-job grant.
@@ -55,7 +64,7 @@ on:
       - 'metadata-schema.json'
       - '.github/workflows/sync-metadata.yml'
       - '.github/scripts/validate-readme.py'
-      - '.github/scripts/validate-schema-workflow-keys.py'
+      - 'Tools/institute-ci/**'
       - '.github/scripts/tests/schema-correspondence/**'
       - '.github/workflows/validate-schema-correspondence.yml'
   pull_request:
@@ -63,7 +72,7 @@ on:
       - 'metadata-schema.json'
       - '.github/workflows/sync-metadata.yml'
       - '.github/scripts/validate-readme.py'
-      - '.github/scripts/validate-schema-workflow-keys.py'
+      - 'Tools/institute-ci/**'
       - '.github/scripts/tests/schema-correspondence/**'
       - '.github/workflows/validate-schema-correspondence.yml'
   workflow_dispatch: {}
@@ -76,7 +85,10 @@ jobs:
   correspondence:
     if: ${{ !github.event.repository.private }}
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 60, up from 10: the F12 cold bootstrap (a Workspace source build of
+    # institute-ci) runs in this job on a cache miss and takes ~30 minutes;
+    # warm-cache runs restore in seconds (validate-skill-hygiene precedent).
+    timeout-minutes: 60
     permissions:
       contents: read
     steps:
@@ -93,11 +105,17 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: Provision the Institute CI binary
+        id: institute-ci
+        uses: ./.github/actions/institute-ci
+        with:
+          sources-root: ${{ github.workspace }}
+
       - name: Positive control — the guard must still be able to fail
         id: control
         shell: bash
         env:
-          GUARD: .github/scripts/validate-schema-workflow-keys.py
+          BINARY: ${{ steps.institute-ci.outputs.binary }}
           FIXTURES: .github/scripts/tests/schema-correspondence
         run: |
           set -euo pipefail
@@ -105,21 +123,27 @@ jobs:
           scenarios=0
           bad=0
           for kind in pass fail; do
-            want=0; [ "$kind" = fail ] && want=1
             for dir in "${FIXTURES}/${kind}"/*/; do
               [ -d "$dir" ] || continue
               scenarios=$((scenarios + 1))
               rc=0
-              python3 "$GUARD" \
-                "${dir}metadata-schema.json" \
-                "${dir}sync-metadata.yml" \
-                "${dir}validate-readme.py" > /tmp/scenario.txt 2>&1 || rc=$?
-              if [ "$rc" -eq "$want" ]; then
-                echo "ok   ${kind}/$(basename "$dir") rc=${rc}" >> /tmp/control.txt
+              "$BINARY" validate --rule GH-REPO-063 \
+                --repository swift-institute/.github --root . \
+                --schema "${dir}metadata-schema.json" \
+                --sync-workflow "${dir}sync-metadata.yml" \
+                --readme-validator "${dir}validate-readme.py" \
+                > /tmp/scenario.txt 2>&1 || rc=$?
+              findings=$(grep -c . /tmp/scenario.txt || true)
+              # Contract: exit 0 = ran (findings are the TSV, not the code);
+              # any nonzero exit means the question was not asked.
+              want_findings=0; [ "$kind" = fail ] && want_findings=1
+              if [ "$rc" -eq 0 ] && { { [ "$want_findings" -eq 1 ] && [ "$findings" -ge 1 ]; } \
+                  || { [ "$want_findings" -eq 0 ] && [ "$findings" -eq 0 ]; }; }; then
+                echo "ok   ${kind}/$(basename "$dir") findings=${findings}" >> /tmp/control.txt
               else
                 bad=$((bad + 1))
                 {
-                  echo "BAD  ${kind}/$(basename "$dir") rc=${rc} want=${want}"
+                  echo "BAD  ${kind}/$(basename "$dir") rc=${rc} findings=${findings} want_findings=${want_findings}"
                   sed 's/^/       /' /tmp/scenario.txt
                 } >> /tmp/control.txt
               fi
@@ -144,12 +168,24 @@ jobs:
       - name: Check the live schema against its consumers
         id: live
         shell: bash
+        env:
+          BINARY: ${{ steps.institute-ci.outputs.binary }}
         run: |
           set -euo pipefail
-          python3 .github/scripts/validate-schema-workflow-keys.py \
-            metadata-schema.json \
-            .github/workflows/sync-metadata.yml \
-            .github/scripts/validate-readme.py | tee /tmp/live.txt
+          rc=0
+          "$BINARY" validate --rule GH-REPO-063 \
+            --repository swift-institute/.github --root . \
+            > /tmp/live.txt 2>&1 || rc=$?
+          cat /tmp/live.txt
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::GH-REPO-063 could not run (exit ${rc}) — an environment defect, not a verdict."
+            exit "$rc"
+          fi
+          if grep -q . /tmp/live.txt; then
+            echo "::error::GH-REPO-063 found schema<->consumer correspondence mismatches (see findings above)."
+            exit 1
+          fi
+          echo "[GH-REPO-063] live schema is consistent with its consumers."
 
       - name: Step summary
         if: always()
