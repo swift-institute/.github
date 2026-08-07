@@ -1,0 +1,115 @@
+{
+  "schemaVersion": 1,
+  "actionGrants": [
+    {
+      "repositoryClass": "package",
+      "path": ".github/workflows/ci.yml",
+      "kind": "thin-caller",
+      "triggers": [
+        "pull_request",
+        "push",
+        "workflow_dispatch"
+      ],
+      "uses": [
+        "swift-foundations/.github/.github/workflows/swift-ci.yml@main",
+        "swift-foundations/.github/.github/workflows/swift-docs.yml@main",
+        "swift-institute/.github/.github/workflows/notify-linter-republish.yml@main",
+        "swift-primitives/.github/.github/workflows/swift-ci.yml@main",
+        "swift-primitives/.github/.github/workflows/swift-docs.yml@main",
+        "swift-standards/.github/.github/workflows/swift-ci.yml@main",
+        "swift-standards/.github/.github/workflows/swift-docs.yml@main"
+      ]
+    },
+    {
+      "repositoryClass": "tool",
+      "repository": "swift-foundations/swift-linter",
+      "path": ".github/workflows/ci.yml",
+      "kind": "thin-caller",
+      "triggers": [
+        "pull_request",
+        "push",
+        "workflow_dispatch"
+      ],
+      "uses": [
+        "swift-foundations/.github/.github/workflows/swift-ci.yml@main",
+        "swift-foundations/.github/.github/workflows/swift-docs.yml@main"
+      ]
+    },
+    {
+      "_comment": "swift-institute/.github#266 (control-plane surface reachability follow-up, 2026-08-04): swift-institute/Issues carries a root Package.swift (its per-issue reproducers are packages), so it is NOT excluded from the surfaces sweep the way a manifest-less control-plane repo (e.g. this .github repo itself) is, and with no grant naming it here it fell back to the 'package' repositoryClass default and its bespoke ci.yml (an enumerate-issues job with its own steps, feeding a per-issue matrix job that calls the universal reusable) failed REPO-ACTIONS-003 (schedule trigger not granted under the package-class grant above), -004 (direct actions/checkout + this exact swift-ci.yml reference not in the package-class uses list), and -005 (thin-caller shape forbids non-reusable steps). This grant both names the repositoryClass override (control-plane, matching #266's ruleset-side control-plane classification for the same repo and the same reproducer-CI rationale) and the 'bespoke' kind that exempts this shape from the thin-caller structural constraint while still enforcing explicit trigger/uses allowlists below.",
+      "repositoryClass": "control-plane",
+      "repository": "swift-institute/Issues",
+      "path": ".github/workflows/ci.yml",
+      "kind": "bespoke",
+      "triggers": [
+        "pull_request",
+        "push",
+        "schedule",
+        "workflow_dispatch"
+      ],
+      "uses": [
+        "actions/checkout@v6",
+        "swift-institute/.github/.github/workflows/swift-ci.yml@main"
+      ]
+    },
+    {
+      "repositoryClass": "tool",
+      "repository": "swift-foundations/swift-linter",
+      "path": ".github/workflows/lint.yml",
+      "kind": "tool-workflow",
+      "triggers": [
+        "workflow_call"
+      ],
+      "uses": [
+        "actions/checkout@v7",
+        "github/codeql-action/upload-sarif@v3",
+        "step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920",
+        "swift-institute/.github/.github/actions/configure-private-repos@main"
+      ]
+    },
+    {
+      "_comment": "swift-institute/.github#276 predicate-18 finding (2026-08-04), decided together with the same-day ruleset-class-overrides.json addition for this repo: REPO-ACTIONS-001 denied deploy-docs.yml under the package-class default (no grant named this path). Reclassifying the repository as control-plane (Tools/repository-policy/Policy/ruleset-class-overrides.json, same rationale as swift-institute/Issues) makes an exact typed 'bespoke' actionGrant the correct disposition here too, in place of a blanket surface exemption: it still enforces exact trigger/uses allowlists (REPO-ACTIONS-003/004) while exempting the non-reusable-workflow-call shape (steps + runs-on, no workflow_call) from the thin-caller structural constraint (REPO-ACTIONS-002/005), the same mechanism swift-institute/Issues' ci.yml grant above uses. deploy-docs.yml is a standalone GitHub Pages deployment (DocC build + actions/deploy-pages) and cannot become a reusable-workflow caller: documentation *deployment* is explicitly out of scope for the CI/CD refactor programme (#276), which only moves common DocC build/validation evidence into the universal chain.",
+      "repositoryClass": "control-plane",
+      "repository": "swift-institute/swift-institute.org",
+      "path": ".github/workflows/deploy-docs.yml",
+      "kind": "bespoke",
+      "triggers": [
+        "push",
+        "workflow_dispatch"
+      ],
+      "uses": [
+        "actions/checkout@v7",
+        "actions/configure-pages@v6",
+        "actions/deploy-pages@v5",
+        "actions/upload-pages-artifact@v5",
+        "swift-actions/setup-swift@v3"
+      ]
+    }
+  ],
+  "exemptions": [
+    {
+      "surface": "actions",
+      "repository": "swift-foundations/swift-linter",
+      "path": ".github/workflows/publish-ci-binaries.yml",
+      "reason": "Ruling-approved 2026-07-20 binary publisher for the prebuilt linter binaries the universal swift-ci.yml downloads; standalone push/schedule/workflow_dispatch workflow (not a workflow_call reusable), so it is admissible only as a typed exemption under the current grant kinds."
+    },
+    {
+      "surface": "actions",
+      "repository": "swift-foundations/swift-pdf",
+      "path": ".github/workflows/windows-6.4-proof.yml",
+      "reason": "Principal-directed, repo-owned Windows ICE-evidence job proving the Swift 6.3.3 Windows (+Asserts) debug-info-mangler crash is resolved on 6.4 for the full swift-pdf graph; deliberately non-centralized. Retire once the Swift 6.4 GA proof lands and is recorded (tracked as a separate swift-pdf-owned item)."
+    },
+    {
+      "surface": "actions",
+      "repository": "swift-foundations/swift-pdf",
+      "path": ".github/workflows/windows-existential-repro.yml",
+      "reason": "Principal-directed, repo-owned Windows ICE-evidence job compiling isolated reproducers for the 6.3.3 Windows (+Asserts) existential debug-info ICE; deliberately non-centralized. Retire once the Swift 6.4 GA proof lands and is recorded (tracked as a separate swift-pdf-owned item)."
+    },
+    {
+      "surface": "actions",
+      "repository": "swift-iso/swift-iso-32000",
+      "path": ".github/workflows/no-verbatim-spec-text.yml",
+      "reason": "Repo-owned legal guard rejecting verbatim paid ISO 32000-2 specification text from source; today only this repository carries it, so a typed exemption is the correct scope until a second authority-org repository needs the same guard."
+    }
+  ]
+}

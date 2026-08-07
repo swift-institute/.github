@@ -10,7 +10,7 @@
 # profile fields fail closed. `reviewOnly` is reserved for legitimately
 # check-less PRs (paths outside every path-filtered workflow's trigger, e.g.
 # Tools-only changes in this repository — swift-institute/.github#200): the
-# Swift verification (PR.Transaction+Verification.swift) accepts it only when
+# Swift verification (PullRequest.Transaction+Verification.swift) accepts it only when
 # the exact-head check-run collection is empty, and fails closed the instant
 # any check run — including a synthesized full-tier run — is cited at that
 # head. `waveMechanical` is the mechanical-remediation fast lane
@@ -33,7 +33,7 @@
 # (swift-institute/.github#288 Defect A) — a PR that founds a Goal (e.g. its
 # governing programme document) legitimately has no narrower child issue to
 # cite yet. This does not touch the `reviewOnly` security property itself:
-# PR.Transaction+Verification.swift still fails closed the instant any check
+# PullRequest.Transaction+Verification.swift still fails closed the instant any check
 # run is cited at the exact head, unconditionally of the owning Issue's type.
 
 name: review-pr-transaction
@@ -426,9 +426,9 @@ jobs:
                 }
               }
             ' > producer-input.json
-          swift run --package-path Tools/PRTransaction pr-transaction produce producer-input.json \
+          swift run --package-path Tools/pull-request-transaction pr-transaction produce producer-input.json \
             > transaction.json
-          swift run --package-path Tools/PRTransaction pr-transaction review transaction.json
+          swift run --package-path Tools/pull-request-transaction pr-transaction review transaction.json
           # The plan already passed the closed-union `verification` gate
           # above, so its sole top-level key is exactly one of the four
           # known profile names — safe to interpolate into the approval

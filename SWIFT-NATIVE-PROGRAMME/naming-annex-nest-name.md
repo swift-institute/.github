@@ -4,7 +4,7 @@ Principal ruling: identifiers follow the Institute Nest.Name convention. The
 parallel review's final edition adopted Nest.Name for public namespaces but
 retained flat compound spellings for targets/modules (`InstituteReceipt`,
 `CIContract`, `GitHubControl`). This annex normalizes every spelling to the
-live house precedent (`Tools/RepositoryPolicy` → target directory
+live house precedent (`Tools/repository-policy` → target directory
 `Sources/Repository Policy/`, files `Repository.Policy.<Type>.swift`, public
 types nested under noun namespaces). **Where the final edition and this annex
 differ on a spelling, this annex controls.** Architecture, owners, boundaries,
@@ -12,10 +12,23 @@ gates, and the FT1→F18 order are unchanged.
 
 ## Package roots (unchanged boundaries, credential split preserved)
 
+**Amended 2026-08-06 by principal ruling** (swift-institute/.github#404 comment
+5208179754): package-root DIRECTORIES are kebab-case, matching the house
+package-root precedent and the executable product each one carries. This
+resolves swift-institute/Workspace#141 by rename rather than by exemption, so
+the future Workspace directory validator ships exemption-free.
+
+Target-directory spellings (spaces) and every type spelling in the next section
+are UNCHANGED. This amendment moves the package-directory column only — the
+directory boundary is chosen independently of the target and type boundaries,
+and a kebab package root sits over spaced target directories without tension.
+
 | Package directory | Package name | Executable products |
 |---|---|---|
-| `Tools/InstituteCI` | Institute CI | `institute-ci` (thin front-end) |
-| `Tools/InstituteCIControl` | Institute CI Control | `institute-ci-control` (thin trusted front-end) |
+| `Tools/institute-ci` | Institute CI | `institute-ci` (thin front-end) |
+| `Tools/institute-ci-control` | Institute CI Control | `institute-ci-control` (thin trusted front-end) |
+| `Tools/repository-policy` | repository-policy | `repository-policy` |
+| `Tools/pull-request-transaction` | pr-transaction | `pr-transaction` |
 
 ## Target and public-type spellings
 
