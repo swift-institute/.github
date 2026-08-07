@@ -328,7 +328,9 @@ validators:
     self-firing: deferred
     discovery-mode: per-package-org-sweep
     rule-id-regex: '^GH-REPO-'
-    migrate-to-base: 'no (signature mismatch + jsonschema cross-repo fetch; rewrite scope > migration)'
+    # Ported to Swift (CI.Validation.GitHubMetadata); the script path above
+    # stays as the registry key per Registry.validator(replacing:).
+    migrate-to-base: 'no (per-package-org-sweep deferred to B-2)'
 
   - rule-id: PACKAGE-STRUCTURE
     validator-script: .github/scripts/validate-package-structure.py

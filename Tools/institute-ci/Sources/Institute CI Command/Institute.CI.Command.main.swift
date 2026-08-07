@@ -240,6 +240,13 @@ case "validate":
             organizationsFile: organizationsFile.isEmpty ? nil : organizationsFile,
             baselineFile: baselineFile.isEmpty ? nil : baselineFile)
     }
+    let schemaFile = value("--schema", in: rest)
+    if !schemaFile.isEmpty {
+        guard validator is CI.Validation.GitHubMetadata else {
+            fail("validate: --schema is not an input to this validator")
+        }
+        validator = CI.Validation.GitHubMetadata(schema: schemaFile)
+    }
     let subject = CI.Validation.Subject(
         repository: value("--repository", in: rest), root: value("--root", in: rest))
     let run = CI.Validation.Run.validate(validator, of: subject)
