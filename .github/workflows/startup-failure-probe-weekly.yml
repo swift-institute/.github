@@ -41,7 +41,12 @@ on:
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 60, up from 10: the F12 cold bootstrap (a Workspace source build of
+    # institute-ci) runs in this job on a cache miss and takes ~30 minutes;
+    # warm-cache runs restore in seconds. Same allowance swift-ci.yml's plan
+    # job already carries. Measured the hard way — the first canary
+    # (run 31164499832) was killed at exactly 10 minutes mid-bootstrap.
+    timeout-minutes: 60
     permissions:
       contents: read
     strategy:
@@ -75,9 +80,16 @@ jobs:
           repositories: .github
           permission-actions: read
 
+      - name: Provision the Institute CI binary
+        id: institute-ci
+        uses: ./.github/actions/institute-ci
+        with:
+          sources-root: ${{ github.workspace }}
+
       - name: Query recent runs and detect startup_failure
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
+          INSTITUTE_CI: ${{ steps.institute-ci.outputs.binary }}
           TARGET: ${{ matrix.repo }}
         run: |
           set -euo pipefail
@@ -96,4 +108,4 @@ jobs:
             "/repos/${TARGET}/actions/runs?per_page=100&created=>=${SINCE}" \
             | jq '{workflow_runs: (map(.workflow_runs) | add)}' > /tmp/runs.json
           # Exits 1 (RED) if any run concluded startup_failure; 0 if clean.
-          python3 .github/scripts/detect-startup-failures.py /tmp/runs.json
+          "$INSTITUTE_CI" startup-failures /tmp/runs.json
