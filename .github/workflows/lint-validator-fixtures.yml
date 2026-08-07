@@ -324,10 +324,16 @@ jobs:
             tail -n 40 /tmp/fixtures.txt 2>/dev/null || echo "(suite produced no output)"
             echo '```'
             echo
-            echo "### Swift CI shell controls"
+            echo "### Embedded-shell controls"
             echo
             echo '```'
-            tail -n 30 /tmp/ci-ok-controls.txt 2>/dev/null || echo "(controls produced no output)"
+            tail -n 30 /tmp/embedded-shell-controls.txt 2>/dev/null || echo "(controls produced no output)"
+            echo '```'
+            echo
+            echo "### Secret-transport contract controls"
+            echo
+            echo '```'
+            tail -n 15 /tmp/thin-caller-controls.txt 2>/dev/null || echo "(controls produced no output)"
             echo '```'
             echo
             echo "### File-naming validator controls"

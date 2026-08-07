@@ -186,7 +186,17 @@ jobs:
         run: |
           set -euo pipefail
           apt-get update -qq
-          apt-get install -qq -y curl python3 git
+          # uuid-dev: swift-linux-standard's CLinuxKernelShim `#include`s
+          # <uuid/uuid.h>, which `institute-ci-control` reaches transitively
+          # through swift-github. `.linkedLibrary` affects only the LINK
+          # step, so without the header the C module fails to build and the
+          # sweep never starts (canary runs 31175005924 / 31175007454). Same
+          # typed provisioning input as `.github/actions/institute-ci`; that
+          # action installs it explicitly for the same reason this does —
+          # `install-system-deps` derives from the workspace root, and this
+          # package lives under `.swift-institute-github/`, where the
+          # derivation cannot see it.
+          apt-get install -qq -y curl python3 git uuid-dev
           # gh CLI install on swift:* container (not in base; required for `gh repo list`)
           type -p curl >/dev/null
           mkdir -p -m 755 /etc/apt/keyrings
@@ -217,6 +227,24 @@ jobs:
         uses: SwiftyLab/setup-swift@38f54a76b70d989321de9dc7c840618c08cf56e9 # v1.14.0
         with:
           swift-version: '6.3'
+
+      - name: Install C-shim system headers (bare runner)
+        if: ${{ inputs.container == '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # uuid-dev: swift-linux-standard's CLinuxKernelShim `#include`s
+          # <uuid/uuid.h>, which `institute-ci-control` reaches transitively
+          # through swift-github. `.linkedLibrary` affects only the LINK
+          # step, so without the header the C module fails to build and the
+          # sweep never starts (canary runs 31175005924 / 31175007454). Same
+          # typed provisioning input as `.github/actions/institute-ci`; that
+          # action installs it explicitly for the same reason this does —
+          # `install-system-deps` derives from the workspace root, and this
+          # package lives under `.swift-institute-github/`, where the
+          # derivation cannot see it.
+          sudo apt-get update -qq
+          sudo apt-get install -qq -y uuid-dev
 
       - name: Fetch the control tool + any script audit (sparse-checkout from swift-institute/.github)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
