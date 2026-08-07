@@ -212,6 +212,9 @@ jobs:
           SUBJECT_VISIBILITY: ${{ github.event.client_payload.visibility }}
           SUBJECT_LAYER: ${{ github.event.client_payload.layer }}
           INVENTORY_DIGEST: ${{ github.event.client_payload.inventoryDigest }}
+          # Empty when a digest was measured; the seal refuses a cause
+          # beside a real digest, and refuses "unmeasured" without one.
+          INVENTORY_DIGEST_CAUSE: ${{ github.event.client_payload.inventoryDigestCause }}
           WORKSPACE_REVISION: ${{ github.event.client_payload.workspaceRevision }}
           POLICY_REVISION: ${{ github.event.client_payload.policyRevision }}
         run: |
@@ -273,6 +276,7 @@ jobs:
               --visibility "$SUBJECT_VISIBILITY" \
               --layer "$SUBJECT_LAYER" \
               --inventory-digest "$INVENTORY_DIGEST" \
+              --inventory-digest-cause "$INVENTORY_DIGEST_CAUSE" \
               --workspace-revision "$WORKSPACE_REVISION" \
               --policy-revision "$POLICY_REVISION" \
               --step build --step test --step nested-tests --step lint \
@@ -397,7 +401,12 @@ jobs:
                   }
                 ],
                 requiredGates: [ .requiredGates[] | { name, satisfied } ],
-                inventoryDigest: .inventoryDigest
+                inventoryDigest: .inventoryDigest,
+                # Present exactly when nothing was measured — the field
+                # `Private.Verification.Envelope` has always required
+                # beside an "unmeasured" digest and the receipt could not
+                # supply until swift-institute/Workspace#147.
+                inventoryDigestCause: .inventoryDigestCause
               }
               ' "$RECEIPT_PATH" > "$envelope_path"
             echo "outcome=$(jq -r '.outcome' "$envelope_path")" >> "$GITHUB_OUTPUT"
@@ -596,7 +605,9 @@ jobs:
               "- request: " + .requestId + "\n" +
               "- workspaceRevision: " + .workspaceRevision + "\n" +
               "- policyRevision: " + .policyRevision + "\n" +
-              "- inventoryDigest: " + .inventoryDigest + "\n" +
+              "- inventoryDigest: " + .inventoryDigest
+                + (if .inventoryDigestCause then " (" + .inventoryDigestCause + ")" else "" end)
+                + "\n" +
               "- layer: " + .layer + "\n" +
               "- environment: swift " + .environment.swift + ", " + .environment.os + "/" + .environment.architecture + "\n" +
               "- requiredGates: " + ([.requiredGates[] | .name + "=" + (.satisfied | tostring)] | join(", "))

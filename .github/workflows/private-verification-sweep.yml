@@ -132,6 +132,33 @@ jobs:
           test -n "$revision"
           echo "revision=${revision}" >> "$GITHUB_OUTPUT"
 
+      # The effective-inventory digest is computed by Workspace itself, at
+      # the same pinned revision this sweep dispatches with, from the
+      # roster this step enumerates (`Workspace.Inventory.Effective.Roster`
+      # — swift-institute/Workspace#147). The build is cached on the
+      # revision alone: acceleration only, and a cold pass that cannot
+      # finish it records a typed UNMEASURED cause rather than inventing a
+      # digest.
+      - name: Restore the pinned Workspace build (acceleration only)
+        id: workspace-build-restore
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .workspace/Application/.build
+          key: workspace-build-${{ steps.workspace.outputs.revision }}-linux-x86_64-swift-6.3
+
+      - name: Swift toolchain
+        uses: SwiftyLab/setup-swift@38f54a76b70d989321de9dc7c840618c08cf56e9  # v1.14.0
+        with:
+          swift-version: "6.3"
+
+      - name: Check out Workspace at the exact revision this sweep dispatches with
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: swift-institute/Workspace
+          ref: ${{ steps.workspace.outputs.revision }}
+          path: .workspace
+          persist-credentials: false
+
       - name: Enumerate candidates, dedupe, mark in-progress, and dispatch
         id: sweep
         shell: bash
@@ -239,7 +266,7 @@ jobs:
 
           dispatch_one() {
             local repository="$1" head="$2" default_branch="$3" visibility="$4" layer="$5"
-            local inventory_digest="$6"
+            local inventory_digest="$6" inventory_digest_cause="${7:-}"
             local org="${repository%%/*}" read_tok mark_tok
             read_tok=$(org_token "$org" read) || return 0
             mark_tok=$(org_token "$org" checks) || return 0
@@ -301,6 +328,7 @@ jobs:
               -f "client_payload[visibility]=${visibility}" \
               -f "client_payload[layer]=${layer}" \
               -f "client_payload[inventoryDigest]=${inventory_digest}" \
+              -f "client_payload[inventoryDigestCause]=${inventory_digest_cause}" \
               -f "client_payload[workspaceRevision]=${WORKSPACE_REVISION}" \
               -f "client_payload[policyRevision]=${POLICY_REVISION}" \
               -f "client_payload[requestId]=${policy_id}" \
@@ -321,9 +349,20 @@ jobs:
 
           enumerated_private=0
           unmeasured_orgs=""
+          # PHASE 1 — enumerate the effective private population.
+          #
+          # Enumeration is now separated from dispatch, because the
+          # effective-inventory digest is a property of the WHOLE
+          # population and every dispatch carries it: a roster truncated at
+          # MAX_TOTAL would digest a population that does not exist. Only
+          # the per-subject work (topics, heads, open PRs) stays bounded,
+          # in phase 3.
+          roster_rows_file="${RUNNER_TEMP}/roster-rows.jsonl"
+          subjects_file="${RUNNER_TEMP}/subjects.jsonl"
+          : > "$roster_rows_file"
+          : > "$subjects_file"
           while IFS= read -r org_raw; do
             org=$(jq -r '.' <<<"$org_raw")
-            [[ "$(candidate_count)" -lt "$MAX_TOTAL" ]] || break
 
             # G1 repair: loud, typed enumeration. A failed per-org token
             # mint or listing is recorded UNMEASURED, never silently
@@ -346,35 +385,109 @@ jobs:
             enumerated_private=$((enumerated_private + $(wc -l < "$repo_list_file" | tr -d ' ')))
 
             while IFS= read -r repo_raw; do
-              [[ "$(candidate_count)" -lt "$MAX_TOTAL" ]] || break
               repository=$(jq -r '.name' <<<"$repo_raw")
               default_branch=$(jq -r '.default_branch' <<<"$repo_raw")
 
+              # The same eligibility the live private pass applies
+              # (`Client.discoverPrivate`): a repository is on the
+              # effective inventory exactly when it carries a manifest.
               has_manifest=$(GH_TOKEN="$org_tok" gh api "repos/${repository}/contents/Package.swift?ref=${default_branch}" \
                 --jq '.type == "file"' 2>/dev/null || echo "false")
               [[ "$has_manifest" == "true" ]] || continue
 
-              layer=$(GH_TOKEN="$org_tok" gh api "repos/${repository}/topics" \
-                --jq '[.names[] | select(startswith("layer-"))] | first // "layer-applications" | sub("^layer-"; "")' \
-                2>/dev/null || echo "applications")
-
-              default_head=$(GH_TOKEN="$org_tok" gh api "repos/${repository}/commits/${default_branch}" --jq '.sha' 2>/dev/null || echo "")
-              [[ -n "$default_head" ]] || continue
-
-              open_pr_heads=$(GH_TOKEN="$org_tok" gh api "repos/${repository}/pulls?state=open&per_page=100" \
-                --jq '[.[].head.sha]' 2>/dev/null || echo '[]')
-
-              for head in "$default_head" $(jq -r '.[]' <<<"$open_pr_heads"); do
-                [[ "$(candidate_count)" -lt "$MAX_TOTAL" ]] || break
-                dispatch_one "$repository" "$head" "$default_branch" "private" "$layer" "unmeasured" &
-                running=$((running + 1))
-                if [[ "$running" -ge "$MAX_CONCURRENT" ]]; then
-                  wait -n
-                  running=$((running - 1))
-                fi
-              done
+              jq -cn --arg c "$repository" '$c' >> "$roster_rows_file"
+              jq -cn --arg r "$repository" --arg b "$default_branch" \
+                '{repository: $r, default_branch: $b}' >> "$subjects_file"
             done < "$repo_list_file"
           done < "$org_list_file"
+
+          # PHASE 2 — digest the enumerated population, or record why not.
+          #
+          # The digest is computed by Workspace at the pinned revision from
+          # the roster above: this sweep holds per-organization credentials
+          # no single `gh` credential can replace, so it discovers and
+          # Workspace digests (swift-institute/Workspace#147). Every
+          # failure path below lands a typed cause, never a bare
+          # "unmeasured" and never an invented digest — a receipt schema
+          # that accepts "unmeasured" without a cause is exactly what this
+          # repair removed.
+          roster_file="${RUNNER_TEMP}/roster.json"
+          report_file="${RUNNER_TEMP}/effective-inventory.json"
+          jq -n \
+            --slurpfile rows "$roster_rows_file" \
+            --arg orgs "${unmeasured_orgs:-}" \
+            '{schemaVersion: 1,
+              repositories: $rows,
+              unmeasured: ($orgs | split(" ") | map(select(length > 0))
+                | map({kind: "organization", coordinate: ., reason: "the sweep could not enumerate this organization on this pass"}))}' \
+            > "$roster_file"
+
+          inventory_digest="unmeasured"
+          inventory_digest_cause=""
+          if [[ "$enumerated_private" -eq 0 ]]; then
+            inventory_digest_cause="the sweep enumerated no private repositories, so there is no population to digest"
+          elif ! swift run --package-path .workspace/Application -c release workspace inventory effective \
+                 --inventory-scope effective \
+                 --inventory-private-roster "$roster_file" \
+                 --inventory-output "$report_file" > /dev/null 2>&1; then
+            # Exit 2 means the report was written with UNMEASURED residue;
+            # anything else means no report at all. Both are read from the
+            # report's own presence rather than from the exit status, so a
+            # partially-measured population still cannot pass as complete.
+            if [[ -s "$report_file" ]]; then
+              inventory_digest_cause="the effective inventory carries unmeasured residue: $(jq -r '.unmeasured | length' "$report_file") organization(s) this pass could not enumerate"
+            else
+              inventory_digest_cause="Workspace could not compute an effective-inventory digest on this runner"
+            fi
+          fi
+          if [[ -s "$report_file" && -z "$inventory_digest_cause" ]]; then
+            candidate_digest=$(jq -r '.combined.digest // empty' "$report_file")
+            if [[ "$candidate_digest" =~ ^[0-9a-f]{64}$ ]]; then
+              inventory_digest="$candidate_digest"
+            else
+              inventory_digest_cause="the effective-inventory report carried no 64-hex combined digest"
+            fi
+          fi
+          if [[ "$inventory_digest" == "unmeasured" && -z "$inventory_digest_cause" ]]; then
+            inventory_digest_cause="no effective-inventory digest was established on this pass"
+          fi
+          # The digest is a hash and the cause is fixed text this file
+          # authors — neither carries a private coordinate, so both are
+          # safe to log in this PUBLIC repository. The roster and the
+          # report are not: they stay in RUNNER_TEMP and are never printed,
+          # uploaded, or added to the step summary.
+          echo "inventory digest: ${inventory_digest}${inventory_digest_cause:+ (${inventory_digest_cause})}"
+          export inventory_digest inventory_digest_cause
+
+          # PHASE 3 — dispatch, bounded by MAX_TOTAL.
+          while IFS= read -r subject_raw; do
+            [[ "$(candidate_count)" -lt "$MAX_TOTAL" ]] || break
+            repository=$(jq -r '.repository' <<<"$subject_raw")
+            default_branch=$(jq -r '.default_branch' <<<"$subject_raw")
+            org="${repository%%/*}"
+            org_tok=$(org_token "$org" read) || continue
+
+            layer=$(GH_TOKEN="$org_tok" gh api "repos/${repository}/topics" \
+              --jq '[.names[] | select(startswith("layer-"))] | first // "layer-applications" | sub("^layer-"; "")' \
+              2>/dev/null || echo "applications")
+
+            default_head=$(GH_TOKEN="$org_tok" gh api "repos/${repository}/commits/${default_branch}" --jq '.sha' 2>/dev/null || echo "")
+            [[ -n "$default_head" ]] || continue
+
+            open_pr_heads=$(GH_TOKEN="$org_tok" gh api "repos/${repository}/pulls?state=open&per_page=100" \
+              --jq '[.[].head.sha]' 2>/dev/null || echo '[]')
+
+            for head in "$default_head" $(jq -r '.[]' <<<"$open_pr_heads"); do
+              [[ "$(candidate_count)" -lt "$MAX_TOTAL" ]] || break
+              dispatch_one "$repository" "$head" "$default_branch" "private" "$layer" \
+                "$inventory_digest" "$inventory_digest_cause" &
+              running=$((running + 1))
+              if [[ "$running" -ge "$MAX_CONCURRENT" ]]; then
+                wait -n
+                running=$((running - 1))
+              fi
+            done
+          done < "$subjects_file"
           wait
 
           # Positive control (R10): the fleet census records a large private
@@ -392,6 +505,13 @@ jobs:
             echo "enumerated-private=${enumerated_private}"
             echo "unmeasured-orgs=${unmeasured_orgs:-}"
           } >> "$GITHUB_OUTPUT"
+
+      - name: Save the pinned Workspace build (acceleration only)
+        if: ${{ steps.workspace-build-restore.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .workspace/Application/.build
+          key: workspace-build-${{ steps.workspace.outputs.revision }}-linux-x86_64-swift-6.3
 
       - name: Summary
         shell: bash
