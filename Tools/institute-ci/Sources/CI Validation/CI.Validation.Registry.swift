@@ -17,13 +17,23 @@ extension CI.Validation {
         public static let validators: [any Validator] = [
             BinaryInstallChecksum(),
             BranchPins(),
+            CIMatrix(),
+            CachePolicy(),
+            CompositeActionDescriptions(),
             CompositeActionPins(),
             ContinueOnError(),
             Drift.LintValidatorsWeekly(),
             Drift.ScheduledWorkflowAlert(),
+            EmbeddedJob(),
+            EnvironmentContext(),
             Gitignore(),
+            HardenRunner(),
+            InputDefaults(),
             ManifestBinding(),
+            PermissionsShape(),
             SkillHygiene(),
+            SubOrgWrappers(),
+            ThinCallers(),
             VisibilityGate(),
         ]
 

@@ -19,6 +19,8 @@ enum Main {
                 try ruleset(RulesetArguments(Array(CommandLine.arguments.dropFirst(2))))
             } else if CommandLine.arguments.dropFirst().first == "render-caller" {
                 try renderCaller(Array(CommandLine.arguments.dropFirst(2)))
+            } else if CommandLine.arguments.dropFirst().first == "parse-caller" {
+                try parseCaller(Array(CommandLine.arguments.dropFirst(2)))
             } else if CommandLine.arguments.dropFirst().first == "draft-metadata" {
                 try draftMetadata(Array(CommandLine.arguments.dropFirst(2)))
             } else if CommandLine.arguments.dropFirst().first == "census" {
