@@ -1,6 +1,7 @@
 // Thin CLI mapping only; owns no predicate (annex: Institute CI Command).
 import Byte_Primitives
 import CI_Contract
+import CI_Inventory
 import CI_Validation
 import CI_Workflow
 import Foundation
@@ -203,6 +204,25 @@ case "workflow-json":
         exit(1)
     }
 
+case "verdict-inventory":
+    // The structural inventory of the shipped verdict, as canonical
+    // JSON. Regenerates the committed expectation corpus; the drift
+    // check itself is a test, not a mode of this command, so that a
+    // stale corpus fails the package rather than one workflow step.
+    let rest = Array(arguments.dropFirst())
+    let path = value("--universal", in: rest)
+    guard let data = FileManager.default.contents(atPath: path) else {
+        fail("verdict-inventory: unreadable universal workflow \(path)")
+    }
+    do throws(CI.Inventory.Error) {
+        let inventory = try CI.Inventory.Document(
+            universalWorkflow: String(decoding: data, as: UTF8.self))
+        print(inventory.canonicalJSON)
+    } catch {
+        FileHandle.standardError.write(Data("institute-ci: \(error.message)\n".utf8))
+        exit(1)
+    }
+
 case "validate-fixtures":
     // The harness face — the Swift owner of `.github/scripts/tests/run.sh`.
     let rest = Array(arguments.dropFirst())
@@ -232,5 +252,6 @@ case "validate-fixtures":
 default:
     fail(
         "usage: institute-ci plan|aggregate|validate|validate-fixtures|workflow-json"
+            + "|verdict-inventory"
             + "|bootstrap-identity|bootstrap-manifest|bootstrap-verify ...")
 }

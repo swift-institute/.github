@@ -21,6 +21,10 @@ let package = Package(
             targets: ["CI Validation"]
         ),
         .library(
+            name: "CI Inventory",
+            targets: ["CI Inventory"]
+        ),
+        .library(
             name: "Institute Receipt",
             targets: ["Institute Receipt"]
         ),
@@ -49,6 +53,13 @@ let package = Package(
             name: "CI Validation",
             dependencies: ["CI Contract", "CI Workflow"]
         ),
+        // Describes the shipped verdict: the universal workflow's jobs,
+        // postures, waves, token boundary, and single aggregate. Models
+        // the terminal one-hop topology; there are no layer wrappers.
+        .target(
+            name: "CI Inventory",
+            dependencies: ["CI Contract", "CI Workflow"]
+        ),
         .target(
             name: "Institute CI Application",
             dependencies: ["CI Contract", "CI Validation", "Institute Receipt"]
@@ -66,6 +77,7 @@ let package = Package(
                 "Institute CI Application",
                 "CI Validation",
                 "CI Workflow",
+                "CI Inventory",
                 "Institute Receipt",
                 .product(name: "Byte Primitives", package: "swift-byte-primitives"),
             ]
@@ -81,6 +93,14 @@ let package = Package(
         .testTarget(
             name: "CI Validation Tests",
             dependencies: ["CI Validation"]
+        ),
+        .testTarget(
+            name: "CI Inventory Tests",
+            dependencies: ["CI Inventory"],
+            // Read from source through `#filePath`, not bundled: the
+            // corpus is an expectation to regenerate and diff, and the
+            // recorded run is evidence, not a resource.
+            exclude: ["Fixtures"]
         ),
         .testTarget(
             name: "Institute Receipt Tests",
