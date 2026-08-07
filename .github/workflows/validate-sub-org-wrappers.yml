@@ -129,9 +129,18 @@ jobs:
           path: institute-github
           ref: ${{ job.workflow_sha }}
 
+      - name: Provision the Institute CI binary
+        id: institute-ci
+        uses: ./institute-github/.github/actions/institute-ci
+        with:
+          sources-root: ${{ github.workspace }}/institute-github
+
       - name: Run validation against ${{ matrix.sub-org }}/.github
         env:
           GH_TOKEN: ${{ steps.mint-token.outputs.token }}
+          INSTITUTE_CI: ${{ steps.institute-ci.outputs.binary }}
+          INSTITUTE_CI_SUPPORT_ROOT: ${{ github.workspace }}/institute-github
+          VALIDATOR_ID: .github/scripts/validate-sub-org-wrappers.py
           VALIDATOR: ${{ github.workspace }}/institute-github/.github/scripts/validate-sub-org-wrappers.py
           TARGET_ORG: ${{ matrix.sub-org }}
         run: |
@@ -144,7 +153,15 @@ jobs:
               # sub-org .github repo doesn't exist — that's GOOD (no wrapper to fire on)
               exit 0
             fi
-            python3 "$VALIDATOR" "${TARGET_ORG}/.github" "$workdir" >> "/tmp/findings-${TARGET_ORG}.tsv" || true
+            rc=0
+            "$INSTITUTE_CI" validate --script "$VALIDATOR_ID" \
+              --repository "${TARGET_ORG}/.github" --root "$workdir" \
+              >> "/tmp/findings-${TARGET_ORG}.tsv" || rc=$?
+            if [ "$rc" -eq 3 ]; then
+              : > "/tmp/findings-${TARGET_ORG}.tsv"
+              python3 "$VALIDATOR" "${TARGET_ORG}/.github" "$workdir" \
+                >> "/tmp/findings-${TARGET_ORG}.tsv" || true
+            fi
           )
           rm -rf "$workdir"
 

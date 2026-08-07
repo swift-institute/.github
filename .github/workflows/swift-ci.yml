@@ -2690,7 +2690,11 @@ jobs:
             "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs?per_page=100" \
             --jq '.jobs[]' | jq -s '{jobs: .}' > "$RUNNER_TEMP/jobs.json"
           mkdir -p "$RUNNER_TEMP/receipt"
-          python3 institute-receipt/.github/scripts/effective-runtime-receipt.py \
+          # F16: the receipt canonicalizer is `Institute.Receipt.Capture` +
+          # `.Canonical` (C6). The binary is the one provisioned by this
+          # job's own F12 bootstrap block above — no second channel, and
+          # the same tree OID the plan decision was made with.
+          .institute-ci-entry/bin/institute-ci runtime-receipt \
             --run-json "$RUNNER_TEMP/run.json" \
             --jobs-json "$RUNNER_TEMP/jobs.json" \
             --planned-gating "${PLANNED_GATING:-}" \
