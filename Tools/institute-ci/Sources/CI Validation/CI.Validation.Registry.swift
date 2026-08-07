@@ -15,7 +15,11 @@ extension CI.Validation {
     /// resolution mechanical.
     public enum Registry {
         public static let validators: [any Validator] = [
-            ContinueOnError()
+            CachePolicy(),
+            ContinueOnError(),
+            HardenRunner(),
+            InputDefaults(),
+            PermissionsShape(),
         ]
 
         /// The validator authoritative for a rule, or `nil` when the rule
