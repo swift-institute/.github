@@ -169,12 +169,22 @@ jobs:
           owner: ${{ matrix.org }}
           repositories: ''
 
-      - name: Install dependencies (curl, gh, jq)
+      - name: Install dependencies (curl, gh, jq, uuid-dev)
         shell: bash
         run: |
           set -euo pipefail
           apt-get update -qq
-          apt-get install -qq -y curl jq ca-certificates gnupg
+          # uuid-dev: swift-linux-standard's CLinuxKernelShim `#include`s
+          # <uuid/uuid.h>, which `institute-ci-control` reaches transitively
+          # through swift-github. `.linkedLibrary` affects only the LINK
+          # step, so without the header the C module fails to build and the
+          # sweep never starts (canary runs 31175005924 / 31175007454). Same
+          # typed provisioning input as `.github/actions/institute-ci`; that
+          # action installs it explicitly for the same reason this does —
+          # `install-system-deps` derives from the workspace root, and this
+          # package lives under `.swift-institute-github/`, where the
+          # derivation cannot see it.
+          apt-get install -qq -y curl jq ca-certificates gnupg uuid-dev
           mkdir -p -m 755 /etc/apt/keyrings
           # [CI-082] fetch to file, sha256sum -c against pinned digest,
           # only then place in /etc/apt/keyrings/. Restructured from the
