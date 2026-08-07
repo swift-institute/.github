@@ -21,7 +21,7 @@ on:
 env:
   ACTIVATION_RECEIPT_DIGEST: 89924760b9b292ea2d18118c4c9d99af20e218a59b8538ef420bd6e0712f1483
   LINTER_RELEASE: https://github.com/swift-foundations/swift-linter/releases/download/ci-binaries
-  WORKSPACE_REPOSITORY: swift-institute/Workspace
+  WORKSPACE_REPOSITORY: swift-institute/institute-application
 
 jobs:
   measure:
@@ -75,7 +75,7 @@ jobs:
           workspace="$RUNNER_TEMP/workspace"
           git clone --depth 1 "https://github.com/${WORKSPACE_REPOSITORY}.git" "$workspace"
           workspace_sha="$(git -C "$workspace" rev-parse HEAD)"
-          inventory="$workspace/Workspace.json"
+          inventory="$workspace/Institute.json"
           jq --exit-status 'type == "object" and (.repositories | type == "array" and length > 0)' "$inventory" >/dev/null
           case "$COHORT" in
             smoke|all) ;;
@@ -168,7 +168,7 @@ jobs:
               foundations) bundle=institute ;;
               *)
                 blocked=$((blocked + 1))
-                emit "$(jq -cn --arg repo "$repo" --arg layer "$layer" '{repository:$repo,classification:"genuinely-blocked",predicate:"unknown-semantic-layer",owner:"swift-institute/Workspace",layer:$layer}')"
+                emit "$(jq -cn --arg repo "$repo" --arg layer "$layer" '{repository:$repo,classification:"genuinely-blocked",predicate:"unknown-semantic-layer",owner:"swift-institute/institute-application",layer:$layer}')"
                 continue
                 ;;
             esac

@@ -591,7 +591,7 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .institute-ci-entry
-          key: institute-ci-${{ steps.institute-ci-identity.outputs.sources-tree }}-6e3861935041c9a92d873f0e444da1dd5b666fdb-linux-x86_64-swift-6.3-static
+          key: institute-ci-${{ steps.institute-ci-identity.outputs.sources-tree }}-72d4b2ae1e5b6a2b49fc22e0240dad0a34a9618f-linux-x86_64-swift-6.3-static
       - name: Swift toolchain (cold bootstrap only)
         if: ${{ inputs.job == '' && steps.institute-ci-restore.outputs.cache-hit != 'true' }}
         uses: SwiftyLab/setup-swift@38f54a76b70d989321de9dc7c840618c08cf56e9  # v1.14.0
@@ -601,9 +601,9 @@ jobs:
         if: ${{ inputs.job == '' && steps.institute-ci-restore.outputs.cache-hit != 'true' }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: swift-institute/Workspace
+          repository: swift-institute/institute-application
           # Advance with pin-advance flow; must stay a full SHA (branch-pin guard).
-          ref: 6e3861935041c9a92d873f0e444da1dd5b666fdb
+          ref: 72d4b2ae1e5b6a2b49fc22e0240dad0a34a9618f
           path: .workspace
           persist-credentials: false
       - name: Cold bootstrap through the sanctioned Workspace coordinate
@@ -616,16 +616,16 @@ jobs:
           # uuid-dev: the typed F2/F10 provisioning input (swift-linux-standard's
           # CLinuxKernelShim includes uuid/uuid.h); absent on the bare runner.
           sudo apt-get update -qq && sudo apt-get install -qq -y uuid-dev
-          swift run --package-path .workspace/Application workspace package build --package-path "${RUNNER_TEMP}/institute-ci-sources" --argument=--static-swift-stdlib
+          swift run --package-path .workspace/Application institute package build --package-path "${RUNNER_TEMP}/institute-ci-sources" --argument=--static-swift-stdlib
           mkdir -p .institute-ci-entry/bin
           cp "$(find "${RUNNER_TEMP}/institute-ci-sources/.build" -name institute-ci -type f -perm /111 | head -1)" .institute-ci-entry/bin/institute-ci
-          .institute-ci-entry/bin/institute-ci bootstrap-manifest --workspace-revision 6e3861935041c9a92d873f0e444da1dd5b666fdb --sources-revision "$SOURCES_TREE" --toolchain swift-6.3 --os linux --arch x86_64 --provisioning uuid-dev,static-swift-stdlib --root .institute-ci-entry --executables bin/institute-ci --producer-run "$GITHUB_RUN_ID" > .institute-ci-entry/manifest.json
+          .institute-ci-entry/bin/institute-ci bootstrap-manifest --workspace-revision 72d4b2ae1e5b6a2b49fc22e0240dad0a34a9618f --sources-revision "$SOURCES_TREE" --toolchain swift-6.3 --os linux --arch x86_64 --provisioning uuid-dev,static-swift-stdlib --root .institute-ci-entry --executables bin/institute-ci --producer-run "$GITHUB_RUN_ID" > .institute-ci-entry/manifest.json
       - name: Save Institute CI cache entry (cold bootstrap only)
         if: ${{ inputs.job == '' && steps.institute-ci-restore.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .institute-ci-entry
-          key: institute-ci-${{ steps.institute-ci-identity.outputs.sources-tree }}-6e3861935041c9a92d873f0e444da1dd5b666fdb-linux-x86_64-swift-6.3-static
+          key: institute-ci-${{ steps.institute-ci-identity.outputs.sources-tree }}-72d4b2ae1e5b6a2b49fc22e0240dad0a34a9618f-linux-x86_64-swift-6.3-static
       - name: Verify Institute CI provenance before trust (fail closed)
         if: ${{ inputs.job == '' }}
         shell: bash
@@ -633,7 +633,7 @@ jobs:
           SOURCES_TREE: ${{ steps.institute-ci-identity.outputs.sources-tree }}
         run: |
           set -euo pipefail
-          .institute-ci-entry/bin/institute-ci bootstrap-verify --workspace-revision 6e3861935041c9a92d873f0e444da1dd5b666fdb --sources-revision "$SOURCES_TREE" --toolchain swift-6.3 --os linux --arch x86_64 --provisioning uuid-dev,static-swift-stdlib --root .institute-ci-entry --manifest .institute-ci-entry/manifest.json
+          .institute-ci-entry/bin/institute-ci bootstrap-verify --workspace-revision 72d4b2ae1e5b6a2b49fc22e0240dad0a34a9618f --sources-revision "$SOURCES_TREE" --toolchain swift-6.3 --os linux --arch x86_64 --provisioning uuid-dev,static-swift-stdlib --root .institute-ci-entry --manifest .institute-ci-entry/manifest.json
       # Body executed by the Swift owner since F12 (Goal
       # swift-institute/.github#358): tier/leg/gating selection is
       # CI.Contract.Plan in institute-ci, differentially proven against the
@@ -2198,7 +2198,7 @@ jobs:
       # The runner's argument vector is lint targets and NOTHING else, so a
       # `--exit-policy` flag there would be read as a path. Both the bundle and
       # the policy therefore ride environment channels. This is the same pair
-      # Workspace drives, so a package's CI verdict and its `workspace lint`
+      # Workspace drives, so a package's CI verdict and its `institute lint`
       # verdict come from one mechanism rather than two that can drift.
       #
       # SWIFT_LINTER_BUNDLE must be set explicitly on every invocation: the
@@ -2586,7 +2586,7 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .institute-ci-entry
-          key: institute-ci-${{ steps.institute-ci-identity.outputs.sources-tree }}-6e3861935041c9a92d873f0e444da1dd5b666fdb-linux-x86_64-swift-6.3-static
+          key: institute-ci-${{ steps.institute-ci-identity.outputs.sources-tree }}-72d4b2ae1e5b6a2b49fc22e0240dad0a34a9618f-linux-x86_64-swift-6.3-static
       - name: Swift toolchain (cold bootstrap only)
         if: ${{ steps.institute-ci-restore.outputs.cache-hit != 'true' }}
         uses: SwiftyLab/setup-swift@38f54a76b70d989321de9dc7c840618c08cf56e9  # v1.14.0
@@ -2596,8 +2596,8 @@ jobs:
         if: ${{ steps.institute-ci-restore.outputs.cache-hit != 'true' }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: swift-institute/Workspace
-          ref: 6e3861935041c9a92d873f0e444da1dd5b666fdb
+          repository: swift-institute/institute-application
+          ref: 72d4b2ae1e5b6a2b49fc22e0240dad0a34a9618f
           path: .workspace
           persist-credentials: false
       - name: Cold bootstrap through the sanctioned Workspace coordinate
@@ -2610,17 +2610,17 @@ jobs:
           # uuid-dev: the typed F2/F10 provisioning input (swift-linux-standard's
           # CLinuxKernelShim includes uuid/uuid.h); absent on the bare runner.
           sudo apt-get update -qq && sudo apt-get install -qq -y uuid-dev
-          swift run --package-path .workspace/Application workspace package build --package-path "$GITHUB_WORKSPACE/institute-receipt/Tools/institute-ci" --argument=--static-swift-stdlib
+          swift run --package-path .workspace/Application institute package build --package-path "$GITHUB_WORKSPACE/institute-receipt/Tools/institute-ci" --argument=--static-swift-stdlib
           mkdir -p .institute-ci-entry/bin
           cp "$(find institute-receipt/Tools/institute-ci/.build -name institute-ci -type f -perm /111 | head -1)" .institute-ci-entry/bin/institute-ci
-          .institute-ci-entry/bin/institute-ci bootstrap-manifest --workspace-revision 6e3861935041c9a92d873f0e444da1dd5b666fdb --sources-revision "$SOURCES_TREE" --toolchain swift-6.3 --os linux --arch x86_64 --provisioning uuid-dev,static-swift-stdlib --root .institute-ci-entry --executables bin/institute-ci --producer-run "$GITHUB_RUN_ID" > .institute-ci-entry/manifest.json
+          .institute-ci-entry/bin/institute-ci bootstrap-manifest --workspace-revision 72d4b2ae1e5b6a2b49fc22e0240dad0a34a9618f --sources-revision "$SOURCES_TREE" --toolchain swift-6.3 --os linux --arch x86_64 --provisioning uuid-dev,static-swift-stdlib --root .institute-ci-entry --executables bin/institute-ci --producer-run "$GITHUB_RUN_ID" > .institute-ci-entry/manifest.json
       - name: Verify Institute CI provenance before trust (fail closed)
         shell: bash
         env:
           SOURCES_TREE: ${{ steps.institute-ci-identity.outputs.sources-tree }}
         run: |
           set -euo pipefail
-          .institute-ci-entry/bin/institute-ci bootstrap-verify --workspace-revision 6e3861935041c9a92d873f0e444da1dd5b666fdb --sources-revision "$SOURCES_TREE" --toolchain swift-6.3 --os linux --arch x86_64 --provisioning uuid-dev,static-swift-stdlib --root .institute-ci-entry --manifest .institute-ci-entry/manifest.json
+          .institute-ci-entry/bin/institute-ci bootstrap-verify --workspace-revision 72d4b2ae1e5b6a2b49fc22e0240dad0a34a9618f --sources-revision "$SOURCES_TREE" --toolchain swift-6.3 --os linux --arch x86_64 --provisioning uuid-dev,static-swift-stdlib --root .institute-ci-entry --manifest .institute-ci-entry/manifest.json
       # Body executed by the Swift owner since F12 (#358/#390):
       # CI.Contract.AggregateVerdict in institute-ci, differentially proven
       # against the retired shell (F4/F11, exit-status equality across all
