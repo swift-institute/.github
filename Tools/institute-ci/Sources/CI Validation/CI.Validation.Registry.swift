@@ -19,6 +19,7 @@ extension CI.Validation {
             BranchPins(),
             CompositeActionPins(),
             ContinueOnError(),
+            SkillHygiene(),
         ]
 
         /// The validator authoritative for a rule, or `nil` when the rule
