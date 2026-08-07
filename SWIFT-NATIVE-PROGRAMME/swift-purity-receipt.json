@@ -9,8 +9,21 @@
   "stopCondition": {
     "id": "STOP-F16-PURITY",
     "statement": "Institute-authored non-Swift semantics remain \u2192 do not claim 100% Swift.",
-    "state": "TRIPPED",
-    "detail": "71 RETAINED-NO-OWNER + 2 RETAINED-TYPED + 1 RETAINED-HARNESS Institute-authored non-Swift semantic files remain at this head, and 9 SUPERSEDED files cannot pass the deletion gate. F16 does not close on this PR set and NO 100%-Swift claim is admissible."
+    "state": "RESOLVED",
+    "detail": "RESOLVED at the terminal census (seal head 87ea16f94669378539b990888847ce9d935fd01c, census base d8e131c56bcc3701faabd7c88c8e25139e06f60a): 44 tracked non-Swift files remain and every one carries a named disposition \u2014 22 TRANSFERRED-CW (ruling #358 comment 5215227317, grown to 22 per cwClassAmendment), 13 RETAINED-FIXTURE-STUB pinned by the PS-1 guard test, 8 RETAINED-TYPED and 1 RETAINED-UTILITY per terminalCensus, UNTYPED 0. The stop's predicate \u2014 Institute-authored non-Swift semantics remaining without disposition \u2014 no longer holds, so the 100%-Swift claim is admissible only in the exception-naming form recorded in purityClaim. Re-stated per F18 review finding PS-5 (#358 comment 5216905503); the original trip is preserved in history below, not erased.",
+    "history": [
+      {
+        "state": "TRIPPED",
+        "measuredAtHead": "d32382565bc296ad735996d633a99fb3b62c204f",
+        "detail": "71 RETAINED-NO-OWNER + 2 RETAINED-TYPED + 1 RETAINED-HARNESS Institute-authored non-Swift semantic files remain at this head, and 9 SUPERSEDED files cannot pass the deletion gate. F16 does not close on this PR set and NO 100%-Swift claim is admissible.",
+        "supersededBy": "The terminal census at base d8e131c5 (sealed at 87ea16f9) enumerated the tree to 44 files, all typed, UNTYPED 0; the trip was correct for its 104-file preimage and is retained here as the historical verdict it was."
+      }
+    ]
+  },
+  "purityClaim": {
+    "sentence": "Institute-authored CI semantics in swift-institute/.github are Swift, with exactly three named exception categories: 22 TRANSFERRED-CW files (transferred out of Institute semantics by ruling #358 comment 5215227317, counted at 22 per cwClassAmendment), 13 RETAINED-FIXTURE-STUB files that are test corpus data pinned by the PS-1 guard test in #446, and the retained-typed set per terminalCensus (8 RETAINED-TYPED plus 1 RETAINED-UTILITY, each with its coordinate and reason recorded above).",
+    "resolves": "DB3 (F18 review, #358 comments 5216468747 and 5216905503): the purity claim names its exceptions instead of asserting an unqualified gated property.",
+    "skillResidue": "The Skill-side sentence lives in swift-institute/Skills ci-cd/SKILL.md; at Skills origin/main c0f0f79 it is already stated as the Goal's gated end-state rather than the present state, but it still cites the stale 90-file F18-cut figure and names no exception categories. That file is outside this PR's SWIFT-NATIVE-PROGRAMME/* authority; aligning it to this purityClaim is recorded here as the remaining DB3 term for the coordinator to route as a Skills-repository change."
   },
   "census": {
     "artifact": "F16/non-swift-authored-census.csv",
@@ -119,8 +132,8 @@
     "hostedCanaries": "NONE. GitHub Actions is in a major outage; required checks cannot report. No PR in this set carries hosted evidence and none may be merged as if it did.",
     "localVerification": "Reduced evidence only, per the two-gate rule: workspace package build/test in the authoring worktree. Full --fresh verification is not this task's."
   },
-  "sealState": "RESEALED 2026-08-07 by peer task f16-final-census (terminal census, PS-4 resolution; base main d8e131c56bcc3701faabd7c88c8e25139e06f60a)",
-  "resealedAtHead": "e5f9e8834a062932fb51cd019da1a10c5806fa3e",
+  "sealState": "RESEALED 2026-08-07 by peer task ps5-receipt-restate (stop-condition re-statement, PS-5 and DB3 per #358 comment 5216905503; base main 87ea16f94669378539b990888847ce9d935fd01c). Prior seal: RESEALED 2026-08-07 by peer task f16-final-census (terminal census, PS-4 resolution; base main d8e131c56bcc3701faabd7c88c8e25139e06f60a) at head e5f9e8834a062932fb51cd019da1a10c5806fa3e.",
+  "resealedAtHead": "87ea16f94669378539b990888847ce9d935fd01c",
   "terminalCensus": {
     "measuredAtBase": "d8e131c56bcc3701faabd7c88c8e25139e06f60a",
     "resolves": "PS-4 (F18 independent review, #358 comment 5216814794); enumeration cross-checked against that review's DB1 tracker (46 tracked .py/.sh pre-deletion = 22 CW + 13 fixture stubs + 7 typed + 4 untyped) and reproduced exactly by unfiltered `git ls-files '*.py' '*.sh'` at the base head.",
@@ -230,6 +243,7 @@
   "resealScan": {
     "instrument": "find -name '*.py' -o -name '*.sh' (git-excluded), positive-controlled on SWIFT-NATIVE-PROGRAMME/census-generator.py",
     "nonSwiftFileCount": 91,
+    "supersededBy": "terminalCensus.totalAfterThisReseal = 44 (base d8e131c5, sealed at 87ea16f9). The 91 was measured at the e5f9e883 merged head, before the F16 residual sweep (#446) and the terminal census reduced and fully typed the population; it is retained as history, not as a current count.",
     "note": "count at merged head after PR-A deletions and the eligibility restack; per-file classification (superseded/retained-typed/out-of-repo-owner) is the census in PR #405 and stands. The purity CLAIM is scoped to swift-institute/.github; out-of-repo remainders are owned at swift-foundations/swift-linter#42 and swift-institute/Workspace#145."
   },
   "mergeEvidence": {
