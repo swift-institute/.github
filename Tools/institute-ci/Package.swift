@@ -13,6 +13,14 @@ let package = Package(
             targets: ["CI Contract"]
         ),
         .library(
+            name: "CI Workflow",
+            targets: ["CI Workflow"]
+        ),
+        .library(
+            name: "CI Validation",
+            targets: ["CI Validation"]
+        ),
+        .library(
             name: "Institute Receipt",
             targets: ["Institute Receipt"]
         ),
@@ -29,9 +37,21 @@ let package = Package(
         .target(
             name: "CI Contract"
         ),
+        // Reads an Actions workflow file into a typed document.
+        .target(
+            name: "CI Workflow",
+            dependencies: ["CI Contract"]
+        ),
+        // Runs rule predicates over a repository. Wave-1 port peers add
+        // one validator file each here, plus one line in
+        // `CI.Validation.Registry`.
+        .target(
+            name: "CI Validation",
+            dependencies: ["CI Contract", "CI Workflow"]
+        ),
         .target(
             name: "Institute CI Application",
-            dependencies: ["CI Contract", "Institute Receipt"]
+            dependencies: ["CI Contract", "CI Validation", "Institute Receipt"]
         ),
         .target(
             name: "Institute Receipt",
@@ -44,6 +64,8 @@ let package = Package(
             name: "Institute CI Command",
             dependencies: [
                 "Institute CI Application",
+                "CI Validation",
+                "CI Workflow",
                 "Institute Receipt",
                 .product(name: "Byte Primitives", package: "swift-byte-primitives"),
             ]
@@ -51,6 +73,14 @@ let package = Package(
         .testTarget(
             name: "CI Contract Tests",
             dependencies: ["CI Contract"]
+        ),
+        .testTarget(
+            name: "CI Workflow Tests",
+            dependencies: ["CI Workflow"]
+        ),
+        .testTarget(
+            name: "CI Validation Tests",
+            dependencies: ["CI Validation"]
         ),
         .testTarget(
             name: "Institute Receipt Tests",

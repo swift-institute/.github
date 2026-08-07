@@ -1,6 +1,8 @@
 // Thin CLI mapping only; owns no predicate (annex: Institute CI Command).
 import Byte_Primitives
 import CI_Contract
+import CI_Validation
+import CI_Workflow
 import Foundation
 import Institute_Receipt
 
@@ -162,6 +164,73 @@ case "bootstrap-identity", "bootstrap-manifest", "bootstrap-verify":
     default:
         fail("unreachable")
     }
+case "validate":
+    // The rule-invocation face: one validator, one repository, TSV on
+    // stdout. Argument order and the TSV shape match the retired
+    // `python3 validate-<rule>.py <owner/name> <repo-root>` invocation so
+    // `validate-base.yml` needs no change beyond the command it runs.
+    let rest = Array(arguments.dropFirst())
+    let rule = CI.Validation.Rule(value("--rule", in: rest))
+    guard let validator = CI.Validation.Registry.validator(for: rule) else {
+        fail("validate: no Swift validator is registered for rule '\(rule)'")
+    }
+    let subject = CI.Validation.Subject(
+        repository: value("--repository", in: rest), root: value("--root", in: rest))
+    let run = CI.Validation.Run.validate(validator, of: subject)
+    if let defect = run.defect {
+        FileHandle.standardError.write(Data("institute-ci: \(defect.message)\n".utf8))
+    }
+    for finding in run.findings { print(finding.tsv) }
+    exit(run.exitCode)
+
+case "workflow-json":
+    // Canonical JSON of one workflow document, as the reader sees it.
+    // The face the reader is proved through: comparable against any
+    // other YAML implementation's canonical rendering of the same file,
+    // which is a far wider check than comparing one rule's findings.
+    let rest = Array(arguments.dropFirst())
+    let path = value("--file", in: rest)
+    guard let data = FileManager.default.contents(atPath: path) else {
+        fail("workflow-json: unreadable file \(path)")
+    }
+    do throws(CI.Workflow.YAML.Error) {
+        let document = try CI.Workflow.Document(
+            name: (path as NSString).lastPathComponent,
+            text: String(decoding: data, as: UTF8.self))
+        print(CI.Workflow.YAML.Canonical.json(document.root))
+    } catch {
+        FileHandle.standardError.write(Data("institute-ci: \(error.message)\n".utf8))
+        exit(1)
+    }
+
+case "validate-fixtures":
+    // The harness face — the Swift owner of `.github/scripts/tests/run.sh`.
+    let rest = Array(arguments.dropFirst())
+    let root = value("--corpus", in: rest)
+    if root.isEmpty { fail("validate-fixtures requires --corpus <fixtures-dir>") }
+    let harness = CI.Validation.Harness(corpus: .init(root: root))
+    let report: CI.Validation.Harness.Report
+    do throws(CI.Validation.EnvironmentDefect) {
+        report = try harness.run(matching: value("--rule-prefix", in: rest))
+    } catch {
+        fail(error.message)
+    }
+    for outcome in report.outcomes { print("  " + outcome.summary) }
+    print("")
+    print("Total: \(report.satisfied.count) passed, \(report.unsatisfied.count) failed")
+    if !report.unownedRuleDirectories.isEmpty {
+        // Named, not silently skipped. `run.sh` failed the run on any
+        // unregistered rule directory; during the port that residue is
+        // expected, so it is reported and gated by --require-complete.
+        print(
+            "Awaiting a Swift validator (\(report.unownedRuleDirectories.count)): "
+                + report.unownedRuleDirectories.joined(separator: ", "))
+    }
+    let complete = rest.contains("--require-complete")
+    exit((complete ? report.isComplete : report.isSatisfied) ? 0 : 1)
+
 default:
-    fail("usage: institute-ci plan|aggregate|bootstrap-identity|bootstrap-manifest|bootstrap-verify ...")
+    fail(
+        "usage: institute-ci plan|aggregate|validate|validate-fixtures|workflow-json"
+            + "|bootstrap-identity|bootstrap-manifest|bootstrap-verify ...")
 }
