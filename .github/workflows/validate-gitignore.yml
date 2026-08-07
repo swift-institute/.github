@@ -114,6 +114,12 @@ jobs:
           path: institute-github
           ref: ${{ job.workflow_sha }}
 
+      - name: Provision the Institute CI binary
+        id: institute-ci
+        uses: ./institute-github/.github/actions/institute-ci
+        with:
+          sources-root: ${{ github.workspace }}/institute-github
+
       - name: Prove the validator's own controls fire
         # The fixture suite runs BEFORE the sweep, not in a separate workflow.
         # A validator whose controls are checked elsewhere is a validator whose
@@ -125,7 +131,10 @@ jobs:
         # itself once.
         run: |
           set -euo pipefail
-          "${{ github.workspace }}/institute-github/.github/scripts/tests/run.sh" gh-ignore-
+          "${{ steps.institute-ci.outputs.binary }}" validate-fixtures \
+            --corpus "${{ github.workspace }}/institute-github/.github/scripts/tests/fixtures" \
+            --scripts "${{ github.workspace }}/institute-github/.github/scripts" \
+            --rule-prefix gh-ignore-
 
       - name: Resolve target repos
         id: targets

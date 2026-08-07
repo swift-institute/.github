@@ -201,10 +201,24 @@ jobs:
           fi
           echo "count=$n" >> "$GITHUB_OUTPUT"
 
+      # F16 cutover: the same registry-driven dispatch validate-base.yml
+      # performs. `validate --script` is asked first by the validator's
+      # identity; exit 3 means no Swift owner is registered and only that
+      # code falls back to python3. BRANCH-PIN-001 is ported (C2), so this
+      # sweep is Swift-served today and the fallback is the safety net for
+      # a revision where it is not.
+      - name: Provision the Institute CI binary
+        uses: ./.github-shared/.github/actions/institute-ci
+        id: institute-ci
+        with:
+          sources-root: ${{ github.workspace }}/.github-shared
+
       - name: Run branch-pin checks
         id: check
         env:
           GH_TOKEN: ${{ steps.mint-token.outputs.token }}
+          INSTITUTE_CI: ${{ steps.institute-ci.outputs.binary }}
+          VALIDATOR_ID: .github/scripts/validate-branch-pins.py
           VALIDATOR_SCRIPT: ${{ github.workspace }}/.github-shared/.github/scripts/validate-branch-pins.py
           # Default: the workflow_sha-pinned checkout copy, exactly as
           # before #212. With `manifest-repository` set, the SAME fetched
@@ -216,6 +230,7 @@ jobs:
           set -euo pipefail
           mkdir -p /tmp/findings
           : > /tmp/findings/all.tsv
+          : > /tmp/findings/swift.tsv
 
           while IFS= read -r repo; do
             [ -z "$repo" ] && continue
@@ -232,12 +247,26 @@ jobs:
                 exit 0
               fi
 
-              # The validator exits 1 to mean "non-baselined findings", so
-              # only rc >= 2 is a crash worth a sentinel.
+              # The retired validator exits 1 to mean "non-baselined
+              # findings", so only rc >= 2 is a crash worth a sentinel. The
+              # ported contract no longer sets the exit code from findings
+              # (0 = ran, 2 = could not run), which lands on the same side
+              # of that threshold — no accounting change here.
               rc=0
-              python3 "$VALIDATOR_SCRIPT" "$repo" . \
+              "$INSTITUTE_CI" validate --script "$VALIDATOR_ID" \
+                --repository "$repo" --root . \
                 --orgs-file "$ORGS_FILE" --baseline "$BASELINE_FILE" \
-                >> /tmp/findings/all.tsv || rc=$?
+                >> /tmp/findings/swift.tsv || rc=$?
+              if [ "$rc" -eq 3 ]; then
+                : > /tmp/findings/swift.tsv
+                rc=0
+                python3 "$VALIDATOR_SCRIPT" "$repo" . \
+                  --orgs-file "$ORGS_FILE" --baseline "$BASELINE_FILE" \
+                  >> /tmp/findings/all.tsv || rc=$?
+              else
+                cat /tmp/findings/swift.tsv >> /tmp/findings/all.tsv
+                : > /tmp/findings/swift.tsv
+              fi
               if [ "$rc" -gt 1 ]; then
                 echo "$repo	validator-crashed	-" >> /tmp/findings/all.tsv
               fi

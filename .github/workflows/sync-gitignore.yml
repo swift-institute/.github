@@ -150,6 +150,12 @@ jobs:
           path: institute-github
           ref: ${{ job.workflow_sha }}
 
+      - name: Provision the Institute CI binary
+        id: institute-ci
+        uses: ./institute-github/.github/actions/institute-ci
+        with:
+          sources-root: ${{ github.workspace }}/institute-github
+
       - name: Prove the renderer and the gate agree before writing anything
         # The fixture suite covers the gate; this covers the pair. A renderer
         # that emits something the validator rejects would push a fleet-wide
@@ -157,7 +163,10 @@ jobs:
         # precise failure this ordering exists to prevent.
         run: |
           set -euo pipefail
-          "${{ github.workspace }}/institute-github/.github/scripts/tests/run.sh" gh-ignore-
+          "${{ steps.institute-ci.outputs.binary }}" validate-fixtures \
+            --corpus "${{ github.workspace }}/institute-github/.github/scripts/tests/fixtures" \
+            --scripts "${{ github.workspace }}/institute-github/.github/scripts" \
+            --rule-prefix gh-ignore-
 
       - name: Resolve target repos
         id: targets

@@ -4,6 +4,7 @@ import CI_Contract
 import CI_Validation
 import CI_Workflow
 import Foundation
+import Institute_CI_Application
 import Institute_Receipt
 
 let arguments = Array(CommandLine.arguments.dropFirst())
@@ -12,6 +13,15 @@ func fail(_ message: String) -> Never {
     FileHandle.standardError.write(Data("institute-ci: \(message)\n".utf8))
     exit(2)
 }
+
+/// `validate --script` found no Swift owner for that retired script.
+///
+/// A third code, distinct from `0` (ran) and `2` (could not run),
+/// because during the port "this file has not been ported yet" is a
+/// normal, expected answer and must not be readable as either a clean
+/// scan or a broken machine. `validate-base.yml` reads exactly this
+/// code as "serve this target with python3".
+let unportedScript: Int32 = 3
 
 func value(_ flag: String, in arguments: [String]) -> String {
     guard let index = arguments.firstIndex(of: flag),
@@ -169,10 +179,46 @@ case "validate":
     // stdout. Argument order and the TSV shape match the retired
     // `python3 validate-<rule>.py <owner/name> <repo-root>` invocation so
     // `validate-base.yml` needs no change beyond the command it runs.
+    //
+    // Two ways to name the validator, because two callers ask
+    // differently. A person, a test, or the harness names a **rule**.
+    // `validate-base.yml` names the **retired script** — that is what
+    // its fifty callers declare — and needs an answer for a script that
+    // has no Swift owner yet, which is the transition window's whole
+    // shape. So `--script` on an unported script is not a failure: it
+    // exits `unportedScript` (3), distinct from both `0` (ran) and `2`
+    // (could not run), and the scan loop reads that one code as "fall
+    // back to python3".
     let rest = Array(arguments.dropFirst())
-    let rule = CI.Validation.Rule(value("--rule", in: rest))
-    guard let validator = CI.Validation.Registry.validator(for: rule) else {
-        fail("validate: no Swift validator is registered for rule '\(rule)'")
+    let script = value("--script", in: rest)
+    var validator: any CI.Validation.Validator
+    if script.isEmpty {
+        let rule = CI.Validation.Rule(value("--rule", in: rest))
+        guard let registered = CI.Validation.Registry.validator(for: rule) else {
+            fail("validate: no Swift validator is registered for rule '\(rule)'")
+        }
+        validator = registered
+    } else {
+        guard let registered = CI.Validation.Registry.validator(replacing: script) else {
+            exit(unportedScript)
+        }
+        validator = registered
+    }
+    // Support-file overrides. Only the validators that read a support
+    // file consult these, and they are passed through rather than
+    // discovered so a sweep over a foreign checkout can name the
+    // manifest and the ledger it means — the shape the retired
+    // `validate-branch-pins.py --orgs-file … --baseline …` invocation
+    // already had.
+    let organizationsFile = value("--orgs-file", in: rest)
+    let baselineFile = value("--baseline", in: rest)
+    if !organizationsFile.isEmpty || !baselineFile.isEmpty {
+        guard validator is CI.Validation.BranchPins else {
+            fail("validate: --orgs-file/--baseline are not inputs to this validator")
+        }
+        validator = CI.Validation.BranchPins(
+            organizationsFile: organizationsFile.isEmpty ? nil : organizationsFile,
+            baselineFile: baselineFile.isEmpty ? nil : baselineFile)
     }
     let subject = CI.Validation.Subject(
         repository: value("--repository", in: rest), root: value("--root", in: rest))
@@ -216,18 +262,89 @@ case "validate-fixtures":
         fail(error.message)
     }
     for outcome in report.outcomes { print("  " + outcome.summary) }
+
+    // Transitional: every rule directory the registry does not own yet
+    // is run through its retired script, so retiring `run.sh` does not
+    // narrow the corpus gate while the port is in progress. `--scripts`
+    // names the directory holding them; omitting it declines the
+    // fallback, which is what the end state does.
+    //
+    // A directory that is neither owned by the registry nor covered by
+    // the table is a hard failure, not a skip. `run.sh` failed the run
+    // on exactly that condition, and it is the invariant worth keeping:
+    // an unowned corpus is indistinguishable from a clean one.
+    var residue = report.unownedRuleDirectories
+    var fallbackFailures = 0
+    var fallbackPassed = 0
+    let scriptsDirectory = value("--scripts", in: rest)
+    if !scriptsDirectory.isEmpty {
+        var unresolved: [String] = []
+        for directory in residue {
+            let corpus = CI.Validation.Corpus(root: root)
+            let scenarios: [CI.Validation.Corpus.Scenario]
+            do throws(CI.Validation.EnvironmentDefect) {
+                scenarios = try corpus.scenarios(in: directory)
+            } catch {
+                fail(error.message)
+            }
+            // A directory with no `pass/`, `fail/` or `edge/` scenarios
+            // is shared fixture data, not a rule corpus — `fixtures/
+            // callers/` and `fixtures/wrappers/` are read by other
+            // suites. `run.sh` reached the same conclusion by never
+            // dispatching them; here it is said rather than implied.
+            if scenarios.isEmpty { continue }
+            guard let script = Institute.CI.Application.RetiredValidator.scripts[directory] else {
+                unresolved.append(directory)
+                continue
+            }
+            let rule = Institute.CI.Application.RetiredValidator.rule(forDirectory: directory)
+            for scenario in scenarios {
+                let output = Institute.CI.Application.RetiredValidator.run(
+                    script: "\(scriptsDirectory)/\(script)",
+                    repository: scenario.repository, root: scenario.root)
+                let found = output.split(separator: "\n").filter { line in
+                    line.split(separator: "\t", omittingEmptySubsequences: false)
+                        .dropFirst().first == rule[...]
+                }
+                let satisfied =
+                    scenario.expectation == .violating ? !found.isEmpty : found.isEmpty
+                if satisfied { fallbackPassed += 1 } else { fallbackFailures += 1 }
+                print(
+                    "  \(satisfied ? "PASS" : "FAIL") \(rule) (python3) "
+                        + "\(scenario.expectation.rawValue)/\(scenario.name)"
+                        + " (\(found.count) finding(s))")
+            }
+        }
+        residue = unresolved
+    }
+
     print("")
-    print("Total: \(report.satisfied.count) passed, \(report.unsatisfied.count) failed")
-    if !report.unownedRuleDirectories.isEmpty {
+    print(
+        "Total: \(report.satisfied.count + fallbackPassed) passed, "
+            + "\(report.unsatisfied.count + fallbackFailures) failed")
+    if !residue.isEmpty {
         // Named, not silently skipped. `run.sh` failed the run on any
         // unregistered rule directory; during the port that residue is
         // expected, so it is reported and gated by --require-complete.
         print(
-            "Awaiting a Swift validator (\(report.unownedRuleDirectories.count)): "
-                + report.unownedRuleDirectories.joined(separator: ", "))
+            "Awaiting a Swift validator (\(residue.count)): "
+                + residue.joined(separator: ", "))
     }
-    let complete = rest.contains("--require-complete")
-    exit((complete ? report.isComplete : report.isSatisfied) ? 0 : 1)
+    // With the fallback armed a residue entry means *nothing* ran for
+    // that rule — neither engine owns it — which is the condition
+    // `run.sh` refused to pass. Without it, residue is the ordinary
+    // in-progress state and only `--require-complete` gates on it.
+    let unowned = scriptsDirectory.isEmpty
+        ? (rest.contains("--require-complete") ? !residue.isEmpty : false)
+        : !residue.isEmpty
+    if !scriptsDirectory.isEmpty && !residue.isEmpty {
+        FileHandle.standardError.write(
+            Data(
+                ("institute-ci: no engine owns \(residue.count) rule "
+                    + "director(ies): \(residue.joined(separator: ", "))\n").utf8))
+    }
+    let failed = !report.isSatisfied || fallbackFailures > 0 || unowned
+    exit(failed ? 1 : 0)
 
 default:
     fail(
