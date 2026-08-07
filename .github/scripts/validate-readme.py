@@ -3,11 +3,12 @@
 # The Swift owner is `CI.Validation.Readme` (Tools/institute-ci), which
 # records this path as its `retiredScript`, so validate-base.yml dispatch and
 # the fixture harness are served by Swift -- this script no longer runs in CI
-# dispatch. It survives solely as DATA: validate-schema-workflow-keys.py (the
-# [GH-REPO-063] guard, two unconditional callers) parses the EXEMPTIONS and
-# FAMILIES constants below with `ast`, pinning this file's existence. The
-# deletion rides the GH-REPO-063 re-specification, which per #404 follows the
-# port. Behavioural edits belong in the Swift owner, not here.
+# dispatch. It survives solely as DATA: the GH-REPO-063 guard
+# (`CI.Validation.SchemaCorrespondence`) parses the EXEMPTIONS and FAMILIES
+# constants below as its correspondence consumer, pinning this file's
+# existence. The deletion rides GH-REPO-063's re-specification against a
+# Swift-owned consumer surface (see #404). Behavioural edits belong in the
+# Swift owner, not here.
 """validate-readme.py — verify README files per readme skill family rules.
 
 Wave 2b finalization (2026-05-10) — companion to validate-readme.yml.
@@ -100,10 +101,11 @@ def strip_code_blocks(text: str) -> str:
 # scope by decision, not unclassified by omission, and the two must not look
 # alike to a reader.
 #
-# Both this tuple and FAMILIES below are read by
-# `validate-schema-workflow-keys.py`, which asserts each is identical to the
-# corresponding enum in metadata-schema.json's `readme` block. It parses this
-# file with `ast` and looks these constants up BY NAME, so:
+# Both this tuple and FAMILIES below are read by the GH-REPO-063 guard
+# (`CI.Validation.SchemaCorrespondence` in Tools/institute-ci), which asserts
+# each is identical to the corresponding enum in metadata-schema.json's
+# `readme` block. It reads this file as data and looks these constants up BY
+# NAME at module level, so:
 #
 #   - keep them module-level assignments of tuple-of-string literals;
 #   - if you rename or compute either one, the guard fails closed rather than
