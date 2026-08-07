@@ -17,6 +17,10 @@ let package = Package(
             targets: ["CI Workflow"]
         ),
         .library(
+            name: "CI Canon",
+            targets: ["CI Canon"]
+        ),
+        .library(
             name: "CI Validation",
             targets: ["CI Validation"]
         ),
@@ -46,12 +50,20 @@ let package = Package(
             name: "CI Workflow",
             dependencies: ["CI Contract"]
         ),
+        // The documents this control plane distributes into every
+        // package, and how they are spliced. One owner for the renderer
+        // (`sync-gitignore.yml`) and the gate (`validate-gitignore.yml`),
+        // which must never disagree about where canon ends.
+        .target(
+            name: "CI Canon",
+            dependencies: ["CI Contract"]
+        ),
         // Runs rule predicates over a repository. Wave-1 port peers add
         // one validator file each here, plus one line in
         // `CI.Validation.Registry`.
         .target(
             name: "CI Validation",
-            dependencies: ["CI Contract", "CI Workflow"]
+            dependencies: ["CI Contract", "CI Workflow", "CI Canon"]
         ),
         // Describes the shipped verdict: the universal workflow's jobs,
         // postures, waves, token boundary, and single aggregate. Models
@@ -77,6 +89,7 @@ let package = Package(
                 "Institute CI Application",
                 "CI Validation",
                 "CI Workflow",
+                "CI Canon",
                 "CI Inventory",
                 "Institute Receipt",
                 .product(name: "Byte Primitives", package: "swift-byte-primitives"),
@@ -89,6 +102,10 @@ let package = Package(
         .testTarget(
             name: "CI Workflow Tests",
             dependencies: ["CI Workflow"]
+        ),
+        .testTarget(
+            name: "CI Canon Tests",
+            dependencies: ["CI Canon"]
         ),
         .testTarget(
             name: "CI Validation Tests",

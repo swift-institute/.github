@@ -1,5 +1,6 @@
 // Thin CLI mapping only; owns no predicate (annex: Institute CI Command).
 import Byte_Primitives
+import CI_Canon
 import CI_Contract
 import CI_Inventory
 import CI_Validation
@@ -249,6 +250,31 @@ case "validate-fixtures":
     let complete = rest.contains("--require-complete")
     exit((complete ? report.isComplete : report.isSatisfied) ? 0 : 1)
 
+case "render-gitignore":
+    // The propagation face — the Swift owner of
+    // `.github/scripts/render-gitignore.py`, driven by
+    // `sync-gitignore.yml`. Writes the rendered file to stdout with no
+    // terminator of its own; the caller byte-compares it against the
+    // target, so a conformant repository produces no commit.
+    let rest = Array(arguments.dropFirst())
+    let canonPath = value("--canon", in: rest)
+    let targetPath = value("--target", in: rest)
+    if canonPath.isEmpty {
+        fail("render-gitignore requires --canon <path> [--target <path>]")
+    }
+    guard let canonData = FileManager.default.contents(atPath: canonPath) else {
+        fail("render-gitignore: canon not found: \(canonPath)")
+    }
+    let existing = FileManager.default.contents(atPath: targetPath)
+        .map { CI.Canon.Gitignore(String(decoding: $0, as: UTF8.self)) }
+    do throws(CI.Canon.Gitignore.Render.Error) {
+        let render = try CI.Canon.Gitignore.Render(
+            canon: .init(String(decoding: canonData, as: UTF8.self)))
+        FileHandle.standardOutput.write(Data(render(over: existing).utf8))
+    } catch {
+        fail("\(error.message): \(canonPath)")
+    }
+
 case "runtime-receipt":
     // The pure base canonicalizer (TX7 §8.9; P19/P20). Reads the run
     // object and jobs collection the aggregate fetched for its OWN run;
@@ -463,7 +489,7 @@ case "runtime-receipt-augment":
 default:
     fail(
         "usage: institute-ci plan|aggregate|validate|validate-fixtures|workflow-json"
-            + "|verdict-inventory"
+            + "|verdict-inventory|render-gitignore"
             + "|bootstrap-identity|bootstrap-manifest|bootstrap-verify"
             + "|runtime-receipt|runtime-receipt-augment|startup-failures ...")
 }
