@@ -29,6 +29,10 @@ let package = Package(
             targets: ["CI Inventory"]
         ),
         .library(
+            name: "Rulebook",
+            targets: ["Rulebook"]
+        ),
+        .library(
             name: "Institute Receipt",
             targets: ["Institute Receipt"]
         ),
@@ -72,6 +76,14 @@ let package = Package(
             name: "CI Inventory",
             dependencies: ["CI Contract", "CI Workflow"]
         ),
+        // The rulebook checking itself: referential integrity of the
+        // markdown skill corpus. Not `CI.Canon`, which owns the canonical
+        // documents this control plane distributes — a different domain
+        // that happens to share the retired script's word. No dependency
+        // on the CI contract: the subject is prose, not workflows.
+        .target(
+            name: "Rulebook"
+        ),
         .target(
             name: "Institute CI Application",
             dependencies: ["CI Contract", "CI Validation", "Institute Receipt"]
@@ -86,6 +98,7 @@ let package = Package(
         .executableTarget(
             name: "Institute CI Command",
             dependencies: [
+                "Rulebook",
                 "Institute CI Application",
                 "CI Validation",
                 "CI Workflow",
@@ -118,6 +131,10 @@ let package = Package(
             // corpus is an expectation to regenerate and diff, and the
             // recorded run is evidence, not a resource.
             exclude: ["Fixtures"]
+        ),
+        .testTarget(
+            name: "Rulebook Tests",
+            dependencies: ["Rulebook"]
         ),
         .testTarget(
             name: "Institute Receipt Tests",

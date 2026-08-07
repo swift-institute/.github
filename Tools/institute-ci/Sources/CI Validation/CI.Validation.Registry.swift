@@ -19,7 +19,10 @@ extension CI.Validation {
             BranchPins(),
             CompositeActionPins(),
             ContinueOnError(),
+            Drift.LintValidatorsWeekly(),
+            Drift.ScheduledWorkflowAlert(),
             Gitignore(),
+            ManifestBinding(),
             VisibilityGate(),
         ]
 

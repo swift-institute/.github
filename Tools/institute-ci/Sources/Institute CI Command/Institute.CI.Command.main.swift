@@ -6,6 +6,7 @@ import CI_Inventory
 import CI_Validation
 import CI_Workflow
 import Foundation
+import Rulebook
 import Institute_Receipt
 
 let arguments = Array(CommandLine.arguments.dropFirst())
@@ -13,6 +14,22 @@ let arguments = Array(CommandLine.arguments.dropFirst())
 func fail(_ message: String) -> Never {
     FileHandle.standardError.write(Data("institute-ci: \(message)\n".utf8))
     exit(2)
+}
+
+/// Every value of a repeatable flag, in the order given.
+func values(_ flag: String, in arguments: [String]) -> [String] {
+    var found: [String] = []
+    for (index, argument) in arguments.enumerated()
+    where argument == flag && index + 1 < arguments.count {
+        found.append(arguments[index + 1])
+    }
+    return found
+}
+
+/// An `alias=path` pair, as the canon roots are given.
+func aliased(_ text: String) -> (alias: String, path: String)? {
+    guard let split = text.firstIndex(of: "=") else { return nil }
+    return (String(text[..<split]), String(text[text.index(after: split)...]))
 }
 
 func value(_ flag: String, in arguments: [String]) -> String {
@@ -222,6 +239,96 @@ case "verdict-inventory":
     } catch {
         FileHandle.standardError.write(Data("institute-ci: \(error.message)\n".utf8))
         exit(1)
+    }
+
+case "check-canon":
+    // The canon guard, replacing the retired `check-canon.sh` /
+    // `check-canon.py` pair. One semantic, so one command: the wrapper's
+    // contribution was the sanctioned root set and the developer-root
+    // derivation, and that is argument defaulting, which lives here.
+    let rest = Array(arguments.dropFirst())
+    let home = FileManager.default.homeDirectoryForCurrentUser.path
+    let developerRoot = value("--dev-root", in: rest).isEmpty
+        ? "\(home)/Developer" : value("--dev-root", in: rest)
+    // The three unified gate roots plus Workspace/CLAUDE.md, per the
+    // 2026-07-05 gate-root unification ruling. The
+    // `swift-institute/Workspace` coordinate is the current one and is
+    // carried as-is; the Launch Programme's census repoints it.
+    let declaredRoots = values("--root", in: rest).compactMap(aliased)
+    let roots = declaredRoots.isEmpty
+        ? [
+            (alias: "institute", path: "\(developerRoot)/swift-institute/Skills"),
+            (alias: "engagement", path: "\(developerRoot)/swift-institute/Engagement/Skills"),
+            (alias: "rule", path: "\(developerRoot)/rule-institute/Skills"),
+        ]
+        : declaredRoots
+    let declaredFiles = values("--file", in: rest).compactMap(aliased)
+    let files = declaredRoots.isEmpty && declaredFiles.isEmpty
+        ? [
+            (
+                alias: "workspace:CLAUDE.md",
+                path: "\(developerRoot)/swift-institute/Workspace/CLAUDE.md"
+            )
+        ].filter { FileManager.default.fileExists(atPath: $0.path) }
+        : declaredFiles
+    let corpus = Rulebook.Corpus.read(roots: roots, files: files)
+    guard !corpus.documents.isEmpty else {
+        // Exit 2, not a clean report. A run that found no corpus has
+        // measured nothing, and reporting zero findings would be the
+        // silent no-op every gate in this repository exists to prevent.
+        FileHandle.standardError.write(Data("::error::check-canon: no corpus files found\n".utf8))
+        exit(2)
+    }
+    let configuration = value("--configuration", in: rest).isEmpty
+        ? ".github/scripts" : value("--configuration", in: rest)
+    let audit = Rulebook.Audit(
+        corpus: corpus,
+        baseline: .read(at: "\(configuration)/.check-canon-baseline"),
+        allowlist: .read(at: "\(configuration)/.check-canon-allowlist"),
+        developerRoot: developerRoot)
+    let selected = values("--check", in: rest).compactMap(Rulebook.Check.init(rawValue:))
+    let report = audit.run(selected.isEmpty ? nil : selected)
+    if rest.contains("--emit-baseline") {
+        for entry in report.baselineEntries { print(entry) }
+        exit(0)
+    }
+    let enforcing = rest.contains("--enforce")
+    for line in report.lines(enforcing: enforcing) { print(line) }
+    // `--enforce` keeps exit 1 on a non-baselined finding. The 0/2
+    // normalisation the port adopted applies to validators aggregated by
+    // `validate-base.yml`; this is a standalone gate whose caller —
+    // `sync-skills.sh` — aborts a corpus sync on that 1, and normalising
+    // it away would silently disarm the gate.
+    exit(enforcing && !report.isClean ? 1 : 0)
+
+case "canon-rule-count":
+    // The Swift owner of `check-rule-count.sh`. Counts; does not judge.
+    let rest = Array(arguments.dropFirst())
+    let home = FileManager.default.homeDirectoryForCurrentUser.path
+    let declared = values("--root", in: rest)
+    let roots =
+        (declared.isEmpty
+            ? [
+                "\(home)/Developer/swift-institute/Skills",
+                "\(home)/Developer/swift-primitives/Skills",
+                "\(home)/Developer/swift-primitives/swift-memory-primitives/Skills",
+                "\(home)/Developer/swift-primitives/swift-index-primitives/Skills",
+            ]
+            : declared)
+        .filter { path in
+            var isDirectory: ObjCBool = false
+            return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
+                && isDirectory.boolValue
+        }
+    do throws(Rulebook.Census.Error) {
+        let census = try Rulebook.Census.taken(over: roots)
+        print("Skill rule count across \(roots.count) root(s):")
+        print("  heading-form (### [ID]): \(census.headingForm)")
+        print("  table-row form  (| [ID] |): \(census.tableForm)")
+        print("  union (per [SKILL-CREATE-005c]): \(census.union)")
+    } catch {
+        FileHandle.standardError.write(Data("::error::no skill roots found\n".utf8))
+        exit(2)
     }
 
 case "validate-fixtures":
