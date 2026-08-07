@@ -36,7 +36,7 @@
 # job goes red before it has a chance to report a reassuring green on the live
 # files. A run in which the fixtures did not execute is a failure, not a pass.
 #
-# The fixtures live outside .github/scripts/tests/run.sh because that runner
+# The fixtures live outside the validator-fixture corpus because that runner
 # assumes the `<repo> <repo-root>` TSV-emitting validator convention, and this
 # guard takes three file paths and emits prose. Registering it there would have
 # meant bending one of the two conventions out of shape.

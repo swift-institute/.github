@@ -1,0 +1,136 @@
+name: 'Institute CI binary'
+description: >-
+  Provision the `institute-ci` executable at exact sources, through the
+  sanctioned Workspace coordinate, and verify its provenance before any
+  caller trusts it. Revision-keyed cache is acceleration only.
+
+# The F16 port's binary channel, extracted from swift-ci.yml's plan job so
+# that the validator control plane and the universal share ONE bootstrap
+# owner rather than growing a second, drifting copy (F10/F12 precedent;
+# cache-key shape re-verified post-rename by canary 31151036569).
+#
+# Cache key is the raw identity tuple — the git tree OID of
+# `Tools/institute-ci` plus the Workspace pin, the runner platform, the
+# toolchain, and the provisioning set. The tree OID is exact content
+# identity that does not churn on unrelated commits, so a validator port
+# invalidates the entry and an unrelated workflow edit does not.
+#
+# Cache-key transport is the raw tuple rather than the witness digest
+# because the digest is computed by institute-ci itself and cannot exist
+# before the binary does on a cold consumer. The digest identity is still
+# minted into, and verified against, the entry manifest. Typed deviation,
+# recorded on #390.
+
+inputs:
+  sources-root:
+    description: >-
+      Path to a checkout of swift-institute/.github whose `Tools/institute-ci`
+      is the exact source revision to provision. Its tree OID becomes the
+      cache key.
+    required: true
+  workspace-revision:
+    description: >-
+      Exact commit of swift-institute/Workspace used as the build coordinate.
+      Must stay a full 40-hex SHA — the branch-pin guard rejects anything else.
+    required: false
+    default: '6e3861935041c9a92d873f0e444da1dd5b666fdb'
+
+outputs:
+  binary:
+    description: 'Absolute path to the verified `institute-ci` executable.'
+    value: ${{ steps.entry.outputs.binary }}
+  sources-tree:
+    description: 'Git tree OID of Tools/institute-ci that the binary was built from.'
+    value: ${{ steps.identity.outputs.sources-tree }}
+  cache-hit:
+    description: "'true' when the binary was restored rather than built."
+    value: ${{ steps.restore.outputs.cache-hit }}
+
+runs:
+  using: composite
+  steps:
+    # An OID that is not 40-hex refuses fail-closed rather than minting a
+    # malformed cache key that would silently collide across revisions.
+    - name: Institute CI source identity
+      id: identity
+      shell: bash
+      env:
+        SOURCES_ROOT: ${{ inputs.sources-root }}
+      run: |
+        set -euo pipefail
+        SOURCES_TREE="$(git -C "$SOURCES_ROOT" rev-parse "HEAD:Tools/institute-ci")"
+        [[ "$SOURCES_TREE" =~ ^[0-9a-f]{40}$ ]] \
+          || { echo "refusing malformed Institute CI tree OID: '$SOURCES_TREE'" >&2; exit 1; }
+        cp -R "$SOURCES_ROOT/Tools/institute-ci" "${RUNNER_TEMP}/institute-ci-sources"
+        echo "sources-tree=$SOURCES_TREE" >> "$GITHUB_OUTPUT"
+
+    - name: Restore Institute CI (exact key, acceleration only)
+      id: restore
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: .institute-ci-entry
+        key: institute-ci-${{ steps.identity.outputs.sources-tree }}-${{ inputs.workspace-revision }}-linux-x86_64-swift-6.3-static
+
+    - name: Swift toolchain (cold bootstrap only)
+      if: ${{ steps.restore.outputs.cache-hit != 'true' }}
+      uses: SwiftyLab/setup-swift@38f54a76b70d989321de9dc7c840618c08cf56e9 # v1.14.0
+      with:
+        swift-version: "6.3"
+
+    - name: Checkout Workspace at exact main pin (cold bootstrap only)
+      if: ${{ steps.restore.outputs.cache-hit != 'true' }}
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        repository: swift-institute/Workspace
+        # Advance with pin-advance flow; must stay a full SHA (branch-pin guard).
+        ref: ${{ inputs.workspace-revision }}
+        path: .workspace
+        persist-credentials: false
+
+    - name: Cold bootstrap through the sanctioned Workspace coordinate
+      if: ${{ steps.restore.outputs.cache-hit != 'true' }}
+      shell: bash
+      env:
+        SOURCES_TREE: ${{ steps.identity.outputs.sources-tree }}
+        WORKSPACE_REVISION: ${{ inputs.workspace-revision }}
+      run: |
+        set -euo pipefail
+        # uuid-dev: the typed F2/F10 provisioning input (swift-linux-standard's
+        # CLinuxKernelShim includes uuid/uuid.h); absent on the bare runner.
+        sudo apt-get update -qq && sudo apt-get install -qq -y uuid-dev
+        swift run --package-path .workspace/Application workspace package build \
+          --package-path "${RUNNER_TEMP}/institute-ci-sources" --argument=--static-swift-stdlib
+        mkdir -p .institute-ci-entry/bin
+        cp "$(find "${RUNNER_TEMP}/institute-ci-sources/.build" -name institute-ci -type f -perm /111 | head -1)" \
+          .institute-ci-entry/bin/institute-ci
+        .institute-ci-entry/bin/institute-ci bootstrap-manifest \
+          --workspace-revision "$WORKSPACE_REVISION" --sources-revision "$SOURCES_TREE" \
+          --toolchain swift-6.3 --os linux --arch x86_64 \
+          --provisioning uuid-dev,static-swift-stdlib \
+          --root .institute-ci-entry --executables bin/institute-ci \
+          --producer-run "$GITHUB_RUN_ID" > .institute-ci-entry/manifest.json
+
+    - name: Save Institute CI cache entry (cold bootstrap only)
+      if: ${{ steps.restore.outputs.cache-hit != 'true' }}
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: .institute-ci-entry
+        key: institute-ci-${{ steps.identity.outputs.sources-tree }}-${{ inputs.workspace-revision }}-linux-x86_64-swift-6.3-static
+
+    # Every restored entry is provenance-verified before any trust: a
+    # corrupt or wrong-identity entry refuses fail-closed rather than
+    # serving a binary nobody can attribute (run 31080609758).
+    - name: Verify Institute CI provenance before trust (fail closed)
+      id: entry
+      shell: bash
+      env:
+        SOURCES_TREE: ${{ steps.identity.outputs.sources-tree }}
+        WORKSPACE_REVISION: ${{ inputs.workspace-revision }}
+      run: |
+        set -euo pipefail
+        .institute-ci-entry/bin/institute-ci bootstrap-verify \
+          --workspace-revision "$WORKSPACE_REVISION" --sources-revision "$SOURCES_TREE" \
+          --toolchain swift-6.3 --os linux --arch x86_64 \
+          --provisioning uuid-dev,static-swift-stdlib \
+          --root .institute-ci-entry --manifest .institute-ci-entry/manifest.json
+        echo "binary=$(pwd)/.institute-ci-entry/bin/institute-ci" >> "$GITHUB_OUTPUT"

@@ -32,8 +32,8 @@ extension Institute.Receipt {
             } else if base.run.conclusion == nil && !typed.contains("run.conclusion") {
                 findings.append(.nullTerminalField(field: "run.conclusion"))
             }
-            if !FIPS_180_4.SHA1.isDigestHex(base.run.headSha) {
-                findings.append(.shortSha(field: "run.headSha", value: base.run.headSha))
+            if let headSha = base.run.headSha, !FIPS_180_4.SHA1.isDigestHex(headSha) {
+                findings.append(.shortSha(field: "run.headSha", value: headSha))
             }
             if base.subjectRepository.isEmpty || base.subjectSha.isEmpty {
                 findings.append(.emptySubject)
@@ -47,12 +47,13 @@ extension Institute.Receipt {
                 findings.append(.shortSha(field: "referencedWorkflows[\(hop.path)]", value: hop.sha))
             }
             for job in base.jobs where job.mandatory {
-                if job.conclusion == nil && !typed.contains("jobs[\(job.id)].conclusion") {
-                    findings.append(.nullTerminalField(field: "jobs[\(job.id)]"))
+                if job.conclusion == nil && !typed.contains("jobs[\(job.identifier)].conclusion") {
+                    findings.append(.nullTerminalField(field: "jobs[\(job.identifier)]"))
                 }
                 if let conclusion = job.conclusion,
-                   conclusion == "skipped" || conclusion == "cancelled" {
-                    findings.append(.mandatoryJobNotSuccess(job: job.id, conclusion: conclusion))
+                   conclusion == .skipped || conclusion == .cancelled {
+                    findings.append(
+                        .mandatoryJobNotSuccess(job: job.identifier, conclusion: conclusion))
                 }
             }
             // R35/K-21 correction: a terminal receipt over a run with no

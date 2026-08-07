@@ -64,7 +64,12 @@ jobs:
   scan:
     if: ${{ !github.event.repository.private }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 60, up from 30: the F12 cold bootstrap (a Workspace source build of
+    # institute-ci) runs in this job on a cache miss and takes ~30 minutes;
+    # warm-cache runs restore in seconds. Same allowance swift-ci.yml's plan
+    # job already carries. Measured the hard way — the first canary
+    # (run 31164499832) was killed at exactly 30 minutes mid-bootstrap.
+    timeout-minutes: 60
     outputs:
       total-violations: ${{ steps.aggregate.outputs.total-violations }}
     steps:
@@ -106,14 +111,26 @@ jobs:
               --json nameWithOwner --jq '.[].nameWithOwner' > /tmp/targets.txt
           fi
 
+      - name: Provision the Institute CI binary
+        id: institute-ci
+        uses: ./institute-github/.github/actions/institute-ci
+        with:
+          sources-root: ${{ github.workspace }}/institute-github
+
       - name: Run thin-callers validation
         id: check
         env:
           GH_TOKEN: ${{ steps.mint-token.outputs.token }}
+          INSTITUTE_CI: ${{ steps.institute-ci.outputs.binary }}
+          INSTITUTE_CI_SUPPORT_ROOT: ${{ github.workspace }}/institute-github
+          # The registry key. See validate-base.yml's scan loop: exit 3
+          # means no Swift owner, and only that code falls back to python3.
+          VALIDATOR_ID: .github/scripts/validate-thin-callers.py
           VALIDATOR: ${{ github.workspace }}/institute-github/.github/scripts/validate-thin-callers.py
         run: |
           set -euo pipefail
           : > /tmp/findings.tsv
+          : > /tmp/swift.tsv
           while IFS= read -r repo; do
             [ -z "$repo" ] && continue
             workdir=$(mktemp -d)
@@ -128,7 +145,16 @@ jobs:
               # the crash as a sentinel row and let Aggregate fail on it,
               # matching validate-base.yml.
               rc=0
-              python3 "$VALIDATOR" "$repo" "$workdir" >> /tmp/findings.tsv || rc=$?
+              "$INSTITUTE_CI" validate --script "$VALIDATOR_ID" \
+                --repository "$repo" --root "$workdir" >> /tmp/swift.tsv || rc=$?
+              if [ "$rc" -eq 3 ]; then
+                : > /tmp/swift.tsv
+                rc=0
+                python3 "$VALIDATOR" "$repo" "$workdir" >> /tmp/findings.tsv || rc=$?
+              else
+                cat /tmp/swift.tsv >> /tmp/findings.tsv
+                : > /tmp/swift.tsv
+              fi
               if [ "$rc" -ne 0 ]; then
                 echo "$repo	validator-crashed	-" >> /tmp/findings.tsv
               fi

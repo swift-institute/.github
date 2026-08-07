@@ -21,6 +21,8 @@ enum Main {
                 try renderCaller(Array(CommandLine.arguments.dropFirst(2)))
             } else if CommandLine.arguments.dropFirst().first == "parse-caller" {
                 try parseCaller(Array(CommandLine.arguments.dropFirst(2)))
+            } else if CommandLine.arguments.dropFirst().first == "draft-metadata" {
+                try draftMetadata(Array(CommandLine.arguments.dropFirst(2)))
             } else if CommandLine.arguments.dropFirst().first == "census" {
                 try census(Array(CommandLine.arguments.dropFirst(2)))
             } else if CommandLine.arguments.dropFirst().first == "capability-records" {

@@ -19,8 +19,13 @@ extension CI.Validation {
             BranchPins(),
             CompositeActionPins(),
             ContinueOnError(),
+            Drift.LintValidatorsWeekly(),
+            Drift.ScheduledWorkflowAlert(),
+            Gitignore(),
+            ManifestBinding(),
             SubOrgWrappers(),
             ThinCallers(),
+            VisibilityGate(),
         ]
 
         /// The validator authoritative for a rule, or `nil` when the rule
