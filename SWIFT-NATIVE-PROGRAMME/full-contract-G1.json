@@ -8,64 +8,117 @@
  "outputs": [
   "full-contract-G1.json"
  ],
- "sealedRun": {
-  "run": 31175662313,
-  "workflow": ".github/workflows/private-verification-sweep.yml",
-  "event": "workflow_dispatch",
-  "headSha": "f779bca23f1102bcc0fa754d0bb95f0d5277ebad",
-  "headBranch": "main",
-  "runAttempt": 1,
-  "createdAt": "2026-08-07T11:50:01Z",
-  "updatedAt": "2026-08-07T12:08:27Z",
-  "status": "completed",
-  "conclusion": "success",
-  "jobs": [
-   {
-    "name": "sweep",
-    "conclusion": "success",
-    "startedAt": "2026-08-07T11:52:34Z",
-    "completedAt": "2026-08-07T12:08:27Z",
-    "credentialSteps": [
-     "Mint a fleet-read installation token (metadata across every active org)",
-     "Mint a central-repository dispatch token (contents write, this repo only)"
-    ],
-    "dispatchStep": "Enumerate candidates, dedupe, mark in-progress, and dispatch"
+ "sealedRuns": {
+  "stageA": {
+   "role": "sweep instrument, measured at the fixed revision",
+   "run": 31175662313,
+   "workflow": ".github/workflows/private-verification-sweep.yml",
+   "event": "workflow_dispatch",
+   "headSha": "f779bca23f1102bcc0fa754d0bb95f0d5277ebad",
+   "headBranch": "main",
+   "runAttempt": 1,
+   "createdAt": "2026-08-07T11:50:01Z",
+   "updatedAt": "2026-08-07T12:08:27Z",
+   "status": "completed",
+   "conclusion": "success",
+   "jobs": [
+    {
+     "name": "sweep",
+     "conclusion": "success",
+     "startedAt": "2026-08-07T11:52:34Z",
+     "completedAt": "2026-08-07T12:08:27Z",
+     "credentialSteps": [
+      "Mint a fleet-read installation token (metadata across every active org)",
+      "Mint a central-repository dispatch token (contents write, this repo only)"
+     ],
+     "dispatchStep": "Enumerate candidates, dedupe, mark in-progress, and dispatch"
+    }
+   ],
+   "measuredResult": {
+    "dryRun": false,
+    "candidatesLackingCurrentSuccessfulCheck": 0,
+    "dispatchedThisPass": 0,
+    "workspaceRevision": "f32665eff3d5b5eb7921b4df7654fd2fc9207a6c",
+    "inventoryDigest": "fd4d8a755aa8ee6802fa4b526784fe5ea7852f45a4c28d7710bf6028ea2be51e",
+    "reading": "The sweep's candidate predicate is keyed on the exact (repository, head, policyRevision) tuple at policyRevision 2026-08-07-1; zero candidates is this run's own measurement that every enumerated fleet head already carries a current successful verification check under this policy revision."
    }
-  ]
- },
- "measuredResult": {
-  "dryRun": false,
-  "candidatesLackingCurrentSuccessfulCheck": 0,
-  "dispatchedThisPass": 0,
-  "workspaceRevision": "f32665eff3d5b5eb7921b4df7654fd2fc9207a6c",
-  "inventoryDigest": "fd4d8a755aa8ee6802fa4b526784fe5ea7852f45a4c28d7710bf6028ea2be51e",
-  "reading": "The sweep's candidate predicate is keyed on the exact (repository, head, policyRevision) tuple at policyRevision 2026-08-07-1; zero candidates is this run's own measurement that every enumerated fleet head already carries a current successful verification check under this policy revision, so this pass had nothing to dispatch."
+  },
+  "stageBC": {
+   "role": "verify/publish attestation including measured lint, REINSTATED per the amended supersession ruling",
+   "run": 31171384472,
+   "workflow": ".github/workflows/private-verification.yml",
+   "event": "repository_dispatch",
+   "headSha": "a657a5b4f62c1e95b1f64764a89481e28e6dbae4",
+   "headBranch": "main",
+   "runAttempt": 1,
+   "createdAt": "2026-08-07T10:45:57Z",
+   "updatedAt": "2026-08-07T11:51:07Z",
+   "status": "completed",
+   "conclusion": "success",
+   "jobs": [
+    {
+     "name": "verify",
+     "conclusion": "success",
+     "startedAt": "2026-08-07T11:31:15Z",
+     "completedAt": "2026-08-07T11:48:50Z",
+     "credentialSteps": [
+      "Mint a read-only App token scoped to the one subject repository"
+     ],
+     "lintSteps": [
+      "Install the linter the lint leg measures with",
+      "Run Workspace verification seal — subject code, fully contained"
+     ],
+     "envelopeSteps": [
+      "Derive the public-safe envelope and delete raw evidence",
+      "Upload the safe envelope — the only artifact this job produces"
+     ]
+    },
+    {
+     "name": "publish",
+     "conclusion": "success",
+     "startedAt": "2026-08-07T11:50:50Z",
+     "completedAt": "2026-08-07T11:51:07Z",
+     "credentialSteps": [
+      "Mint the write-capable App token — only now, only if a verdict was reached"
+     ],
+     "verdictStep": "Verify the envelope, bind it to this run, and decide the verdict",
+     "checkStep": "Update the trusted check run on the private subject"
+    }
+   ],
+   "instrumentSoundness": "The PS-2 cache defect was confined to Stage A: 2 actions/cache hits in private-verification-sweep.yml at pre-fix f237a484 (coordinator-measured). private-verification.yml had ZERO actions/cache steps at that revision and is byte-identical between a657a5b4 (this run's head) and current main (git diff empty). The enumeration instrument was hazarded; this attestation instrument never was."
+  }
  },
  "fullContract": {
   "reference": "R34 three-stage split-credential contract: sweep -> verify/publish -> `verification / workspace` check, including measured lint",
   "elements": {
    "sweepStage": {
     "status": "MEASURED",
-    "evidence": "This run's sweep job: split-credential minting (fleet-read metadata installation token; central-repository contents-write dispatch token, this repo only), Workspace pinned once for the whole pass (f32665ef), enumerate/dedupe/mark-in-progress/dispatch step completed success."
+    "evidencedBy": 31175662313,
+    "evidence": "Post-fix sweep at the fixed revision f779bca2: split-credential minting (fleet-read metadata installation token; central-repository contents-write dispatch token), Workspace pinned once for the pass (f32665ef), enumerate/dedupe/mark-in-progress/dispatch completed success with candidates=0."
    },
    "verifyPublishStage": {
-    "status": "UNMEASURED",
-    "reason": "This run contains only the sweep job, and this pass measured candidates=0 / dispatched=0, so no verify/publish execution is a child of run 31175662313; the verify/publish behaviour is not evidenced by this run's own jobs or steps."
+    "status": "MEASURED",
+    "evidencedBy": 31171384472,
+    "evidence": "Run 31171384472's own jobs: `verify` (read-only App token scoped to the one subject; subject fetched typed and silent at its claimed head; Workspace resolved at the pinned control-plane-supplied revision; public-safe envelope derived, raw evidence deleted, envelope uploaded) and `publish` (envelope verified and bound to the run, verdict decided, write-capable App token minted only after a verdict) — both conclusion success. Reinstated per the amended supersession ruling; instrument soundness recorded under sealedRuns.stageBC."
    },
    "verificationWorkspaceCheck": {
-    "status": "MEASURED-INDIRECTLY",
-    "evidence": "The zero-candidate result is this run's measurement that a current successful check keyed to policyRevision 2026-08-07-1 exists at every enumerated head; the check runs themselves are not children of this run."
+    "status": "MEASURED",
+    "evidencedBy": [
+     31171384472,
+     31175662313
+    ],
+    "evidence": "Run 31171384472's `publish` job step 'Update the trusted check run on the private subject' completed success under the split write credential; run 31175662313's zero-candidate result independently measures that a current successful check keyed to policyRevision 2026-08-07-1 exists at every enumerated head."
    },
    "measuredLint": {
-    "status": "UNMEASURED",
-    "reason": "The lint step lives inside the dispatched verification runs; this pass dispatched none, so no lint execution appears in run 31175662313's own data."
+    "status": "MEASURED",
+    "evidencedBy": 31171384472,
+    "evidence": "Run 31171384472's `verify` job steps 'Install the linter the lint leg measures with' and 'Run Workspace verification seal — subject code, fully contained' both completed success within the successful attestation."
    }
   }
  },
  "supersession": {
-  "note": "The pre-fix green run 31171384472 (head a657a5b4) was ruled superseded per swift-institute/.github#375 comment 5216706754; G1 is sealed only from evidence produced at or after the PS-2 fix f779bca2. This receipt's sealed run executes at head f779bca2 itself and postdates the fix.",
-  "supersededRun": 31171384472,
-  "supersededHead": "a657a5b4",
-  "ruling": "swift-institute/.github#375 comment 5216706754"
+  "note": "The pre-fix green run 31171384472 (head a657a5b4) was first ruled superseded wholesale per swift-institute/.github#375 comment 5216706754; that ruling was AMENDED and narrowed to Stage A per #375 comment 5217110842, because the PS-2 cache defect lived only in the sweep workflow — the attesting private-verification.yml had zero actions/cache steps at the green run's revision and is byte-identical to current main. Run 31171384472 is therefore reinstated as sound Stage B/C evidence, and run 31175662313 (executing at the PS-2 fix head f779bca2 itself) evidences the sweep instrument at the fixed revision. Together they cover R34 without a policyRevision bump or any fleet mutation.",
+  "originalRuling": "swift-institute/.github#375 comment 5216706754",
+  "amendedRuling": "swift-institute/.github#375 comment 5217110842"
  }
 }
