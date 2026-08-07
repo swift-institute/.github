@@ -139,6 +139,11 @@ jobs:
         # itself once.
         run: |
           set -euo pipefail
+          # From the control-plane checkout: the registered Gitignore
+          # validator resolves canon/gitignore-package.txt by walking up
+          # from the working directory, and the workspace root does not
+          # carry it.
+          cd "${{ github.workspace }}/institute-github"
           "${{ steps.institute-ci.outputs.binary }}" validate-fixtures \
             --corpus "${{ github.workspace }}/institute-github/.github/scripts/tests/fixtures" \
             --scripts "${{ github.workspace }}/institute-github/.github/scripts" \
