@@ -70,7 +70,10 @@ on:
 jobs:
   sweep:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # A cold pass now also builds Workspace once, to digest the effective
+    # inventory; warm passes restore that build from the cache keyed on
+    # the Workspace revision. 30 minutes was sized for enumeration alone.
+    timeout-minutes: 45
     permissions:
       contents: read
     steps:
@@ -146,10 +149,25 @@ jobs:
           path: .workspace/Application/.build
           key: workspace-build-${{ steps.workspace.outputs.revision }}-linux-x86_64-swift-6.3
 
+      # EXACT, not "6.3": Workspace's Application declares
+      # `swift-tools-version: 6.3.3`, and a 6.3.0 toolchain refuses such a
+      # package outright — which is why the digest command failed in about
+      # a minute in run 31139672101, long before it could have compiled
+      # anything.
       - name: Swift toolchain
         uses: SwiftyLab/setup-swift@38f54a76b70d989321de9dc7c840618c08cf56e9  # v1.14.0
         with:
-          swift-version: "6.3"
+          swift-version: "6.3.3"
+
+      # The same typed provisioning input `swift-ci.yml` installs before
+      # building through Workspace: swift-linux-standard's
+      # CLinuxKernelShim includes uuid/uuid.h, which the bare runner image
+      # does not carry.
+      - name: Provision the Linux build inputs Workspace's graph needs
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq && sudo apt-get install -qq -y uuid-dev
 
       - name: Check out Workspace at the exact revision this sweep dispatches with
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -490,6 +508,14 @@ jobs:
                 digest_class="the command produced no output at all"
               fi
               inventory_digest_cause="Workspace could not compute an effective-inventory digest on this runner (${digest_class})"
+              # Workspace is a PUBLIC repository and this is its own build
+              # output — no private coordinate can appear in it, and the
+              # roster and report it was pointed at are still never
+              # printed. Withholding it is what made the previous two
+              # failures guesswork.
+              echo "::group::effective-inventory digest command output (last 40 lines)"
+              tail -40 "$digest_log" || true
+              echo "::endgroup::"
             fi
           fi
           if [[ -s "$report_file" && -z "$inventory_digest_cause" ]]; then
