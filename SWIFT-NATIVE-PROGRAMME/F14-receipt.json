@@ -1,0 +1,211 @@
+{
+  "schemaVersion": 1,
+  "transaction": "F14",
+  "goal": "swift-institute/.github#358",
+  "subIssue": "swift-institute/.github#394",
+  "responsibleIdentity": "the principal (wave execution from their own terminal, non-leaf uniformity ruling, swift-xml-printer adjudication) and the successor coordinator session (verification and authorship), authenticated as coenttb",
+  "outputs": [
+    "F14-receipt.json"
+  ],
+  "precondition": "F13 terminal (swift-institute/.github#393); the terminal direct leaf caller rendered and its secret profile ruled",
+  "subject": {
+    "form": "converge every terminal caller in the fleet onto the rendered visibility-gated uniform caller, and extend uniformity to non-leaf repositories so the fleet reads zero wrapper references",
+    "authority": "visibility-gated uniform caller ruling, swift-institute/.github#358 comment 5205099233, which supersedes the per-repository rendering plan",
+    "exactOwners": [
+      "RepositoryPolicy",
+      "CIContract"
+    ]
+  },
+  "venue": {
+    "executedBy": "the principal, from their own terminal",
+    "ratification": "R28.1 / TX6A bypass-window re-establishment, swift-institute/.github#394 comment 5204973650",
+    "cause": "harness refusals forced the venue; recorded at swift-institute/.github#358 comment 5205394948",
+    "consequence": "the wave is a principal action under ratification, not an agent mutation; agent sessions hold verification and authorship only"
+  },
+  "sequence": [
+    {
+      "step": "dry-run accepted",
+      "recordedAt": "swift-institute/.github#394 comment 5206194288"
+    },
+    {
+      "step": "pilot: swift-primitives/swift-render-primitives",
+      "recordedAt": "swift-institute/.github#394 comment 5206244406"
+    },
+    {
+      "step": "swift-primitives org boundary complete",
+      "recordedAt": "swift-institute/.github#394 comment 5206873989"
+    },
+    {
+      "step": "gate amendment — the org gate becomes canary-plus-pilot evidence with keeper confirmation, releasing standards, foundations and institute to proceed in parallel",
+      "recordedAt": "swift-institute/.github#394 comment 5206944693"
+    },
+    {
+      "step": "swift-standards ∥ swift-foundations ∥ swift-institute executed in parallel under the amended gate"
+    },
+    {
+      "step": "fleet wave complete",
+      "recordedAt": "swift-institute/.github#394 comment 5207423211"
+    },
+    {
+      "step": "non-leaf uniformity extension, principal-ratified",
+      "recordedAt": "swift-institute/.github#395 comments 5207763092 (ruling: uniformity, not deletion) and 5207827350 (wave complete, fleet reads zero wrapper references)"
+    }
+  ],
+  "fleetState": {
+    "measuredOver": 470,
+    "measuredOverDescription": "unarchived repositories at measurement time",
+    "TERMINAL_GATED": 453,
+    "TERMINAL_UNGATED": {
+      "count": 1,
+      "repositories": [
+        "swift-institute/Issues"
+      ],
+      "disposition": "ruled bespoke"
+    },
+    "NO_CI": {
+      "count": 14,
+      "disposition": "true non-leaves"
+    },
+    "OTHER": {
+      "count": 2,
+      "repositories": [
+        "Skills",
+        "cclsp"
+      ],
+      "disposition": "bespoke"
+    },
+    "WRAPPER": 0
+  },
+  "conversions": {
+    "byOrg": {
+      "swift-primitives": 207,
+      "swift-standards": 29,
+      "swift-foundations": {
+        "converted": 167,
+        "scaffoldUniformity": 48
+      },
+      "swift-institute": {
+        "converted": 2,
+        "note": "both CREATED"
+      }
+    },
+    "created": {
+      "count": 5,
+      "condition": "manifest-bearing leaves with no prior CI"
+    },
+    "private": {
+      "count": 74,
+      "note": "private repositories carry the identical gated artifact under the uniform-caller ruling, swift-institute/.github#358 comment 5205099233"
+    }
+  },
+  "rosterChangeAfterMeasurement": {
+    "repository": "swift-institute/swift-xml-printer",
+    "wasOneOf": "the two swift-institute-org CREATED conversions",
+    "event": "deleted by the principal after adjudication",
+    "adjudication": "swift-institute/Issues#102, closed completed",
+    "dependents": "zero, verified across all 470 manifests",
+    "unarchivedFleetCountNow": 469,
+    "disposition": "the census figures above stand as-of-measurement and are not restated"
+  },
+  "bypassWindows": {
+    "public": {
+      "open": 0,
+      "scope": "all 385 public repositories after completion",
+      "method": "complete ruleset sweep"
+    },
+    "private": {
+      "verdict": "UNMEASURED",
+      "cause": "private repositories carry no rulesets on the current GitHub plan; the ruleset read returns 403",
+      "property": "structurally windowless — there is no ruleset, therefore no bypass window to open"
+    }
+  },
+  "anomalies": {
+    "realFailures": 0,
+    "realFailuresScope": "across 453 writes",
+    "typed": [
+      {
+        "class": "known-diff",
+        "entry": "pilot trailing-newline difference",
+        "sha256": "f3d31b439934af962d27ff82384c786c57f222b3ee16bd19b267591397084777",
+        "recordedAt": "swift-institute/.github#394 comment 5206244406"
+      },
+      {
+        "class": "eventual-consistency",
+        "entry": "contents-API stale read-after-write",
+        "mitigation": "retry",
+        "verification": "every occurrence verified landed byte-identical"
+      },
+      {
+        "class": "instrument artifact",
+        "entry": "spurious private-repository bypass warnings",
+        "cause": "403 mis-parse in the sweep instrument, not a real open window"
+      }
+    ]
+  },
+  "journal": {
+    "form": "preimage plus reverse payload per write, including the nonleaf-uniformity class",
+    "location": "the principal's workstation",
+    "disposition": "referenced, not embedded — no machine paths appear in the public record"
+  },
+  "postLandingRuns": {
+    "pilot": {
+      "run": 31111879660,
+      "repository": "swift-primitives/swift-render-primitives",
+      "conclusion": "success",
+      "timing": "concluded PRE-outage"
+    },
+    "delay": {
+      "cause": "GitHub Actions major outage",
+      "recordedAt": "swift-institute/.github#394 comment 5207727238",
+      "gateEffect": "non-blocking, per the gate amendment at comment 5206944693"
+    },
+    "samplingRuling": "the principal ruled that samples suffice; no full-fleet run verification is required",
+    "KEEPER-RUNS": [
+      {
+        "org": "swift-primitives",
+        "repository": "swift-primitives/swift-builder-primitives",
+        "run": 31133840544,
+        "conclusion": "success",
+        "also": [
+          {
+            "repository": "swift-primitives/swift-cache-primitives",
+            "run": 31133842907,
+            "conclusion": "success"
+          },
+          {
+            "repository": "swift-primitives/swift-render-primitives",
+            "run": 31111879660,
+            "conclusion": "success",
+            "note": "pilot, concluded pre-outage"
+          }
+        ]
+      },
+      {
+        "org": "swift-standards",
+        "repository": "swift-standards/swift-domain-standard",
+        "run": 31136537264,
+        "conclusion": "success"
+      },
+      {
+        "org": "swift-foundations",
+        "repository": "swift-foundations/swift-translating",
+        "run": 31136539322,
+        "conclusion": "success"
+      },
+      {
+        "org": "swift-institute",
+        "repository": "swift-institute/swift-institute.org",
+        "run": 31136541241,
+        "conclusion": "failure",
+        "typed": "CREATED-FIRST-RUN-NO-BASELINE: this caller was CREATED on a repo with no prior CI; the failure is the package's own shape (no test target; swift-institute/swift-institute.org#6), first measured by this run. A CREATED caller has no baseline to preserve; not a caller defect. The org's only other converged repo (swift-xml-printer) was deleted by principal adjudication (swift-institute/Issues#102)."
+      }
+    ],
+    "note": "Conclusions read from each run object via GET /actions/runs/{id} by the coordinator on 2026-08-07. Original push-triggered keeper runs were invalidated by the 2026-08-06 GitHub Actions major outage (queued 8.5h, infra-signature failures); fresh workflow_dispatch keepers were dispatched post-recovery per the sampling ruling. Two red-main repos encountered during keeper selection carried pre-existing product defects reproduced identically on pre-wave baselines (swift-primitives/swift-percent-primitives#8, swift-primitives/swift-logic-primitives#5) — context-identity witnesses, not wave defects."
+  },
+  "sealState": "SEALED 2026-08-07 by the successor coordinator session; keeper slots filled from run objects.",
+  "successorObligations": [
+    "the coordinator fills PENDING-KEEPER-RUNS from run objects and only then seals and merges this receipt",
+    "F15 owns wrapper deletion and legacy id-shaped org-secret deletion; F14 has already reduced the fleet WRAPPER count to zero, so F15's deletion acts on unreferenced artifacts",
+    "the private-repository org-variable and ruleset constraints carried from F13 remain in force and are restated here as UNMEASURED rather than assumed"
+  ]
+}
