@@ -2,7 +2,7 @@
 #
 # The suite in .github/scripts/tests/ asserts that every validator still fires
 # on the inputs it is supposed to reject: each fixture under fail/ MUST produce
-# a finding, each under pass/ and edge/ MUST produce none, and run.sh exits
+# a finding, each under pass/ and edge/ MUST produce none, and the gate exits
 # nonzero if any of that stops being true. It also fails on a silent SKIP, so a
 # fixture directory that no longer resolves to a registered validator is an
 # error rather than quiet attrition.
@@ -100,7 +100,12 @@ jobs:
   fixtures:
     if: ${{ !github.event.repository.private }}
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 60, up from 10: the F12 cold bootstrap (a Workspace source build of
+    # institute-ci) runs in this job on a cache miss and takes ~30 minutes;
+    # warm-cache runs restore in seconds. Same allowance swift-ci.yml's plan
+    # job already carries. Measured the hard way — the first canary
+    # (run 31164499832) was killed at exactly 10 minutes mid-bootstrap.
+    timeout-minutes: 60
     permissions:
       contents: read
     steps:
@@ -132,7 +137,7 @@ jobs:
 
       # swiftlint-witness-exemption fixtures need the real binary; the
       # validator exits 2 (environment defect, not a finding) when it is
-      # absent, which run.sh's fail/ fixtures would otherwise misreport as
+      # absent, which the fail/ fixtures would otherwise misreport as
       # the exemption predicate itself being broken.
       - name: Install SwiftLint ${{ env.SWIFTLINT_VERSION }}
         if: steps.cache-swiftlint.outputs.cache-hit != 'true'
@@ -153,19 +158,39 @@ jobs:
         shell: bash
         run: swiftlint --version
 
+      - name: Provision the Institute CI binary
+        id: institute-ci
+        uses: ./.github/actions/institute-ci
+        with:
+          sources-root: ${{ github.workspace }}
+
+      # F16: the corpus gate is `institute-ci validate-fixtures` — C0's
+      # Swift owner of the retired `tests/run.sh`. `--scripts` arms the
+      # transitional fallback, so a rule directory whose validator is not
+      # ported yet is still exercised through its retired script and a
+      # directory NEITHER engine owns fails the run. That is the invariant
+      # run.sh enforced through its SKIP count, and it is why run.sh could
+      # not survive the first Python deletion: a deleted script dangles its
+      # dispatch arm, and removing the arm turns the directory into a
+      # counted skip.
+      - name: Run fixture suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          "${{ steps.institute-ci.outputs.binary }}" validate-fixtures \
+            --corpus .github/scripts/tests/fixtures \
+            --scripts .github/scripts | tee /tmp/fixtures.txt
+
+      # The provisioning action above installs a toolchain only on a
+      # cold cache; the embedded-shell suites are run with `swift test`,
+      # which needs one on every run.
       - name: Set up Swift
         uses: SwiftyLab/setup-swift@38f54a76b70d989321de9dc7c840618c08cf56e9 # v1.14.0
         with:
           swift-version: '6.3'
 
-      - name: Run fixture suite
-        shell: bash
-        run: |
-          set -euo pipefail
-          bash .github/scripts/tests/run.sh | tee /tmp/fixtures.txt
-
       # swift-ci.yml's ci-ok aggregator, subject resolver and configured
-      # swift-linter path are shell embedded in a workflow, so run.sh's
+      # swift-linter path are shell embedded in a workflow, so the corpus'
       # repo-shaped fixtures cannot reach them; the shared system-dependency
       # action must likewise derive packages from every graph a Test step
       # compiles, including Tests/Package.swift. Both suites extract the
@@ -178,49 +203,12 @@ jobs:
             --filter 'ControlPlaneShellTests|SystemDependencyDerivationTests' \
             2>&1 | tee /tmp/embedded-shell-controls.txt
 
-      # Task 1-01 (swift-institute/.github#276, #281): the machine-readable
-      # verdict inventory (fixtures/verdict-inventory.json) and its
-      # characterization suite — the population-completeness, outer/inner
-      # aggregate, private-visibility, nested-test-execution, token-boundary,
-      # cache-policy, required-check-context, and runner-wave coverage that
-      # the embedded-shell controls' aggregator/subject-resolution
-      # extraction does not reach. The drift test regenerates the committed
-      # inventory from THIS checkout's live swift-ci.yml (plus the vendored
-      # wrapper snapshots under fixtures/wrappers/) and fails if it no
-      # longer matches what is actually shipped.
-      - name: Run CI verdict inventory controls
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 .github/scripts/tests/test-verdict-inventory.py 2>&1 | tee /tmp/verdict-inventory-controls.txt
+      # The CI verdict inventory (Task 1-01, #276/#281) moved to Swift in
+      # F16 class C7: `CI.Inventory` in Tools/institute-ci, with its
+      # drift and live-run gates as `CI Inventory Tests`. It is verified
+      # by `workspace package test`, not by a step here, so a stale
+      # inventory fails the package rather than one workflow job.
 
-      # Task 5-01 (swift-institute/.github#276, #304): the canonical caller
-      # generator, proven against seven real fetched callers (same-org/
-      # cross-org × Primitives/Standards/Foundations, the three known
-      # platform-support holders) plus synthetic unknown-customization
-      # controls. No consumer file is touched by this task or this suite.
-      - name: Run caller generator controls
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 .github/scripts/tests/test-generate-caller.py 2>&1 | tee /tmp/generate-caller-controls.txt
-
-      # Task 5-02 (swift-institute/.github#276, #282, ruling R23a): the
-      # fleet convergence orchestrator's pure/offline logic — classification
-      # against synthetic GraphQL nodes (including the real divergent-caller
-      # shape observed live against swift-arm-ltd/swift-arm-standard),
-      # #90/precondition parsing, R6 Trap A/B check-run gating, and
-      # rate-limit backoff/checkpoint behavior against a stubbed subprocess.
-      # No network call and no mutation happen in this suite; the
-      # generator+validator round-trip half of self_verify() is proven
-      # live in the Task 5-02 receipt, not re-encoded as a synthetic
-      # fixture that could share the same wrong expectation as the code
-      # under test.
-      - name: Run caller convergence orchestrator controls
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 .github/scripts/tests/test-converge-callers.py 2>&1 | tee /tmp/converge-callers-controls.txt
 
       # The prebuilt-linter identity gate (#43 item 4) is likewise embedded
       # shell: these controls extract the shipped download step and prove it
@@ -245,7 +233,7 @@ jobs:
 
       # Task 4-01 (swift-institute/.github#276, #284): the TEMPORARY
       # The file-naming validator's diagnostic-precedence rules operate on
-      # synthetic module trees the unit suite builds itself, a surface run.sh's
+      # synthetic module trees the unit suite builds itself, a surface the corpus'
       # repo-shaped fixtures do not exercise; until 2026-07-30 this suite
       # existed but nothing ran it.
       - name: Run file-naming validator controls
@@ -266,7 +254,7 @@ jobs:
 
       # The branch-pin guard's contract surface (baseline suppression, the
       # exit code the swift-ci fast-check keys on, --orgs-file resolution)
-      # is not reachable through run.sh's repo-shaped fixtures.
+      # is not reachable through the corpus' repo-shaped fixtures.
       - name: Run branch-pin baseline controls
         shell: bash
         run: |
@@ -368,24 +356,6 @@ jobs:
             echo
             echo '```'
             tail -n 30 /tmp/ci-ok-controls.txt 2>/dev/null || echo "(controls produced no output)"
-            echo '```'
-            echo
-            echo "### CI verdict inventory controls"
-            echo
-            echo '```'
-            tail -n 30 /tmp/verdict-inventory-controls.txt 2>/dev/null || echo "(controls produced no output)"
-            echo '```'
-            echo
-            echo "### Caller generator controls"
-            echo
-            echo '```'
-            tail -n 20 /tmp/generate-caller-controls.txt 2>/dev/null || echo "(controls produced no output)"
-            echo '```'
-            echo
-            echo "### Caller convergence orchestrator controls"
-            echo
-            echo '```'
-            tail -n 30 /tmp/converge-callers-controls.txt 2>/dev/null || echo "(controls produced no output)"
             echo '```'
             echo
             echo "### Branch-pin baseline controls"

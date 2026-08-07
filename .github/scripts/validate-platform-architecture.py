@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+# TRANSFERRED: this predicate's Swift realisation is owned by the Foundation
+# Programme's TX-APP1W (CW transfer ruling: swift-institute/.github#358
+# comment 5215227317; migration preimage: comment 5215128447). This file is
+# retained verbatim until its Swift owner's activation receipt; its deletion
+# rides that gate. Do not port, modify, or delete it under Goal #358.
+
 """validate-platform-architecture.py — verify platform-stack invariants.
 
 Wave 2b finalization (2026-05-10); Wave 2 consolidation (2026-05-11) moved

@@ -15,7 +15,25 @@ extension CI.Validation {
     /// resolution mechanical.
     public enum Registry {
         public static let validators: [any Validator] = [
-            ContinueOnError()
+            BinaryInstallChecksum(),
+            BranchPins(),
+            CIMatrix(),
+            CachePolicy(),
+            CompositeActionDescriptions(),
+            CompositeActionPins(),
+            ContinueOnError(),
+            Drift.LintValidatorsWeekly(),
+            Drift.ScheduledWorkflowAlert(),
+            EmbeddedJob(),
+            EnvironmentContext(),
+            Gitignore(),
+            HardenRunner(),
+            InputDefaults(),
+            ManifestBinding(),
+            PermissionsShape(),
+            SubOrgWrappers(),
+            ThinCallers(),
+            VisibilityGate(),
         ]
 
         /// The validator authoritative for a rule, or `nil` when the rule

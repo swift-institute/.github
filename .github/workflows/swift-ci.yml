@@ -526,6 +526,32 @@ jobs:
       # fast-check — no new checkout, no run-time code fetch. The guard's
       # own failing controls live in lint-validator-fixtures.yml
       # (test-validate-branch-pins.py + the branch-pin-001 fixture ladder).
+      #
+      # ─── F16: a TYPED, PERMANENT exception to the Swift-purity end state
+      # (Goal #358; home issue #404; coordinator adjudication at #404
+      # comment 5214319296). BRANCH-PIN-001 has a Swift owner
+      # (`CI.Validation.BranchPins`, C2) and every other call site is
+      # served by it. THIS call site keeps its vendored Python, decided by
+      # measurement rather than preference:
+      #
+      #   the guard, vendored python3            <1 s  (step granularity)
+      #   restore of the revision-keyed entry     1-3 s
+      #   fail-closed provenance verification     9-10 s
+      #
+      # measured on this workflow's own plan job in
+      # swift-standards/swift-fips-180-4 runs 31098709519 and 31097766486,
+      # both warm-cache. Serving the guard from the binary therefore costs
+      # 11-13 s before it can refuse anything, and minutes on a cold
+      # consumer, against a budget of under a second.
+      #
+      # The budget is the point of the step. It runs BEFORE any toolchain
+      # is installed so a newly introduced branch pin fails the fleet in
+      # under a second, and the F12 bootstrap deliberately sits after it.
+      # Buying uniformity here would spend the property the guard exists
+      # for. One file, one call site, no second copy of the predicate —
+      # the Swift owner remains authoritative everywhere else, and this
+      # exception belongs in the purity receipt's denominator alongside
+      # the fixture stubs.
       - name: Branch-pin guard
         if: ${{ inputs.job == '' }}
         shell: bash
@@ -2664,7 +2690,11 @@ jobs:
             "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs?per_page=100" \
             --jq '.jobs[]' | jq -s '{jobs: .}' > "$RUNNER_TEMP/jobs.json"
           mkdir -p "$RUNNER_TEMP/receipt"
-          python3 institute-receipt/.github/scripts/effective-runtime-receipt.py \
+          # F16: the receipt canonicalizer is `Institute.Receipt.Capture` +
+          # `.Canonical` (C6). The binary is the one provisioned by this
+          # job's own F12 bootstrap block above — no second channel, and
+          # the same tree OID the plan decision was made with.
+          .institute-ci-entry/bin/institute-ci runtime-receipt \
             --run-json "$RUNNER_TEMP/run.json" \
             --jobs-json "$RUNNER_TEMP/jobs.json" \
             --planned-gating "${PLANNED_GATING:-}" \
