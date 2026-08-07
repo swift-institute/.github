@@ -1,0 +1,113 @@
+{
+    "conclusion": "success",
+    "event": "workflow_dispatch",
+    "head_sha": "e26e9867fc28afebcc056162e735fad03391d6ae",
+    "jobs": [
+        {
+            "conclusion": "success",
+            "name": "ci / matrix / Plan (tier + identity fast-check)"
+        },
+        {
+            "conclusion": "skipped",
+            "name": "ci / matrix / API breakage (\u03b3-1c, advisory pilot)"
+        },
+        {
+            "conclusion": "skipped",
+            "name": "ci / matrix / PR title format (\u03b3-4, advisory)"
+        },
+        {
+            "conclusion": "success",
+            "name": "ci / matrix / Windows (Swift 6.3, debug)"
+        },
+        {
+            "conclusion": "success",
+            "name": "ci / matrix / Ubuntu (Swift 6.4.x nightly, release)"
+        },
+        {
+            "conclusion": "success",
+            "name": "ci / matrix / macOS (Swift 6.3, debug)"
+        },
+        {
+            "conclusion": "success",
+            "name": "ci / matrix / Ubuntu (Swift 6.3, release)"
+        },
+        {
+            "conclusion": "failure",
+            "name": "ci / matrix / Ubuntu (Swift 6.3, Embedded Wasm SDK build)"
+        },
+        {
+            "conclusion": "success",
+            "name": "ci / matrix / Ubuntu (Swift main nightly, release)"
+        },
+        {
+            "conclusion": "success",
+            "name": "ci / matrix / Ubuntu (Swift 6.3, Android SDK build)"
+        },
+        {
+            "conclusion": "success",
+            "name": "ci / matrix / watchOS Simulator (Swift 6.3, debug)"
+        },
+        {
+            "conclusion": "success",
+            "name": "ci / matrix / visionOS Simulator (Swift 6.3, debug)"
+        },
+        {
+            "conclusion": "success",
+            "name": "ci / matrix / swift-linter"
+        },
+        {
+            "conclusion": "success",
+            "name": "ci / matrix / Ubuntu (Swift 6.3, Static Linux musl build)"
+        },
+        {
+            "conclusion": "success",
+            "name": "ci / matrix / iOS Simulator (Swift 6.3, debug)"
+        },
+        {
+            "conclusion": "success",
+            "name": "ci / matrix / SwiftLint"
+        },
+        {
+            "conclusion": "success",
+            "name": "ci / matrix / tvOS Simulator (Swift 6.3, debug)"
+        },
+        {
+            "conclusion": "failure",
+            "name": "ci / matrix / Ubuntu (Swift main nightly, Embedded mode on host triple)"
+        },
+        {
+            "conclusion": "success",
+            "name": "ci / matrix / Broken symlinks (\u03b3-2, advisory) / Broken symlink scan"
+        },
+        {
+            "conclusion": "success",
+            "name": "ci / matrix / swift-format lint"
+        },
+        {
+            "conclusion": "success",
+            "name": "ci / matrix / DocC archive (integrated) / DocC archive"
+        },
+        {
+            "conclusion": "success",
+            "name": "ci / matrix / License header (\u03b3-1b Stage 1, advisory) / License-header audit"
+        },
+        {
+            "conclusion": "success",
+            "name": "ci / matrix / Test Support dependency integrity (advisory) / Test Support Spine audit"
+        },
+        {
+            "conclusion": "success",
+            "name": "ci / matrix / yamllint (\u03b3-2, advisory) / yamllint scan"
+        },
+        {
+            "conclusion": "success",
+            "name": "ci / matrix / Advisory results (informational)"
+        },
+        {
+            "conclusion": "success",
+            "name": "ci / matrix / ci-ok"
+        }
+    ],
+    "repository": "swift-primitives/swift-cache-primitives",
+    "run": 31151036569
+}

@@ -99,7 +99,12 @@ jobs:
     needs: config
     if: ${{ !github.event.repository.private }}     # [CI-032]
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 60, up from 10: the F12 cold bootstrap (a Workspace source build of
+    # institute-ci) runs in this job on a cache miss and takes ~30 minutes;
+    # warm-cache runs restore in seconds. Same allowance swift-ci.yml's plan
+    # job already carries. Measured the hard way — the first canary
+    # (run 31164499832) was killed at exactly 10 minutes mid-bootstrap.
+    timeout-minutes: 60
     permissions:
       contents: read
     outputs:
@@ -129,9 +134,18 @@ jobs:
           path: institute-github
           ref: ${{ job.workflow_sha }}
 
+      - name: Provision the Institute CI binary
+        id: institute-ci
+        uses: ./institute-github/.github/actions/institute-ci
+        with:
+          sources-root: ${{ github.workspace }}/institute-github
+
       - name: Run validation against ${{ matrix.sub-org }}/.github
         env:
           GH_TOKEN: ${{ steps.mint-token.outputs.token }}
+          INSTITUTE_CI: ${{ steps.institute-ci.outputs.binary }}
+          INSTITUTE_CI_SUPPORT_ROOT: ${{ github.workspace }}/institute-github
+          VALIDATOR_ID: .github/scripts/validate-sub-org-wrappers.py
           VALIDATOR: ${{ github.workspace }}/institute-github/.github/scripts/validate-sub-org-wrappers.py
           TARGET_ORG: ${{ matrix.sub-org }}
         run: |
@@ -144,7 +158,15 @@ jobs:
               # sub-org .github repo doesn't exist — that's GOOD (no wrapper to fire on)
               exit 0
             fi
-            python3 "$VALIDATOR" "${TARGET_ORG}/.github" "$workdir" >> "/tmp/findings-${TARGET_ORG}.tsv" || true
+            rc=0
+            "$INSTITUTE_CI" validate --script "$VALIDATOR_ID" \
+              --repository "${TARGET_ORG}/.github" --root "$workdir" \
+              >> "/tmp/findings-${TARGET_ORG}.tsv" || rc=$?
+            if [ "$rc" -eq 3 ]; then
+              : > "/tmp/findings-${TARGET_ORG}.tsv"
+              python3 "$VALIDATOR" "${TARGET_ORG}/.github" "$workdir" \
+                >> "/tmp/findings-${TARGET_ORG}.tsv" || true
+            fi
           )
           rm -rf "$workdir"
 
