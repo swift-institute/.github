@@ -542,6 +542,12 @@ validators:
     discovery-mode: single-target
     rule-id-regex: '^skill-'
     migrate-to-base: 'yes (single-target; landed on validate-base.yml)'
+    # F16 C9: ported to `CI.Validation.SkillHygiene`. `validator-script`
+    # is now the validator's IDENTITY rather than a file that exists —
+    # it is the key validate-base.yml resolves against the Swift
+    # registry, and the Swift owner records the same path as its
+    # `retiredScript`. The .py is deleted; the entry is not.
+    engine: swift (Tools/institute-ci, CI Validation)
 
   # ─── Task 4-01 (swift-institute/.github#276, #284) ──────────────────
   # Not a numbered [CI-NNN] rule — no /promote-rule pilot slot claimed by

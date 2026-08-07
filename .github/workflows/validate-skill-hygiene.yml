@@ -87,13 +87,11 @@ on:
   push:
     branches: [main]
     paths:
-      - '.github/scripts/validate-skill-hygiene.py'
       - '.github/scripts/tests/fixtures/skill-**'
       - 'Tools/institute-ci/**'
       - '.github/workflows/validate-skill-hygiene.yml'
   pull_request:
     paths:
-      - '.github/scripts/validate-skill-hygiene.py'
       - '.github/scripts/tests/fixtures/skill-**'
       - 'Tools/institute-ci/**'
       - '.github/workflows/validate-skill-hygiene.yml'
