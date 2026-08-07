@@ -96,7 +96,8 @@
     {
       "id": "F16-FINDING-3",
       "severity": "missing replacement",
-      "statement": "build-verdict-inventory.py and test-verdict-inventory.py, typed as RepositoryPolicy residue on #390, still have NO Swift replacement. Unfiltered enumeration of every file under Tools/*/Sources/*/ at this head finds no verdict-inventory owner; the same enumeration finds Repository.Policy.Caller.Render, so the zero is from a working instrument. RETAINED-TYPED, not deleted."
+      "statement": "build-verdict-inventory.py and test-verdict-inventory.py, typed as RepositoryPolicy residue on #390, still have NO Swift replacement. Unfiltered enumeration of every file under Tools/*/Sources/*/ at this head finds no verdict-inventory owner; the same enumeration finds Repository.Policy.Caller.Render, so the zero is from a working instrument. RETAINED-TYPED, not deleted.",
+      "resolution": "RESOLVED and STALE as of main d8e131c56bcc3701faabd7c88c8e25139e06f60a. The Swift owner now exists: Tools/institute-ci exposes the `verdict-inventory` verb (Institute.CI.Command.main.swift case \"verdict-inventory\"; CI.Inventory.* sources; CI.Inventory.Drift Tests carry the retired test's two gates against the committed verdict-inventory.json fixture). Both .py files were deleted in the F16 residual sweep (#404, merged as #446 = d8e131c5) and neither appears in the tracked tree at the terminal-census head."
     },
     {
       "id": "F16-FINDING-4",
@@ -118,8 +119,114 @@
     "hostedCanaries": "NONE. GitHub Actions is in a major outage; required checks cannot report. No PR in this set carries hosted evidence and none may be merged as if it did.",
     "localVerification": "Reduced evidence only, per the two-gate rule: workspace package build/test in the authoring worktree. Full --fresh verification is not this task's."
   },
-  "sealState": "SEALED 2026-08-07 by the successor coordinator session",
+  "sealState": "RESEALED 2026-08-07 by peer task f16-final-census (terminal census, PS-4 resolution; base main d8e131c56bcc3701faabd7c88c8e25139e06f60a)",
   "resealedAtHead": "e5f9e8834a062932fb51cd019da1a10c5806fa3e",
+  "terminalCensus": {
+    "measuredAtBase": "d8e131c56bcc3701faabd7c88c8e25139e06f60a",
+    "resolves": "PS-4 (F18 independent review, #358 comment 5216814794); enumeration cross-checked against that review's DB1 tracker (46 tracked .py/.sh pre-deletion = 22 CW + 13 fixture stubs + 7 typed + 4 untyped) and reproduced exactly by unfiltered `git ls-files '*.py' '*.sh'` at the base head.",
+    "instrument": "git ls-files (unfiltered) for the population; git grep -F per basename over the whole tracked tree for liveness, positive-controlled: validate-branch-pins.py returns lint-validator-fixtures.yml, lint-validators-weekly.yml, and swift-ci.yml by the same probe, so zero-reference verdicts are zeros from a working instrument.",
+    "totalAtBase": 46,
+    "totalAfterThisReseal": 44,
+    "byCategory": {
+      "TRANSFERRED-CW": 22,
+      "RETAINED-FIXTURE-STUB": 13,
+      "RETAINED-TYPED": 8,
+      "RETAINED-UTILITY": 1,
+      "DELETED-ORPHANED": 2,
+      "UNTYPED": 0
+    },
+    "cwClassAmendment": {
+      "statement": "The CW class is 22 files, not 21. The CW transfer ruling (#358 comment 5215227317, TX-APP1W) states '21/21 confirmed, 4,537 LOC' against the preimage at comment 5215128447; ci-identity-conflict-fastcheck.py subsequently joined the class when the F16 residual sweep (#404, merged as #446) applied the TRANSFERRED marker citing the same ruling (recorded at #404 comment 5216787046: 'ci-identity-conflict-fastcheck.py (CW marker applied)'). A closed class that grows must say so: the ruling's count of 21 was correct for its preimage; the class as marked in the tree at d8e131c5 is 22, and this receipt records the growth explicitly rather than restating the ruling's number.",
+      "rulingCoordinate": "swift-institute/.github#358 comment 5215227317",
+      "joinCoordinate": "swift-institute/.github#404 comment 5216787046 (via PR #446 = d8e131c5)"
+    },
+    "transferredCW": [
+      ".github/scripts/audit-license-header.py",
+      ".github/scripts/audit-test-support-spine.py",
+      ".github/scripts/ci-identity-conflict-fastcheck.py",
+      ".github/scripts/tests/test-validate-completion-receipt.py",
+      ".github/scripts/tests/test-validate-file-naming.py",
+      ".github/scripts/validate-completion-receipt.py",
+      ".github/scripts/validate-dependency-spelling.py",
+      ".github/scripts/validate-diagnostic-format.py",
+      ".github/scripts/validate-docc-structure.py",
+      ".github/scripts/validate-file-naming.py",
+      ".github/scripts/validate-layer-deps.py",
+      ".github/scripts/validate-package-graph.py",
+      ".github/scripts/validate-package-identity.py",
+      ".github/scripts/validate-package-naming.py",
+      ".github/scripts/validate-package-shape.py",
+      ".github/scripts/validate-package-structure.py",
+      ".github/scripts/validate-platform-architecture.py",
+      ".github/scripts/validate-swiftlint-bitpattern-comment.py",
+      ".github/scripts/validate-swiftlint-rules.py",
+      ".github/scripts/validate-swiftlint-witness-exemption.py",
+      ".github/scripts/validate-target-imports.py",
+      ".github/scripts/validate-test-target-layers.py"
+    ],
+    "retainedFixtureStubs": {
+      "count": 13,
+      "detail": "8 ci-manifest-binding stubs + 5 schema-correspondence validate-readme.py copies under .github/scripts/tests/, exact membership pinned by the PS-1 guard fix in #446; test corpus data, not Institute semantics."
+    },
+    "retainedTyped": [
+      {
+        "path": ".github/scripts/generate-metadata.sh",
+        "reason": "Unrepointed bespoke caller; C4/C5 cutover incomplete on its workflow (#404 comment 5216787046).",
+        "caller": ".github/workflows/generate-metadata.yml"
+      },
+      {
+        "path": ".github/scripts/validate-branch-pins.py",
+        "reason": "Retained guard [BRANCH-PIN-001] (#404 comment 5216787046).",
+        "caller": ".github/workflows/swift-ci.yml, lint-validator-fixtures.yml, lint-validators-weekly.yml"
+      },
+      {
+        "path": ".github/scripts/validate-gitignore.py",
+        "reason": "Unrepointed bespoke caller; C4/C5 cutover incomplete on its workflow (#404 comment 5216787046).",
+        "caller": ".github/workflows/validate-gitignore.yml"
+      },
+      {
+        "path": ".github/scripts/validate-manifest-binding.py",
+        "reason": "Unrepointed bespoke caller; C4/C5 cutover incomplete on its workflow (#404 comment 5216787046).",
+        "caller": ".github/workflows/validate-manifest-binding.yml"
+      },
+      {
+        "path": ".github/scripts/validate-readme.py",
+        "reason": "No port class yet; GH-REPO-063 re-specification must FOLLOW this port (#404 comment 5216787046).",
+        "caller": ".github/workflows/validate-readme.yml and validate-schema-correspondence.yml"
+      },
+      {
+        "path": ".github/scripts/validate-schema-workflow-keys.py",
+        "reason": "No port class yet (#404 comment 5216787046).",
+        "caller": ".github/workflows/validate-schema-correspondence.yml and validate-github-metadata.yml"
+      },
+      {
+        "path": ".github/scripts/validate_lib.py",
+        "reason": "Shared library of the retained validators (20 live consumers at typing time; #404 comment 5216787046).",
+        "caller": "imported by the retained validate-*.py set"
+      },
+      {
+        "path": ".github/scripts/validate-github-metadata.py",
+        "reason": "RETAINED-LIVE-UNPORTED. Live validator CI actually runs: no GitHubMetadata entry exists in the 20-validator registry, so it is an unported live validator the earlier three-category enumeration omitted (PS-4). Typed here alongside the three unrepointed callers from #404 comment 5216787046.",
+        "caller": ".github/workflows/validate-github-metadata.yml (VALIDATOR env at line 163; invoked via lint-validators-weekly.yml line 192)"
+      }
+    ],
+    "retainedUtility": [
+      {
+        "path": "social-preview/render.py",
+        "reason": "RETAINED-UTILITY, no CI invocation. It is a parametric SVG template renderer for social preview cards (its own docstring: caller hands the SVG to resvg); whole-repo grep for 'render.py'/'social-preview' returns ZERO workflow references — only the F16 census CSV mentions it. Operator-run tooling, not a CI semantic."
+      }
+    ],
+    "deletedOrphaned": [
+      {
+        "path": ".github/scripts/check-canon.py",
+        "evidence": "ZERO workflow references, independently re-measured at d8e131c5 with the positive-controlled instrument above; the C4 Canon port landed as the institute-ci `check-canon` verb (Institute.CI.Command.main.swift case \"check-canon\", Rulebook sources), which reads the retained .check-canon-baseline/.check-canon-allowlist dotfiles directly. Deleted in this reseal PR."
+      },
+      {
+        "path": ".github/scripts/check-canon.sh",
+        "evidence": "As above; wrapper of the same retired pair, zero references, same Swift owner. Deleted in this reseal PR."
+      }
+    ]
+  },
   "resealScan": {
     "instrument": "find -name '*.py' -o -name '*.sh' (git-excluded), positive-controlled on SWIFT-NATIVE-PROGRAMME/census-generator.py",
     "nonSwiftFileCount": 91,
