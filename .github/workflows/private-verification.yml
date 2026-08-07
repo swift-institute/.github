@@ -298,7 +298,24 @@ jobs:
             log_class="empty"
             if [[ -s "$run_log" ]]; then
               if grep -q "error: " "$run_log" 2>/dev/null; then log_class="toolchain-error"
-              elif grep -q "refusing to seal" "$run_log" 2>/dev/null; then log_class="seal-refusal"
+              elif grep -q "refusing to seal" "$run_log" 2>/dev/null; then
+                # Which refusal, not merely that one happened. Every
+                # pattern below is Workspace's own fixed error text
+                # (`Workspace.Verification.Error`), never captured subject
+                # content, so naming the branch leaks nothing that a bare
+                # "seal-refusal" was protecting. Runs 31141148414 /
+                # 31141150817 / 31141151775 all refused and the raw log is
+                # deleted by design, so the five possible causes were
+                # indistinguishable from the outside — which is a
+                # diagnosability defect in this classifier, not in the
+                # producer.
+                if grep -q "did not observe" "$run_log" 2>/dev/null; then log_class="seal-refusal:head-mismatch"
+                elif grep -q "uncommitted changes" "$run_log" 2>/dev/null; then log_class="seal-refusal:dirty-subject"
+                elif grep -q "was not requested" "$run_log" 2>/dev/null; then log_class="seal-refusal:required-not-requested"
+                elif grep -q "was skipped or unmeasured" "$run_log" 2>/dev/null; then log_class="seal-refusal:required-unmeasured"
+                elif grep -q "captured evidence" "$run_log" 2>/dev/null; then log_class="seal-refusal:unsafe-content"
+                else log_class="seal-refusal:unclassified"
+                fi
               else log_class="other"
               fi
             fi
