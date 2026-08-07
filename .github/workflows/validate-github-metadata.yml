@@ -80,6 +80,62 @@ on:
         default: 'public'
 
 jobs:
+  # The sweep's view of `main` for [GH-REPO-063]: the same correspondence
+  # validate-schema-correspondence.yml gates on push/pull_request, re-asked
+  # here so a drift that somehow landed is still seen weekly. Swift-owned:
+  # CI.Validation.SchemaCorrespondence in Tools/institute-ci, retiring
+  # `.github/scripts/validate-schema-workflow-keys.py`. Its own job rather
+  # than a step of `scan` because the institute-ci binary channel
+  # (./.github/actions/institute-ci) cannot bootstrap inside `scan`'s
+  # swift:6.3 container.
+  correspondence:
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    # 60: the F12 cold bootstrap of institute-ci runs here on a cache miss
+    # and takes ~30 minutes; warm-cache runs restore in seconds.
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout swift-institute/.github (schema + validator)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: swift-institute/.github
+          path: institute-github
+          ref: ${{ job.workflow_sha }}
+
+      - name: Provision the Institute CI binary
+        id: institute-ci
+        uses: ./institute-github/.github/actions/institute-ci
+        with:
+          sources-root: ${{ github.workspace }}/institute-github
+
+      - name: Validate schema<->consumer correspondence [GH-REPO-063]
+        shell: bash
+        env:
+          BINARY: ${{ steps.institute-ci.outputs.binary }}
+        run: |
+          set -euo pipefail
+          rc=0
+          "$BINARY" validate --rule GH-REPO-063 \
+            --repository swift-institute/.github --root institute-github \
+            > /tmp/gh-repo-063.txt 2>&1 || rc=$?
+          cat /tmp/gh-repo-063.txt
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::GH-REPO-063 could not run (exit ${rc}) — an environment defect, not a verdict."
+            exit "$rc"
+          fi
+          if grep -q . /tmp/gh-repo-063.txt; then
+            echo "::error::GH-REPO-063 found schema<->consumer correspondence mismatches (see findings above)."
+            exit 1
+          fi
+          echo "[GH-REPO-063] schema is consistent with its consumers."
+
   scan:
     if: ${{ !github.event.repository.private }}
     runs-on: ubuntu-latest
@@ -121,11 +177,10 @@ jobs:
           path: institute-github
           ref: ${{ job.workflow_sha }}
 
-      - name: Validate schema<->workflow settings-key consistency [GH-REPO-063]
-        run: |
-          python3 institute-github/.github/scripts/validate-schema-workflow-keys.py \
-            institute-github/metadata-schema.json \
-            institute-github/.github/workflows/sync-metadata.yml
+      # [GH-REPO-063] moved to the `correspondence` job below: the guard is
+      # Swift-owned (CI.Validation.SchemaCorrespondence, retiring
+      # validate-schema-workflow-keys.py), and the institute-ci binary channel
+      # cannot bootstrap inside this container job. Same inputs, same ref.
 
       - name: Set up gh
         env:

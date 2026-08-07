@@ -31,10 +31,9 @@ struct CIValidationManifestBindingTests {
         @Test func `this repository's own manifest is internally consistent`() throws {
             let findings = try CI.Validation.ManifestBinding()
                 .findings(in: CIValidationManifestBindingTests.repository)
-            // One known finding is carried by the repository at the time
-            // of the port and is the retired script's finding too,
-            // byte-for-byte; the assertion is that the set does not grow.
-            #expect(findings.count <= 1)
+            // Zero is the measured state since C8 retired the last
+            // carried finding; the assertion is that the set stays empty.
+            #expect(findings.count == 0)
         }
 
         /// A count from the wrong root is not evidence. If the manifest

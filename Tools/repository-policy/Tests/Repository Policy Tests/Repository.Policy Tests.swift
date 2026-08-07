@@ -694,12 +694,16 @@ struct RepositoryPolicyTests {
         #expect(workflow.contains("accepted-plan:"))
         #expect(workflow.contains("timelineItems(itemTypes: [CROSS_REFERENCED_EVENT]"))
         // The transaction engine admits every owning-issue type it is
-        // authorized against (swift-institute/.github#199, #201); pin all
-        // three comparisons, not just the first, so a future edit cannot
+        // authorized against (swift-institute/.github#199, #201, #294); pin
+        // all four comparisons, not just the first, so a future edit cannot
         // silently narrow the admitted set back down without failing here.
-        #expect(workflow.contains("issueType.name == \"Task\""))
-        #expect(workflow.contains("issueType.name == \"Bug\""))
-        #expect(workflow.contains("issueType.name == \"Feature\""))
+        // Spelled in the jq form introduced by #294
+        // (`.issueType.name as $t | ($t == "Task" or ...)`).
+        #expect(workflow.contains("issueType.name as $t"))
+        #expect(workflow.contains("$t == \"Task\""))
+        #expect(workflow.contains("$t == \"Bug\""))
+        #expect(workflow.contains("$t == \"Feature\""))
+        #expect(workflow.contains("$t == \"Goal\""))
         #expect(!workflow.contains("closingIssuesReferences"))
         #expect(!workflow.contains(".number == 176"))
     }

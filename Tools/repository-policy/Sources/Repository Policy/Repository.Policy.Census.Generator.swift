@@ -131,8 +131,13 @@ extension Repository.Policy.Census {
                     engine: engine, excerptSha256: digest, family: fam,
                     intendedOwner: owner, disposition: "reduce", notes: notes)
             }
-            rows.append(row(.file, "file:\(rel)", line: 1, engine: engine,
-                            digest: hasher.digest(raw)))
+            // Collected locally: the regex enumeration closures below are
+            // escaping, and an escaping closure cannot capture the `rows`
+            // inout parameter (rejected by the Swift 6.3 Linux toolchain).
+            var collected: [Row] = []
+            defer { rows.append(contentsOf: collected) }
+            collected.append(row(.file, "file:\(rel)", line: 1, engine: engine,
+                                 digest: hasher.digest(raw)))
             guard engine == "actions-yaml" else { return }
 
             let ns = text as NSString
@@ -150,15 +155,12 @@ extension Repository.Policy.Census {
                 pattern: "\\$\\{\\{.*?\\}\\}",
                 options: [.dotMatchesLineSeparators])
             var i = 0
-            // `matches(in:)` rather than `enumerateMatches`: on Linux,
-            // swift-corelibs-foundation declares the enumeration closure
-            // @escaping, which cannot capture the `inout` rows — the
-            // Darwin toolchain accepts it and CI does not.
-            for match in expression.matches(
+            expression.enumerateMatches(
                 in: text, range: NSRange(location: 0, length: ns.length)
-            ) {
+            ) { match, _, _ in
+                guard let match else { return }
                 let excerpt = ns.substring(with: match.range)
-                rows.append(row(.expression, "expr:\(rel):\(i)",
+                collected.append(row(.expression, "expr:\(rel):\(i)",
                                 line: lineNumber(at: match.range.location),
                                 engine: "actions-expression",
                                 digest: hasher.digest(Data(excerpt.utf8))))
@@ -169,11 +171,12 @@ extension Repository.Policy.Census {
                 pattern: "^\\s*(?:-\\s+)?uses:\\s*(\\S+)",
                 options: [.anchorsMatchLines])
             i = 0
-            for match in uses.matches(
+            uses.enumerateMatches(
                 in: text, range: NSRange(location: 0, length: ns.length)
-            ) {
+            ) { match, _, _ in
+                guard let match else { return }
                 let target = ns.substring(with: match.range(at: 1))
-                rows.append(row(.usesEdge, "uses:\(rel):\(i)",
+                collected.append(row(.usesEdge, "uses:\(rel):\(i)",
                                 line: lineNumber(at: match.range.location),
                                 engine: "actions-yaml",
                                 digest: hasher.digest(Data(target.utf8)),
@@ -187,9 +190,10 @@ extension Repository.Policy.Census {
                 options: [.anchorsMatchLines])
             let command = try NSRegularExpression(pattern: "^\\s*([A-Za-z0-9_.\\/-]+)")
             i = 0
-            for match in runPattern.matches(
+            runPattern.enumerateMatches(
                 in: text, range: NSRange(location: 0, length: ns.length)
-            ) {
+            ) { match, _, _ in
+                guard let match else { return }
                 let startLine = lineNumber(at: match.range.location)
                 let indent = match.range(at: 1).length
                 var block: [String] = []
@@ -208,7 +212,7 @@ extension Repository.Policy.Census {
                     block = [String(rest.prefix { $0 != "\n" })]
                 }
                 let body = block.joined(separator: "\n")
-                rows.append(row(.runBlock, "run:\(rel):\(i)", line: startLine,
+                collected.append(row(.runBlock, "run:\(rel):\(i)", line: startLine,
                                 engine: "shell",
                                 digest: hasher.digest(Data(body.utf8))))
                 for (k, blockLine) in block.enumerated() {
@@ -217,7 +221,7 @@ extension Repository.Policy.Census {
                     let token = (blockLine as NSString).substring(with: commandMatch.range(at: 1))
                     if skipCommands.contains(token) { continue }
                     if blockLine.trimmingCharacters(in: .whitespaces).hasPrefix("#") { continue }
-                    rows.append(row(.commandReference, "cmd:\(rel):\(i):\(k)",
+                    collected.append(row(.commandReference, "cmd:\(rel):\(i):\(k)",
                                     line: startLine + 1 + k, engine: "shell",
                                     digest: hasher.digest(Data(token.utf8)),
                                     notes: token))
