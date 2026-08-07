@@ -1,3 +1,8 @@
+# RETAINED (F16 residual sweep, swift-institute/.github#404): 20 live .py
+# consumers remain after this sweep's deletions — every validator whose port
+# class has not yet landed still imports it. It dies with the last consumer,
+# not before. Positive control: `git grep -l validate_lib -- '.github/scripts/'`.
+
 """validate_lib.py — shared helpers for .github/scripts/validate-*.py.
 
 Phase B-1 of CI-REVIEW-PHASE-B-DESIGN-2026-05-14 §2. Centralizes the

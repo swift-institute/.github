@@ -53,16 +53,56 @@ struct CIValidationManifestBindingTests {
         /// only reason `fail/missing-reference` can fail, so a sweep that
         /// "finished the Swift port" by deleting them would leave this
         /// rule passing on a corpus that no longer tests it.
+        ///
+        /// There are **two** stub families, and the guard must hold both:
+        ///
+        /// - `tests/fixtures/ci-manifest-binding/` — the eight stubs this
+        ///   rule's own corpus is built from.
+        /// - `tests/schema-correspondence/` — five `validate-readme.py`
+        ///   copies. They are the corpus for GH-REPO-063's re-specified
+        ///   check and stay whatever becomes of the production
+        ///   `validate-readme.py`; if that validator is ported, these
+        ///   remain as the fixture set for the Swift re-specification.
+        ///   Check 2 counts them as `validate-*.py` on disk either way.
+        ///
+        /// Membership is pinned **exactly**, per family. The floor this
+        /// replaced (`>= 4`) could not do the job the paragraph above
+        /// describes: a sweep deleting four of the eight, or all five of
+        /// the schema-correspondence copies, still satisfied it. A test
+        /// whose purpose is to fail when the corpus shrinks must count.
         @Test func `the fixture stubs are still Python and still present`() throws {
             var url = URL(fileURLWithPath: #filePath)
             for _ in 0..<5 { url.deleteLastPathComponent() }
-            let fixtures = url.appendingPathComponent(
-                ".github/scripts/tests/fixtures/ci-manifest-binding")
-            let stubs = FileManager.default
-                .enumerator(atPath: fixtures.path)?
-                .compactMap { $0 as? String }
-                .filter { $0.hasSuffix(".py") } ?? []
-            #expect(stubs.count >= 4)
+
+            func stubs(under path: String) -> [String] {
+                let root = url.appendingPathComponent(path)
+                return (FileManager.default
+                    .enumerator(atPath: root.path)?
+                    .compactMap { $0 as? String }
+                    .filter { $0.hasSuffix(".py") } ?? [])
+                    .sorted()
+            }
+
+            #expect(
+                stubs(under: ".github/scripts/tests/fixtures/ci-manifest-binding") == [
+                    "edge/multi-rule-same-script/.github/scripts/validate-paired.py",
+                    "edge/self-firing-deferred-no-triggers/.github/scripts/validate-stub.py",
+                    "fail/deprecated-non-empty/.github/scripts/validate-foo.py",
+                    "fail/missing-reference/.github/scripts/validate-bar.py",
+                    "fail/missing-reference/.github/scripts/validate-foo.py",
+                    "fail/self-firing-active-missing-triggers/.github/scripts/validate-stub.py",
+                    "pass/clean/.github/scripts/validate-foo.py",
+                    "pass/self-firing-active-with-triggers/.github/scripts/validate-stub.py",
+                ])
+
+            #expect(
+                stubs(under: ".github/scripts/tests/schema-correspondence") == [
+                    "fail/constant-renamed/validate-readme.py",
+                    "fail/readme-exempt-unhandled/validate-readme.py",
+                    "fail/readme-family-unhandled/validate-readme.py",
+                    "fail/settings-key-unread/validate-readme.py",
+                    "pass/consistent/validate-readme.py",
+                ])
         }
     }
 

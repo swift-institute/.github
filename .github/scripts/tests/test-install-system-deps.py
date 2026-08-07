@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# RETAINED (F16 residual sweep, swift-institute/.github#404): unowned. No F16
+# port class claims it and no Swift test cites it as a preimage, while
+# lint-validator-fixtures.yml still invokes it as a live positive control for
+# the shared system-dependency action. It is the only gate on that derivation.
+# Reported as unassigned rather than deleted; needs an owner before retirement.
 """Positive control for nested-test system-dependency derivation.
 
 The installer must inspect every package graph that universal CI can compile.

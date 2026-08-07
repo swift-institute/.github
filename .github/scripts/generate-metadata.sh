@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# RETAINED (F16 residual sweep, swift-institute/.github#404): its Swift owner
+# `Repository.Policy.Metadata.Draft` (+ the `draft-metadata` face) is live, but
+# generate-metadata.yml still runs THIS file unconditionally
+# (`bash .../generate-metadata.sh`). The cutover did not reach it. Deletion
+# gates on repointing that workflow to the repository-policy CLI.
 # generate-metadata.sh — BOOTSTRAP-ONLY metadata.yaml seeder.
 #
 # Called from .github/workflows/generate-metadata.yml. Reads $ORG and
