@@ -211,10 +211,14 @@ jobs:
           SUBJECT_DEFAULT_BRANCH: ${{ github.event.client_payload.defaultBranch }}
           SUBJECT_VISIBILITY: ${{ github.event.client_payload.visibility }}
           SUBJECT_LAYER: ${{ github.event.client_payload.layer }}
-          INVENTORY_DIGEST: ${{ github.event.client_payload.inventoryDigest }}
+          # One property, not two: `client_payload` accepts at most ten
+          # top-level properties and the eleventh made the API reject
+          # every dispatch (HTTP 422, run 31138691252). The digest and its
+          # cause describe one measurement and now travel as one.
+          INVENTORY_DIGEST: ${{ github.event.client_payload.inventory.digest }}
           # Empty when a digest was measured; the seal refuses a cause
           # beside a real digest, and refuses "unmeasured" without one.
-          INVENTORY_DIGEST_CAUSE: ${{ github.event.client_payload.inventoryDigestCause }}
+          INVENTORY_DIGEST_CAUSE: ${{ github.event.client_payload.inventory.cause }}
           WORKSPACE_REVISION: ${{ github.event.client_payload.workspaceRevision }}
           POLICY_REVISION: ${{ github.event.client_payload.policyRevision }}
         run: |

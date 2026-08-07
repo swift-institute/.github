@@ -319,20 +319,47 @@ jobs:
             # Dispatch Stage B/C. `client_payload` never appears in this
             # run's own log or summary — it is read only from
             # `github.event.client_payload` inside the triggered run, and
-            # this step never echoes it either.
-            GH_TOKEN="$CENTRAL_DISPATCH_TOKEN" gh api --method POST "repos/${CENTRAL_REPOSITORY}/dispatches" \
-              -f event_type="private-verification" \
-              -f "client_payload[repository]=${repository}" \
-              -f "client_payload[head]=${head}" \
-              -f "client_payload[defaultBranch]=${default_branch}" \
-              -f "client_payload[visibility]=${visibility}" \
-              -f "client_payload[layer]=${layer}" \
-              -f "client_payload[inventoryDigest]=${inventory_digest}" \
-              -f "client_payload[inventoryDigestCause]=${inventory_digest_cause}" \
-              -f "client_payload[workspaceRevision]=${WORKSPACE_REVISION}" \
-              -f "client_payload[policyRevision]=${POLICY_REVISION}" \
-              -f "client_payload[requestId]=${policy_id}" \
-              -f "client_payload[nonce]=${nonce}" \
+            # this step never echoes it either (the body travels on stdin,
+            # not argv).
+            #
+            # `client_payload` accepts at most TEN top-level properties,
+            # and the API rejects the whole dispatch with HTTP 422 when it
+            # gets eleven — which is exactly what adding
+            # `inventoryDigestCause` beside `inventoryDigest` did: every
+            # dispatch in run 31138691252 failed
+            # "No more than 10 properties are allowed; 11 were supplied".
+            # The digest and its cause are one fact about one measurement,
+            # so they are now one property carrying both, which restores
+            # the count to ten and keeps the pair together by construction.
+            # The body is built with jq rather than repeated `-f` flags so
+            # the nesting is explicit and the count is countable.
+            jq -n \
+              --arg repository "$repository" \
+              --arg head "$head" \
+              --arg default_branch "$default_branch" \
+              --arg visibility "$visibility" \
+              --arg layer "$layer" \
+              --arg digest "$inventory_digest" \
+              --arg cause "$inventory_digest_cause" \
+              --arg workspace_revision "$WORKSPACE_REVISION" \
+              --arg policy_revision "$POLICY_REVISION" \
+              --arg request_id "$policy_id" \
+              --arg nonce "$nonce" \
+              '{event_type: "private-verification",
+                client_payload: {
+                  repository: $repository,
+                  head: $head,
+                  defaultBranch: $default_branch,
+                  visibility: $visibility,
+                  layer: $layer,
+                  inventory: {digest: $digest, cause: $cause},
+                  workspaceRevision: $workspace_revision,
+                  policyRevision: $policy_revision,
+                  requestId: $request_id,
+                  nonce: $nonce
+                }}' \
+              | GH_TOKEN="$CENTRAL_DISPATCH_TOKEN" gh api --method POST \
+                  "repos/${CENTRAL_REPOSITORY}/dispatches" --input - \
               >/dev/null
 
             : > "${dispatched_dir}/${policy_id}"
@@ -411,7 +438,17 @@ jobs:
           # "unmeasured" and never an invented digest — a receipt schema
           # that accepts "unmeasured" without a cause is exactly what this
           # repair removed.
+          # `workspace inventory` reads the committed roster from the
+          # Workspace checkout it is STANDING IN — the CLI resolves its
+          # root from the working directory, not from `--package-path`,
+          # which selects the SwiftPM package to run. Run 31138691252 ran
+          # it from this repository's checkout, where there is no
+          # Workspace.json, so it could not have succeeded; it recorded a
+          # typed cause, which is the honest outcome of a wrong invocation
+          # but not a measurement. The subshell below puts it in the right
+          # root without moving this step's own working directory.
           roster_file="${RUNNER_TEMP}/roster.json"
+          digest_log="${RUNNER_TEMP}/inventory-digest.log"
           report_file="${RUNNER_TEMP}/effective-inventory.json"
           jq -n \
             --slurpfile rows "$roster_rows_file" \
@@ -426,10 +463,11 @@ jobs:
           inventory_digest_cause=""
           if [[ "$enumerated_private" -eq 0 ]]; then
             inventory_digest_cause="the sweep enumerated no private repositories, so there is no population to digest"
-          elif ! swift run --package-path .workspace/Application -c release workspace inventory effective \
-                 --inventory-scope effective \
-                 --inventory-private-roster "$roster_file" \
-                 --inventory-output "$report_file" > /dev/null 2>&1; then
+          elif ! (cd .workspace && swift run --package-path Application -c release \
+                    workspace inventory effective \
+                      --inventory-scope effective \
+                      --inventory-private-roster "$roster_file" \
+                      --inventory-output "$report_file") > "$digest_log" 2>&1; then
             # Exit 2 means the report was written with UNMEASURED residue;
             # anything else means no report at all. Both are read from the
             # report's own presence rather than from the exit status, so a
@@ -437,7 +475,21 @@ jobs:
             if [[ -s "$report_file" ]]; then
               inventory_digest_cause="the effective inventory carries unmeasured residue: $(jq -r '.unmeasured | length' "$report_file") organization(s) this pass could not enumerate"
             else
-              inventory_digest_cause="Workspace could not compute an effective-inventory digest on this runner"
+              # A coarse, fixed classification of the captured output —
+              # never the output itself, which names this runner's own
+              # filesystem and lands in a PUBLIC log. Without it, a cold
+              # build that ran out of time and a genuine CLI refusal are
+              # the same opaque sentence, which is how run 31138691252's
+              # wrong working directory stayed invisible.
+              digest_class="unclassified"
+              if grep -qF "Workspace.json" "$digest_log" 2>/dev/null; then
+                digest_class="no Workspace inventory at the checkout it ran in"
+              elif grep -qF "error: " "$digest_log" 2>/dev/null; then
+                digest_class="the build or the command failed"
+              elif [[ ! -s "$digest_log" ]]; then
+                digest_class="the command produced no output at all"
+              fi
+              inventory_digest_cause="Workspace could not compute an effective-inventory digest on this runner (${digest_class})"
             fi
           fi
           if [[ -s "$report_file" && -z "$inventory_digest_cause" ]]; then
