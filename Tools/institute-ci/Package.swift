@@ -21,6 +21,10 @@ let package = Package(
             targets: ["CI Validation"]
         ),
         .library(
+            name: "Canon",
+            targets: ["Canon"]
+        ),
+        .library(
             name: "Institute Receipt",
             targets: ["Institute Receipt"]
         ),
@@ -49,6 +53,12 @@ let package = Package(
             name: "CI Validation",
             dependencies: ["CI Contract", "CI Workflow"]
         ),
+        // The rulebook checking itself: referential integrity of the
+        // markdown skill corpus. No dependency on the CI contract — its
+        // subject is prose, not workflows.
+        .target(
+            name: "Canon"
+        ),
         .target(
             name: "Institute CI Application",
             dependencies: ["CI Contract", "CI Validation", "Institute Receipt"]
@@ -65,6 +75,7 @@ let package = Package(
             dependencies: [
                 "Institute CI Application",
                 "CI Validation",
+                "Canon",
                 "CI Workflow",
                 "Institute Receipt",
                 .product(name: "Byte Primitives", package: "swift-byte-primitives"),
@@ -85,6 +96,10 @@ let package = Package(
         .testTarget(
             name: "Institute Receipt Tests",
             dependencies: ["Institute Receipt"]
+        ),
+        .testTarget(
+            name: "Canon Tests",
+            dependencies: ["Canon"]
         ),
     ],
     swiftLanguageModes: [.v6]
