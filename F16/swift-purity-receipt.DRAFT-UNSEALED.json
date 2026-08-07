@@ -1,0 +1,127 @@
+{
+  "DRAFT-UNSEALED": true,
+  "draftNotice": "This file is the AUTHORED CONTENT of F16's evidence output, not the sealed artifact. It is deliberately NOT in SWIFT-NATIVE-PROGRAMME/ and is NOT enrolled in SWIFT-NATIVE-PROGRAMME/SHA256SUMS. The coordinator seals it — moving it to SWIFT-NATIVE-PROGRAMME/swift-purity-receipt.json and recutting SHA256SUMS — only after PR-A..PR-D merge AND the positive-controlled zero-scan is re-run at the merged head. Every count below is measured at the PRE-MERGE head and MUST be re-measured at seal time; do not seal these numbers.",
+  "receipt": "swift-purity-receipt.json",
+  "transaction": "F16 — Retire non-Swift Institute semantics",
+  "goal": "https://github.com/swift-institute/.github/issues/358",
+  "issue": "https://github.com/swift-institute/.github/issues/404",
+  "repository": "swift-institute/.github",
+  "measuredAtHead": "d32382565bc296ad735996d633a99fb3b62c204f",
+  "authoringIdentity": "coenttb (f16-author peer task, dispatched by the successor coordinator session)",
+
+  "stopCondition": {
+    "id": "STOP-F16-PURITY",
+    "statement": "Institute-authored non-Swift semantics remain → do not claim 100% Swift.",
+    "state": "TRIPPED",
+    "detail": "71 RETAINED-NO-OWNER + 2 RETAINED-TYPED + 1 RETAINED-HARNESS Institute-authored non-Swift semantic files remain at this head, and 9 SUPERSEDED files cannot pass the deletion gate. F16 does not close on this PR set and NO 100%-Swift claim is admissible."
+  },
+
+  "census": {
+    "artifact": "F16/non-swift-authored-census.csv",
+    "scope": "Every tracked .py, .sh, and composite-action file in swift-institute/.github at the measured head.",
+    "instrument": "git ls-files (unfiltered enumeration, not a pattern match over the worktree) + git grep -F per basename with the incumbent inventory CSV excluded so its own rows do not self-reference.",
+    "positiveControl": "validate-branch-pins.py returns .github/workflows/swift-ci.yml:514 and lint-validator-fixtures.yml:267 by the same probe; the zero-reference rows are therefore zeros from a working instrument.",
+    "total": 104,
+    "byDisposition": {
+      "RETAINED-NO-OWNER": 71,
+      "RETAINED-FIXTURE": 18,
+      "SUPERSEDED-GATED": 9,
+      "RETAINED-TYPED": 2,
+      "DELETED-TERMINAL": 2,
+      "RETAINED-HARNESS": 1,
+      "SUPERSEDED-TERRITORY-BLOCKED": 1
+    }
+  },
+
+  "deleted": [
+    {
+      "path": "CI-CD-REFACTOR-EVIDENCE/generate-receipt.py",
+      "disposition": "DELETED-TERMINAL",
+      "parity": "No successor required. The programme it served is terminal: Goal swift-institute/.github#276 reclosed completed 2026-08-05T20:46:54Z, and the artifact it produced is frozen in the committed CI-CD-REFACTOR-COMPLETION-RECEIPT.md.",
+      "zeroUse": "Positive-controlled zero references across the whole tracked tree."
+    },
+    {
+      "path": "CI-CD-REFACTOR-EVIDENCE/validate-final-receipt.py",
+      "disposition": "DELETED-TERMINAL",
+      "parity": "As above; validator of the same frozen receipt.",
+      "zeroUse": "Positive-controlled zero references across the whole tracked tree."
+    }
+  ],
+
+  "blockedDeletions": [
+    {
+      "family": "caller generator",
+      "paths": [
+        ".github/scripts/generate-caller.py",
+        ".github/scripts/converge-callers.py",
+        ".github/scripts/tests/test-generate-caller.py",
+        ".github/scripts/tests/test-converge-callers.py"
+      ],
+      "swiftOwner": "Repository.Policy.Caller.Render — Tools/RepositoryPolicy/Sources/Repository Policy/Repository.Policy.Caller.Render.swift; CLI verb `repository-policy render-caller`",
+      "parityEvidence": "F3 fixture corpus (cited, not re-run) plus today's fleet state: #394 comment 5207423211 (405/405 then 453 TERMINAL_GATED) and #395 comment 5207827350 (zero WRAPPER references).",
+      "blocker": "TWO independent terms of the deletion gate are unmet. (1) NO REPLACEMENT ACTIVATION: .github/workflows/converge-caller.yml is still the live producer and calls generate-caller.py at lines 289 and 321; no workflow anywhere in this repository invokes `repository-policy render-caller`. The F14 wave was therefore rendered by the PYTHON generator, not by Repository.Policy.Caller.Render — a correction to the dispatch brief's premise, recorded rather than quietly worked around. (2) NO SWIFT OWNER FOR `parse`: converge-caller.yml line 289 uses generate-caller.py's `parse` mode for preserve-existing-inputs, and Main.RenderCaller.swift exposes only `--form current|direct`. There is no `parse-caller` verb. Deleting the incumbent today would remove the recovery path that makes a bespoke caller fail closed to typed-exception review instead of being overwritten.",
+      "requiredToUnblock": [
+        "Implement Repository.Policy.Caller.Parse (+ CLI `parse-caller`) with the F3 fixture corpus as its parity gate.",
+        "Cut converge-caller.yml over to the Swift CLI in one measured commit.",
+        "One hosted activation canary on a real target — impossible during the current GitHub Actions major outage (#394 comment 5207727238)."
+      ]
+    },
+    {
+      "family": "runtime receipt",
+      "paths": [
+        ".github/scripts/effective-runtime-receipt.py",
+        ".github/scripts/augment-effective-runtime-receipt.py",
+        ".github/scripts/validate-completion-receipt.py",
+        ".github/scripts/tests/test-effective-runtime-receipt.py",
+        ".github/scripts/tests/test-validate-completion-receipt.py"
+      ],
+      "swiftOwner": "Institute.Receipt.* — Tools/InstituteCI/Sources/Institute Receipt/",
+      "blocker": "Still invoked by live swift-ci.yml steps. Cutover plus hosted canary required; canary unavailable during the outage."
+    },
+    {
+      "family": "census generator",
+      "paths": ["SWIFT-NATIVE-PROGRAMME/census-generator.py"],
+      "swiftOwner": "Repository.Policy.Census.Generator — Tools/RepositoryPolicy/Sources/Repository Policy/Repository.Policy.Census.Generator.swift; CLI verb `repository-policy census`",
+      "parityEvidence": "The Swift owner's own doc comment asserts coordinate-for-coordinate parity with this file.",
+      "blocker": "TERRITORY. The file lives under SWIFT-NATIVE-PROGRAMME/, which another peer owns tonight and this task must not touch, and it is enrolled in SWIFT-NATIVE-PROGRAMME/SHA256SUMS so its deletion requires the seal recut. This is the single cleanest available F16 deletion and it belongs to the coordinator."
+    }
+  ],
+
+  "findings": [
+    {
+      "id": "F16-FINDING-1",
+      "severity": "corrects a programme premise",
+      "statement": "The F14 caller wave was rendered by .github/scripts/generate-caller.py through converge-caller.yml, NOT by Repository.Policy.Caller.Render. The Swift renderer exists and carries F3 fixture parity, but it has never been the live producer: `git grep render-caller -- .github/workflows` returns nothing, while converge-caller.yml calls the Python generator at lines 289 and 321 and its 922nd run completed 2026-08-05T12:21:19Z. Any statement that the fleet's callers came from the Swift owner is unsupported at this head."
+    },
+    {
+      "id": "F16-FINDING-2",
+      "severity": "missing replacement",
+      "statement": "generate-caller.py's `parse` mode has no Swift counterpart. Repository Policy CLI exposes render-caller with --form current|direct only. Until Repository.Policy.Caller.Parse exists, the incumbent is load-bearing for the preserve-existing-inputs fail-closed path."
+    },
+    {
+      "id": "F16-FINDING-3",
+      "severity": "missing replacement",
+      "statement": "build-verdict-inventory.py and test-verdict-inventory.py, typed as RepositoryPolicy residue on #390, still have NO Swift replacement. Unfiltered enumeration of every file under Tools/*/Sources/*/ at this head finds no verdict-inventory owner; the same enumeration finds Repository.Policy.Caller.Render, so the zero is from a working instrument. RETAINED-TYPED, not deleted."
+    },
+    {
+      "id": "F16-FINDING-4",
+      "severity": "scope",
+      "statement": "71 of 104 files are RETAINED-NO-OWNER. Almost all are .github/scripts/validate-*.py and audit-*.py — linter and validator predicates whose intended owners are swift-linter (Swift syntax and AST semantics) and Workspace validators (checkout and package-graph facts), per the standing ownership split. NEITHER owner is realised for these predicates. F16 as scoped in PROGRAMME.md cannot retire them from inside this repository; they are cross-repository work in swift-linter and Workspace. This is the dominant term in STOP-F16-PURITY and it should be filed as exact-owner issues on those repositories."
+    },
+    {
+      "id": "F16-FINDING-5",
+      "severity": "correction to the dispatch brief",
+      "statement": "swift-institute/Skills carries NO root Package.swift at this head (measured; positive control: swift-primitives/swift-percent-primitives returns the file, swift-institute/.github returns 404). #394 comment 5205766701 states Skills carries a root manifest and was caught by the dry run at 67 lines → 25. Both cannot be true of the same head. PR-D therefore evaluates the manifest term FIRST, so Skills reports .noManifest — the reason it is actually out — while the bespoke exception entry remains as a guard should it ever gain a manifest."
+    },
+    {
+      "id": "F16-FINDING-6",
+      "severity": "premise not applicable",
+      "statement": "PR-B needs no manual cache-key recut. The universal workflow's bootstrap key derives from `git rev-parse HEAD:Tools/InstituteCI` (swift-ci.yml lines 501 and 2556) — the tree OID of that ONE directory, whose spelling is already annex-correct. Any content change inside it recuts the key automatically, and no other Tools path participates in a cache key (unfiltered `git grep HEAD:Tools` returns exactly those two lines). The same-commit coupling the brief required is satisfied vacuously; a hand-written key bump would have been the hazard, not the fix."
+    }
+  ],
+
+  "evidenceDiscipline": {
+    "hostedCanaries": "NONE. GitHub Actions is in a major outage; required checks cannot report. No PR in this set carries hosted evidence and none may be merged as if it did.",
+    "localVerification": "Reduced evidence only, per the two-gate rule: workspace package build/test in the authoring worktree. Full --fresh verification is not this task's."
+  }
+}
