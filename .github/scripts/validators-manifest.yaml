@@ -2,7 +2,8 @@
 # validator-script ↔ workflow-file binding.
 #
 # Phase B-1 of CI-REVIEW-PHASE-B-DESIGN-2026-05-14 §3. The binding
-# validator (validate-manifest-binding.py) cross-checks this manifest
+# validator (`CI.Validation.ManifestBinding`, Tools/institute-ci;
+# formerly validate-manifest-binding.py) cross-checks this manifest
 # for internal consistency. Phase B-1 scope = checks 2 + 4 only
 # (internal consistency); checks 1 + 3 (Skills cross-references)
 # DEFERRED to Phase B-2 per supervisor adjudication 2026-05-14:
@@ -44,7 +45,7 @@
 # Writer / reader contract:
 #   - Appended in the same Phase 7 transaction as a new validator
 #     mechanization per [PROMOTE-006].
-#   - Read by validate-manifest-binding.py weekly (Phase D's
+#   - Read by the manifest-binding validator weekly (Phase D's
 #     lint-validators-weekly when authored) and on every
 #     .github/scripts/validate-*.py edit (paths-trigger).
 #
@@ -242,6 +243,13 @@ validators:
     discovery-mode: single-target
     rule-id-regex: '^CI-MANIFEST-BINDING'
     migrate-to-base: yes
+    # #404 drain: ported to `CI.Validation.ManifestBinding`.
+    # `validator-script` is now the validator's IDENTITY rather than a
+    # file that exists — it is the key validate-manifest-binding.yml
+    # resolves against the Swift registry (`institute-ci validate
+    # --script`), and the Swift owner records the same path as its
+    # `retiredScript`. The .py is deleted; the entry is not.
+    engine: swift (Tools/institute-ci, CI Validation)
 
   # ─── Cross-cutting (gh-repo skill, shared with thin-callers) ───────
 
@@ -311,6 +319,13 @@ validators:
     discovery-mode: per-package-org-sweep
     rule-id-regex: '^GH-IGNORE-001'
     migrate-to-base: 'no (per-package-org-sweep deferred to B-2)'
+    # #404 drain: ported to `CI.Validation.Gitignore`. `validator-script`
+    # is now the validator's IDENTITY rather than a file that exists —
+    # it is the key validate-gitignore.yml resolves against the Swift
+    # registry (`institute-ci validate --script`), and the Swift owner
+    # records the same path as its `retiredScript`. The .py is deleted;
+    # the entry is not.
+    engine: swift (Tools/institute-ci, CI Validation)
 
   - rule-id: GH-IGNORE-002
     validator-script: .github/scripts/validate-gitignore.py
@@ -320,6 +335,8 @@ validators:
     discovery-mode: per-package-org-sweep
     rule-id-regex: '^GH-IGNORE-002'
     migrate-to-base: 'no (per-package-org-sweep deferred to B-2)'
+    # #404 drain: ported to `CI.Validation.Gitignore` — see GH-IGNORE-001.
+    engine: swift (Tools/institute-ci, CI Validation)
 
   - rule-id: GH-REPO-METADATA
     validator-script: .github/scripts/validate-github-metadata.py
