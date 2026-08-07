@@ -18,6 +18,7 @@ extension CI.Validation {
             BinaryInstallChecksum(),
             BranchPins(),
             CIMatrix(),
+            CachePolicy(),
             CompositeActionDescriptions(),
             CompositeActionPins(),
             ContinueOnError(),
@@ -26,7 +27,10 @@ extension CI.Validation {
             EmbeddedJob(),
             EnvironmentContext(),
             Gitignore(),
+            HardenRunner(),
+            InputDefaults(),
             ManifestBinding(),
+            PermissionsShape(),
             VisibilityGate(),
         ]
 
