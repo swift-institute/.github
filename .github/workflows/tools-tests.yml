@@ -5,7 +5,7 @@
 # repository-policy — carry test suites, but until now no hosted gate ran
 # them. lint-validator-fixtures.yml runs two filtered institute-ci suites
 # as embedded-shell controls, and everything else was "verified by
-# `workspace package test`" only on whichever machine remembered to run
+# `institute package test`" only on whichever machine remembered to run
 # it. An untriggered test suite is the same category of artifact as an
 # unproven gate: it looks like coverage and provides none.
 #
@@ -77,10 +77,10 @@ jobs:
       - name: Checkout Workspace at exact main pin
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
-          repository: swift-institute/Workspace
+          repository: swift-institute/institute-application
           # Advance with pin-advance flow; must stay a full SHA (branch-pin
           # guard). Mirrors the institute-ci composite action's default pin.
-          ref: 6e3861935041c9a92d873f0e444da1dd5b666fdb
+          ref: 72d4b2ae1e5b6a2b49fc22e0240dad0a34a9618f
           path: .workspace
           persist-credentials: false
 
@@ -98,5 +98,5 @@ jobs:
           PACKAGE: ${{ matrix.package }}
         run: |
           set -euo pipefail
-          swift run --package-path .workspace/Application workspace package test \
+          swift run --package-path .workspace/Application institute package test \
             --package-path "Tools/${PACKAGE}"

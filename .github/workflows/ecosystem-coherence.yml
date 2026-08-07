@@ -3,7 +3,7 @@
 # PURPOSE
 # Per-package CI proves each package against its own resolution; nothing
 # measures whether the fleet's canonical `main` heads compose as one graph.
-# swift-institute/Workspace#80 shipped the instrument (`workspace coherence`:
+# swift-institute/Workspace#80 shipped the instrument (`institute coherence`:
 # sync -> doctor -> graph -> build -> population, emitting a content-addressed
 # receipt). This workflow is the Institute wiring around that instrument:
 # cadence, quota placement, receipt persistence, and scheduled-failure
@@ -132,20 +132,20 @@ jobs:
         with:
           egress-policy: audit
 
-      # No `path:` — checks out swift-institute/Workspace directly to
+      # No `path:` — checks out swift-institute/institute-application directly to
       # $GITHUB_WORKSPACE, the same shape contributor-path.yml's own job has
       # when it checks out itself. `ref: main` is the deliberately floating
       # instrument pin discussed above. persist-credentials: false keeps the
-      # rest of this job's `workspace sync` credential-free by construction,
+      # rest of this job's `institute sync` credential-free by construction,
       # the same property contributor-path.yml proves.
       - name: Checkout the Workspace front door
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: swift-institute/Workspace
+          repository: swift-institute/institute-application
           ref: main
           persist-credentials: false
 
-      # Workspace.json's floor is Swift 6.3.3 / Xcode 26.6; select it the
+      # Institute.json's floor is Swift 6.3.3 / Xcode 26.6; select it the
       # way a contributor following the README would, per contributor-
       # path.yml. A nightly-only red on a newer default image would be
       # toolchain data, not coherence data.
@@ -156,13 +156,13 @@ jobs:
         run: |
           set -euo pipefail
           export PATH="$HOME/.local/bin:$PATH"
-          if command -v workspace; then
-            echo "::error::clean runner unexpectedly already exposes a workspace command"
+          if command -v institute; then
+            echo "::error::clean runner unexpectedly already exposes an institute command"
             exit 1
           fi
-          swift run --package-path Application workspace install
-          test "$(command -v workspace)" = "$HOME/.local/bin/workspace"
-          workspace --help >/dev/null
+          swift run --package-path Application institute install
+          test "$(command -v institute)" = "$HOME/.local/bin/workspace"
+          institute --help >/dev/null
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Render selection narrowing (manual bisect input)
@@ -181,8 +181,8 @@ jobs:
         if: ${{ inputs.dry-run == true }}
         run: |
           set -euo pipefail
-          workspace coherence --help >/dev/null
-          echo "dry-run: 'workspace coherence' CLI surface present and parses --help"
+          institute coherence --help >/dev/null
+          echo "dry-run: 'institute coherence' CLI surface present and parses --help"
 
       - name: Dry run — synthesize a schema-shaped receipt for artifact/summary wiring
         id: dry-receipt
@@ -200,12 +200,12 @@ jobs:
         if: ${{ inputs.dry-run != true }}
         run: |
           set -euo pipefail
-          workspace sync --dry-run
-          workspace sync
+          institute sync --dry-run
+          institute sync
 
       - name: Facts — doctor
         if: ${{ inputs.dry-run != true }}
-        run: workspace doctor
+        run: institute doctor
 
       - name: Coherence — composed build with content-addressed receipt
         id: coherence
@@ -213,7 +213,7 @@ jobs:
         run: |
           set -euo pipefail
           set -o pipefail
-          # `workspace coherence` prints exactly three lines: the selection
+          # `institute coherence` prints exactly three lines: the selection
           # origin, the receipt's canonical (single-line, sorted-key) JSON,
           # and a "coherence: verdict <v>[, digest <d>]" summary — in that
           # order (Workspace.CLI.swift's `.coherence` case). Extracting by
@@ -221,7 +221,7 @@ jobs:
           # line is documented as compact/canonical specifically so it can
           # be lifted verbatim without a JSON-aware CLI on this side.
           status=0
-          workspace coherence > coherence-output.txt 2>&1 || status=$?
+          institute coherence > coherence-output.txt 2>&1 || status=$?
           cat coherence-output.txt
           sed -n '2p' coherence-output.txt > receipt.json
           summary_line=$(grep -m1 '^coherence: verdict' coherence-output.txt || true)

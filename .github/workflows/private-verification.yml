@@ -6,7 +6,7 @@
 # WHY THIS EXISTS. A private repository produces no CI attestation at all
 # (swift-ci.yml's 18 `!github.event.repository.private` guards, deliberately
 # — see swift-institute/.github#253). Task 2-01 gave Workspace a typed
-# `workspace verification seal`/`check` pair that performs the same
+# `institute verification seal`/`check` pair that performs the same
 # Swift-owned build/test/lint gates locally and seals a content-addressed
 # receipt. This workflow is the trusted control-plane path that runs that
 # instrument against a private subject's exact head from PUBLIC control-plane
@@ -216,10 +216,10 @@ jobs:
           test -n "$WORKSPACE_REVISION"
           # Inside the same hierarchy as the subject: `Workspace.Root`
           # derives its hierarchy as the checkout's PARENT, so cloning
-          # here is what makes `workspace lint install` (next step)
+          # here is what makes `institute lint install` (next step)
           # install into the very directory the subject ascends through.
           workspace_dir="${HIERARCHY_DIR}/Workspace"
-          git clone --quiet https://github.com/swift-institute/Workspace.git "$workspace_dir"
+          git clone --quiet https://github.com/swift-institute/institute-application.git "$workspace_dir"
           git -C "$workspace_dir" checkout --quiet "$WORKSPACE_REVISION"
           observed=$(git -C "$workspace_dir" rev-parse HEAD)
           test "$observed" = "$WORKSPACE_REVISION"
@@ -244,7 +244,7 @@ jobs:
       #
       # The binaries come from swift-linter's rolling `ci-binaries`
       # release over plain HTTPS (the repository is public) and are
-      # verified by `workspace lint install` against that release's own
+      # verified by `institute lint install` against that release's own
       # SHA256SUMS before placement; a checksum mismatch refuses rather
       # than installs. This runs BEFORE any subject code and touches no
       # subject input.
@@ -258,7 +258,7 @@ jobs:
           # the hierarchy of the root it is standing in, and that
           # hierarchy is the subject's ancestor by construction above.
           (cd "$WORKSPACE_DIR" && swift run --package-path Application -c release \
-            workspace lint install)
+            institute lint install)
 
       - name: Run Workspace verification seal — subject code, fully contained
         id: run
@@ -332,7 +332,7 @@ jobs:
           # landing `unmeasured` for want of a linter installation — the
           # same caution #341 applied, now on a leg that can report.
           env -u GITHUB_ENV -u GITHUB_OUTPUT -u GITHUB_PATH -u GITHUB_STEP_SUMMARY -u ACTIONS_STEP_DEBUG \
-            swift run --package-path "${WORKSPACE_DIR}/Application" -c release workspace verification seal \
+            swift run --package-path "${WORKSPACE_DIR}/Application" -c release institute verification seal \
               --package-path "$SUBJECT_DIR" \
               --claimed-head "$SUBJECT_HEAD" \
               --default-branch "$SUBJECT_DEFAULT_BRANCH" \
@@ -388,7 +388,7 @@ jobs:
           # re-digesting from bytes on disk.
           check_status=0
           env -u GITHUB_ENV -u GITHUB_OUTPUT -u GITHUB_PATH -u GITHUB_STEP_SUMMARY \
-            swift run --package-path "${WORKSPACE_DIR}/Application" -c release workspace verification check \
+            swift run --package-path "${WORKSPACE_DIR}/Application" -c release institute verification check \
               --receipt "$receipt_path" \
               > "${RUNNER_TEMP}/check.log" 2>&1 \
             || check_status=$?

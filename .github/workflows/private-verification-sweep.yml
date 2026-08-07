@@ -13,7 +13,7 @@
 # for public repositories. Layer classification here is best-effort (a
 # `layer:<name>` repository topic, defaulting to `applications` when absent)
 # — this sweep does not yet call Workspace's live private-discovery pass
-# (`workspace doctor --institute`, Task 0C-02's mechanism), which resolves
+# (`institute doctor --institute`, Task 0C-02's mechanism), which resolves
 # an authoritative layer per repository but at ~460 requests per invocation.
 # Wiring that exact population through a stable CLI-exposed JSON verb is
 # flagged as follow-on scope (recorded UNMEASURED in this task's receipt,
@@ -130,7 +130,7 @@ jobs:
           # The trusted verifier pins to an exact Workspace commit, never
           # `main` at dispatch time drifting mid-sweep — every subject this
           # pass dispatches gets the SAME Workspace revision, resolved once.
-          revision=$(gh api repos/swift-institute/Workspace/commits/main --jq .sha)
+          revision=$(gh api repos/swift-institute/institute-application/commits/main --jq .sha)
           test -n "$revision"
           echo "revision=${revision}" >> "$GITHUB_OUTPUT"
 
@@ -169,7 +169,7 @@ jobs:
       - name: Check out Workspace at the exact revision this sweep dispatches with
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: swift-institute/Workspace
+          repository: swift-institute/institute-application
           ref: ${{ steps.workspace.outputs.revision }}
           path: .workspace
           persist-credentials: false
@@ -460,12 +460,12 @@ jobs:
           # "unmeasured" and never an invented digest — a receipt schema
           # that accepts "unmeasured" without a cause is exactly what this
           # repair removed.
-          # `workspace inventory` reads the committed roster from the
+          # `institute inventory` reads the committed roster from the
           # Workspace checkout it is STANDING IN — the CLI resolves its
           # root from the working directory, not from `--package-path`,
           # which selects the SwiftPM package to run. Run 31138691252 ran
           # it from this repository's checkout, where there is no
-          # Workspace.json, so it could not have succeeded; it recorded a
+          # Institute.json, so it could not have succeeded; it recorded a
           # typed cause, which is the honest outcome of a wrong invocation
           # but not a measurement. The subshell below puts it in the right
           # root without moving this step's own working directory.
@@ -486,7 +486,7 @@ jobs:
           if [[ "$enumerated_private" -eq 0 ]]; then
             inventory_digest_cause="the sweep enumerated no private repositories, so there is no population to digest"
           elif ! (cd .workspace && swift run --package-path Application -c release \
-                    workspace inventory effective \
+                    institute inventory effective \
                       --inventory-scope effective \
                       --inventory-private-roster "$roster_file" \
                       --inventory-output "$report_file") > "$digest_log" 2>&1; then
@@ -504,7 +504,7 @@ jobs:
               # the same opaque sentence, which is how run 31138691252's
               # wrong working directory stayed invisible.
               digest_class="unclassified"
-              if grep -qF "Workspace.json" "$digest_log" 2>/dev/null; then
+              if grep -qF "Institute.json" "$digest_log" 2>/dev/null; then
                 digest_class="no Workspace inventory at the checkout it ran in"
               elif grep -qF "error: " "$digest_log" 2>/dev/null; then
                 digest_class="the build or the command failed"

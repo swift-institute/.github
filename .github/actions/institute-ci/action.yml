@@ -30,10 +30,10 @@ inputs:
     required: true
   workspace-revision:
     description: >-
-      Exact commit of swift-institute/Workspace used as the build coordinate.
+      Exact commit of swift-institute/institute-application used as the build coordinate.
       Must stay a full 40-hex SHA — the branch-pin guard rejects anything else.
     required: false
-    default: '6e3861935041c9a92d873f0e444da1dd5b666fdb'
+    default: '72d4b2ae1e5b6a2b49fc22e0240dad0a34a9618f'
 
 outputs:
   binary:
@@ -81,7 +81,7 @@ runs:
       if: ${{ steps.restore.outputs.cache-hit != 'true' }}
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
-        repository: swift-institute/Workspace
+        repository: swift-institute/institute-application
         # Advance with pin-advance flow; must stay a full SHA (branch-pin guard).
         ref: ${{ inputs.workspace-revision }}
         path: .workspace
@@ -98,7 +98,7 @@ runs:
         # uuid-dev: the typed F2/F10 provisioning input (swift-linux-standard's
         # CLinuxKernelShim includes uuid/uuid.h); absent on the bare runner.
         sudo apt-get update -qq && sudo apt-get install -qq -y uuid-dev
-        swift run --package-path .workspace/Application workspace package build \
+        swift run --package-path .workspace/Application institute package build \
           --package-path "${RUNNER_TEMP}/institute-ci-sources" --argument=--static-swift-stdlib
         mkdir -p .institute-ci-entry/bin
         cp "$(find "${RUNNER_TEMP}/institute-ci-sources/.build" -name institute-ci -type f -perm /111 | head -1)" \
