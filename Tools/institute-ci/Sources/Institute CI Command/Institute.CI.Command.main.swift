@@ -240,6 +240,23 @@ case "validate":
             organizationsFile: organizationsFile.isEmpty ? nil : organizationsFile,
             baselineFile: baselineFile.isEmpty ? nil : baselineFile)
     }
+    // The three-file face GH-REPO-063 inherited from its retired
+    // script's positional arguments: the fixture corpus keeps the
+    // schema, the sync workflow, and the readme consumer flat in one
+    // scenario directory, so its caller names them rather than relying
+    // on the subject-root defaults.
+    let schemaFile = value("--schema", in: rest)
+    let syncWorkflowFile = value("--sync-workflow", in: rest)
+    let readmeValidatorFile = value("--readme-validator", in: rest)
+    if !schemaFile.isEmpty || !syncWorkflowFile.isEmpty || !readmeValidatorFile.isEmpty {
+        guard validator is CI.Validation.SchemaCorrespondence else {
+            fail("validate: --schema/--sync-workflow/--readme-validator are not inputs to this validator")
+        }
+        validator = CI.Validation.SchemaCorrespondence(
+            schemaFile: schemaFile.isEmpty ? nil : schemaFile,
+            syncWorkflowFile: syncWorkflowFile.isEmpty ? nil : syncWorkflowFile,
+            readmeValidatorFile: readmeValidatorFile.isEmpty ? nil : readmeValidatorFile)
+    }
     let subject = CI.Validation.Subject(
         repository: value("--repository", in: rest), root: value("--root", in: rest))
     let run = CI.Validation.Run.validate(validator, of: subject)

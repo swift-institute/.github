@@ -2,8 +2,8 @@
 # RETAINED (F16 residual sweep, swift-institute/.github#404): no port class
 # owns this validator. It has no Swift owner, four live RetiredValidator
 # fixture rows (readme-008/013/017/026), a live validate-readme.yml caller,
-# and its source text is READ as data by validate-schema-workflow-keys.py and
-# validate-skill-hygiene.py. A faithful port is not S-class — it carries the
+# and its source text is READ as data by the GH-REPO-063 guard
+# (CI.Validation.SchemaCorrespondence). A faithful port is not S-class — it carries the
 # metadata-schema.json correspondence surface with it. Follow-up owner: the
 # GH-REPO-063 re-sequencing (see #404). Do not delete.
 """validate-readme.py — verify README files per readme skill family rules.
@@ -98,10 +98,11 @@ def strip_code_blocks(text: str) -> str:
 # scope by decision, not unclassified by omission, and the two must not look
 # alike to a reader.
 #
-# Both this tuple and FAMILIES below are read by
-# `validate-schema-workflow-keys.py`, which asserts each is identical to the
-# corresponding enum in metadata-schema.json's `readme` block. It parses this
-# file with `ast` and looks these constants up BY NAME, so:
+# Both this tuple and FAMILIES below are read by the GH-REPO-063 guard
+# (`CI.Validation.SchemaCorrespondence` in Tools/institute-ci), which asserts
+# each is identical to the corresponding enum in metadata-schema.json's
+# `readme` block. It reads this file as data and looks these constants up BY
+# NAME at module level, so:
 #
 #   - keep them module-level assignments of tuple-of-string literals;
 #   - if you rename or compute either one, the guard fails closed rather than

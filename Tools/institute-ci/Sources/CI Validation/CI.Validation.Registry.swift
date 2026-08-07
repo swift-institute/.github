@@ -31,6 +31,7 @@ extension CI.Validation {
             InputDefaults(),
             ManifestBinding(),
             PermissionsShape(),
+            SchemaCorrespondence(),
             SkillHygiene(),
             SubOrgWrappers(),
             ThinCallers(),
