@@ -203,7 +203,14 @@ jobs:
           # file) invalidates every prior "success" check as not-current,
           # exactly the "current receipt schema/policy digest" test in
           # point A.3.
-          POLICY_REVISION: "2026-08-04-1"
+          #
+          # Bumped for the full contract: every prior success was sealed
+          # under a contract with no lint leg, or with a lint leg that
+          # could not measure. The dedupe key treats a current success as
+          # terminal, so without this bump the fleet — including the 23
+          # reduced-contract greens — would never be re-verified under
+          # the contract it now runs.
+          POLICY_REVISION: "2026-08-07-1"
           DRY_RUN: ${{ inputs.dry-run || 'false' }}
           MAX_CONCURRENT: 8
           MAX_TOTAL: 200

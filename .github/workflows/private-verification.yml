@@ -150,6 +150,7 @@ jobs:
           SUBJECT_OWNER: ${{ steps.masks.outputs.owner }}
           SUBJECT_NAME: ${{ steps.masks.outputs.name }}
           SUBJECT_HEAD: ${{ github.event.client_payload.head }}
+          SUBJECT_LAYER: ${{ github.event.client_payload.layer }}
         run: |
           set -euo pipefail
           set +x
@@ -160,7 +161,31 @@ jobs:
           # `git` fetch instead: the credential rides one transient HTTP
           # header on the fetch invocation only, never a stored remote URL,
           # and is never echoed.
-          subject_dir="${RUNNER_TEMP}/subject"
+          # Laid out as an Institute hierarchy, not as two loose
+          # directories. `Workspace.Lint` finds its installed binaries by
+          # ASCENDING from the subject, and resolves the subject's default
+          # rule bundle from the layer-root directory the subject sits
+          # directly under (`Lint.Bundle.resolve`). A subject at
+          # `$RUNNER_TEMP/subject` can satisfy neither, which is why lint
+          # could only ever land `unmeasured` here — and, since #409 made
+          # lint a requested step, why no subject could seal `verified`
+          # (13 post-#409 receipts).
+          #
+          # The layer ROOT is the layer's own organization directory, not
+          # the subject's GitHub owner: a `swift-ietf` repository is a
+          # `standards`-layer package and materializes under
+          # `swift-standards` (ruling 139), so the mapping below is
+          # Workspace.Layer.organization and must stay identical to it.
+          case "${SUBJECT_LAYER}" in
+            primitives) layer_root="swift-primitives" ;;
+            standards) layer_root="swift-standards" ;;
+            foundations) layer_root="swift-foundations" ;;
+            components) layer_root="swift-components" ;;
+            applications) layer_root="swift-applications" ;;
+            *) echo "::error::unrecognised layer '${SUBJECT_LAYER}'" ; exit 1 ;;
+          esac
+          hierarchy_dir="${RUNNER_TEMP}/hierarchy"
+          subject_dir="${hierarchy_dir}/${layer_root}/${SUBJECT_NAME}"
           mkdir -p "$subject_dir"
           git -C "$subject_dir" init --quiet
           auth_header="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_APP_TOKEN" | base64 | tr -d '\n')"
@@ -178,16 +203,22 @@ jobs:
           observed_head=$(git -C "$subject_dir" rev-parse HEAD)
           test "$observed_head" = "$SUBJECT_HEAD"
           echo "subject-dir=${subject_dir}" >> "$GITHUB_OUTPUT"
+          echo "hierarchy-dir=${hierarchy_dir}" >> "$GITHUB_OUTPUT"
 
       - name: Resolve Workspace at its pinned, control-plane-supplied revision
         id: workspace
         shell: bash
         env:
           WORKSPACE_REVISION: ${{ github.event.client_payload.workspaceRevision }}
+          HIERARCHY_DIR: ${{ steps.fetch.outputs.hierarchy-dir }}
         run: |
           set -euo pipefail
           test -n "$WORKSPACE_REVISION"
-          workspace_dir="${RUNNER_TEMP}/workspace-src"
+          # Inside the same hierarchy as the subject: `Workspace.Root`
+          # derives its hierarchy as the checkout's PARENT, so cloning
+          # here is what makes `workspace lint install` (next step)
+          # install into the very directory the subject ascends through.
+          workspace_dir="${HIERARCHY_DIR}/Workspace"
           git clone --quiet https://github.com/swift-institute/Workspace.git "$workspace_dir"
           git -C "$workspace_dir" checkout --quiet "$WORKSPACE_REVISION"
           observed=$(git -C "$workspace_dir" rev-parse HEAD)
@@ -200,6 +231,34 @@ jobs:
           # never whatever happens to be on the runner's PATH. The
           # bootstrap itself is never cited as package evidence.
           echo "workspace-dir=${workspace_dir}" >> "$GITHUB_OUTPUT"
+
+      # Without this the lint leg cannot measure — `Workspace.Lint`
+      # refuses to guess an installation — so it seals `unmeasured`, and
+      # since #409 requested the step, `Run.run()`'s verdict conjunct
+      # `results.allSatisfy(\.outcome.isSatisfying)` then denied every
+      # subject a `verified` receipt, including one whose build, test and
+      # nested-test gates were all satisfied (receipt from run
+      # 31151241835). The contract stays whole and the instrument is made
+      # able to honour it — reverting the step would restore exactly the
+      # reduced contract R34 typed as the deviation.
+      #
+      # The binaries come from swift-linter's rolling `ci-binaries`
+      # release over plain HTTPS (the repository is public) and are
+      # verified by `workspace lint install` against that release's own
+      # SHA256SUMS before placement; a checksum mismatch refuses rather
+      # than installs. This runs BEFORE any subject code and touches no
+      # subject input.
+      - name: Install the linter the lint leg measures with
+        shell: bash
+        env:
+          WORKSPACE_DIR: ${{ steps.workspace.outputs.workspace-dir }}
+        run: |
+          set -euo pipefail
+          # Run from inside the Workspace checkout: `lint install` targets
+          # the hierarchy of the root it is standing in, and that
+          # hierarchy is the subject's ancestor by construction above.
+          (cd "$WORKSPACE_DIR" && swift run --package-path Application -c release \
+            workspace lint install)
 
       - name: Run Workspace verification seal — subject code, fully contained
         id: run
@@ -439,8 +498,8 @@ jobs:
           # and the deletion is PROVED (TX3): a raw path still readable
           # after this point fails the job rather than leaking silently.
           rm -f "$RECEIPT_PATH" "${RUNNER_TEMP}/run.log" 2>/dev/null || true
-          rm -rf "${RUNNER_TEMP}/subject" "${RUNNER_TEMP}/workspace-src" 2>/dev/null || true
-          for raw in "$RECEIPT_PATH" "${RUNNER_TEMP}/run.log" "${RUNNER_TEMP}/subject" "${RUNNER_TEMP}/workspace-src"; do
+          rm -rf "${RUNNER_TEMP}/hierarchy" 2>/dev/null || true
+          for raw in "$RECEIPT_PATH" "${RUNNER_TEMP}/run.log" "${RUNNER_TEMP}/hierarchy"; do
             if [[ -n "$raw" && -e "$raw" ]]; then
               echo "::error::raw evidence path still present after deletion: $(basename "$raw")"
               exit 1
