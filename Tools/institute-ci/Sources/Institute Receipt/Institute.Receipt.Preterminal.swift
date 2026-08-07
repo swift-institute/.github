@@ -5,6 +5,8 @@ extension Institute.Receipt {
         public let run: Run
         public let subjectRepository: String
         public let subjectSha: String
+        /// The subject repository's visibility at capture time.
+        public let subjectVisibility: String
         public let referencedWorkflows: [ReferencedWorkflow]
         public let jobs: [Job]
         /// Reported total from the paginated jobs collection; must equal
@@ -14,12 +16,14 @@ extension Institute.Receipt {
 
         public init(
             run: Run, subjectRepository: String, subjectSha: String,
+            subjectVisibility: String = "",
             referencedWorkflows: [ReferencedWorkflow], jobs: [Job],
             jobsTotalCount: Int?, unmeasured: [Unmeasured]
         ) {
             self.run = run
             self.subjectRepository = subjectRepository
             self.subjectSha = subjectSha
+            self.subjectVisibility = subjectVisibility
             self.referencedWorkflows = referencedWorkflows
             self.jobs = jobs
             self.jobsTotalCount = jobsTotalCount

@@ -25,6 +25,10 @@ let package = Package(
             targets: ["CI Validation"]
         ),
         .library(
+            name: "CI Inventory",
+            targets: ["CI Inventory"]
+        ),
+        .library(
             name: "Institute Receipt",
             targets: ["Institute Receipt"]
         ),
@@ -61,6 +65,13 @@ let package = Package(
             name: "CI Validation",
             dependencies: ["CI Contract", "CI Workflow", "CI Canon"]
         ),
+        // Describes the shipped verdict: the universal workflow's jobs,
+        // postures, waves, token boundary, and single aggregate. Models
+        // the terminal one-hop topology; there are no layer wrappers.
+        .target(
+            name: "CI Inventory",
+            dependencies: ["CI Contract", "CI Workflow"]
+        ),
         .target(
             name: "Institute CI Application",
             dependencies: ["CI Contract", "CI Validation", "Institute Receipt"]
@@ -79,6 +90,7 @@ let package = Package(
                 "CI Validation",
                 "CI Workflow",
                 "CI Canon",
+                "CI Inventory",
                 "Institute Receipt",
                 .product(name: "Byte Primitives", package: "swift-byte-primitives"),
             ]
@@ -100,8 +112,24 @@ let package = Package(
             dependencies: ["CI Validation"]
         ),
         .testTarget(
+            name: "CI Inventory Tests",
+            dependencies: ["CI Inventory"],
+            // Read from source through `#filePath`, not bundled: the
+            // corpus is an expectation to regenerate and diff, and the
+            // recorded run is evidence, not a resource.
+            exclude: ["Fixtures"]
+        ),
+        .testTarget(
             name: "Institute Receipt Tests",
-            dependencies: ["Institute Receipt"]
+            dependencies: [
+                "Institute Receipt",
+                // The installer suite reads the shipped `swift-ci.yml`
+                // step through the same workflow reader every validator
+                // uses, rather than a second YAML implementation.
+                "CI Workflow",
+                "CI Contract",
+                .product(name: "Byte Primitives", package: "swift-byte-primitives"),
+            ]
         ),
     ],
     swiftLanguageModes: [.v6]

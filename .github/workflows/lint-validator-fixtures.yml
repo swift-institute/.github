@@ -161,21 +161,11 @@ jobs:
           set -euo pipefail
           python3 .github/scripts/tests/test-ci-ok-aggregate.py 2>&1 | tee /tmp/ci-ok-controls.txt
 
-      # Task 1-01 (swift-institute/.github#276, #281): the machine-readable
-      # verdict inventory (fixtures/verdict-inventory.json) and its
-      # characterization suite — the population-completeness, outer/inner
-      # aggregate, private-visibility, nested-test-execution, token-boundary,
-      # cache-policy, required-check-context, and runner-wave coverage that
-      # test-ci-ok-aggregate.py's classifier/aggregator/subject-resolution
-      # extraction does not reach. The drift test regenerates the committed
-      # inventory from THIS checkout's live swift-ci.yml (plus the vendored
-      # wrapper snapshots under fixtures/wrappers/) and fails if it no
-      # longer matches what is actually shipped.
-      - name: Run CI verdict inventory controls
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 .github/scripts/tests/test-verdict-inventory.py 2>&1 | tee /tmp/verdict-inventory-controls.txt
+      # The CI verdict inventory (Task 1-01, #276/#281) moved to Swift in
+      # F16 class C7: `CI.Inventory` in Tools/institute-ci, with its
+      # drift and live-run gates as `CI Inventory Tests`. It is verified
+      # by `workspace package test`, not by a step here, so a stale
+      # inventory fails the package rather than one workflow job.
 
       # Task 5-01 (swift-institute/.github#276, #304): the canonical caller
       # generator, proven against seven real fetched callers (same-org/
@@ -361,12 +351,6 @@ jobs:
             echo
             echo '```'
             tail -n 30 /tmp/ci-ok-controls.txt 2>/dev/null || echo "(controls produced no output)"
-            echo '```'
-            echo
-            echo "### CI verdict inventory controls"
-            echo
-            echo '```'
-            tail -n 30 /tmp/verdict-inventory-controls.txt 2>/dev/null || echo "(controls produced no output)"
             echo '```'
             echo
             echo "### Caller generator controls"

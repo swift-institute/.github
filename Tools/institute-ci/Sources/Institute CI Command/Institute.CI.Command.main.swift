@@ -2,6 +2,7 @@
 import Byte_Primitives
 import CI_Canon
 import CI_Contract
+import CI_Inventory
 import CI_Validation
 import CI_Workflow
 import Foundation
@@ -204,6 +205,25 @@ case "workflow-json":
         exit(1)
     }
 
+case "verdict-inventory":
+    // The structural inventory of the shipped verdict, as canonical
+    // JSON. Regenerates the committed expectation corpus; the drift
+    // check itself is a test, not a mode of this command, so that a
+    // stale corpus fails the package rather than one workflow step.
+    let rest = Array(arguments.dropFirst())
+    let path = value("--universal", in: rest)
+    guard let data = FileManager.default.contents(atPath: path) else {
+        fail("verdict-inventory: unreadable universal workflow \(path)")
+    }
+    do throws(CI.Inventory.Error) {
+        let inventory = try CI.Inventory.Document(
+            universalWorkflow: String(decoding: data, as: UTF8.self))
+        print(inventory.canonicalJSON)
+    } catch {
+        FileHandle.standardError.write(Data("institute-ci: \(error.message)\n".utf8))
+        exit(1)
+    }
+
 case "validate-fixtures":
     // The harness face — the Swift owner of `.github/scripts/tests/run.sh`.
     let rest = Array(arguments.dropFirst())
@@ -255,8 +275,221 @@ case "render-gitignore":
         fail("\(error.message): \(canonPath)")
     }
 
+case "runtime-receipt":
+    // The pure base canonicalizer (TX7 §8.9; P19/P20). Reads the run
+    // object and jobs collection the aggregate fetched for its OWN run;
+    // it never calls GitHub and never claims a terminal conclusion.
+    let rest = Array(arguments.dropFirst())
+    let output = value("--output", in: rest)
+    guard let runData = FileManager.default.contents(atPath: value("--run-json", in: rest)),
+          let jobsData = FileManager.default.contents(atPath: value("--jobs-json", in: rest))
+    else { fail("runtime-receipt: --run-json and --jobs-json must both be readable") }
+    let attestation: Institute.Receipt.Attestation
+    do throws(Institute.Receipt.Capture.Error) {
+        attestation = try Institute.Receipt.Capture.attestation(
+            runJSON: [UInt8](runData).map(Byte.init),
+            jobsJSON: [UInt8](jobsData).map(Byte.init),
+            plannedGating: value("--planned-gating", in: rest)
+                .split(separator: ",").map(String.init),
+            subjectRepository: value("--subject-repository", in: rest),
+            subjectSha: value("--subject-sha", in: rest),
+            subjectVisibility: value("--subject-visibility", in: rest))
+    } catch {
+        FileHandle.standardError.write(Data("::error::\(error)\n".utf8))
+        exit(1)
+    }
+    let payload = Institute.Receipt.Canonical.bytes(of: attestation)
+    let digest = Institute.Receipt.Canonical.digest(of: payload)
+    let bytes = Data(payload.map(\.underlying))
+    guard FileManager.default.createFile(atPath: output, contents: bytes),
+          FileManager.default.createFile(
+            atPath: output + ".sha256", contents: Data((digest + "\n").utf8))
+    else { fail("runtime-receipt: could not write \(output)") }
+    print("effective-runtime-receipt-base-digest=\(digest)")
+    print("effective-runtime-receipt-stage=\(attestation.stage.rawValue)")
+    if attestation.verdict == .unmeasured {
+        FileHandle.standardError.write(
+            Data("::error::referenced_workflows is empty/unavailable — the reusable-workflow chain is UNMEASURED and this aggregate must fail (P20).\n".utf8))
+        exit(1)
+    }
+
+case "startup-failures":
+    // The weekly probe's predicate. Input is a runs payload on a path
+    // or on stdin; exit 1 means at least one run never started.
+    let rest = Array(arguments.dropFirst())
+    let path = rest.first { !$0.hasPrefix("-") } ?? "-"
+    let data: Data
+    if path == "-" {
+        data = FileHandle.standardInput.readDataToEndOfFile()
+    } else if let contents = FileManager.default.contents(atPath: path) {
+        data = contents
+    } else {
+        FileHandle.standardError.write(Data("# error: cannot read \(path)\n".utf8))
+        exit(2)
+    }
+    let probe: Institute.Receipt.Run.Startup
+    do throws(Institute.Receipt.Run.Summary.Error) {
+        probe = .init(
+            scanning: try Institute.Receipt.Run.Summary.collection(
+                [UInt8](data).map(Byte.init)))
+    } catch {
+        FileHandle.standardError.write(Data("# error: \(error)\n".utf8))
+        exit(2)
+    }
+    if probe.isClean {
+        print("clean: 0 startup_failure runs in \(probe.inspected.count) recent run(s).")
+        exit(0)
+    }
+    print(
+        "FLAGGED: \(probe.flagged.count) startup_failure run(s) in "
+            + "\(probe.inspected.count) recent run(s):")
+    for run in probe.flagged {
+        let line = "  - \(run.name ?? "?") (run \(run.id.map(String.init) ?? "?")) "
+            + (run.htmlURL ?? "")
+        print(String(line.reversed().drop { $0 == " " }.reversed()))
+    }
+    exit(1)
+
+case "runtime-receipt-augment":
+    // The post-completion collector. Credentialed by construction: it
+    // reads the completed run and its complete paginated jobs
+    // collection, so unlike every other face here it cannot be measured
+    // against a static corpus — its predicate is `Augmentation.outcome`,
+    // which is measured, and this face is the transport around it.
+    let rest = Array(arguments.dropFirst())
+    let repository = value("--repo", in: rest)
+    let runIdentifier = value("--run-id", in: rest)
+    guard let attempt = Int(value("--attempt", in: rest)) else {
+        fail("runtime-receipt-augment: --attempt must be an integer")
+    }
+
+    func api(_ path: String) -> Data {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = ["gh", "api", path]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        // say gh is unavailable, which is what this does.
+        // swift-linter:disable:next try optional
+        // REASON: Process.run() throws untyped; the only recovery is to report gh unavailable, which is what this does.
+        guard (try? process.run()) != nil else { fail("gh is not available") }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        if process.terminationStatus != 0 { fail("gh api \(path) failed") }
+        return data
+    }
+
+    func object(_ data: Data) -> [String: Any] {
+        // unreadable response and an empty one are handled identically
+        // downstream, by the refusals in Augmentation.
+        // swift-linter:disable:next try optional
+        // REASON: JSONSerialization.jsonObject throws untyped; an unreadable response and an empty one are refused identically downstream, by Augmentation.
+        (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+    }
+
+    // The base artifact: exactly one, by name. A sweep run carries one
+    // receipt per swept subject, so "more than one" is ambiguity, not a
+    // convenience to resolve by picking the first.
+    let artifactName = value("--base-artifact", in: rest)
+    let artifacts = object(
+        api("repos/\(repository)/actions/runs/\(runIdentifier)/artifacts?per_page=100"))
+    let matches = (artifacts["artifacts"] as? [[String: Any]] ?? [])
+        .filter { $0["name"] as? String == artifactName }
+    guard matches.count == 1, let artifactIdentifier = matches[0]["id"] as? Int else {
+        fail("expected exactly one artifact named \(artifactName), found \(matches.count)")
+    }
+    let archive = FileManager.default.temporaryDirectory
+        .appendingPathComponent("receipt-\(artifactIdentifier).zip")
+    // the empty-extraction refusal two statements below.
+    // swift-linter:disable:next try optional
+    // REASON: Data.write(to:) throws untyped; a failed write surfaces as the empty-extraction refusal below.
+    try? api("repos/\(repository)/actions/artifacts/\(artifactIdentifier)/zip")
+        .write(to: archive)
+    let extraction = Process()
+    extraction.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+    extraction.arguments = ["unzip", "-p", archive.path, "*.base.json"]
+    let extracted = Pipe()
+    extraction.standardOutput = extracted
+    // swift-linter:disable:next try optional
+    // REASON: Process.run() throws untyped.
+    guard (try? extraction.run()) != nil else { fail("unzip is not available") }
+    let baseData = extracted.fileHandleForReading.readDataToEndOfFile()
+    extraction.waitUntilExit()
+    guard extraction.terminationStatus == 0, !baseData.isEmpty else {
+        fail("the base artifact carries no .base.json")
+    }
+
+    let basePayload = [UInt8](baseData).map(Byte.init)
+    let baseDigest = Institute.Receipt.Canonical.digest(of: basePayload)
+    let base: Institute.Receipt.Attestation
+    do throws(Institute.Receipt.Canonical.Error) {
+        base = try Institute.Receipt.Canonical.attestation(from: basePayload)
+    } catch {
+        FileHandle.standardError.write(Data("::error::\(error)\n".utf8))
+        exit(1)
+    }
+
+    let liveRun = object(api("repos/\(repository)/actions/runs/\(runIdentifier)"))
+    var conclusions: [Int: Institute.Receipt.Conclusion?] = [:]
+    var page = 1
+    while true {
+        let document = object(
+            api("repos/\(repository)/actions/runs/\(runIdentifier)/jobs?per_page=100&page=\(page)"))
+        let rows = document["jobs"] as? [[String: Any]] ?? []
+        for row in rows {
+            guard let identifier = row["id"] as? Int else { continue }
+            conclusions[identifier] =
+                (row["conclusion"] as? String).map { Institute.Receipt.Conclusion($0) }
+        }
+        if rows.count < 100 { break }
+        page += 1
+    }
+
+    let outcome: Institute.Receipt.Augmentation.Outcome
+    do throws(Institute.Receipt.Augmentation.Refusal) {
+        outcome = try Institute.Receipt.Augmentation.outcome(
+            base: base,
+            baseReceiptDigest: baseDigest,
+            run: .init(
+                id: liveRun["id"] as? Int,
+                attempt: liveRun["run_attempt"] as? Int,
+                headSha: liveRun["head_sha"] as? String,
+                event: liveRun["event"] as? String,
+                conclusion: (liveRun["conclusion"] as? String).map { Institute.Receipt.Conclusion($0) },
+                repository: (liveRun["repository"] as? [String: Any])?["full_name"] as? String,
+                workflowPath: liveRun["path"] as? String),
+            status: liveRun["status"] as? String ?? "",
+            attempt: attempt,
+            conclusions: conclusions)
+    } catch {
+        FileHandle.standardError.write(Data("::error::\(error)\n".utf8))
+        exit(1)
+    }
+
+    let output = value("--output", in: rest)
+    // directory is the common case and a genuine failure surfaces as the
+    // createFile refusal below.
+    // swift-linter:disable:next try optional
+    // REASON: FileManager.createDirectory throws untyped; an existing directory is the common case and a real failure surfaces as the createFile refusal below.
+    try? FileManager.default.createDirectory(
+        atPath: (output as NSString).deletingLastPathComponent,
+        withIntermediateDirectories: true)
+    let terminalPayload = Institute.Receipt.Canonical.bytes(of: outcome.attestation)
+    guard FileManager.default.createFile(
+        atPath: output, contents: Data(terminalPayload.map(\.underlying)))
+    else { fail("runtime-receipt-augment: could not write \(output)") }
+    for job in outcome.mandatoryFailures {
+        FileHandle.standardError.write(
+            Data("::warning::mandatory selected job '\(job.name)' concluded '\(job.conclusion?.rawValue ?? "null")'\n".utf8))
+    }
+    print("terminal-receipt-digest=\(Institute.Receipt.Canonical.digest(of: terminalPayload))")
+    print("terminal-verdict=\(outcome.attestation.verdict.rawValue)")
+    exit(outcome.attestation.verdict == .met ? 0 : 1)
+
 default:
     fail(
         "usage: institute-ci plan|aggregate|validate|validate-fixtures|workflow-json"
-            + "|render-gitignore|bootstrap-identity|bootstrap-manifest|bootstrap-verify ...")
+            + "|verdict-inventory|render-gitignore"
+            + "|bootstrap-identity|bootstrap-manifest|bootstrap-verify"
+            + "|runtime-receipt|runtime-receipt-augment|startup-failures ...")
 }
