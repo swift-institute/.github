@@ -2,7 +2,8 @@
 #
 # Reusable workflow. For the given `org` (or single `repo`), enumerates
 # non-archived package repos, renders each one's `.gitignore` from canon via
-# `.github/scripts/render-gitignore.py`, and commits only where the render
+# `institute-ci render-gitignore` (`CI.Canon.Gitignore.Render`, the F16 class
+# C4 port of the retired render-gitignore.py), and commits only where the render
 # differs from what is there.
 #
 # This is the propagation half of the gitignore pair; validate-gitignore.yml is

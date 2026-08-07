@@ -31,9 +31,6 @@ on:
     paths:
       - '.github/scripts/validate-*.py'
       - '.github/scripts/validate_lib.py'
-      - '.github/scripts/detect-startup-failures.py'
-      - '.github/scripts/check-lint-validators-weekly-parity.py'
-      - '.github/scripts/check-scheduled-workflow-alert-parity.py'
       - '.github/scripts/.branch-pin-baseline'
       - '.github/scripts/tests/**'
       - '.github/workflows/lint-validator-fixtures.yml'
@@ -44,10 +41,10 @@ on:
       # the embedded-shell controls extract their subjects from
       # swift-ci.yml, so an edit there is an edit to what this suite tests.
       - '.github/workflows/swift-ci.yml'
-      # check-lint-validators-weekly-parity.py parses this file's report job;
-      # an edit here is an edit to what that checker's own test asserts.
+      # CI.Validation.Drift.LintValidatorsWeekly parses this file's report
+      # job; an edit here is an edit to what that checker's own test asserts.
       - '.github/workflows/lint-validators-weekly.yml'
-      # check-scheduled-workflow-alert-parity.py parses this file's watch
+      # CI.Validation.Drift.ScheduledWorkflowAlert parses this file's watch
       # list and every workflow's on: block (#123); an edit to the alert
       # workflow or to any workflow's schedule: trigger is an edit to what
       # that checker's own test asserts.
@@ -57,9 +54,6 @@ on:
     paths:
       - '.github/scripts/validate-*.py'
       - '.github/scripts/validate_lib.py'
-      - '.github/scripts/detect-startup-failures.py'
-      - '.github/scripts/check-lint-validators-weekly-parity.py'
-      - '.github/scripts/check-scheduled-workflow-alert-parity.py'
       - '.github/scripts/.branch-pin-baseline'
       - '.github/scripts/tests/**'
       - '.github/workflows/lint-validator-fixtures.yml'
@@ -70,10 +64,10 @@ on:
       # the embedded-shell controls extract their subjects from
       # swift-ci.yml, so an edit there is an edit to what this suite tests.
       - '.github/workflows/swift-ci.yml'
-      # check-lint-validators-weekly-parity.py parses this file's report job;
-      # an edit here is an edit to what that checker's own test asserts.
+      # CI.Validation.Drift.LintValidatorsWeekly parses this file's report
+      # job; an edit here is an edit to what that checker's own test asserts.
       - '.github/workflows/lint-validators-weekly.yml'
-      # check-scheduled-workflow-alert-parity.py parses this file's watch
+      # CI.Validation.Drift.ScheduledWorkflowAlert parses this file's watch
       # list and every workflow's on: block (#123); an edit to the alert
       # workflow or to any workflow's schedule: trigger is an edit to what
       # that checker's own test asserts.
@@ -212,15 +206,10 @@ jobs:
       # one workflow job.
 
 
-      # The prebuilt-linter identity gate (#43 item 4) is likewise embedded
-      # shell: these controls extract the shipped download step and prove it
-      # falls back closed when the fetched manifest omits or mismatches the
-      # engine identity.
-      - name: Run ci-binaries identity controls
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 .github/scripts/tests/test-ci-binaries-identity.py 2>&1 | tee /tmp/ci-binaries-controls.txt
+      # The prebuilt-linter identity gate (#43 item 4) moved to Swift in F16
+      # class C6 as `Institute.Receipt.Bootstrap.Installer` with its controls
+      # as `Institute Receipt Tests`. It is verified by `workspace package
+      # test`, not by a step here.
 
       # The secret-transport contract (#92 ruling, enforced per #108)
       # includes class-exactness of typed exemptions, which cannot be a
@@ -244,24 +233,16 @@ jobs:
           set -euo pipefail
           python3 .github/scripts/tests/test-validate-file-naming.py 2>&1 | tee /tmp/file-naming-controls.txt
 
-      # The startup-failure probe's prove-it-can-fail controls: the detector
-      # must flag a synthetic startup_failure (function and exit code) and
-      # stay green on clean data. startup-failure-probe-weekly.yml cites this
-      # suite, but until 2026-07-30 nothing ran it.
-      - name: Run startup-failure detector controls
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 .github/scripts/tests/test-detect-startup-failures.py 2>&1 | tee /tmp/startup-failure-controls.txt
+      # The startup-failure detector moved to Swift in F16 class C6 as
+      # `Institute.Receipt.Run.Startup` (the `startup-failures` face
+      # startup-failure-probe-weekly.yml now invokes), with its
+      # prove-it-can-fail controls as `Institute Receipt Tests`.
 
       # The branch-pin guard's contract surface (baseline suppression, the
       # exit code the swift-ci fast-check keys on, --orgs-file resolution)
-      # is not reachable through the corpus' repo-shaped fixtures.
-      - name: Run branch-pin baseline controls
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 .github/scripts/tests/test-validate-branch-pins.py 2>&1 | tee /tmp/branch-pin-controls.txt
+      # is covered by `CI.Validation.BranchPins Tests`, the F16 class C2 port
+      # of these controls. validate-branch-pins.py itself remains live as the
+      # permanent guard exception; only its Python controls were retired.
 
       # #117: lint-validators-weekly.yml's report job repeats its scan-leg
       # set across five hand-synchronized surfaces with nothing checking
@@ -269,11 +250,8 @@ jobs:
       # in the workflow. This suite's own leg-removed positive controls
       # prove the checker can fail; its real-workflow assertion is the
       # fail-closed gate itself.
-      - name: Run lint-validators-weekly report-surface drift controls
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 .github/scripts/tests/test-lint-validators-weekly-drift.py 2>&1 | tee /tmp/lint-validators-drift-controls.txt
+      # Owner: `CI.Validation.Drift.LintValidatorsWeekly` (F16 class C5),
+      # controls as `CI.Validation.Drift Tests`.
 
       # #123: alert-scheduled-workflow-failure.yml's workflow_run trigger
       # requires an exact name list of scheduled workflows, which is a
@@ -282,11 +260,8 @@ jobs:
       # showed a scheduled workflow can fail silently. This suite's own
       # leg-removed/leg-added positive controls prove the checker can
       # fail; its real-watch-list assertion is the fail-closed gate itself.
-      - name: Run scheduled-workflow-alert watch-list drift controls
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 .github/scripts/tests/test-scheduled-workflow-alert-drift.py 2>&1 | tee /tmp/scheduled-workflow-alert-drift-controls.txt
+      # Owner: `CI.Validation.Drift.ScheduledWorkflowAlert` (F16 class C5),
+      # controls as `CI.Validation.Drift Tests`.
 
       # [CI-117] (swift-institute/.github#286, corrigendum §11.1, R4/R4a/R4b):
       # self-referential composite-action `uses:` sites must stay identity-
@@ -294,11 +269,8 @@ jobs:
       # test_real_repository_workflows_are_clean, which runs the validator
       # against this checkout's own workflows and is what turns red if a
       # future PR reverts a converged site back to `@main`.
-      - name: Run composite-action pin controls
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 .github/scripts/tests/test-validate-composite-action-pins.py 2>&1 | tee /tmp/composite-action-pin-controls.txt
+      # Owner: `CI.Validation.CompositeActionPins` (F16 class C2), controls
+      # as `CI.Validation.CompositeActionPins Tests`.
 
       # The branch-pin baseline is a shrink-only ratchet: entries may be
       # pruned as repointings land, never added — a new branch pin is a
@@ -360,40 +332,10 @@ jobs:
             tail -n 30 /tmp/ci-ok-controls.txt 2>/dev/null || echo "(controls produced no output)"
             echo '```'
             echo
-            echo "### Branch-pin baseline controls"
-            echo
-            echo '```'
-            tail -n 15 /tmp/branch-pin-controls.txt 2>/dev/null || echo "(controls produced no output)"
-            echo '```'
-            echo
             echo "### File-naming validator controls"
             echo
             echo '```'
             tail -n 15 /tmp/file-naming-controls.txt 2>/dev/null || echo "(controls produced no output)"
-            echo '```'
-            echo
-            echo "### Startup-failure detector controls"
-            echo
-            echo '```'
-            tail -n 15 /tmp/startup-failure-controls.txt 2>/dev/null || echo "(controls produced no output)"
-            echo '```'
-            echo
-            echo "### lint-validators-weekly report-surface drift controls"
-            echo
-            echo '```'
-            tail -n 20 /tmp/lint-validators-drift-controls.txt 2>/dev/null || echo "(controls produced no output)"
-            echo '```'
-            echo
-            echo "### scheduled-workflow-alert watch-list drift controls"
-            echo
-            echo '```'
-            tail -n 20 /tmp/scheduled-workflow-alert-drift-controls.txt 2>/dev/null || echo "(controls produced no output)"
-            echo '```'
-            echo
-            echo "### composite-action pin controls"
-            echo
-            echo '```'
-            tail -n 20 /tmp/composite-action-pin-controls.txt 2>/dev/null || echo "(controls produced no output)"
             echo '```'
             echo
             echo "### integrated-docs compatibility controls"

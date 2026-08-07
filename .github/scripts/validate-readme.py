@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+# RETAINED (F16 residual sweep, swift-institute/.github#404): no port class
+# owns this validator. It has no Swift owner, four live RetiredValidator
+# fixture rows (readme-008/013/017/026), a live validate-readme.yml caller,
+# and its source text is READ as data by validate-schema-workflow-keys.py and
+# validate-skill-hygiene.py. A faithful port is not S-class — it carries the
+# metadata-schema.json correspondence surface with it. Follow-up owner: the
+# GH-REPO-063 re-sequencing (see #404). Do not delete.
 """validate-readme.py — verify README files per readme skill family rules.
 
 Wave 2b finalization (2026-05-10) — companion to validate-readme.yml.
