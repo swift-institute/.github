@@ -88,7 +88,12 @@ jobs:
   scan:
     if: ${{ !github.event.repository.private }}     # [CI-032]
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 60, up from 30: the F12 cold bootstrap (a Workspace source build of
+    # institute-ci) runs in this job on a cache miss and takes ~30 minutes;
+    # warm-cache runs restore in seconds. Same allowance swift-ci.yml's plan
+    # job already carries. Measured the hard way — the first canary
+    # (run 31164499832) was killed at exactly 30 minutes mid-bootstrap.
+    timeout-minutes: 60
     outputs:
       total-violations: ${{ steps.aggregate.outputs.total-violations }}
     permissions:
