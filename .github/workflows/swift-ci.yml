@@ -156,7 +156,7 @@ on:
       embedded-target:
         type: string
         default: ""
-        description: "Optional target to build for Embedded with default traits disabled, consulted only by the `embedded` job (`lint-bundle == 'primitives'`). Empty preserves the full-package Embedded build. Relocated verbatim from the Primitives layer wrapper (swift-institute/.github#276 Task 1-03) so an existing consumer's `with: { embedded-target: ... }` keeps meaning the same thing after the wrapper forwards it here; every other layer/consumer never sets it and is unaffected."
+        description: "Optional target to build for Embedded, consulted only by the `embedded` job (`lint-bundle == 'primitives'`). Empty preserves the full-package Embedded build. For a selected target, the job evaluates the package manifest and disables default traits only when a `default` trait is declared; packages that declare no traits build without the inapplicable flag (swift-institute/.github#476). Relocated from the Primitives layer wrapper (swift-institute/.github#276 Task 1-03) so an existing consumer's `with: { embedded-target: ... }` keeps meaning the same thing after the wrapper forwards it here; every other layer/consumer never sets it and is unaffected."
       docs-umbrella-module:
         type: string
         default: ""
@@ -1339,12 +1339,25 @@ jobs:
         if: ${{ inputs.embedded-target == '' }}
         run: swift build -Xswiftc -enable-experimental-feature -Xswiftc Embedded
 
-      - name: Build target (Embedded, default traits disabled)
+      - name: Build target (Embedded)
         id: build-target
         if: ${{ inputs.embedded-target != '' }}
         env:
           EMBEDDED_TARGET: ${{ inputs.embedded-target }}
-        run: swift build --target "$EMBEDDED_TARGET" --disable-default-traits -Xswiftc -enable-experimental-feature -Xswiftc Embedded
+        run: |
+          set -euo pipefail
+          MANIFEST_JSON="$(swift package dump-package)"
+          DEFAULT_TRAIT_COUNT="$(
+            jq -er '[.traits[]? | select(.name == "default")] | length' <<< "$MANIFEST_JSON"
+          )"
+          if [[ "$DEFAULT_TRAIT_COUNT" == "1" ]]; then
+            swift build --target "$EMBEDDED_TARGET" --disable-default-traits -Xswiftc -enable-experimental-feature -Xswiftc Embedded
+          elif [[ "$DEFAULT_TRAIT_COUNT" == "0" ]]; then
+            swift build --target "$EMBEDDED_TARGET" -Xswiftc -enable-experimental-feature -Xswiftc Embedded
+          else
+            echo "::error::evaluated package manifest declares $DEFAULT_TRAIT_COUNT traits named 'default'; refusing an ambiguous Embedded build."
+            exit 1
+          fi
 
   embedded-wasm-sdk:
     name: Ubuntu (Swift 6.3, Embedded Wasm SDK build)
