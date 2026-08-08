@@ -1342,6 +1342,7 @@ jobs:
       - name: Build target (Embedded)
         id: build-target
         if: ${{ inputs.embedded-target != '' }}
+        shell: bash
         env:
           EMBEDDED_TARGET: ${{ inputs.embedded-target }}
         run: |
@@ -1805,7 +1806,14 @@ jobs:
         run: swiftlint --version
 
       - name: Lint
-        run: swiftlint lint --strict --reporter github-actions-logging
+        run: |
+          if [ -f .swiftlint.yml ]; then
+            swiftlint lint --strict --reporter github-actions-logging
+          else
+            swiftlint lint \
+              --config "${GITHUB_WORKSPACE}/.ci-central-swiftlint-config/.swiftlint.yml" \
+              --strict --reporter github-actions-logging
+          fi
 
   # ─── swift-linter (gating; swiftsyntax-based AST linter) ─────────────────
   # SwiftSyntax-based AST linter at swift-foundations/swift-linter. Phase 1
