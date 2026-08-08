@@ -275,6 +275,51 @@ struct ControlPlaneShellTests {
         }
     }
 
+    /// A selected Embedded target disables default traits only when the
+    /// evaluated package manifest actually declares the reserved trait.
+    @Suite
+    struct EmbeddedTargetTraits {
+        static func run(traits: String) throws -> EmbeddedShell.Result {
+            let shell = try EmbeddedShell.workflowStep(
+                ControlPlaneShellTests.workflow,
+                job: "embedded", step: "Build target (Embedded)")
+            return try shell.run(
+                environment: [
+                    "EMBEDDED_TARGET": "Example",
+                    "MANIFEST_JSON": #"{"traits":\#(traits)}"#,
+                ],
+                preamble: """
+                    swift() {
+                      case "$*" in
+                        'package dump-package') printf '%s\n' "$MANIFEST_JSON" ;;
+                        build*) printf 'SWIFT_CALL=%s\n' "$*" ;;
+                        *) echo "unexpected swift invocation: $*" >&2; return 97 ;;
+                      esac
+                    }
+                    """)
+        }
+
+        @Test func `a package with no traits omits the inapplicable flag`() throws {
+            let result = try Self.run(traits: "[]")
+            #expect(result.status == 0, "\(result.log)")
+            #expect(
+                result.log.contains(
+                    "SWIFT_CALL=build --target Example -Xswiftc "
+                        + "-enable-experimental-feature -Xswiftc Embedded"))
+            #expect(!result.log.contains("--disable-default-traits"))
+        }
+
+        @Test func `a package with a default trait keeps the Embedded gate`() throws {
+            let result = try Self.run(
+                traits: #"[{"name":"Concurrency"},{"name":"default","enabledTraits":["Concurrency"]}]"#)
+            #expect(result.status == 0, "\(result.log)")
+            #expect(
+                result.log.contains(
+                    "SWIFT_CALL=build --target Example --disable-default-traits "
+                        + "-Xswiftc -enable-experimental-feature -Xswiftc Embedded"))
+        }
+    }
+
     /// R7 (swift-institute/.github#276): exactly one component derives
     /// the CI subject and every other consumer reads it.
     ///
