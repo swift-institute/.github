@@ -748,18 +748,20 @@ case "symbol-graph-umbrella":
     else {
         fail("symbol-graph-umbrella: \(sourceDirectory) is not a directory")
     }
-    var pool: [CI.SymbolGraph.Graph] = []
-    for name in CI.SymbolGraph.Umbrella.graphFiles(in: names) {
-        guard let data = FileManager.default.contents(atPath: sourceDirectory + "/" + name),
-              let graph = try? CI.SymbolGraph.Graph(
-                name: name, text: String(decoding: data, as: UTF8.self))
-        else { fail("symbol-graph-umbrella: \(name) is not a readable symbol graph") }
-        pool.append(graph)
-    }
     let umbrella = CI.SymbolGraph.Umbrella(module: module, excludedModules: excluded)
     let isolation: CI.SymbolGraph.Umbrella.Isolation
     do throws(CI.SymbolGraph.Umbrella.Error) {
-        isolation = try umbrella.isolate(from: pool)
+        isolation = try umbrella.isolate(files: names) { name in
+            guard let data = FileManager.default.contents(
+                atPath: sourceDirectory + "/" + name)
+            else { return nil }
+            do throws(CI.SymbolGraph.JSON.Error) {
+                return try CI.SymbolGraph.Graph(
+                    name: name, text: String(decoding: data, as: UTF8.self))
+            } catch {
+                return nil
+            }
+        }
     } catch {
         FileHandle.standardError.write(
             Data("institute-ci: symbol-graph-umbrella refused: \(error)\n".utf8))

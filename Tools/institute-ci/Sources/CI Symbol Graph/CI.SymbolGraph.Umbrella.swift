@@ -25,6 +25,7 @@ extension CI.SymbolGraph {
         public enum Error: Swift.Error, Equatable {
             case emptyGraphDirectory
             case noGraphForUmbrella(String)
+            case unreadable(String)
         }
 
         /// Whether a graph file belongs to the umbrella: its own graph,
@@ -78,6 +79,57 @@ extension CI.SymbolGraph {
             }
 
             var patched: [Graph] = []
+            var total = 0
+            for graph in umbrellaGraphs {
+                var graph = graph
+                total += graph.patch(from: documented)
+                patched.append(graph)
+            }
+            return Isolation(graphs: patched, patchedSymbols: total)
+        }
+
+        /// Patch and isolate a file-backed graph pool without retaining it whole.
+        ///
+        /// Umbrella graphs are loaded first. Donor graphs are then loaded one at a
+        /// time, and only while an umbrella symbol still lacks documentation. This
+        /// bounds the retained input to the output graphs and the comments they need.
+        public func isolate(
+            files names: [String], loading graph: (String) -> Graph?
+        ) throws(Error) -> Isolation {
+            let names = Self.graphFiles(in: names)
+            if names.isEmpty { throw .emptyGraphDirectory }
+
+            let owned = names.filter { owns(file: $0) }
+            if owned.isEmpty { throw .noGraphForUmbrella(module) }
+
+            var umbrellaGraphs: [Graph] = []
+            umbrellaGraphs.reserveCapacity(owned.count)
+            for name in owned {
+                guard let graph = graph(name) else { throw .unreadable(name) }
+                umbrellaGraphs.append(graph)
+            }
+
+            var needed: Set<String> = []
+            for graph in umbrellaGraphs {
+                needed.formUnion(graph.undocumented)
+            }
+            if needed.isEmpty {
+                return Isolation(graphs: umbrellaGraphs, patchedSymbols: 0)
+            }
+
+            var documented: [String: JSON] = [:]
+            for name in names where !owns(file: name)
+                && !excludedModules.contains(Graph.module(ofFile: name))
+                && !needed.isEmpty {
+                guard let donor = graph(name) else { throw .unreadable(name) }
+                for (identifier, comment) in donor.documented(matching: needed) {
+                    documented[identifier] = comment
+                    needed.remove(identifier)
+                }
+            }
+
+            var patched: [Graph] = []
+            patched.reserveCapacity(umbrellaGraphs.count)
             var total = 0
             for graph in umbrellaGraphs {
                 var graph = graph

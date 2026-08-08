@@ -41,6 +41,33 @@ extension CI.SymbolGraph {
             return documented
         }
 
+        /// Documentation carried by the requested symbol identifiers only.
+        func documented(matching identifiers: Set<String>) -> [String: JSON] {
+            var documented: [String: JSON] = [:]
+            for symbol in document["symbols"]?.array ?? [] {
+                guard let comment = symbol["docComment"],
+                      let lines = comment["lines"]?.array, !lines.isEmpty,
+                      let identifier = symbol["identifier"]?["precise"]?.string,
+                      identifiers.contains(identifier)
+                else { continue }
+                if documented[identifier] == nil { documented[identifier] = comment }
+            }
+            return documented
+        }
+
+        /// The identifiers of symbols whose documentation is absent.
+        var undocumented: Set<String> {
+            var identifiers: Set<String> = []
+            for symbol in document["symbols"]?.array ?? [] {
+                let lines = symbol["docComment"]?["lines"]?.array ?? []
+                guard lines.isEmpty,
+                      let identifier = symbol["identifier"]?["precise"]?.string
+                else { continue }
+                identifiers.insert(identifier)
+            }
+            return identifiers
+        }
+
         /// Inject doc comments from sibling graphs into symbols that
         /// carry none, and report how many were injected.
         ///
