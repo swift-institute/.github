@@ -340,7 +340,7 @@ struct ControlPlaneShellTests {
     /// consumer does not own a root configuration file.
     @Suite
     struct SwiftLintConfigSelection {
-        static func run(hasRootConfig: Bool) throws -> EmbeddedShell.Result {
+        static func run(hasRootConfig: Bool, source: String? = nil) throws -> EmbeddedShell.Result {
             let shell = try EmbeddedShell.workflowStep(
                 ControlPlaneShellTests.workflow, job: "lint", step: "Lint")
             let directory = URL(
@@ -353,21 +353,39 @@ struct ControlPlaneShellTests {
                     to: directory.appendingPathComponent(".swiftlint.yml"),
                     atomically: true, encoding: .utf8)
             }
+            if let source {
+                let sources = directory.appendingPathComponent("Sources")
+                try FileManager.default.createDirectory(
+                    at: sources, withIntermediateDirectories: true)
+                try source.write(
+                    to: sources.appendingPathComponent("Example.swift"),
+                    atomically: true, encoding: .utf8)
+            }
             return try shell.run(
                 environment: ["GITHUB_WORKSPACE": "/github/workspace"],
                 preamble: """
                     swiftlint() {
+                      if [ "$1" = lint ] && [ "$2" = . ]; then
+                        count=$(find "$2" -type f -name '*.swift' | wc -l)
+                        if [ "$count" -eq 0 ]; then
+                          echo 'rootless consumer selected zero lintable source paths' >&2
+                          return 96
+                        fi
+                        printf 'SWIFTLINT_ROOTLESS_LINTABLE_FILES=%s\\n' "$count"
+                      fi
                       printf 'SWIFTLINT_CALL=%s\\n' "$*"
                     }
                     """,
                 in: directory)
         }
 
-        @Test func `a consumer without root config passes the checked-out central path`() throws {
-            let result = try Self.run(hasRootConfig: false)
+        @Test func `a rootless consumer lints its own source path with the checked-out central config`() throws {
+            let result = try Self.run(
+                hasRootConfig: false, source: "struct Example {}\\n")
             #expect(result.status == 0, "\(result.log)")
+            #expect(result.log.contains("SWIFTLINT_ROOTLESS_LINTABLE_FILES=1"))
             #expect(result.log.contains(
-                "SWIFTLINT_CALL=lint --config "
+                "SWIFTLINT_CALL=lint . --config "
                     + "/github/workspace/.ci-central-swiftlint-config/.swiftlint.yml"))
         }
 
