@@ -1810,8 +1810,8 @@ jobs:
           if [ -f .swiftlint.yml ]; then
             swiftlint lint --strict --reporter github-actions-logging
           else
-            swiftlint lint \
-              --config "${GITHUB_WORKSPACE}/.ci-central-swiftlint-config/.swiftlint.yml" \
+            ln -s "${GITHUB_WORKSPACE}/.ci-central-swiftlint-config/.swiftlint.yml" .swiftlint.yml
+            swiftlint lint . \
               --strict --reporter github-actions-logging
           fi
 
