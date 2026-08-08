@@ -125,6 +125,54 @@ struct CISymbolGraphTests {
                     == "patched 0 symbol(s) across 1 umbrella graph file(s); wrote to /tmp/out")
         }
 
+        @Test func `a complete umbrella does not load a large donor pool`() throws {
+            let donors = (0..<1_000).map { "Donor\($0).symbols.json" }
+            let umbrella = CISymbolGraphTests.graph(
+                "Umbrella.symbols.json", symbols: [("s:Own", true)])
+            var loaded: [String] = []
+
+            let isolation = try CI.SymbolGraph.Umbrella(module: "Umbrella")
+                .isolate(files: donors + [umbrella.name]) { name in
+                    loaded.append(name)
+                    return name == umbrella.name ? umbrella : nil
+                }
+
+            #expect(loaded == [umbrella.name])
+            #expect(isolation.graphs == [umbrella])
+            #expect(isolation.patchedSymbols == 0)
+        }
+
+        @Test func `donors load only until every missing comment is found`() throws {
+            let umbrella = CISymbolGraphTests.graph(
+                "Umbrella.symbols.json", symbols: [("s:Donor", false)])
+            let donor = CISymbolGraphTests.graph(
+                "A.symbols.json", symbols: [("s:Donor", true)])
+            let unnecessary = CISymbolGraphTests.graph(
+                "B.symbols.json", symbols: [("s:Other", true)])
+            let graphs = Dictionary(
+                uniqueKeysWithValues: [umbrella, donor, unnecessary].map { ($0.name, $0) })
+            var loaded: [String] = []
+
+            let isolation = try CI.SymbolGraph.Umbrella(module: "Umbrella")
+                .isolate(files: Array(graphs.keys)) { name in
+                    loaded.append(name)
+                    return graphs[name]
+                }
+
+            #expect(loaded == [umbrella.name, donor.name])
+            #expect(isolation.patchedSymbols == 1)
+        }
+
+        @Test func `an unreadable required graph refuses`() {
+            #expect(
+                throws: CI.SymbolGraph.Umbrella.Error.unreadable(
+                    "Umbrella.symbols.json")
+            ) {
+                try CI.SymbolGraph.Umbrella(module: "Umbrella")
+                    .isolate(files: ["Umbrella.symbols.json"]) { _ in nil }
+            }
+        }
+
         @Test func `an empty graph directory refuses`() {
             #expect(throws: CI.SymbolGraph.Umbrella.Error.emptyGraphDirectory) {
                 try CI.SymbolGraph.Umbrella(module: "Umbrella").isolate(from: [])
