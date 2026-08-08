@@ -361,16 +361,30 @@ struct ControlPlaneShellTests {
                     to: sources.appendingPathComponent("Example.swift"),
                     atomically: true, encoding: .utf8)
             }
+            if !hasRootConfig {
+                let centralConfig = directory.appendingPathComponent(
+                    ".ci-central-swiftlint-config/.swiftlint.yml")
+                try FileManager.default.createDirectory(
+                    at: centralConfig.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try "included: [Sources, Tests]\\n".write(
+                    to: centralConfig, atomically: true, encoding: .utf8)
+            }
             return try shell.run(
-                environment: ["GITHUB_WORKSPACE": "/github/workspace"],
+                environment: ["GITHUB_WORKSPACE": directory.path],
                 preamble: """
                     swiftlint() {
                       if [ "$1" = lint ] && [ "$2" = . ]; then
+                        expected="$GITHUB_WORKSPACE/.ci-central-swiftlint-config/.swiftlint.yml"
+                        if [ ! -L .swiftlint.yml ] || [ "$(readlink .swiftlint.yml)" != "$expected" ]; then
+                          echo 'rootless consumer did not link the checked-out central config' >&2
+                          return 95
+                        fi
                         count=$(find "$2" -type f -name '*.swift' | wc -l)
                         if [ "$count" -eq 0 ]; then
                           echo 'rootless consumer selected zero lintable source paths' >&2
                           return 96
                         fi
+                        printf 'SWIFTLINT_ROOTLESS_CONFIG=linked\\n'
                         printf 'SWIFTLINT_ROOTLESS_LINTABLE_FILES=%s\\n' "$count"
                       fi
                       printf 'SWIFTLINT_CALL=%s\\n' "$*"
@@ -383,10 +397,10 @@ struct ControlPlaneShellTests {
             let result = try Self.run(
                 hasRootConfig: false, source: "struct Example {}\\n")
             #expect(result.status == 0, "\(result.log)")
+            #expect(result.log.contains("SWIFTLINT_ROOTLESS_CONFIG=linked"))
             #expect(result.log.contains("SWIFTLINT_ROOTLESS_LINTABLE_FILES=1"))
             #expect(result.log.contains(
-                "SWIFTLINT_CALL=lint . --config "
-                    + "/github/workspace/.ci-central-swiftlint-config/.swiftlint.yml"))
+                "SWIFTLINT_CALL=lint . --strict --reporter github-actions-logging"))
         }
 
         @Test func `a consumer root config retains the existing resolution path`() throws {
