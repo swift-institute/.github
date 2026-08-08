@@ -318,6 +318,66 @@ struct ControlPlaneShellTests {
                     "SWIFT_CALL=build --target Example --disable-default-traits "
                         + "-Xswiftc -enable-experimental-feature -Xswiftc Embedded"))
         }
+
+        @Test func `the selected target executes its pipefail script in Bash`() throws {
+            let shell = try EmbeddedShell.workflowStep(
+                ControlPlaneShellTests.workflow,
+                job: "embedded", step: "Build target (Embedded)")
+            #expect(shell.shell == "bash")
+            #expect(shell.script.contains("swift build --target \"$EMBEDDED_TARGET\""))
+        }
+
+        @Test func `a sh-compatible sibling does not stand in for the target shell contract`() throws {
+            let shell = try EmbeddedShell.workflowStep(
+                ControlPlaneShellTests.workflow,
+                job: "embedded", step: "Print Swift version")
+            #expect(shell.shell == nil)
+            #expect(shell.script == "swift --version")
+        }
+    }
+
+    /// The checked-out central config is the effective policy only when a
+    /// consumer does not own a root configuration file.
+    @Suite
+    struct SwiftLintConfigSelection {
+        static func run(hasRootConfig: Bool) throws -> EmbeddedShell.Result {
+            let shell = try EmbeddedShell.workflowStep(
+                ControlPlaneShellTests.workflow, job: "lint", step: "Lint")
+            let directory = URL(
+                fileURLWithPath: NSTemporaryDirectory() + "swiftlint-" + UUID().uuidString)
+            try FileManager.default.createDirectory(
+                at: directory, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            if hasRootConfig {
+                try "disabled_rules: []\n".write(
+                    to: directory.appendingPathComponent(".swiftlint.yml"),
+                    atomically: true, encoding: .utf8)
+            }
+            return try shell.run(
+                environment: ["GITHUB_WORKSPACE": "/github/workspace"],
+                preamble: """
+                    swiftlint() {
+                      printf 'SWIFTLINT_CALL=%s\\n' "$*"
+                    }
+                    """,
+                in: directory)
+        }
+
+        @Test func `a consumer without root config passes the checked-out central path`() throws {
+            let result = try Self.run(hasRootConfig: false)
+            #expect(result.status == 0, "\(result.log)")
+            #expect(result.log.contains(
+                "SWIFTLINT_CALL=lint --config "
+                    + "/github/workspace/.ci-central-swiftlint-config/.swiftlint.yml"))
+        }
+
+        @Test func `a consumer root config retains the existing resolution path`() throws {
+            let result = try Self.run(hasRootConfig: true)
+            #expect(result.status == 0, "\(result.log)")
+            #expect(result.log.contains(
+                "SWIFTLINT_CALL=lint --strict --reporter github-actions-logging"))
+            #expect(!result.log.contains("--config"))
+        }
     }
 
     /// R7 (swift-institute/.github#276): exactly one component derives

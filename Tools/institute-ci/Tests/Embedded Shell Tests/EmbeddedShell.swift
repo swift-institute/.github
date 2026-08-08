@@ -12,6 +12,7 @@ import Foundation
 /// renamed is worse than no suite, because it reports green.
 struct EmbeddedShell {
     let script: String
+    let shell: String?
 
     enum ExtractionFailure: Error, CustomStringConvertible {
         case unreadable(String)
@@ -80,7 +81,7 @@ struct EmbeddedShell {
             guard let body = step["run"]?.text, !body.isEmpty else {
                 throw ExtractionFailure.noBody(path, stepName)
             }
-            return EmbeddedShell(script: body)
+            return EmbeddedShell(script: body, shell: step["shell"]?.text)
         }
         throw ExtractionFailure.noStep(path, stepName)
     }
