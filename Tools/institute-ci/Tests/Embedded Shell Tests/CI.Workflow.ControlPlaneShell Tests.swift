@@ -327,6 +327,91 @@ struct ControlPlaneShellTests {
             #expect(shell.script.contains("swift build --target \"$EMBEDDED_TARGET\""))
         }
 
+        @Test func `a jq-free nightly fixture provisions manifest classification before building`() throws {
+            let provisioner = try EmbeddedShell.workflowStep(
+                ControlPlaneShellTests.workflow,
+                job: "embedded", step: "Install jq for manifest classification")
+            let target = try EmbeddedShell.workflowStep(
+                ControlPlaneShellTests.workflow,
+                job: "embedded", step: "Build target (Embedded)")
+            let directory = URL(
+                fileURLWithPath: NSTemporaryDirectory() + "embedded-jq-" + UUID().uuidString)
+            let manager = FileManager.default
+            try manager.createDirectory(
+                at: directory.appendingPathComponent("Sources/Example"),
+                withIntermediateDirectories: true)
+            defer { try? manager.removeItem(at: directory) }
+
+            try """
+                // swift-tools-version: 6.0
+                import PackageDescription
+
+                let package = Package(
+                    name: "Example",
+                    targets: [.target(name: "Example")])
+                """.write(
+                    to: directory.appendingPathComponent("Package.swift"),
+                    atomically: true, encoding: .utf8)
+            try "#error(\"selected Embedded build ran before manifest classification\")\n".write(
+                to: directory.appendingPathComponent("Sources/Example/Example.swift"),
+                atomically: true, encoding: .utf8)
+            try provisioner.script.write(
+                to: directory.appendingPathComponent("install-jq.sh"),
+                atomically: true, encoding: .utf8)
+            try target.script.write(
+                to: directory.appendingPathComponent("build-target.sh"),
+                atomically: true, encoding: .utf8)
+
+            let missingProvisioning = try Self.nightly(
+                in: directory, command: "bash build-target.sh")
+            #expect(missingProvisioning.status != 0, "\(missingProvisioning.log)")
+            #expect(missingProvisioning.log.contains("jq: command not found"))
+            #expect(!missingProvisioning.log.contains(
+                "selected Embedded build ran before manifest classification"))
+
+            try "public struct Example {}\n".write(
+                to: directory.appendingPathComponent("Sources/Example/Example.swift"),
+                atomically: true, encoding: .utf8)
+
+            let built = try Self.nightly(
+                in: directory,
+                command: """
+                    command -v jq && exit 91
+                    bash install-jq.sh
+                    jq --version
+                    bash build-target.sh
+                    """)
+            #expect(built.status == 0, "\(built.log)")
+            #expect(built.log.contains("jq-"))
+            #expect(built.log.contains("Build complete!"))
+        }
+
+        /// Runs the extracted shipped bytes in the same jq-free image as the
+        /// `embedded` job. No command in this harness stands in for apt, jq,
+        /// manifest evaluation, or the selected build.
+        static func nightly(in directory: URL, command: String) throws -> EmbeddedShell.Result {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+            process.arguments = [
+                "docker", "run", "--rm",
+                "--mount", "type=bind,source=\(directory.path),target=/fixture",
+                "--workdir", "/fixture",
+                "--env", "EMBEDDED_TARGET=Example",
+                "swiftlang/swift:nightly-main-jammy",
+                "bash", "-lc", command,
+            ]
+            let pipe = Pipe()
+            process.standardOutput = pipe
+            process.standardError = pipe
+            try process.run()
+            let output = pipe.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            return .init(
+                status: process.terminationStatus,
+                log: String(decoding: output, as: UTF8.self),
+                outputs: [:], summary: "")
+        }
+
         @Test func `a sh-compatible sibling does not stand in for the target shell contract`() throws {
             let shell = try EmbeddedShell.workflowStep(
                 ControlPlaneShellTests.workflow,
@@ -336,10 +421,18 @@ struct ControlPlaneShellTests {
         }
     }
 
-    /// The checked-out central config is the effective policy only when a
-    /// consumer does not own a root configuration file.
+    /// A rootless consumer materializes the checked-out central config before
+    /// selecting its own source paths. Its positive control runs the shipped
+    /// bytes against the pinned Linux SwiftLint release, not a command shim.
     @Suite
     struct SwiftLintConfigSelection {
+        @Test func `the production Lint step declares Bash for its array-based script`() throws {
+            let shell = try EmbeddedShell.workflowStep(
+                ControlPlaneShellTests.workflow, job: "lint", step: "Lint")
+            #expect(shell.shell == "bash")
+            #expect(shell.script.contains("mapfile -d '' files"))
+        }
+
         static func run(hasRootConfig: Bool, source: String? = nil) throws -> EmbeddedShell.Result {
             let shell = try EmbeddedShell.workflowStep(
                 ControlPlaneShellTests.workflow, job: "lint", step: "Lint")
@@ -373,34 +466,53 @@ struct ControlPlaneShellTests {
                 environment: ["GITHUB_WORKSPACE": directory.path],
                 preamble: """
                     swiftlint() {
-                      if [ "$1" = lint ] && [ "$2" = . ]; then
-                        expected="$GITHUB_WORKSPACE/.ci-central-swiftlint-config/.swiftlint.yml"
-                        if [ ! -L .swiftlint.yml ] || [ "$(readlink .swiftlint.yml)" != "$expected" ]; then
-                          echo 'rootless consumer did not link the checked-out central config' >&2
-                          return 95
-                        fi
-                        count=$(find "$2" -type f -name '*.swift' | wc -l)
-                        if [ "$count" -eq 0 ]; then
-                          echo 'rootless consumer selected zero lintable source paths' >&2
-                          return 96
-                        fi
-                        printf 'SWIFTLINT_ROOTLESS_CONFIG=linked\\n'
-                        printf 'SWIFTLINT_ROOTLESS_LINTABLE_FILES=%s\\n' "$count"
-                      fi
                       printf 'SWIFTLINT_CALL=%s\\n' "$*"
                     }
                     """,
                 in: directory)
         }
 
-        @Test func `a rootless consumer lints its own source path with the checked-out central config`() throws {
-            let result = try Self.run(
-                hasRootConfig: false, source: "struct Example {}\\n")
-            #expect(result.status == 0, "\(result.log)")
-            #expect(result.log.contains("SWIFTLINT_ROOTLESS_CONFIG=linked"))
-            #expect(result.log.contains("SWIFTLINT_ROOTLESS_LINTABLE_FILES=1"))
-            #expect(result.log.contains(
-                "SWIFTLINT_CALL=lint . --strict --reporter github-actions-logging"))
+        @Test func `a rootless consumer selects and lints its own source path`() throws {
+            let directory = URL(
+                fileURLWithPath: NSTemporaryDirectory() + "swiftlint-real-" + UUID().uuidString)
+            let manager = FileManager.default
+            try manager.createDirectory(
+                at: directory.appendingPathComponent("Sources"), withIntermediateDirectories: true)
+            defer { try? manager.removeItem(at: directory) }
+
+            // `force_unwrapping` is enabled in this fixture's copied config:
+            // the nonzero exit and the rendered consumer path prove that
+            // SwiftLint selected and linted this real file, rather than
+            // merely accepting the command line.
+            try "let value: Int? = nil\n_ = value!\n".write(
+                to: directory.appendingPathComponent("Sources/Example.swift"),
+                atomically: true, encoding: .utf8)
+            let checkedOut = directory.appendingPathComponent(
+                ".ci-central-swiftlint-config/.swiftlint.yml")
+            try manager.createDirectory(
+                at: checkedOut.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try manager.copyItem(
+                at: URL(fileURLWithPath: EmbeddedShell.repositoryRoot + "/.swiftlint.yml"), to: checkedOut)
+            let copiedConfiguration = try String(contentsOf: checkedOut, encoding: .utf8)
+            try copiedConfiguration.replacingOccurrences(
+                of: "opt_in_rules:\n", with: "opt_in_rules:\n  - force_unwrapping\n")
+                .write(to: checkedOut, atomically: true, encoding: .utf8)
+
+            let shell = try EmbeddedShell.workflowStep(
+                ControlPlaneShellTests.workflow, job: "lint", step: "Lint")
+            let result = try Self.pinnedSwiftLint(shell, in: directory)
+            #expect(result.status != 0, "\(result.log)")
+            #expect(result.log.contains("Sources/Example.swift"))
+            #expect(
+                try String(contentsOf: directory.appendingPathComponent(".swiftlint.yml"), encoding: .utf8)
+                    == String(contentsOf: checkedOut, encoding: .utf8))
+        }
+
+        @Test func `a rootless consumer with no source paths fails before SwiftLint`() throws {
+            let result = try Self.run(hasRootConfig: false)
+            #expect(result.status != 0)
+            #expect(result.log.contains("rootless consumer has no Swift files"))
+            #expect(!result.log.contains("SWIFTLINT_CALL="))
         }
 
         @Test func `a consumer root config retains the existing resolution path`() throws {
@@ -409,6 +521,60 @@ struct ControlPlaneShellTests {
             #expect(result.log.contains(
                 "SWIFTLINT_CALL=lint --strict --reporter github-actions-logging"))
             #expect(!result.log.contains("--config"))
+        }
+
+        /// The release URL and digest are the workflow's pinned Linux
+        /// SwiftLint input. The real binary runs inside Ubuntu rather than
+        /// borrowing a host-installed version.
+        static func pinnedSwiftLint(_ shell: EmbeddedShell, in directory: URL)
+            throws -> EmbeddedShell.Result
+        {
+            let script = directory.appendingPathComponent("lint.sh")
+            try shell.script.write(to: script, atomically: true, encoding: .utf8)
+            // GitHub runs a container step with `sh` unless this exact
+            // workflow step declares another shell. Execute through the
+            // extracted declaration so removing `shell: bash` makes this
+            // array-using script fail under the same default.
+            let interpreter = shell.shell ?? "sh"
+
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+            process.arguments = [
+                "docker", "run", "--rm", "--platform", "linux/amd64",
+                "--mount", "type=bind,source=\(directory.path),target=/fixture",
+                "--workdir", "/fixture",
+                "--env", "GITHUB_WORKSPACE=/fixture",
+                "swift:6.3-noble@sha256:d40382aaafd5da4b1012abb8f7689f927f18a4797825d7daaf02dd641057a167",
+                "bash", "-lc",
+                """
+                set -euo pipefail
+                apt-get update -qq
+                apt-get install -qq -y ca-certificates curl libxml2 unzip
+                curl -fsSL -o /tmp/swiftlint.zip \\
+                  https://github.com/realm/SwiftLint/releases/download/0.63.3/swiftlint_linux_amd64.zip
+                echo '26db741d43f2f2dc26c0cf16911100a3e186c3d1dbb59e55ad3ac87b0de4538f  /tmp/swiftlint.zip' | sha256sum -c -
+                unzip -q /tmp/swiftlint.zip -d /tmp/swiftlint
+                install -m 755 /tmp/swiftlint/swiftlint /usr/local/bin/swiftlint
+                set +e
+                \(interpreter) lint.sh
+                status=$?
+                set -e
+                test -f .swiftlint.yml
+                test ! -L .swiftlint.yml
+                cmp -s .swiftlint.yml .ci-central-swiftlint-config/.swiftlint.yml
+                exit "$status"
+                """,
+            ]
+            let pipe = Pipe()
+            process.standardOutput = pipe
+            process.standardError = pipe
+            try process.run()
+            let output = pipe.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            return .init(
+                status: process.terminationStatus,
+                log: String(decoding: output, as: UTF8.self),
+                outputs: [:], summary: "")
         }
     }
 
