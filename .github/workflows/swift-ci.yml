@@ -1339,6 +1339,20 @@ jobs:
         if: ${{ inputs.embedded-target == '' }}
         run: swift build -Xswiftc -enable-experimental-feature -Xswiftc Embedded
 
+      # The Swift main nightly container is intentionally minimal and does
+      # not include jq. The selected-target manifest classification below is
+      # the only consumer in this job, so provision it here rather than
+      # widening another job or action's dependency surface.
+      - name: Install jq for manifest classification
+        if: ${{ inputs.embedded-target != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v jq >/dev/null 2>&1 || {
+            apt-get update -qq
+            apt-get install -qq -y jq
+          }
+
       - name: Build target (Embedded)
         id: build-target
         if: ${{ inputs.embedded-target != '' }}
@@ -1810,7 +1824,10 @@ jobs:
           if [ -f .swiftlint.yml ]; then
             swiftlint lint --strict --reporter github-actions-logging
           else
-            ln -s "${GITHUB_WORKSPACE}/.ci-central-swiftlint-config/.swiftlint.yml" .swiftlint.yml
+            # SwiftLint resolves `included:` relative to the configuration
+            # file itself. Materialize the pinned policy in the consumer
+            # root so Sources/ and Tests/ remain consumer-relative.
+            cp "${GITHUB_WORKSPACE}/.ci-central-swiftlint-config/.swiftlint.yml" .swiftlint.yml
             swiftlint lint . \
               --strict --reporter github-actions-logging
           fi

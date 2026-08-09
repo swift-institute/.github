@@ -327,6 +327,65 @@ struct ControlPlaneShellTests {
             #expect(shell.script.contains("swift build --target \"$EMBEDDED_TARGET\""))
         }
 
+        @Test func `a jq-free nightly fixture provisions manifest classification before building`() throws {
+            let provisioner = try EmbeddedShell.workflowStep(
+                ControlPlaneShellTests.workflow,
+                job: "embedded", step: "Install jq for manifest classification")
+            let target = try EmbeddedShell.workflowStep(
+                ControlPlaneShellTests.workflow,
+                job: "embedded", step: "Build target (Embedded)")
+            let directory = URL(
+                fileURLWithPath: NSTemporaryDirectory() + "embedded-jq-" + UUID().uuidString)
+            let binaries = directory.appendingPathComponent("bin")
+            let manager = FileManager.default
+            try manager.createDirectory(at: binaries, withIntermediateDirectories: true)
+            defer { try? manager.removeItem(at: directory) }
+
+            let apt = binaries.appendingPathComponent("apt-get")
+            try """
+                #!/bin/bash
+                case "$*" in
+                  'update -qq') printf 'APT_CALL=%s\\n' "$*" ;;
+                  'install -qq -y jq')
+                    printf 'APT_CALL=%s\\n' "$*"
+                    printf '%s\\n' '#!/bin/bash' 'printf "%s\\n" "$FIXTURE_DEFAULT_TRAIT_COUNT"' > "$FIXTURE_BIN/jq"
+                    /bin/chmod +x "$FIXTURE_BIN/jq"
+                    ;;
+                  *) echo "unexpected apt-get invocation: $*" >&2; exit 97 ;;
+                esac
+                """.write(to: apt, atomically: true, encoding: .utf8)
+            try manager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: apt.path)
+
+            let environment = [
+                "PATH": binaries.path,
+                "FIXTURE_BIN": binaries.path,
+                "FIXTURE_DEFAULT_TRAIT_COUNT": "1",
+            ]
+            let installed = try provisioner.run(environment: environment, in: directory)
+            #expect(installed.status == 0, "\(installed.log)")
+            #expect(installed.log.contains("APT_CALL=update -qq"))
+            #expect(installed.log.contains("APT_CALL=install -qq -y jq"))
+
+            let classified = try target.run(
+                environment: environment.merging([
+                    "EMBEDDED_TARGET": "Example",
+                    "MANIFEST_JSON": #"{"traits":[{"name":"default"}]}"#,
+                ]) { _, new in new },
+                preamble: """
+                    swift() {
+                      case "$*" in
+                        'package dump-package') printf '%s\\n' "$MANIFEST_JSON" ;;
+                        build*) printf 'SWIFT_CALL=%s\\n' "$*" ;;
+                        *) echo "unexpected swift invocation: $*" >&2; return 97 ;;
+                      esac
+                    }
+                    """,
+                in: directory)
+            #expect(classified.status == 0, "\(classified.log)")
+            #expect(classified.log.contains(
+                "SWIFT_CALL=build --target Example --disable-default-traits"))
+        }
+
         @Test func `a sh-compatible sibling does not stand in for the target shell contract`() throws {
             let shell = try EmbeddedShell.workflowStep(
                 ControlPlaneShellTests.workflow,
@@ -375,17 +434,21 @@ struct ControlPlaneShellTests {
                     swiftlint() {
                       if [ "$1" = lint ] && [ "$2" = . ]; then
                         expected="$GITHUB_WORKSPACE/.ci-central-swiftlint-config/.swiftlint.yml"
-                        if [ ! -L .swiftlint.yml ] || [ "$(readlink .swiftlint.yml)" != "$expected" ]; then
-                          echo 'rootless consumer did not link the checked-out central config' >&2
+                        if [ ! -f .swiftlint.yml ] || [ -L .swiftlint.yml ] || ! cmp -s "$expected" .swiftlint.yml; then
+                          echo 'rootless consumer did not materialize the checked-out central config' >&2
                           return 95
                         fi
-                        count=$(find "$2" -type f -name '*.swift' | wc -l)
-                        if [ "$count" -eq 0 ]; then
-                          echo 'rootless consumer selected zero lintable source paths' >&2
+                        if ! grep -q 'included: \[Sources, Tests\]' .swiftlint.yml; then
+                          echo 'rootless consumer config did not retain consumer-relative included paths' >&2
                           return 96
                         fi
-                        printf 'SWIFTLINT_ROOTLESS_CONFIG=linked\\n'
-                        printf 'SWIFTLINT_ROOTLESS_LINTABLE_FILES=%s\\n' "$count"
+                        count=$(find Sources Tests -type f -name '*.swift' -print 2>/dev/null | wc -l)
+                        if [ "$count" -eq 0 ]; then
+                          echo 'rootless consumer selected zero lintable source paths' >&2
+                          return 97
+                        fi
+                        printf 'SWIFTLINT_ROOTLESS_CONFIG=materialized\\n'
+                        printf 'SWIFTLINT_ROOTLESS_LINTED_FILES=%s\\n' "$count"
                       fi
                       printf 'SWIFTLINT_CALL=%s\\n' "$*"
                     }
@@ -397,8 +460,8 @@ struct ControlPlaneShellTests {
             let result = try Self.run(
                 hasRootConfig: false, source: "struct Example {}\\n")
             #expect(result.status == 0, "\(result.log)")
-            #expect(result.log.contains("SWIFTLINT_ROOTLESS_CONFIG=linked"))
-            #expect(result.log.contains("SWIFTLINT_ROOTLESS_LINTABLE_FILES=1"))
+            #expect(result.log.contains("SWIFTLINT_ROOTLESS_CONFIG=materialized"))
+            #expect(result.log.contains("SWIFTLINT_ROOTLESS_LINTED_FILES=1"))
             #expect(result.log.contains(
                 "SWIFTLINT_CALL=lint . --strict --reporter github-actions-logging"))
         }
