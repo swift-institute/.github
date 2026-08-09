@@ -111,17 +111,27 @@ extension PullRequest.Transaction.Test {
             }
         }
 
-        @Test func `CLI rejects a private target repository`() throws {
-            #expect(throws: PullRequest.Transaction.Error.invalidTarget) {
-                try PullRequest.Transaction.Command.run(["produce", fixture("private-target-source").path])
-            }
+        @Test func `private exact-head verification survives producer and CLI validation`() throws {
+            let output = try produce("private-target-source")
+            defer { try? FileManager.default.removeItem(at: output) }
+
+            let snapshot = try decode(output)
+            #expect(snapshot.visibility == .private)
+            #expect(
+                snapshot.plan.verification
+                    == .control(checks: ["verification / workspace"])
+            )
+            #expect(
+                try PullRequest.Transaction.Command.run(["review", output.path])
+                    == "pr-transaction: ready-for-bot-review head=\(head)"
+            )
         }
 
         @Test func `producer rejects a target response for another repository`() {
             let source = source(
                 verification: control,
                 checks: pages([[check("fixtures"), check("correspondence"), check("scan")]]),
-                target: .init(repository: "swift-foundations/swift-tests", visibility: "public")
+                target: .init(repository: "swift-foundations/swift-tests", visibility: .public)
             )
 
             #expect(throws: PullRequest.Transaction.Error.invalidTarget) {
@@ -133,6 +143,24 @@ extension PullRequest.Transaction.Test {
             let data = Data(#"""
                 { "repository": "swift-institute/.github", "target": { "repository": "swift-institute/.github" } }
                 """#.utf8)
+
+            #expect(throws: DecodingError.self) {
+                try JSONDecoder().decode(PullRequest.Transaction.Snapshot.Source.self, from: data)
+            }
+        }
+
+        @Test func `producer rejects an ungoverned target visibility`() {
+            let data = Data(
+                #"""
+                {
+                  "repository": "swift-institute/.github",
+                  "target": {
+                    "repository": "swift-institute/.github",
+                    "visibility": "internal"
+                  }
+                }
+                """#.utf8
+            )
 
             #expect(throws: DecodingError.self) {
                 try JSONDecoder().decode(PullRequest.Transaction.Snapshot.Source.self, from: data)
@@ -368,7 +396,7 @@ extension PullRequest.Transaction.Test {
             checks: [PullRequest.Transaction.Snapshot.Source.Page<PullRequest.Transaction.Snapshot.Check>],
             target: PullRequest.Transaction.Snapshot.Source.Target = .init(
                 repository: "swift-institute/.github",
-                visibility: "public"
+                visibility: .public
             ),
             runs: [PullRequest.Transaction.Snapshot.Source.Page<PullRequest.Transaction.Snapshot.Source.Run>] = [
                 .init(total: 0, values: [])

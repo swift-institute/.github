@@ -21,9 +21,13 @@ extension PullRequest.Transaction.Test.Unit {
     private var wave: PullRequest.Transaction.Snapshot.Verification {
         .waveMechanical(checks: ["fixtures", "correspondence", "scan"], mechanical: true)
     }
+    private var privateVerification: PullRequest.Transaction.Snapshot.Verification {
+        .control(checks: ["verification / workspace"])
+    }
 
     private func fixture(
         repository: String = "swift-institute/.github",
+        visibility: PullRequest.Transaction.Snapshot.Visibility = .public,
         pull: Int = 181,
         planTargetRepository: String? = nil,
         planPull: Int? = nil,
@@ -101,6 +105,7 @@ extension PullRequest.Transaction.Test.Unit {
         )
         return .init(
             repository: repository,
+            visibility: visibility,
             pull: pull,
             base: base,
             head: head,
@@ -145,6 +150,84 @@ extension PullRequest.Transaction.Test.Unit {
                 )
             ) == .readyForReview
         )
+    }
+    @Test func `accepts private exact-head workspace verification`() throws {
+        #expect(
+            try PullRequest.Transaction.review(
+                fixture(
+                    visibility: .private,
+                    verification: privateVerification,
+                    checks: [check("verification / workspace")]
+                )
+            ) == .readyForReview
+        )
+    }
+    @Test func `private target rejects the public package profile`() {
+        #expect(throws: PullRequest.Transaction.Error.profile) {
+            try PullRequest.Transaction.review(fixture(visibility: .private))
+        }
+    }
+    @Test func `private target rejects reviewOnly even when hosted CI is skipped`() {
+        #expect(throws: PullRequest.Transaction.Error.profile) {
+            try PullRequest.Transaction.review(
+                fixture(visibility: .private, verification: .reviewOnly, checks: [])
+            )
+        }
+    }
+    @Test func `private target rejects an arbitrary control check`() {
+        #expect(throws: PullRequest.Transaction.Error.profile) {
+            try PullRequest.Transaction.review(
+                fixture(
+                    visibility: .private,
+                    verification: native,
+                    checks: [check("fixtures"), check("correspondence"), check("scan")]
+                )
+            )
+        }
+    }
+    @Test func `private target rejects skipped workspace verification`() {
+        #expect(throws: PullRequest.Transaction.Error.unsuccessful("verification / workspace")) {
+            try PullRequest.Transaction.review(
+                fixture(
+                    visibility: .private,
+                    verification: privateVerification,
+                    checks: [check("verification / workspace", conclusion: "skipped")]
+                )
+            )
+        }
+    }
+    @Test func `private target rejects absent workspace verification`() {
+        #expect(throws: PullRequest.Transaction.Error.missing("verification / workspace")) {
+            try PullRequest.Transaction.review(
+                fixture(
+                    visibility: .private,
+                    verification: privateVerification,
+                    checks: []
+                )
+            )
+        }
+    }
+    @Test func `private target rejects stale workspace verification`() {
+        #expect(throws: PullRequest.Transaction.Error.stale("verification / workspace")) {
+            try PullRequest.Transaction.review(
+                fixture(
+                    visibility: .private,
+                    verification: privateVerification,
+                    checks: [check("verification / workspace", revision: old)]
+                )
+            )
+        }
+    }
+    @Test func `private target rejects failed workspace verification`() {
+        #expect(throws: PullRequest.Transaction.Error.unsuccessful("verification / workspace")) {
+            try PullRequest.Transaction.review(
+                fixture(
+                    visibility: .private,
+                    verification: privateVerification,
+                    checks: [check("verification / workspace", conclusion: "failure")]
+                )
+            )
+        }
     }
     @Test func `serialized plan and payload retain the owning task and profile`() throws {
         let snapshot = fixture(

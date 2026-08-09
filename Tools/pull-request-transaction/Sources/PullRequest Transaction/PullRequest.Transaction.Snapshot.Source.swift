@@ -17,13 +17,14 @@ extension PullRequest.Transaction.Snapshot {
 
         /// Combines complete API pages and binds the plan into its preflighted payload.
         public func snapshot() throws(PullRequest.Transaction.Error) -> PullRequest.Transaction.Snapshot {
-            guard target.repository == repository, target.visibility == "public" else {
+            guard target.repository == repository else {
                 throw PullRequest.Transaction.Error.invalidTarget
             }
             let checks = try collect(checkPages, name: "check-runs")
             let runs = try collect(runPages, name: "workflow-runs")
             return PullRequest.Transaction.Snapshot(
                 repository: repository,
+                visibility: target.visibility,
                 pull: pull,
                 base: base,
                 head: head,

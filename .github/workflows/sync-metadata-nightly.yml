@@ -60,6 +60,11 @@ jobs:
     with:
       org: ${{ matrix.org }}
       dry-run: ${{ inputs.dry-run || false }}
+      # The Institute fleet contains both public and private repositories.
+      # Recurring metadata and merge-method convergence must cover both;
+      # visibility-specific security and ruleset branches remain selected
+      # inside the reusable workflow from live repository state.
+      visibility: all
       # Re-admit ruleset convergence to the nightly as post-wave drift
       # repair (swift-institute/.github#204): heals an Institute ruleset
       # that already exists, never creates one where absent.

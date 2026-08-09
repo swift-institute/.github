@@ -596,6 +596,7 @@ struct RepositoryPolicyTests {
         let sweepJob = workflow[sweep.upperBound..<report.lowerBound]
 
         #expect(sweepJob.contains("\n      heal-rulesets: true\n"))
+        #expect(sweepJob.contains("\n      visibility: all\n"))
         // Only the mapping key is forbidden (an explanatory comment
         // mentioning apply-rulesets is fine); the sweep must not pass it.
         #expect(!sweepJob.contains("\n      apply-rulesets:"))
@@ -653,11 +654,21 @@ struct RepositoryPolicyTests {
             .deletingLastPathComponent()
             .appending(path: ".github/workflows/sync-metadata.yml")
         let workflow = try String(contentsOf: url, encoding: .utf8)
+        let sync = try #require(workflow.range(of: "\n  sync:\n"))
         let rulesets = try #require(workflow.range(of: "\n  rulesets:\n"))
         let surfaces = try #require(
             workflow.range(of: "\n  surfaces:\n", range: rulesets.upperBound..<workflow.endIndex)
         )
         let rulesetsJob = workflow[rulesets.upperBound..<surfaces.lowerBound]
+        let syncJob = workflow[sync.upperBound..<rulesets.lowerBound]
+
+        // Metadata and merge-method convergence follows the caller's full
+        // visibility scope. Rulesets stay public-only because the current
+        // plan refuses their API on private repositories.
+        #expect(syncJob.contains("visibility: ${{ inputs.visibility }}"))
+        #expect(syncJob.contains("INPUT_VISIBILITY: ${{ inputs.visibility }}"))
+        #expect(rulesetsJob.contains("visibility: public"))
+        #expect(rulesetsJob.contains("INPUT_VISIBILITY: public"))
 
         // Live read, not a declared list.
         #expect(rulesetsJob.contains(#"gh api "repos/$target" --jq '.visibility'"#))
@@ -706,6 +717,22 @@ struct RepositoryPolicyTests {
         #expect(workflow.contains("$t == \"Goal\""))
         #expect(!workflow.contains("closingIssuesReferences"))
         #expect(!workflow.contains(".number == 176"))
+
+        let parse = try #require(workflow.range(of: "- name: Parse exact target coordinate"))
+        let mint = try #require(workflow.range(of: "- name: Mint narrowed reviewer token"))
+        let resolve = try #require(workflow.range(of: "- name: Resolve exact target scope"))
+        #expect(parse.lowerBound < mint.lowerBound)
+        #expect(mint.lowerBound < resolve.lowerBound)
+        #expect(workflow.contains("GH_TOKEN: ${{ steps.token.outputs.token }}"))
+        #expect(workflow.contains("permission-actions: read"))
+        #expect(workflow.contains("permission-checks: read"))
+        #expect(workflow.contains("permission-issues: read"))
+        #expect(
+            workflow.contains(
+                #"select(.visibility == "public" or .visibility == "private")"#
+            )
+        )
+        #expect(!workflow.contains(#".visibility == "public")"#))
     }
 
     @Test

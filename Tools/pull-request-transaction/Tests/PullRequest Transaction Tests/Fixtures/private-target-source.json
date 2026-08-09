@@ -26,7 +26,7 @@
     },
     "verification": {
       "control": {
-        "checks": ["fixtures", "correspondence", "scan"]
+        "checks": ["verification / workspace"]
       }
     },
     "paths": [".github/workflows/review-pr-transaction.yml"],
@@ -43,11 +43,9 @@
   "reviews": [],
   "checkPages": [
     {
-      "total": 3,
+      "total": 1,
       "values": [
-        { "name": "fixtures", "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "conclusion": "success" },
-        { "name": "correspondence", "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "conclusion": "success" },
-        { "name": "scan", "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "conclusion": "success" }
+        { "name": "verification / workspace", "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "conclusion": "success" }
       ]
     }
   ],

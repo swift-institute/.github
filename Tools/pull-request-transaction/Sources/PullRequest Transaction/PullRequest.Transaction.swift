@@ -67,6 +67,7 @@ extension PullRequest {
             }
 
             public let repository: String
+            public let visibility: Visibility
             public let pull: Int
             public let base: String
             public let head: String
@@ -151,6 +152,14 @@ extension PullRequest {
             else { throw Error.stalePayload }
             guard snapshot.plan.nextOwner == "swift-institute-bot[bot]" else {
                 throw Error.missingNextOwner
+            }
+            if snapshot.visibility == .private {
+                guard
+                    snapshot.plan.verification
+                        == .control(checks: ["verification / workspace"])
+                else {
+                    throw Error.profile
+                }
             }
             guard snapshot.plan.task.number > 0,
                 snapshot.plan.task.state == "OPEN",

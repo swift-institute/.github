@@ -71,7 +71,7 @@ on:
         required: false
         default: false
       visibility:
-        description: 'Filter targets by visibility: public | private | internal | all. Default public — swift-institute''s own fleet is public; a peer institute with a private fleet (#244) supplies its own value.'
+        description: 'Filter targets by visibility: public | private | internal | all. Default public for ad hoc callers; the Institute nightly explicitly supplies all.'
         type: string
         required: false
         default: 'public'
@@ -596,7 +596,12 @@ jobs:
         uses: swift-institute/.github/.github/actions/enumerate-org-public-repos@6f73c2ebff00e4f05375794905926bdd7a0ca14b  # main 2026-08-04, identity-pin to main HEAD (swift-institute/.github#286); no functional change to this action in range
         with:
           org: ${{ inputs.org }}
-          visibility: ${{ inputs.visibility }}
+          # Private repositories cannot carry rulesets on the Institute's
+          # current plan. Metadata/settings jobs honor the caller's full
+          # visibility scope; this ruleset-specific population stays public
+          # so an all-visibility nightly does not turn the platform's 403
+          # into a failed convergence run.
+          visibility: public
           exclude-forks: 'true'
           exclude-archived: ${{ inputs.exclude-archived }}
           gh-token: ${{ steps.token.outputs.token }}
@@ -607,7 +612,7 @@ jobs:
           GH_TOKEN: ${{ steps.token.outputs.token }}
           SINGLE_REPO: ${{ inputs.repo }}
           INPUT_ORG: ${{ inputs.org }}
-          INPUT_VISIBILITY: ${{ inputs.visibility }}
+          INPUT_VISIBILITY: public
           ENUM_REPOS: ${{ steps.enum.outputs.repos }}
           APPLY_RULESETS: ${{ inputs.apply-rulesets }}
           REVERSE_DIR: ${{ runner.temp }}/reverse-payloads

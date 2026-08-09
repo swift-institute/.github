@@ -1,7 +1,7 @@
 # review-pr-transaction.yml — a manually invoked, exact-head bot approval.
 #
 # This workflow deliberately has no merge step. It approves only after the
-# independent transaction model accepts a public, exact-head plan and all
+# independent transaction model accepts a public or private exact-head plan and all
 # current-head merge prerequisites other than the approval it is about to add.
 # `accepted-plan` is `Snapshot.Source.Plan` JSON. Its `verification` is exactly
 # `{ "package": {} }`, `{ "control": { "checks": [<non-empty names>] } }`,
@@ -20,10 +20,18 @@
 # gate. It is admissible only when the plan's own `mechanical: true` field
 # attests the mechanical-remediation class; selecting the profile without
 # that attestation fails closed exactly as an absent check list does.
+# A private target is narrower still (swift-institute/.github#483): the
+# typed producer admits only `{ "control": { "checks": ["verification /
+# workspace"] } }`. `reviewOnly`, `package`, and any other named control
+# check are rejected before approval, while the public profiles remain
+# unchanged.
 # The approval body records which profile was used, naming the fast lane in
 # the audit trail whenever it is the one that admitted the transaction.
-# The target App token is scoped to one selected repository. Minting fails when
-# that owner/repository is outside the App's existing Institute installations.
+# The target App token is scoped to one syntactically validated selected
+# repository. It is minted before repository metadata is read, so the same
+# narrowed credential resolves both public and private targets. Minting fails
+# when that owner/repository is outside the App's existing Institute
+# installations.
 #
 # The "Validate the guarded transaction" step never lets `set -e` fail a
 # predicate silently (swift-institute/.github#288 Defect B): every gate
@@ -82,13 +90,10 @@ jobs:
         with:
           swift-version: '6.3'
 
-      - name: Resolve exact target scope
+      - name: Parse exact target coordinate
         id: target
         shell: bash
         env:
-          # The workflow token, not the App token: this step only reads public
-          # repository metadata, and it runs before any App token is minted.
-          GH_TOKEN: ${{ github.token }}
           TARGET_REPOSITORY: ${{ inputs.repository }}
           TARGET_PULL: ${{ inputs.pull }}
         run: |
@@ -101,16 +106,10 @@ jobs:
             echo "::error::'pull' must be one positive decimal pull-request number."
             exit 1
           fi
-          target=$(gh api "repos/${TARGET_REPOSITORY}" | jq -ce \
-            --arg repository "$TARGET_REPOSITORY" '
-              select(.full_name == $repository and .visibility == "public")
-              | { repository: .full_name, visibility }
-            ')
           echo "repository=${TARGET_REPOSITORY}" >> "$GITHUB_OUTPUT"
           echo "owner=${TARGET_REPOSITORY%/*}" >> "$GITHUB_OUTPUT"
           echo "name=${TARGET_REPOSITORY#*/}" >> "$GITHUB_OUTPUT"
           echo "pull=${TARGET_PULL}" >> "$GITHUB_OUTPUT"
-          echo "target=${target}" >> "$GITHUB_OUTPUT"
 
       - name: Mint narrowed reviewer token
         id: token
@@ -122,7 +121,30 @@ jobs:
           repositories: ${{ steps.target.outputs.name }}
           permission-metadata: read
           permission-contents: read
+          permission-actions: read
+          permission-checks: read
+          permission-issues: read
           permission-pull-requests: write
+
+      - name: Resolve exact target scope
+        id: scope
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          TARGET_REPOSITORY: ${{ steps.target.outputs.repository }}
+        run: |
+          set -euo pipefail
+          response=$(gh api "repos/${TARGET_REPOSITORY}")
+          if ! target=$(jq -ce \
+            --arg repository "$TARGET_REPOSITORY" '
+              select(.full_name == $repository)
+              | select(.visibility == "public" or .visibility == "private")
+              | { repository: .full_name, visibility }
+            ' <<<"$response"); then
+            echo "::error::Target repository must resolve exactly with visibility 'public' or 'private'."
+            exit 1
+          fi
+          echo "target=${target}" >> "$GITHUB_OUTPUT"
 
       - name: Validate the guarded transaction
         id: guard
@@ -130,7 +152,7 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
           TARGET_REPOSITORY: ${{ steps.target.outputs.repository }}
-          TARGET: ${{ steps.target.outputs.target }}
+          TARGET: ${{ steps.scope.outputs.target }}
           PULL: ${{ steps.target.outputs.pull }}
           ACCEPTED_PLAN: ${{ inputs.accepted-plan }}
         run: |
