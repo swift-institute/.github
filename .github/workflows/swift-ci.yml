@@ -1479,15 +1479,22 @@ jobs:
         run: swift --version
 
       - name: Install Embedded Wasm SDK matching container Swift
+        id: install
         uses: swift-institute/.github/.github/actions/install-swift-sdk@d1af72d05bf8262fb3918a2f1607b82fafcafdf9  # main 2026-08-03, pin normalized to the deliberately advanced full SHA (TX7, swift-institute/.github#276); action blobs identical at both commits
         with:
           platform: wasm-sdk
           bundle-suffix: wasm
           sdk-id: ${TAG}_wasm-embedded
           output-env-var: WASM_SDK_ID
+          # swift-institute/.github#497: the floor's Linux legs may run a
+          # pre-release nightly (ReleaseFloorException); swift.org never
+          # publishes SDK bundles for nightlies, so skip cleanly instead
+          # of failing red when no release record matches.
+          skip-on-missing-release: 'true'
 
       - name: Build (Embedded Wasm)
         id: build
+        if: steps.install.outputs.installed == 'true'
         run: swift build --swift-sdk "${WASM_SDK_ID}"
 
   android-build:
@@ -1539,15 +1546,22 @@ jobs:
         run: swift --version
 
       - name: Install Android SDK matching container Swift
+        id: install
         uses: swift-institute/.github/.github/actions/install-swift-sdk@d1af72d05bf8262fb3918a2f1607b82fafcafdf9  # main 2026-08-03, pin normalized to the deliberately advanced full SHA (TX7, swift-institute/.github#276); action blobs identical at both commits
         with:
           platform: android-sdk
           bundle-suffix: android
           sdk-id: ${TAG}_android
           output-env-var: ANDROID_SDK_ID
+          # swift-institute/.github#497: the floor's Linux legs may run a
+          # pre-release nightly (ReleaseFloorException); swift.org never
+          # publishes SDK bundles for nightlies, so skip cleanly instead
+          # of failing red when no release record matches.
+          skip-on-missing-release: 'true'
 
       - name: Build (Android)
         id: build
+        if: steps.install.outputs.installed == 'true'
         run: swift build --swift-sdk "${ANDROID_SDK_ID}"
 
   static-linux-musl-build:
@@ -1599,15 +1613,22 @@ jobs:
         run: swift --version
 
       - name: Install Static Linux SDK matching container Swift
+        id: install
         uses: swift-institute/.github/.github/actions/install-swift-sdk@d1af72d05bf8262fb3918a2f1607b82fafcafdf9  # main 2026-08-03, pin normalized to the deliberately advanced full SHA (TX7, swift-institute/.github#276); action blobs identical at both commits
         with:
           platform: static-sdk
           bundle-suffix: static-linux
           use-platform-version: 'true'
           sdk-id: x86_64-swift-linux-musl
+          # swift-institute/.github#497: the floor's Linux legs may run a
+          # pre-release nightly (ReleaseFloorException); swift.org never
+          # publishes SDK bundles for nightlies, so skip cleanly instead
+          # of failing red when no release record matches.
+          skip-on-missing-release: 'true'
 
       - name: Build (Static Linux musl, x86_64)
         id: build
+        if: steps.install.outputs.installed == 'true'
         run: swift build --swift-sdk x86_64-swift-linux-musl
 
   # ─── Ecosystem-wide quality gates ─────────────────────────────────────
