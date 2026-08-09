@@ -221,6 +221,32 @@ env:
   SWIFT_MAIN_NIGHTLY_IMAGE: "swiftlang/swift@sha256:f577f95edfb85cf3bdc45eb0badaab09239de5c86c69b3b6d594cc62916c0a7d"
   SWIFT_MAIN_NIGHTLY_UPSTREAM_ISSUE: "https://github.com/swiftlang/swift/issues/90275"
   SWIFT_MAIN_NIGHTLY_RECHECK: "2026-09-14"
+  # ─── The sole release-floor exception (swift-institute/.github#491) ──────
+  # The 6.4 floor's containerized Linux legs resolve `swift:6.4`, which does
+  # not exist: Docker Hub returns 404 for `swift:6.4` AND `swift:6.4.0`
+  # (verified 2026-08-09 against registry-1.docker.io, with `swift:6.3` -> 200
+  # as the positive control), because Swift 6.4 stable is unreleased. Every
+  # fleet caller's Linux legs therefore died at 'Initialize containers',
+  # before checkout (swift-iso-9945 PR #75, run 31305975180).
+  #
+  # Until upstream publishes it, those legs run the Swift 6.4.x NIGHTLY image
+  # — the same image the pre-floor workflow's `linux-6-4` leg already used —
+  # pinned by exact digest, never by its `nightly-6.4.x-jammy` tag.
+  #
+  # `plan` validates all three values (CI.Contract.ReleaseFloorException) and
+  # emits the resolved image as `needs.plan.outputs.linux-image`; every
+  # containerized Linux leg below binds THAT and never an image literal, and
+  # `env.*` is unavailable at `container:` in any case ([CI-103]).
+  #
+  # RETIRING THIS IS A REMOVAL. When `swift:6.4` exists, delete these three
+  # values and the four `--release-floor-*`/`--swift-version` plan arguments;
+  # the exception falls away, plan resolves `swift:6.4`, and not one
+  # `container:`, job, or validator changes. Recheck may not outlive the
+  # RC/stable boundary — the typed boundary is 2026-09-09 and a later date is
+  # refused, not warned about.
+  SWIFT_RELEASE_FLOOR_IMAGE: "swiftlang/swift@sha256:28424ece0fa465ad87d8cf55be685fc89f8286e91e86ebb7503418561c0a71d1"
+  SWIFT_RELEASE_FLOOR_UPSTREAM_RELEASE: "https://github.com/swiftlang/swift/releases/tag/swift-6.4-RELEASE"
+  SWIFT_RELEASE_FLOOR_RECHECK: "2026-09-09"
   SWIFTLINT_VERSION: "0.63.3"
   # [CI-082] sha256sum -c pin for swiftlint_linux_amd64.zip at SWIFTLINT_VERSION.
   # Re-lock on every version bump per the rule body's bump protocol.
@@ -343,6 +369,12 @@ jobs:
       tier: ${{ steps.classify.outputs.tier }}
       legs: ${{ steps.classify.outputs.legs }}
       gating: ${{ steps.classify.outputs.gating }}
+      # THE single container-image contract for the Linux legs. Every
+      # containerized Linux job in this file — and every nested reusable it
+      # calls with a container — binds this and never an image literal, so the
+      # release-floor exception has exactly one place to live and one place to
+      # be removed (swift-institute/.github#491).
+      linux-image: ${{ steps.classify.outputs.linux-image }}
       subject-repository: ${{ steps.resolve-subject.outputs.subject-repository }}
       subject-ref: ${{ steps.resolve-subject.outputs.subject-ref }}
       subject-sha: ${{ steps.resolve-subject.outputs.subject-sha }}
@@ -662,18 +694,22 @@ jobs:
           HEAD_MSG: ${{ github.event.head_commit.message }}
           PLATFORM_SUPPORT: ${{ inputs.platform-support }}
           LINT_BUNDLE: ${{ inputs.lint-bundle }}
+          SWIFT_VERSION: ${{ inputs.swift-version }}
         run: |
           set -euo pipefail
-          PLAN_JSON="$(.institute-ci-entry/bin/institute-ci plan --tier "$FORCED_TIER" --ref "$GITHUB_REF" --head-message "$HEAD_MSG" --event "$EVENT_NAME" --platform-support "$PLATFORM_SUPPORT" --lint-bundle "$LINT_BUNDLE" --nightly-main-image "$SWIFT_MAIN_NIGHTLY_IMAGE" --nightly-main-upstream-issue "$SWIFT_MAIN_NIGHTLY_UPSTREAM_ISSUE" --nightly-main-recheck "$SWIFT_MAIN_NIGHTLY_RECHECK" --today "$(date -u +%F)")"
+          PLAN_JSON="$(.institute-ci-entry/bin/institute-ci plan --tier "$FORCED_TIER" --ref "$GITHUB_REF" --head-message "$HEAD_MSG" --event "$EVENT_NAME" --platform-support "$PLATFORM_SUPPORT" --lint-bundle "$LINT_BUNDLE" --nightly-main-image "$SWIFT_MAIN_NIGHTLY_IMAGE" --nightly-main-upstream-issue "$SWIFT_MAIN_NIGHTLY_UPSTREAM_ISSUE" --nightly-main-recheck "$SWIFT_MAIN_NIGHTLY_RECHECK" --swift-version "$SWIFT_VERSION" --release-floor-image "$SWIFT_RELEASE_FLOOR_IMAGE" --release-floor-upstream-release "$SWIFT_RELEASE_FLOOR_UPSTREAM_RELEASE" --release-floor-recheck "$SWIFT_RELEASE_FLOOR_RECHECK" --today "$(date -u +%F)")"
           TIER="$(jq -r '.tier' <<< "$PLAN_JSON")"
           LEGS="$(jq -r '.legs' <<< "$PLAN_JSON")"
           GATING="$(jq -r '.gating' <<< "$PLAN_JSON")"
+          LINUX_IMAGE="$(jq -r '."linux-image"' <<< "$PLAN_JSON")"
           echo "tier=$TIER" >> "$GITHUB_OUTPUT"
           echo "legs=$LEGS" >> "$GITHUB_OUTPUT"
           echo "gating=$GATING" >> "$GITHUB_OUTPUT"
+          echo "linux-image=$LINUX_IMAGE" >> "$GITHUB_OUTPUT"
           echo "Selected tier: $TIER"
           echo "legs: $LEGS"
           echo "gating: $GATING"
+          echo "linux image: $LINUX_IMAGE"
           {
             echo "## CI tier: \`$TIER\` (planned by institute-ci)"
             echo ""
@@ -766,7 +802,7 @@ jobs:
     needs: plan
     if: ${{ !cancelled() && !github.event.repository.private && (inputs.job == 'linux-release' || (inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',linux-release,'))) && (inputs.platform-support == '' || contains(format(',{0},', inputs.platform-support), ',linux,')) }}
     runs-on: ubuntu-latest
-    container: swift:${{ inputs.swift-version }}
+    container: ${{ needs.plan.outputs.linux-image }}
     timeout-minutes: 45
     permissions:
       contents: read
@@ -1390,7 +1426,7 @@ jobs:
     needs: plan
     if: ${{ !cancelled() && !github.event.repository.private && (inputs.job == 'embedded-wasm-sdk' || (inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',embedded-wasm-sdk,'))) }}
     runs-on: ubuntu-latest
-    container: swift:${{ inputs.swift-version }}
+    container: ${{ needs.plan.outputs.linux-image }}
     continue-on-error: true     # γ-3 advisory; classified soak. Drop after flip.
     timeout-minutes: 30
     permissions:
@@ -1450,7 +1486,7 @@ jobs:
     needs: plan
     if: ${{ !cancelled() && !github.event.repository.private && (inputs.job == 'android-build' || (inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',android-build,'))) }}
     runs-on: ubuntu-latest
-    container: swift:${{ inputs.swift-version }}
+    container: ${{ needs.plan.outputs.linux-image }}
     continue-on-error: true     # advisory; classified soak. Drop after flip.
     timeout-minutes: 30
     permissions:
@@ -1510,7 +1546,7 @@ jobs:
     needs: plan
     if: ${{ !cancelled() && !github.event.repository.private && (inputs.job == 'static-linux-musl-build' || (inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',static-linux-musl-build,'))) }}
     runs-on: ubuntu-latest
-    container: swift:${{ inputs.swift-version }}
+    container: ${{ needs.plan.outputs.linux-image }}
     continue-on-error: true     # γ-3b advisory; may remain permanently.
     timeout-minutes: 30
     permissions:
@@ -1582,7 +1618,7 @@ jobs:
     needs: plan
     if: ${{ !cancelled() && !github.event.repository.private && (inputs.job == 'format' || (inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',format,'))) }}
     runs-on: ubuntu-latest
-    container: swift:${{ inputs.swift-version }}
+    container: ${{ needs.plan.outputs.linux-image }}
     timeout-minutes: 15
     permissions:
       contents: read
@@ -1649,7 +1685,7 @@ jobs:
     needs: plan
     if: ${{ !cancelled() && !github.event.repository.private && (inputs.job == 'lint' || (inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',lint,'))) }}
     runs-on: ubuntu-latest
-    container: swift:${{ inputs.swift-version }}
+    container: ${{ needs.plan.outputs.linux-image }}
     timeout-minutes: 15
     permissions:
       contents: read
@@ -1930,7 +1966,7 @@ jobs:
     needs: plan
     if: ${{ !cancelled() && !github.event.repository.private && (inputs.job == 'swift-linter' || (inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',swift-linter,'))) }}
     runs-on: ubuntu-latest
-    container: swift:${{ inputs.swift-version }}
+    container: ${{ needs.plan.outputs.linux-image }}
     timeout-minutes: 30
     permissions:
       contents: read
@@ -2367,6 +2403,7 @@ jobs:
     with:
       advisory: true     # Phase β. Drop in Phase γ.
       swift-version: ${{ inputs.swift-version }}
+      swift-image: ${{ needs.plan.outputs.linux-image }}
       subject-repository: ${{ needs.plan.outputs.subject-repository }}
       subject-sha: ${{ needs.plan.outputs.subject-sha }}
 
@@ -2375,11 +2412,17 @@ jobs:
 
   lint-api-breakage:
     name: API breakage (γ-1c, advisory pilot)
+    # `needs: plan` is the container-image contract, not scheduling: this leg
+    # runs in a Swift container and must take its image from the single
+    # resolved plan output like every other containerized leg
+    # (swift-institute/.github#491). The PR-only `if:` is unchanged.
+    needs: plan
     if: ${{ github.event_name == 'pull_request' && !github.event.repository.private }}
     uses: ./.github/workflows/lint-api-breakage.yml
     with:
       advisory: true
       swift-version: ${{ inputs.swift-version }}
+      swift-image: ${{ needs.plan.outputs.linux-image }}
     secrets: inherit
 
   lint-pr-title:
@@ -2469,6 +2512,12 @@ jobs:
       exclude-modules: ${{ inputs.docs-exclude-modules }}
       enable-private-repos: ${{ inputs.enable-private-repos }}
       swift-version: ${{ inputs.docs-swift-version }}
+      # The release-floor exception applies to the docs container ONLY while
+      # docs sits on the same floor as the build legs — which is the default,
+      # and the case that #491 broke. A caller that deliberately moves
+      # `docs-swift-version` off the floor keeps its own `swift:<version>`
+      # rather than silently inheriting the floor's substitute image.
+      swift-image: ${{ inputs.docs-swift-version == inputs.swift-version && needs.plan.outputs.linux-image || '' }}
       # Full coordinate stays same-repo (swift-institute/.github calling
       # its own swift-docs.yml); target-repo/ref bind the DOCUMENTED
       # package's checkout, not this hop's own identity.

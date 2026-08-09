@@ -37,11 +37,9 @@ extension CI.Contract {
             guard today <= recheck else { throw .expired(recheck: recheck, today: today) }
         }
 
-        static func isDate(_ text: String) -> Bool {
-            let parts = text.split(separator: "-", omittingEmptySubsequences: false)
-            return parts.count == 3
-                && parts[0].count == 4 && parts[1].count == 2 && parts[2].count == 2
-                && parts.allSatisfy { $0.allSatisfy(\.isNumber) }
-        }
+        /// Delegates to the one owner of the `YYYY-MM-DD` shape
+        /// (`CI.Contract.isCalendarDate`). Same predicate, same verdicts —
+        /// this exception's semantics are unchanged.
+        static func isDate(_ text: String) -> Bool { CI.Contract.isCalendarDate(text) }
     }
 }

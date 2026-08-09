@@ -83,6 +83,68 @@ struct CIValidationC1bTests {
             #expect(container == planImage)
         }
 
+        /// The Swift-main-nightly legs, which carry their own separately
+        /// classified exception and are deliberately NOT on the release
+        /// floor's image. Naming them here is what makes the enumeration
+        /// below unfiltered: a fourth container identity appearing in the
+        /// universal fails that test instead of quietly joining a pattern.
+        static let nightlyExceptionJobs: Set<String> = [
+            "linux-nightly", "embedded", "linux-6-4",
+        ]
+
+        /// Real-tree control for the release-floor exception
+        /// (swift-institute/.github#491): every containerized job in the
+        /// shipped universal, except the named nightly legs, must bind the
+        /// single resolved plan output — never an image literal and never
+        /// `swift:${{ inputs.swift-version }}`, which resolved to the
+        /// nonexistent `swift:6.4` and killed the fleet's Linux legs at
+        /// container init.
+        ///
+        /// The enumeration is unfiltered on purpose. A leg added later is
+        /// covered by construction, and a leg that reintroduces a literal
+        /// fails here even if no validator predicate happens to name it.
+        @Test func `every containerized leg binds the one resolved plan image`() throws {
+            let text = try #require(
+                try RepositoryUnderTest.subject.text(at: ".github/workflows/swift-ci.yml"))
+            let document = try CI.Workflow.Document(name: "swift-ci.yml", text: text)
+            let containerized = document.jobs.compactMap { job in
+                (job.body["container"]?.text).map { (job.name, $0) }
+            }
+
+            // Positive control: the instrument sees containers at all.
+            #expect(containerized.count >= 8, "found \(containerized.count) containerized jobs")
+            #expect(
+                Set(containerized.map(\.0)).isSuperset(of: Self.nightlyExceptionJobs),
+                "the named nightly legs are no longer containerized jobs of this workflow")
+
+            for (job, container) in containerized where !Self.nightlyExceptionJobs.contains(job) {
+                #expect(
+                    container == "${{ needs.plan.outputs.linux-image }}",
+                    "job '\(job)' binds container '\(container)'")
+            }
+        }
+
+        /// The shipped release-floor exception must be a valid one: an exact
+        /// digest, the Swift 6.4 release as its upstream coordinate, and a
+        /// recheck date inside the RC/stable boundary. `plan` performs this
+        /// same validation in-run and refuses to emit any leg if it fails —
+        /// this asserts the committed bytes are what `plan` will accept.
+        @Test func `the shipped release floor exception is valid and bounded`() throws {
+            let text = try #require(
+                try RepositoryUnderTest.subject.text(at: ".github/workflows/swift-ci.yml"))
+            let document = try CI.Workflow.Document(name: "swift-ci.yml", text: text)
+            let environment = try #require(document.body?["env"])
+            let exception = CI.Contract.ReleaseFloorException(
+                swiftVersion: "6.4",
+                image: try #require(environment["SWIFT_RELEASE_FLOOR_IMAGE"]?.text),
+                upstreamRelease: try #require(
+                    environment["SWIFT_RELEASE_FLOOR_UPSTREAM_RELEASE"]?.text),
+                recheck: try #require(environment["SWIFT_RELEASE_FLOOR_RECHECK"]?.text))
+
+            try exception.validate(today: "2026-08-09")
+            #expect(exception.recheck <= CI.Contract.ReleaseFloorException.boundary)
+        }
+
         @Test(arguments: [
             "swift:${{ env.SWIFT_VERSION }}",
             "swift:${{env.SWIFT_VERSION}}",
