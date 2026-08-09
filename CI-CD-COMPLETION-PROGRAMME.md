@@ -603,11 +603,11 @@ workspace inventory effective \
 
 The version-1 JSON object has exactly the top-level members `schemaVersion`, `scope`, `public`, `private`, `combined`, and `unmeasured`. `public`, `private`, and `combined` each carry their canonically sorted population and SHA-256 digest; `unmeasured` carries typed inaccessible/error residue rather than an invented absence. `scope=public` emits no private coordinate and marks the private limb `not-requested`; `scope=effective` requires authorized private discovery. Canonical bytes exclude only fields expressly declared volatile by the schema. Exit `0` means complete for the requested scope, `1` means invalid input or semantic failure, and `2` means `UNMEASURED`; TX2/TX3 accept only `0`.
 
-**Operator sequence.** From the frozen Workspace root, run, in order:
+**Operator sequence.** From the frozen institute-application root, run, in order:
 
 ```text
 swift run institute inventory regenerate --dry-run
-institute package test --package-path . --fresh
+swift run institute package test --package-path . --fresh
 swift run institute inventory effective \
   --inventory-scope public \
   --inventory-output .ci-cd-completion/workspace/inventory-public.json
@@ -1126,7 +1126,7 @@ Closure requires: canonical count equals classified records; accessible ordinary
 Run and record:
 
 ```text
-# from swift-institute/Workspace
+# from swift-institute/institute-application
 swift run institute doctor
 swift run institute inventory regenerate --dry-run
 swift run institute inventory effective \
