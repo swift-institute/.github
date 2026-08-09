@@ -1178,18 +1178,49 @@ jobs:
           } else {
             $filterArgs = @()
           }
+          # [swift-institute/.github#498] `--build-system native`.
+          #
+          # Swift Build is SwiftPM's DEFAULT build system on Windows only (since
+          # 6.2); the macOS and Linux legs above already run the native build
+          # system. On a large dependency closure Swift Build emits a per-product
+          # `Libtool` task whose command line names ONE `@<module>.objlib/args.resp`
+          # response file PER MODULE in the transitive closure, and that list of
+          # `@` paths is itself passed as argv. Past ~250 modules the argv exceeds
+          # the Windows CreateProcess 32,767-character ceiling and llvm-lib.exe
+          # cannot be spawned at all:
+          #   error: unable to spawn process '...\llvm-lib.exe'
+          #          (The filename or extension is too long.)
+          # Measured on the six fleet repositories this gated (2026-08-09):
+          # swift-machine-primitives 883 entries / 125,991 argv bytes;
+          # swift-{spm,rss,mailgun,github,email}-standard 349-363 entries /
+          # 45.4-50.0 KB. Shortening the build path (`--scratch-path C:\b`) is
+          # arithmetically INSUFFICIENT, not merely marginal: it takes
+          # swift-machine-primitives to 75,660 bytes, and even a zero-length
+          # directory prefix leaves 41,223 bytes of bare module names — still over
+          # the ceiling. The one-response-file-per-module shape, not the path
+          # length, is the defect, and consolidating it is a swift-build fix we do
+          # not own.
+          #
+          # The native build system has no whole-closure product `Libtool` step —
+          # it archives per target and links the test executable directly — so the
+          # class does not arise. Selecting it here costs no coverage: same
+          # compiler, same +Asserts toolchain, so the Windows leg remains the
+          # fleet's SIL-validity gate. This is NOT platform narrowing and NOT a
+          # cost knob; remove the flag when swift-build consolidates the Libtool
+          # response files upstream.
+          $buildSystemArgs = @('--build-system', 'native')
           # [swift-institute/.github#165] Detect the sanctioned nested-test-package
           # layout (Tests/Package.swift) and run its tests instead of a root
           # `swift test` that silently discovers zero tests and exits green.
           if (Test-Path "Tests/Package.swift") {
             Write-Host "Nested test package detected (Tests/Package.swift); running tests from Tests/"
             Push-Location Tests
-            swift test -c debug @filterArgs
+            swift test -c debug @buildSystemArgs @filterArgs
             $exitCode = $LASTEXITCODE
             Pop-Location
             if ($exitCode -ne 0) { exit $exitCode }
           } else {
-            swift test -c debug @filterArgs
+            swift test -c debug @buildSystemArgs @filterArgs
           }
 
   # ─── Apple-simulator build (γ advisory; resource-bundle CodeSign gate) ──
