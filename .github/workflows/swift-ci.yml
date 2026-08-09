@@ -230,8 +230,17 @@ env:
   # before checkout (swift-iso-9945 PR #75, run 31305975180).
   #
   # Until upstream publishes it, those legs run the Swift 6.4.x NIGHTLY image
-  # — the same image the pre-floor workflow's `linux-6-4` leg already used —
-  # pinned by exact digest, never by its `nightly-6.4.x-jammy` tag.
+  # — pinned by exact digest, never by a mutable tag.
+  #
+  # swift-institute/.github#494: the `nightly-6.4.x-jammy` digest (Ubuntu
+  # 22.04, glibc 2.35) this exception first pinned made the pinned SwiftLint
+  # 0.63.3 / swift-linter binaries (GLIBC_2.38/GLIBCXX_3.4.32, Ubuntu 24.04)
+  # die at `--version` before linting anything — the build leg stayed green,
+  # but both lint legs failed at binary load. Repinned to the
+  # `nightly-6.4.x-noble` digest (Ubuntu 24.04, glibc 2.39 — verified via the
+  # image config blob's `org.opencontainers.image.version: "24.04"` label,
+  # 2026-08-09), the same tag family the pre-floor workflow's `linux-6-4` leg
+  # used, satisfying GLIBC_2.38+.
   #
   # `plan` validates all three values (CI.Contract.ReleaseFloorException) and
   # emits the resolved image as `needs.plan.outputs.linux-image`; every
@@ -244,7 +253,7 @@ env:
   # `container:`, job, or validator changes. Recheck may not outlive the
   # RC/stable boundary — the typed boundary is 2026-09-09 and a later date is
   # refused, not warned about.
-  SWIFT_RELEASE_FLOOR_IMAGE: "swiftlang/swift@sha256:28424ece0fa465ad87d8cf55be685fc89f8286e91e86ebb7503418561c0a71d1"
+  SWIFT_RELEASE_FLOOR_IMAGE: "swiftlang/swift@sha256:8d614165059587ce9dcf6727a76aeff4cbf1cde41fde9a9281a43803be736224"
   SWIFT_RELEASE_FLOOR_UPSTREAM_RELEASE: "https://github.com/swiftlang/swift/releases/tag/swift-6.4-RELEASE"
   SWIFT_RELEASE_FLOOR_RECHECK: "2026-09-09"
   SWIFTLINT_VERSION: "0.63.3"
