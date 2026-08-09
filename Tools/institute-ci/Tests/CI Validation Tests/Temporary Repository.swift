@@ -76,6 +76,39 @@ struct TemporaryRepository: ~Copyable {
     /// The absolute path of a file written into this repository.
     func path(_ relative: String) -> String { root + "/" + relative }
 
+    /// Initializes a git repository at `root` (idempotent) and commits
+    /// every file already written into it, returning the commit's SHA.
+    ///
+    /// `[CI-118]`'s `PinnedContent` resolves a pinned action's schema by
+    /// git object access at an exact commit, never the working tree --
+    /// so a fixture that exercises real resolution (rather than only the
+    /// unreachable/fail-closed path) needs an actual git history to
+    /// resolve against, not just files on disk. This gives fixtures one.
+    @discardableResult
+    func gitCommit() -> String {
+        Self.run(["git", "init", "-q", root])
+        Self.run(["git", "-C", root, "config", "user.email", "fixture@example.invalid"])
+        Self.run(["git", "-C", root, "config", "user.name", "fixture"])
+        Self.run(["git", "-C", root, "add", "-A"])
+        Self.run(["git", "-C", root, "commit", "-q", "--allow-empty", "-m", "fixture"])
+        return Self.run(["git", "-C", root, "rev-parse", "HEAD"])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    @discardableResult
+    private static func run(_ arguments: [String]) -> String {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = arguments
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = Pipe()
+        try? process.run()
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        return String(decoding: data, as: UTF8.self)
+    }
+
     deinit {
         try? FileManager.default.removeItem(atPath: root)
     }
