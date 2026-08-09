@@ -352,7 +352,7 @@ struct ControlPlaneShellTests {
                 """.write(
                     to: directory.appendingPathComponent("Package.swift"),
                     atomically: true, encoding: .utf8)
-            try "public struct Example {}\n".write(
+            try "#error(\"selected Embedded build ran before manifest classification\")\n".write(
                 to: directory.appendingPathComponent("Sources/Example/Example.swift"),
                 atomically: true, encoding: .utf8)
             try provisioner.script.write(
@@ -366,7 +366,12 @@ struct ControlPlaneShellTests {
                 in: directory, command: "bash build-target.sh")
             #expect(missingProvisioning.status != 0, "\(missingProvisioning.log)")
             #expect(missingProvisioning.log.contains("jq: command not found"))
-            #expect(!manager.fileExists(atPath: directory.appendingPathComponent(".build").path))
+            #expect(!missingProvisioning.log.contains(
+                "selected Embedded build ran before manifest classification"))
+
+            try "public struct Example {}\n".write(
+                to: directory.appendingPathComponent("Sources/Example/Example.swift"),
+                atomically: true, encoding: .utf8)
 
             let built = try Self.nightly(
                 in: directory,
@@ -519,7 +524,7 @@ struct ControlPlaneShellTests {
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
             process.arguments = [
-                "docker", "run", "--rm",
+                "docker", "run", "--rm", "--platform", "linux/amd64",
                 "--mount", "type=bind,source=\(directory.path),target=/fixture",
                 "--workdir", "/fixture",
                 "--env", "GITHUB_WORKSPACE=/fixture",
