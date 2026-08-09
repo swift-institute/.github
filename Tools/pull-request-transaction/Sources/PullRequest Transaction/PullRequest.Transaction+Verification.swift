@@ -1,3 +1,5 @@
+import Foundation
+
 extension PullRequest.Transaction {
     static func verify(_ snapshot: Snapshot) throws {
         switch snapshot.plan.verification {
@@ -96,9 +98,10 @@ extension PullRequest.Transaction {
     }
 
     /// Selects exactly one newest attempt for a required context. GitHub's
-    /// start time establishes chronology; immutable IDs and rerun attempt
-    /// ordinals break equal-time ties. Repeated attempt identities are
-    /// ambiguous API evidence and are refused even when their payloads agree.
+    /// authoritative start time establishes chronology and must identify one
+    /// attempt. Equal newest start times are ambiguous API evidence; immutable
+    /// IDs and rerun attempt ordinals must not break that tie. Repeated attempt
+    /// identities are likewise refused even when their payloads agree.
     private static func latest(
         _ checks: [Snapshot.Check],
         named name: String
@@ -112,15 +115,13 @@ extension PullRequest.Transaction {
         guard dated.count == supplied.count,
             supplied.allSatisfy({ $0.id > 0 && $0.attempt > 0 }),
             identities.count == supplied.count,
-            let selected = dated.max(by: { lhs, rhs in
-                if lhs.1 != rhs.1 { return lhs.1 < rhs.1 }
-                if lhs.0.id != rhs.0.id { return lhs.0.id < rhs.0.id }
-                return lhs.0.attempt < rhs.0.attempt
-            })?.0
+            let newest = dated.map({ $0.1 }).max(),
+            let selected = dated.first(where: { $0.1 == newest }),
+            dated.filter({ $0.1 == newest }).count == 1
         else {
             throw Error.ambiguous(name)
         }
-        return selected
+        return selected.0
     }
 
     private static func terminal(_ conclusion: String?) -> Bool {

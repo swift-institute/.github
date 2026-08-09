@@ -562,6 +562,62 @@ extension PullRequest.Transaction.Test.Unit {
             ) == .readyForReview
         )
     }
+    @Test func `control profile rejects tied newest success and failure as ambiguous`() {
+        #expect(throws: PullRequest.Transaction.Error.ambiguous("scan")) {
+            try PullRequest.Transaction.review(
+                fixture(
+                    verification: native,
+                    checks: [
+                        check("fixtures"), check("correspondence"),
+                        check("scan", id: 100, attempt: 1),
+                        check("scan", conclusion: "failure", id: 101, attempt: 2),
+                    ]
+                )
+            )
+        }
+    }
+    @Test func `control profile rejects tied newest success and pending as ambiguous`() {
+        #expect(throws: PullRequest.Transaction.Error.ambiguous("scan")) {
+            try PullRequest.Transaction.review(
+                fixture(
+                    verification: native,
+                    checks: [
+                        check("fixtures"), check("correspondence"),
+                        check("scan", id: 100, attempt: 1),
+                        check("scan", conclusion: nil, id: 101, attempt: 2),
+                    ]
+                )
+            )
+        }
+    }
+    @Test func `control profile rejects tied newest success and stale head as ambiguous`() {
+        #expect(throws: PullRequest.Transaction.Error.ambiguous("scan")) {
+            try PullRequest.Transaction.review(
+                fixture(
+                    verification: native,
+                    checks: [
+                        check("fixtures"), check("correspondence"),
+                        check("scan", id: 100, attempt: 1),
+                        check("scan", revision: old, id: 101, attempt: 2),
+                    ]
+                )
+            )
+        }
+    }
+    @Test func `control profile rejects two tied newest successes as ambiguous`() {
+        #expect(throws: PullRequest.Transaction.Error.ambiguous("scan")) {
+            try PullRequest.Transaction.review(
+                fixture(
+                    verification: native,
+                    checks: [
+                        check("fixtures"), check("correspondence"),
+                        check("scan", id: 100, attempt: 1),
+                        check("scan", id: 101, attempt: 2),
+                    ]
+                )
+            )
+        }
+    }
     @Test func `control profile rejects a newer failure over an older success`() {
         #expect(throws: PullRequest.Transaction.Error.unsuccessful("scan")) {
             try PullRequest.Transaction.review(
