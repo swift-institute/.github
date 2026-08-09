@@ -606,12 +606,12 @@ The version-1 JSON object has exactly the top-level members `schemaVersion`, `sc
 **Operator sequence.** From the frozen Workspace root, run, in order:
 
 ```text
-swift run --package-path Application workspace inventory regenerate --dry-run
-swift run --package-path Application workspace package test --package-path Application --fresh
-swift run --package-path Application workspace inventory effective \
+swift run institute inventory regenerate --dry-run
+institute package test --package-path . --fresh
+swift run institute inventory effective \
   --inventory-scope public \
   --inventory-output .ci-cd-completion/workspace/inventory-public.json
-swift run --package-path Application workspace inventory effective \
+swift run institute inventory effective \
   --inventory-scope effective \
   --inventory-output .ci-cd-completion/private/inventory-effective.json
 ```
@@ -1127,16 +1127,16 @@ Run and record:
 
 ```text
 # from swift-institute/Workspace
-swift run --package-path Application workspace doctor
-swift run --package-path Application workspace inventory regenerate --dry-run
-swift run --package-path Application workspace inventory effective \
+swift run institute doctor
+swift run institute inventory regenerate --dry-run
+swift run institute inventory effective \
   --inventory-scope public \
   --inventory-output .ci-cd-completion/workspace/inventory-public.json
-swift run --package-path Application workspace package test \
-  --package-path Application --fresh
+swift run institute package test \
+  --package-path . --fresh
 
 # in the authorized private containment boundary; never upload this output
-swift run --package-path Application workspace inventory effective \
+swift run institute inventory effective \
   --inventory-scope effective \
   --inventory-output .ci-cd-completion/private/inventory-effective.json
 

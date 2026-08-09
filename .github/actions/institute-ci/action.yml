@@ -98,7 +98,17 @@ runs:
         # uuid-dev: the typed F2/F10 provisioning input (swift-linux-standard's
         # CLinuxKernelShim includes uuid/uuid.h); absent on the bare runner.
         sudo apt-get update -qq && sudo apt-get install -qq -y uuid-dev
-        swift run --package-path .workspace/Application institute package build \
+        # TX-APP1Z: institute-application's Swift package moved from Application/ to
+        # the repository root. This checkout is pinned to a caller-supplied or
+        # hard-pinned revision, so it must build either layout. The probe retires
+        # once every pin in the fleet is post-flatten.
+
+
+        workspace_package_path=.workspace
+        if [ -f .workspace/Application/Package.swift ]; then
+          workspace_package_path=.workspace/Application
+        fi
+        swift run --package-path "$workspace_package_path" institute package build \
           --package-path "${RUNNER_TEMP}/institute-ci-sources" --argument=--static-swift-stdlib
         mkdir -p .institute-ci-entry/bin
         cp "$(find "${RUNNER_TEMP}/institute-ci-sources/.build" -name institute-ci -type f -perm /111 | head -1)" \
