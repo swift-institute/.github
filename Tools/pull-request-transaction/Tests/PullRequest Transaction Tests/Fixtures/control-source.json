@@ -52,16 +52,25 @@
       "total": 3,
       "values": [
         {
+          "id": 100,
+          "attempt": 1,
+          "startedAt": "2026-08-09T10:00:00Z",
           "name": "fixtures",
           "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           "conclusion": "success"
         },
         {
+          "id": 101,
+          "attempt": 1,
+          "startedAt": "2026-08-09T10:00:00Z",
           "name": "correspondence",
           "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           "conclusion": "success"
         },
         {
+          "id": 102,
+          "attempt": 1,
+          "startedAt": "2026-08-09T10:00:00Z",
           "name": "scan",
           "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           "conclusion": "success"

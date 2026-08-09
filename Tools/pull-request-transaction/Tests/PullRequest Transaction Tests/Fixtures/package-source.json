@@ -46,6 +46,9 @@
       "total": 1,
       "values": [
         {
+          "id": 100,
+          "attempt": 1,
+          "startedAt": "2026-08-09T10:00:00Z",
           "name": "ci / matrix / ci-ok",
           "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           "conclusion": "success"
@@ -58,6 +61,9 @@
       "total": 1,
       "values": [
         {
+          "id": 200,
+          "attempt": 1,
+          "startedAt": "2026-08-09T10:01:00Z",
           "name": "CI",
           "event": "workflow_dispatch",
           "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",

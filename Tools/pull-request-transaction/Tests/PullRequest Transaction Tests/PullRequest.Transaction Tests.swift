@@ -123,9 +123,19 @@ extension PullRequest.Transaction.Test.Unit {
     private func check(
         _ name: String,
         revision: String? = nil,
-        conclusion: String? = "success"
+        conclusion: String? = "success",
+        id: Int64 = 100,
+        attempt: Int = 1,
+        startedAt: String = "2026-08-09T10:00:00Z"
     ) -> PullRequest.Transaction.Snapshot.Check {
-        .init(name: name, head: revision ?? head, conclusion: conclusion)
+        .init(
+            id: id,
+            attempt: attempt,
+            startedAt: startedAt,
+            name: name,
+            head: revision ?? head,
+            conclusion: conclusion
+        )
     }
 
     @Test func `accepts a complete current-head transaction`() throws {
@@ -341,6 +351,23 @@ extension PullRequest.Transaction.Test.Unit {
             )
         }
     }
+    @Test func `package profile accepts the newest ci attempt after an older failure`() throws {
+        #expect(
+            try PullRequest.Transaction.review(
+                fixture(
+                    checks: [
+                        check("ci / matrix / ci-ok", conclusion: "failure", id: 100),
+                        check(
+                            "ci / matrix / ci-ok",
+                            id: 101,
+                            startedAt: "2026-08-09T10:01:00Z"
+                        ),
+                        check("full-tier"),
+                    ]
+                )
+            ) == .readyForReview
+        )
+    }
     @Test func `package profile rejects an absent full tier`() {
         #expect(throws: PullRequest.Transaction.Error.nonterminalFullTier) {
             try PullRequest.Transaction.review(fixture(checks: [check("ci / matrix / ci-ok")]))
@@ -517,14 +544,98 @@ extension PullRequest.Transaction.Test.Unit {
             )
         }
     }
-    @Test func `control profile rejects any nonterminal supplied run`() {
+    @Test func `control profile accepts a newer success over an older failure`() throws {
+        #expect(
+            try PullRequest.Transaction.review(
+                fixture(
+                    verification: native,
+                    checks: [
+                        check("fixtures"), check("correspondence"),
+                        check("scan", conclusion: "failure", id: 100),
+                        check(
+                            "scan",
+                            id: 101,
+                            startedAt: "2026-08-09T10:01:00Z"
+                        ),
+                    ]
+                )
+            ) == .readyForReview
+        )
+    }
+    @Test func `control profile rejects a newer failure over an older success`() {
+        #expect(throws: PullRequest.Transaction.Error.unsuccessful("scan")) {
+            try PullRequest.Transaction.review(
+                fixture(
+                    verification: native,
+                    checks: [
+                        check("fixtures"), check("correspondence"), check("scan", id: 100),
+                        check(
+                            "scan",
+                            conclusion: "failure",
+                            id: 101,
+                            startedAt: "2026-08-09T10:01:00Z"
+                        ),
+                    ]
+                )
+            )
+        }
+    }
+    @Test func `control profile rejects a newer pending attempt`() {
         #expect(throws: PullRequest.Transaction.Error.nonterminal("scan")) {
             try PullRequest.Transaction.review(
                 fixture(
                     verification: native,
                     checks: [
+                        check("fixtures"), check("correspondence"), check("scan", id: 100),
+                        check(
+                            "scan",
+                            conclusion: nil,
+                            id: 101,
+                            startedAt: "2026-08-09T10:01:00Z"
+                        ),
+                    ]
+                )
+            )
+        }
+    }
+    @Test func `control profile rejects a newer attempt from a mismatched head`() {
+        #expect(throws: PullRequest.Transaction.Error.stale("scan")) {
+            try PullRequest.Transaction.review(
+                fixture(
+                    verification: native,
+                    checks: [
+                        check("fixtures"), check("correspondence"), check("scan", id: 100),
+                        check(
+                            "scan",
+                            revision: old,
+                            id: 101,
+                            startedAt: "2026-08-09T10:01:00Z"
+                        ),
+                    ]
+                )
+            )
+        }
+    }
+    @Test func `control profile rejects duplicate attempt evidence as ambiguous`() {
+        #expect(throws: PullRequest.Transaction.Error.ambiguous("scan")) {
+            try PullRequest.Transaction.review(
+                fixture(
+                    verification: native,
+                    checks: [
                         check("fixtures"), check("correspondence"), check("scan"),
-                        check("scan", conclusion: nil),
+                        check("scan"),
+                    ]
+                )
+            )
+        }
+    }
+    @Test func `control profile rejects missing attempt provenance as ambiguous`() {
+        #expect(throws: PullRequest.Transaction.Error.ambiguous("scan")) {
+            try PullRequest.Transaction.review(
+                fixture(
+                    verification: native,
+                    checks: [
+                        check("fixtures"), check("correspondence"), check("scan", id: 0),
                     ]
                 )
             )

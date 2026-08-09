@@ -42,6 +42,12 @@ extension PullRequest {
             }
 
             public struct Check: Codable, Sendable {
+                /// GitHub's immutable check-run or workflow-run identity.
+                public let id: Int64
+                /// GitHub's run attempt. Check runs always use attempt one.
+                public let attempt: Int
+                /// GitHub's authoritative start time in its canonical UTC form.
+                public let startedAt: String
                 public let name: String
                 public let head: String
                 public let conclusion: String?
@@ -116,6 +122,7 @@ extension PullRequest {
             case stale(String)
             case nonterminal(String)
             case unsuccessful(String)
+            case ambiguous(String)
             case uncitedChecks
         }
 

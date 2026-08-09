@@ -1,6 +1,8 @@
 # List nameWithOwner of repos in an org via gh CLI, filtered by visibility,
-# fork status, and archive status. Returns the list as the output `repos`
-# (newline-separated).
+# fork status, and archive status. Always writes the list to an opaque
+# runner-local file and returns only its path. The legacy newline `repos`
+# output is populated only for an explicitly public cohort; private or mixed
+# coordinates never enter Actions output metadata (swift-institute/.github#483).
 #
 # Replaces the inline `gh repo list "$ORG" --limit 2000 ... --jq '.[] |
 # select(.isArchived==false) | .nameWithOwner'` block that recurred across
@@ -21,12 +23,13 @@
 # (or `uses: ./.github/actions/enumerate-org-public-repos` when called from
 # within swift-institute/.github itself.)
 
-name: 'Enumerate org public repos'
+name: 'Enumerate org repos'
 description: >
   List nameWithOwner of repos in an org filtered by visibility, fork
-  status, and archive status. Returns the list newline-separated as
-  output `repos`. Caller passes a gh installation token via `with:`
-  since composites cannot read `secrets` directly.
+  status, and archive status. Returns a runner-local file path; only an
+  explicitly public cohort is also returned through the legacy `repos`
+  output. Caller passes a gh installation token via `with:` since
+  composites cannot read `secrets` directly.
 
 inputs:
   org:
@@ -62,8 +65,11 @@ inputs:
     required: true
 
 outputs:
+  repos-file:
+    description: 'Runner-local file containing one matching nameWithOwner per line.'
+    value: ${{ steps.enumerate.outputs.repos-file }}
   repos:
-    description: 'Newline-separated list of nameWithOwner for matching repos.'
+    description: 'Public-only legacy newline list; empty for private, internal, or mixed cohorts.'
     value: ${{ steps.enumerate.outputs.repos }}
 
 runs:
@@ -79,10 +85,12 @@ runs:
         EXCLUDE_ARCHIVED: ${{ inputs.exclude-archived }}
       run: |
         set -euo pipefail
-        # Build visibility flag.
-        viz_flag=()
+        # Build the complete command as a non-empty array. Expanding an empty
+        # array under `set -u` fails on the Bash 3.2 still used by local macOS
+        # controls, even though hosted Linux Bash accepts it.
+        repo_command=(repo list "$ORG" --limit 2000)
         case "$VISIBILITY" in
-          public|private|internal) viz_flag=(--visibility "$VISIBILITY") ;;
+          public|private|internal) repo_command+=(--visibility "$VISIBILITY") ;;
           all|"") ;;
           *) echo "::error::Unknown visibility '$VISIBILITY' (expected: public, private, internal, all)"; exit 1 ;;
         esac
@@ -101,18 +109,21 @@ runs:
           jq_filter="${jq_filter} | select(.isFork==false)"
         fi
         jq_filter="${jq_filter} | .nameWithOwner"
-        repos=$(gh repo list "$ORG" --limit 2000 "${viz_flag[@]}" \
-          --json "$json_fields" --jq "$jq_filter")
-        # Multiline output via heredoc-shaped delimiter.
-        delim="EOF_$$_$(date +%s)"
-        {
-          echo "repos<<${delim}"
-          echo "$repos"
-          echo "${delim}"
-        } >> "$GITHUB_OUTPUT"
-        if [[ -n "$repos" ]]; then
-          count=$(printf '%s\n' "$repos" | grep -c '^.')
-        else
-          count=0
+        repos_file=$(mktemp "${RUNNER_TEMP}/enumerated-repositories.XXXXXX")
+        gh "${repo_command[@]}" \
+          --json "$json_fields" --jq "$jq_filter" > "$repos_file"
+        echo "repos-file=${repos_file}" >> "$GITHUB_OUTPUT"
+
+        # GitHub stores step outputs as run metadata. Only the public-only
+        # contract may duplicate coordinates there; all other visibility
+        # modes leave the legacy output empty and consume the file path.
+        if [[ "$VISIBILITY" == "public" ]]; then
+          delim="EOF_$$_$(date +%s)"
+          {
+            echo "repos<<${delim}"
+            sed -n '1,$p' "$repos_file"
+            echo "${delim}"
+          } >> "$GITHUB_OUTPUT"
         fi
+        count=$(awk 'NF { count += 1 } END { print count + 0 }' "$repos_file")
         echo "Enumerated ${count} repos from org '$ORG' (visibility=$VISIBILITY, exclude-forks=$EXCLUDE_FORKS, exclude-archived=$EXCLUDE_ARCHIVED)."

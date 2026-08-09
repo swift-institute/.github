@@ -31,6 +31,12 @@ enum Main {
                 try rulesetConvergence(
                     RulesetConvergenceArguments(Array(CommandLine.arguments.dropFirst(2)))
                 )
+            } else if CommandLine.arguments.dropFirst().first == "converge-approval-callers" {
+                try await approval(
+                    Approval.Arguments(
+                        Array(CommandLine.arguments.dropFirst(2))
+                    )
+                )
             } else {
                 try await reconcile(ReconcileArguments(CommandLine.arguments))
             }

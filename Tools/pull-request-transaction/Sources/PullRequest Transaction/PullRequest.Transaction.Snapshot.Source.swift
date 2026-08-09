@@ -55,7 +55,14 @@ extension PullRequest.Transaction.Snapshot {
                     // Runs of the same workflow for other events are lower tiers
                     // and are not full-tier evidence.
                     + runs.filter { $0.name == "CI" && $0.event == "workflow_dispatch" }.map {
-                        Check(name: "full-tier", head: $0.head, conclusion: $0.conclusion)
+                        Check(
+                            id: $0.id,
+                            attempt: $0.attempt,
+                            startedAt: $0.startedAt,
+                            name: "full-tier",
+                            head: $0.head,
+                            conclusion: $0.conclusion
+                        )
                     },
                 unresolvedThreads: unresolvedThreads,
                 merge: merge,

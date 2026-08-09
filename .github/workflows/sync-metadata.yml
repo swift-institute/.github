@@ -205,10 +205,19 @@ jobs:
           permission-contents: read
           permission-metadata: read
 
+      - name: Check out the control-plane enumeration action
+        if: ${{ inputs.repo == '' }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: swift-institute/.github
+          ref: ${{ job.workflow_sha }}
+          path: institute-control
+          persist-credentials: false
+
       - name: Enumerate org repos
         if: ${{ inputs.repo == '' }}
         id: enum
-        uses: swift-institute/.github/.github/actions/enumerate-org-public-repos@6f73c2ebff00e4f05375794905926bdd7a0ca14b  # main 2026-08-04, identity-pin to main HEAD (swift-institute/.github#286); no functional change to this action in range
+        uses: ./institute-control/.github/actions/enumerate-org-public-repos
         with:
           org: ${{ inputs.org }}
           visibility: ${{ inputs.visibility }}
@@ -223,7 +232,7 @@ jobs:
           SINGLE_REPO: ${{ inputs.repo }}
           INPUT_ORG: ${{ inputs.org }}
           INPUT_VISIBILITY: ${{ inputs.visibility }}
-          ENUM_REPOS: ${{ steps.enum.outputs.repos }}
+          ENUM_REPOS_FILE: ${{ steps.enum.outputs.repos-file }}
         run: |
           set -euo pipefail
 
@@ -244,15 +253,20 @@ jobs:
           # still disclose a durable private-repository identity.
           target_ordinal=0
 
-          # Build target list — single-repo mode bypasses enumeration; org-mode
-          # reads from the enumerate-org-public-repos composite output.
+          # Build target list — single-repo mode is public-only operator input;
+          # org mode reads coordinates solely from the runner-local file. The
+          # path may enter runner metadata; the file contents never do.
           if [[ -n "$SINGLE_REPO" ]]; then
             targets=("$SINGLE_REPO")
           else
+            if [[ -z "$ENUM_REPOS_FILE" || ! -f "$ENUM_REPOS_FILE" ]]; then
+              echo "::error::Repository enumeration did not produce its runner-local file."
+              exit 1
+            fi
             targets=()
             while IFS= read -r line; do
               [[ -n "$line" ]] && targets+=("$line")
-            done <<< "$ENUM_REPOS"
+            done < "$ENUM_REPOS_FILE"
           fi
 
           echo "Targets: ${#targets[@]} repos"
@@ -577,6 +591,66 @@ jobs:
             echo ""
             for line in "${summary_lines[@]}"; do echo "$line"; done
           } >> "$GITHUB_STEP_SUMMARY"
+
+  private-callers:
+    # Private caller distribution is a separate least-privilege mutation.
+    # It never accepts a repository coordinate as workflow input: the private
+    # cohort is enumerated into one runner-local file, then addressed only
+    # inside this public runner process with ordinal-only reporting.
+    if: ${{ !github.event.repository.private && inputs.repo == '' && (inputs.visibility == 'private' || inputs.visibility == 'all') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Harden runner (audit-mode egress logging)
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Check out canonical private caller source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: swift-institute/.github
+          ref: ${{ job.workflow_sha }}
+          path: institute-control
+          persist-credentials: false
+
+      - name: Mint private-caller convergence token
+        id: token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: ${{ inputs.org }}
+          permission-contents: write
+          permission-metadata: read
+          permission-pull-requests: write
+
+      - name: Enumerate private repositories to a runner-local file
+        id: enum
+        uses: ./institute-control/.github/actions/enumerate-org-public-repos
+        with:
+          org: ${{ inputs.org }}
+          visibility: private
+          exclude-archived: ${{ inputs.exclude-archived }}
+          gh-token: ${{ steps.token.outputs.token }}
+
+      - name: Select Swift 6.3
+        uses: SwiftyLab/setup-swift@38f54a76b70d989321de9dc7c840618c08cf56e9 # v1.14.0
+        with:
+          swift-version: '6.3'
+
+      - name: Converge canonical private callers through repository-policy
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          set -euo pipefail
+          swift run --package-path institute-control/Tools/repository-policy repository-policy \
+            converge-approval-callers \
+            --targets-file "${{ steps.enum.outputs.repos-file }}" \
+            --source institute-control/canon/review-pr-transaction-private.yml \
+            --dry-run "${{ inputs.dry-run }}"
 
   rulesets:
     # The source-controlled contract is applied only by the trusted central

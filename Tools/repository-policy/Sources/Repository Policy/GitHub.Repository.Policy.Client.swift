@@ -204,7 +204,7 @@ extension RepositoryPolicy {
             }
         }
 
-        private func request(
+        func request(
             method: String,
             path: String,
             body: Data? = nil
@@ -234,7 +234,7 @@ extension RepositoryPolicy {
             })
         }
 
-        private func error(
+        func error(
             method: String,
             path: String,
             response: (data: Data, status: Int, headers: [String: String])

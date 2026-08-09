@@ -655,12 +655,13 @@ struct RepositoryPolicyTests {
             .appending(path: ".github/workflows/sync-metadata.yml")
         let workflow = try String(contentsOf: url, encoding: .utf8)
         let sync = try #require(workflow.range(of: "\n  sync:\n"))
+        let privateCallers = try #require(workflow.range(of: "\n  private-callers:\n"))
         let rulesets = try #require(workflow.range(of: "\n  rulesets:\n"))
         let surfaces = try #require(
             workflow.range(of: "\n  surfaces:\n", range: rulesets.upperBound..<workflow.endIndex)
         )
         let rulesetsJob = workflow[rulesets.upperBound..<surfaces.lowerBound]
-        let syncJob = workflow[sync.upperBound..<rulesets.lowerBound]
+        let syncJob = workflow[sync.upperBound..<privateCallers.lowerBound]
 
         // Metadata and merge-method convergence follows the caller's full
         // visibility scope. Rulesets stay public-only because the current
@@ -688,9 +689,9 @@ struct RepositoryPolicyTests {
     }
 
     // The public metadata workflow may converge private targets during the
-    // nightly all-visibility sweep. Public targets keep their actionable
-    // coordinate; a private target is represented only by its in-run ordinal
-    // in normal progress, dry-run previews, failures, and the step summary.
+    // nightly all-visibility sweep. The cohort crosses steps only through an
+    // opaque runner-local file path, and private targets are represented only
+    // by in-run ordinals in logs and summaries.
     @Test
     func syncJobKeepsPrivateTargetCoordinatesOutOfPublicReporting() throws {
         let url = URL(filePath: #filePath)
@@ -701,9 +702,35 @@ struct RepositoryPolicyTests {
             .deletingLastPathComponent()
             .appending(path: ".github/workflows/sync-metadata.yml")
         let workflow = try String(contentsOf: url, encoding: .utf8)
+        let enumeration = try String(
+            contentsOf: url
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appending(path: "actions/enumerate-org-public-repos/action.yml"),
+            encoding: .utf8
+        )
         let sync = try #require(workflow.range(of: "\n  sync:\n"))
+        let privateCallers = try #require(workflow.range(of: "\n  private-callers:\n"))
         let rulesets = try #require(workflow.range(of: "\n  rulesets:\n"))
-        let syncJob = workflow[sync.upperBound..<rulesets.lowerBound]
+        let syncJob = workflow[sync.upperBound..<privateCallers.lowerBound]
+        let callerJob = workflow[privateCallers.upperBound..<rulesets.lowerBound]
+
+        #expect(syncJob.contains("ENUM_REPOS_FILE: ${{ steps.enum.outputs.repos-file }}"))
+        #expect(syncJob.contains("done < \"$ENUM_REPOS_FILE\""))
+        #expect(!syncJob.contains("ENUM_REPOS: ${{ steps.enum.outputs.repos }}"))
+        #expect(callerJob.contains("converge-approval-callers"))
+        #expect(callerJob.contains("--targets-file \"${{ steps.enum.outputs.repos-file }}\""))
+        #expect(!callerJob.contains("outputs.repos }}"))
+        #expect(!callerJob.contains("for target in"))
+        #expect(callerJob.contains("permission-contents: write"))
+        #expect(callerJob.contains("permission-metadata: read"))
+        #expect(callerJob.contains("permission-pull-requests: write"))
+        #expect(!callerJob.contains("permission-administration:"))
+        #expect(!callerJob.contains("permission-actions:"))
+        #expect(!callerJob.contains("repositories:"))
+        #expect(enumeration.contains("echo \"repos-file=${repos_file}\""))
+        #expect(enumeration.contains("if [[ \"$VISIBILITY\" == \"public\" ]]; then"))
+        #expect(enumeration.contains("> \"$repos_file\""))
 
         // Positive control: public repositories retain their actionable name.
         #expect(syncJob.contains("if [[ \"$target_visibility\" == \"public\" ]]; then"))
@@ -731,7 +758,7 @@ struct RepositoryPolicyTests {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-            .appending(path: ".github/workflows/review-pr-transaction.yml")
+            .appending(path: ".github/workflows/review-pr-transaction-core.yml")
         let workflow = try String(contentsOf: url, encoding: .utf8)
 
         for payload in ["reviews", "checks", "runs", "graph"] {
@@ -754,7 +781,7 @@ struct RepositoryPolicyTests {
         #expect(!workflow.contains("closingIssuesReferences"))
         #expect(!workflow.contains(".number == 176"))
 
-        let parse = try #require(workflow.range(of: "- name: Parse exact target coordinate"))
+        let parse = try #require(workflow.range(of: "- name: Resolve trusted caller route"))
         let mint = try #require(workflow.range(of: "- name: Mint narrowed reviewer token"))
         let resolve = try #require(workflow.range(of: "- name: Resolve exact target scope"))
         #expect(parse.lowerBound < mint.lowerBound)
@@ -763,12 +790,47 @@ struct RepositoryPolicyTests {
         #expect(workflow.contains("permission-actions: read"))
         #expect(workflow.contains("permission-checks: read"))
         #expect(workflow.contains("permission-issues: read"))
-        #expect(
-            workflow.contains(
-                #"select(.visibility == "public" or .visibility == "private")"#
-            )
+        #expect(workflow.contains("repositories: ${{ steps.target.outputs.name }}"))
+        #expect(workflow.contains("id: .id"))
+        #expect(workflow.contains("attempt: .run_attempt"))
+        #expect(workflow.contains("startedAt: .run_started_at"))
+        #expect(workflow.contains(#"select(.visibility == env.TARGET_VISIBILITY)"#))
+        #expect(workflow.contains("TARGET_REPOSITORY=\"$CALLER_REPOSITORY\""))
+        #expect(workflow.contains("CALLER_WORKFLOW_REF: ${{ github.workflow_ref }}"))
+        #expect(workflow.contains("permission-pull-requests: write"))
+        #expect(!workflow.contains("permission-administration:"))
+        #expect(!workflow.contains("permission-workflows:"))
+    }
+
+    @Test
+    func `private review caller keeps identity and plan on the private route`() throws {
+        let root = URL(filePath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let publicCaller = try String(
+            contentsOf: root.appending(path: ".github/workflows/review-pr-transaction.yml"),
+            encoding: .utf8
         )
-        #expect(!workflow.contains(#".visibility == "public")"#))
+        let privateCaller = try String(
+            contentsOf: root.appending(path: "canon/review-pr-transaction-private.yml"),
+            encoding: .utf8
+        )
+
+        #expect(publicCaller.contains("route: public"))
+        #expect(publicCaller.contains("repository: ${{ inputs.repository }}"))
+        #expect(!publicCaller.contains("route: private"))
+
+        #expect(privateCaller.contains("github.event.repository.private"))
+        #expect(privateCaller.contains("route: private"))
+        #expect(privateCaller.contains("accepted-plan: ${{ inputs.accepted-plan }}"))
+        #expect(!privateCaller.contains("repository: ${{ inputs.repository }}"))
+        #expect(!privateCaller.contains("repository:\n"))
+        #expect(privateCaller.contains("review-pr-transaction-core.yml@main"))
+        #expect(privateCaller.contains("SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY"))
+        #expect(!privateCaller.contains("secrets: inherit"))
     }
 
     @Test
@@ -1095,6 +1157,21 @@ struct RepositoryPolicyTests {
             ]
         )
 
+        let privateReview = try #require(
+            policy.actionGrants.first {
+                $0.repository == nil
+                    && $0.path == ".github/workflows/review-pr-transaction.yml"
+            }
+        )
+        #expect(privateReview.repositoryClass == .package)
+        #expect(privateReview.kind == .thinCaller)
+        #expect(privateReview.triggers == ["workflow_dispatch"])
+        #expect(
+            privateReview.uses == [
+                "swift-institute/.github/.github/workflows/review-pr-transaction-core.yml@main"
+            ]
+        )
+
         // swift-linter is the tool-host: repository-scoped grants for its own
         // thin caller and its workflow_call reusable, nothing broader.
         let linterGrants = policy.actionGrants.filter {
@@ -1152,7 +1229,7 @@ struct RepositoryPolicyTests {
             ]
         )
 
-        #expect(policy.actionGrants.count == 5)
+        #expect(policy.actionGrants.count == 6)
 
         // Typed exemptions carry exact repository and path scope.
         #expect(

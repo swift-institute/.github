@@ -190,7 +190,17 @@ extension PullRequest.Transaction.Test {
             #expect(first.count == 100)
             let source = source(
                 verification: control,
-                checks: pages([first, [check("scan", conclusion: "failure")]])
+                checks: pages([
+                    first,
+                    [
+                        check(
+                            "scan",
+                            conclusion: "failure",
+                            id: 200,
+                            startedAt: "2026-08-09T10:01:00Z"
+                        )
+                    ],
+                ])
             )
 
             #expect(throws: PullRequest.Transaction.Error.unsuccessful("scan")) {
@@ -204,7 +214,17 @@ extension PullRequest.Transaction.Test {
             #expect(first.count == 100)
             let source = source(
                 verification: control,
-                checks: pages([first, [check("scan", conclusion: nil)]])
+                checks: pages([
+                    first,
+                    [
+                        check(
+                            "scan",
+                            conclusion: nil,
+                            id: 200,
+                            startedAt: "2026-08-09T10:01:00Z"
+                        )
+                    ],
+                ])
             )
 
             #expect(throws: PullRequest.Transaction.Error.nonterminal("scan")) {
@@ -217,7 +237,10 @@ extension PullRequest.Transaction.Test {
             #expect(first.count == 100)
             let source = source(
                 verification: control,
-                checks: pages([first, [check("scan")]])
+                checks: pages([
+                    first,
+                    [check("scan", id: 200, startedAt: "2026-08-09T10:01:00Z")],
+                ])
             )
 
             #expect(try PullRequest.Transaction.review(source.snapshot()) == .readyForReview)
@@ -231,7 +254,17 @@ extension PullRequest.Transaction.Test {
             let source = source(
                 verification: .package,
                 checks: pages([[check("ci / matrix / ci-ok")]]),
-                runs: pages([first, [run("CI", conclusion: "failure")]])
+                runs: pages([
+                    first,
+                    [
+                        run(
+                            "CI",
+                            conclusion: "failure",
+                            id: 200,
+                            startedAt: "2026-08-09T10:01:00Z"
+                        )
+                    ],
+                ])
             )
 
             #expect(throws: PullRequest.Transaction.Error.nonterminalFullTier) {
@@ -245,7 +278,17 @@ extension PullRequest.Transaction.Test {
             let source = source(
                 verification: .package,
                 checks: pages([[check("ci / matrix / ci-ok")]]),
-                runs: pages([first, [run("CI", conclusion: nil)]])
+                runs: pages([
+                    first,
+                    [
+                        run(
+                            "CI",
+                            conclusion: nil,
+                            id: 200,
+                            startedAt: "2026-08-09T10:01:00Z"
+                        )
+                    ],
+                ])
             )
 
             #expect(throws: PullRequest.Transaction.Error.nonterminalFullTier) {
@@ -260,7 +303,30 @@ extension PullRequest.Transaction.Test {
             let source = source(
                 verification: .package,
                 checks: pages([[check("ci / matrix / ci-ok")]]),
-                runs: pages([first, [run("CI")]])
+                runs: pages([
+                    first,
+                    [run("CI", id: 200, startedAt: "2026-08-09T10:01:00Z")],
+                ])
+            )
+
+            #expect(try PullRequest.Transaction.review(source.snapshot()) == .readyForReview)
+        }
+
+        @Test func `producer selects a newer rerun attempt with the same workflow run id`() throws {
+            let source = source(
+                verification: .package,
+                checks: pages([[check("ci / matrix / ci-ok")]]),
+                runs: pages([
+                    [
+                        run("CI", conclusion: "failure", id: 200),
+                        run(
+                            "CI",
+                            id: 200,
+                            attempt: 2,
+                            startedAt: "2026-08-09T10:01:00Z"
+                        ),
+                    ]
+                ])
             )
 
             #expect(try PullRequest.Transaction.review(source.snapshot()) == .readyForReview)
@@ -360,17 +426,37 @@ extension PullRequest.Transaction.Test {
 
         private func check(
             _ name: String,
-            conclusion: String? = "success"
+            conclusion: String? = "success",
+            id: Int64 = 100,
+            startedAt: String = "2026-08-09T10:00:00Z"
         ) -> PullRequest.Transaction.Snapshot.Check {
-            .init(name: name, head: head, conclusion: conclusion)
+            .init(
+                id: id,
+                attempt: 1,
+                startedAt: startedAt,
+                name: name,
+                head: head,
+                conclusion: conclusion
+            )
         }
 
         private func run(
             _ name: String,
             event: String = "workflow_dispatch",
-            conclusion: String? = "success"
+            conclusion: String? = "success",
+            id: Int64 = 100,
+            attempt: Int = 1,
+            startedAt: String = "2026-08-09T10:00:00Z"
         ) -> PullRequest.Transaction.Snapshot.Source.Run {
-            .init(name: name, event: event, head: head, conclusion: conclusion)
+            .init(
+                id: id,
+                attempt: attempt,
+                startedAt: startedAt,
+                name: name,
+                event: event,
+                head: head,
+                conclusion: conclusion
+            )
         }
 
         private func pages<Element: Codable & Sendable>(

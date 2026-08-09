@@ -1,0 +1,35 @@
+# Canonical private-repository caller for exact-head bot approval.
+#
+# The target identity comes only from the caller's `github.repository` context
+# inside the reusable workflow. The accepted plan is entered and rendered only
+# on this private Actions surface. The reusable independently requires this
+# exact caller path on the repository's default branch before minting a token.
+
+name: review-pr-transaction
+
+on:
+  workflow_dispatch:
+    inputs:
+      pull:
+        description: 'Open pull-request number in this private repository.'
+        required: true
+        type: string
+      accepted-plan:
+        description: 'Exact accepted private plan JSON, including owning Issue and verification profile.'
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  approve:
+    if: ${{ github.event.repository.private && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+    permissions:
+      contents: read
+    uses: swift-institute/.github/.github/workflows/review-pr-transaction-core.yml@main
+    with:
+      route: private
+      pull: ${{ inputs.pull }}
+      accepted-plan: ${{ inputs.accepted-plan }}
+    secrets:
+      SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}

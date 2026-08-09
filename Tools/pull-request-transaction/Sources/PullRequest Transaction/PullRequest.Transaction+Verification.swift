@@ -13,25 +13,25 @@ extension PullRequest.Transaction {
             // 2-01/2-02, #253) and is verified through the `.control`
             // profile with that name declared explicitly, not through this
             // case.
-            let ci = snapshot.checks.filter { $0.name == "ci / matrix / ci-ok" }
-            guard !ci.isEmpty else { throw Error.missingCI }
-            guard ci.allSatisfy({ terminal($0.conclusion) }) else { throw Error.staleCI }
-            let currentCI = ci.filter { $0.head == snapshot.head }
-            guard !currentCI.isEmpty,
-                currentCI.allSatisfy({ $0.conclusion == "success" })
-            else {
-                throw Error.staleCI
+            let ciName = "ci / matrix / ci-ok"
+            guard snapshot.checks.contains(where: { $0.name == ciName }) else {
+                throw Error.missingCI
             }
+            let ci = try latest(snapshot.checks, named: ciName)
+            guard ci.head == snapshot.head,
+                terminal(ci.conclusion),
+                ci.conclusion == "success"
+            else { throw Error.staleCI }
 
-            let fullTier = snapshot.checks.filter { $0.name == "full-tier" }
-            let currentFullTier = fullTier.filter { $0.head == snapshot.head }
-            guard !fullTier.isEmpty,
-                fullTier.allSatisfy({ terminal($0.conclusion) }),
-                !currentFullTier.isEmpty,
-                currentFullTier.allSatisfy({ $0.conclusion == "success" })
-            else {
+            let fullTierName = "full-tier"
+            guard snapshot.checks.contains(where: { $0.name == fullTierName }) else {
                 throw Error.nonterminalFullTier
             }
+            let fullTier = try latest(snapshot.checks, named: fullTierName)
+            guard fullTier.head == snapshot.head,
+                terminal(fullTier.conclusion),
+                fullTier.conclusion == "success"
+            else { throw Error.nonterminalFullTier }
 
         case .control(let names):
             guard !names.isEmpty,
@@ -42,15 +42,15 @@ extension PullRequest.Transaction {
             }
 
             for name in names {
-                let supplied = snapshot.checks.filter { $0.name == name }
-                guard !supplied.isEmpty else { throw Error.missing(name) }
-                guard supplied.allSatisfy({ terminal($0.conclusion) }) else {
+                guard snapshot.checks.contains(where: { $0.name == name }) else {
+                    throw Error.missing(name)
+                }
+                let supplied = try latest(snapshot.checks, named: name)
+                guard terminal(supplied.conclusion) else {
                     throw Error.nonterminal(name)
                 }
-
-                let current = supplied.filter { $0.head == snapshot.head }
-                guard !current.isEmpty else { throw Error.stale(name) }
-                guard current.allSatisfy({ $0.conclusion == "success" }) else {
+                guard supplied.head == snapshot.head else { throw Error.stale(name) }
+                guard supplied.conclusion == "success" else {
                     throw Error.unsuccessful(name)
                 }
             }
@@ -80,19 +80,47 @@ extension PullRequest.Transaction {
             // post-merge full tier (verify-post-merge.yml) is the deferred
             // gate for this profile.
             for name in names {
-                let supplied = snapshot.checks.filter { $0.name == name }
-                guard !supplied.isEmpty else { throw Error.missing(name) }
-                guard supplied.allSatisfy({ terminal($0.conclusion) }) else {
+                guard snapshot.checks.contains(where: { $0.name == name }) else {
+                    throw Error.missing(name)
+                }
+                let supplied = try latest(snapshot.checks, named: name)
+                guard terminal(supplied.conclusion) else {
                     throw Error.nonterminal(name)
                 }
-
-                let current = supplied.filter { $0.head == snapshot.head }
-                guard !current.isEmpty else { throw Error.stale(name) }
-                guard current.allSatisfy({ $0.conclusion == "success" }) else {
+                guard supplied.head == snapshot.head else { throw Error.stale(name) }
+                guard supplied.conclusion == "success" else {
                     throw Error.unsuccessful(name)
                 }
             }
         }
+    }
+
+    /// Selects exactly one newest attempt for a required context. GitHub's
+    /// start time establishes chronology; immutable IDs and rerun attempt
+    /// ordinals break equal-time ties. Repeated attempt identities are
+    /// ambiguous API evidence and are refused even when their payloads agree.
+    private static func latest(
+        _ checks: [Snapshot.Check],
+        named name: String
+    ) throws(Error) -> Snapshot.Check {
+        let supplied = checks.filter { $0.name == name }
+        let formatter = ISO8601DateFormatter()
+        let dated = supplied.compactMap { check in
+            formatter.date(from: check.startedAt).map { (check, $0) }
+        }
+        let identities = Set(supplied.map { "\($0.id):\($0.attempt)" })
+        guard dated.count == supplied.count,
+            supplied.allSatisfy({ $0.id > 0 && $0.attempt > 0 }),
+            identities.count == supplied.count,
+            let selected = dated.max(by: { lhs, rhs in
+                if lhs.1 != rhs.1 { return lhs.1 < rhs.1 }
+                if lhs.0.id != rhs.0.id { return lhs.0.id < rhs.0.id }
+                return lhs.0.attempt < rhs.0.attempt
+            })?.0
+        else {
+            throw Error.ambiguous(name)
+        }
+        return selected
     }
 
     private static func terminal(_ conclusion: String?) -> Bool {
