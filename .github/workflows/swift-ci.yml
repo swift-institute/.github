@@ -856,7 +856,7 @@ jobs:
     # typed plan may authorize its temporary advisory exception.
     if: ${{ !cancelled() && !github.event.repository.private && inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',linux-nightly,') && (inputs.platform-support == '' || contains(format(',{0},', inputs.platform-support), ',linux,')) }}
     runs-on: ubuntu-latest
-    container: ${{ env.SWIFT_MAIN_NIGHTLY_IMAGE }}
+    container: swiftlang/swift@sha256:f577f95edfb85cf3bdc45eb0badaab09239de5c86c69b3b6d594cc62916c0a7d
     continue-on-error: true
     timeout-minutes: 45
     permissions:
