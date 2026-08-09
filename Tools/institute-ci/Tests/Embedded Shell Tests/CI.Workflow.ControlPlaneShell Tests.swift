@@ -528,7 +528,7 @@ struct ControlPlaneShellTests {
                 "--mount", "type=bind,source=\(directory.path),target=/fixture",
                 "--workdir", "/fixture",
                 "--env", "GITHUB_WORKSPACE=/fixture",
-                "ubuntu:22.04",
+                "ubuntu:24.04",
                 "bash", "-lc",
                 """
                 set -euo pipefail
