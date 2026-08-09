@@ -1141,7 +1141,7 @@ swift run institute inventory effective \
   --inventory-output .ci-cd-completion/private/inventory-effective.json
 
 # from swift-institute/.github
-workspace package test --package-path Tools/RepositoryPolicy --fresh
+institute package test --package-path Tools/RepositoryPolicy --fresh
 python3 -m unittest discover -s .github/scripts -p 'test-*.py'
 actionlint
 ```
