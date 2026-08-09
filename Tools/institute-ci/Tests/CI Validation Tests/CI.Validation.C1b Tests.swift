@@ -64,6 +64,25 @@ struct CIValidationC1bTests {
     struct `Environment Context` {
         typealias Rule = CI.Validation.EnvironmentContext
 
+        /// The live workflow must keep the temporary main-nightly exception
+        /// as one immutable image identity at both the plan and container
+        /// boundaries. This is a real-tree negative control: changing the
+        /// container back to `${{ env.SWIFT_MAIN_NIGHTLY_IMAGE }}` makes this
+        /// assertion fail even if a future validator change misses the use.
+        @Test func `the shipped main nightly container is a fixed matching digest`() throws {
+            let text = try #require(
+                try RepositoryUnderTest.subject.text(at: ".github/workflows/swift-ci.yml"))
+            let document = try CI.Workflow.Document(name: "swift-ci.yml", text: text)
+            let job = try #require(document.jobs.first { $0.name == "linux-nightly" })
+            let container = try #require(job.body["container"]?.text)
+            let planImage = try #require(document.body?["env"]?["SWIFT_MAIN_NIGHTLY_IMAGE"]?.text)
+
+            #expect(
+                container
+                    == "swiftlang/swift@sha256:f577f95edfb85cf3bdc45eb0badaab09239de5c86c69b3b6d594cc62916c0a7d")
+            #expect(container == planImage)
+        }
+
         @Test(arguments: [
             "swift:${{ env.SWIFT_VERSION }}",
             "swift:${{env.SWIFT_VERSION}}",
