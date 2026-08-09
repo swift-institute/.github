@@ -72,6 +72,12 @@ on:
 
 jobs:
   approve:
+    # Bind visibility before allocating a runner. The private exception is
+    # closed to the explicit private route; the public route retains CI-032's
+    # required public-repository gate.
+    if: >- # [CI-032]
+      ${{ (inputs.route == 'public' && !github.event.repository.private)
+          || (inputs.route == 'private' && github.event.repository.private) }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
