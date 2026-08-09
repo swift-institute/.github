@@ -1480,7 +1480,7 @@ jobs:
 
       - name: Install Embedded Wasm SDK matching container Swift
         id: install
-        uses: swift-institute/.github/.github/actions/install-swift-sdk@52be919aeec2b29ca8ebcf3e51991fe91f9c2344  # TX7 self-referential pin advance (swift-institute/.github#497 landing 1): first commit carrying `skip-on-missing-release` + `installed` output
+        uses: swift-institute/.github/.github/actions/install-swift-sdk@b4246ad5ee6ff39e6ad413a852c86d8311a83be8  # TX7 self-referential pin advance (swift-institute/.github#497 landing 1, PR #500, merged to main): merge SHA on main declares `skip-on-missing-release` input + `installed` output (verified)
         with:
           platform: wasm-sdk
           bundle-suffix: wasm
@@ -1547,7 +1547,7 @@ jobs:
 
       - name: Install Android SDK matching container Swift
         id: install
-        uses: swift-institute/.github/.github/actions/install-swift-sdk@52be919aeec2b29ca8ebcf3e51991fe91f9c2344  # TX7 self-referential pin advance (swift-institute/.github#497 landing 1): first commit carrying `skip-on-missing-release` + `installed` output
+        uses: swift-institute/.github/.github/actions/install-swift-sdk@b4246ad5ee6ff39e6ad413a852c86d8311a83be8  # TX7 self-referential pin advance (swift-institute/.github#497 landing 1, PR #500, merged to main): merge SHA on main declares `skip-on-missing-release` input + `installed` output (verified)
         with:
           platform: android-sdk
           bundle-suffix: android
@@ -1614,7 +1614,7 @@ jobs:
 
       - name: Install Static Linux SDK matching container Swift
         id: install
-        uses: swift-institute/.github/.github/actions/install-swift-sdk@52be919aeec2b29ca8ebcf3e51991fe91f9c2344  # TX7 self-referential pin advance (swift-institute/.github#497 landing 1): first commit carrying `skip-on-missing-release` + `installed` output
+        uses: swift-institute/.github/.github/actions/install-swift-sdk@b4246ad5ee6ff39e6ad413a852c86d8311a83be8  # TX7 self-referential pin advance (swift-institute/.github#497 landing 1, PR #500, merged to main): merge SHA on main declares `skip-on-missing-release` input + `installed` output (verified)
         with:
           platform: static-sdk
           bundle-suffix: static-linux
