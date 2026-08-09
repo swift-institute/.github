@@ -53,7 +53,7 @@ extension Repository.Policy.Approval.Caller {
 
             do {
                 let guarded = try await client.caller(for: target, path: path)
-                guard decision(state: guarded, source: source) == action else {
+                guard try decision(state: guarded, source: source) == action else {
                     throw Error.operation(ordinal)
                 }
                 let created = try await client.proposeCaller(

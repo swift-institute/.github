@@ -874,7 +874,12 @@ extension PullRequest.Transaction.Test.Unit {
                     verification: wave,
                     checks: [
                         check("fixtures"), check("correspondence"), check("scan"),
-                        check("scan", conclusion: nil),
+                        check(
+                            "scan",
+                            conclusion: nil,
+                            id: 101,
+                            startedAt: "2026-08-09T10:01:00Z"
+                        ),
                     ]
                 )
             )
