@@ -57,7 +57,22 @@ case "plan":
             image: value("--nightly-main-image", in: rest),
             upstreamIssue: value("--nightly-main-upstream-issue", in: rest),
             recheck: value("--nightly-main-recheck", in: rest))
-        try nightlyException.validate(today: value("--today", in: rest))
+        let today = value("--today", in: rest)
+        try nightlyException.validate(today: today)
+        // The release-floor exception is OPTIONAL by construction: an absent
+        // `--release-floor-image` is the terminal state, resolving to the
+        // official `swift:<floor>` image. Present, it must validate before any
+        // leg is emitted (swift-institute/.github#491).
+        let releaseFloorImage = value("--release-floor-image", in: rest)
+        let swiftVersion = value("--swift-version", in: rest)
+        let linuxImage = try CI.Contract.ReleaseFloorException.resolve(
+            swiftVersion: swiftVersion,
+            exception: releaseFloorImage.isEmpty ? nil : CI.Contract.ReleaseFloorException(
+                swiftVersion: swiftVersion,
+                image: releaseFloorImage,
+                upstreamRelease: value("--release-floor-upstream-release", in: rest),
+                recheck: value("--release-floor-recheck", in: rest)),
+            today: today)
         let plan = try CI.Contract.Plan(
             forcedTier: value("--tier", in: rest),
             ref: value("--ref", in: rest),
@@ -69,6 +84,7 @@ case "plan":
             "tier": plan.tier.rawValue,
             "legs": plan.legs.map(\.id).joined(separator: ","),
             "gating": plan.gating.map(\.id).joined(separator: ","),
+            "linux-image": linuxImage,
         ]
         let data = try JSONSerialization.data(
             withJSONObject: payload, options: [.sortedKeys])

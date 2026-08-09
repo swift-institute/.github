@@ -22,6 +22,93 @@ struct CIContractPlanTests {
         }
     }
 
+    /// The floor's image is `swift:<floor>` and nothing else — the terminal
+    /// state, and the one a removal of the exception restores.
+    @Test func releaseFloorWithoutAnExceptionIsTheOfficialImage() throws {
+        #expect(
+            try CI.Contract.ReleaseFloorException.resolve(
+                swiftVersion: "6.4", exception: nil, today: "2026-08-09") == "swift:6.4")
+    }
+
+    /// swift-institute/.github#491: the substitute image is admissible only
+    /// as an exact digest, naming the release whose arrival retires it, with
+    /// a recheck date inside the RC/stable boundary and not yet past.
+    @Test func releaseFloorExceptionRefusesEveryLooseIdentity() throws {
+        let valid = CI.Contract.ReleaseFloorException(
+            swiftVersion: "6.4",
+            image:
+                "swiftlang/swift@sha256:28424ece0fa465ad87d8cf55be685fc89f8286e91e86ebb7503418561c0a71d1",
+            upstreamRelease: "https://github.com/swiftlang/swift/releases/tag/swift-6.4-RELEASE",
+            recheck: "2026-09-09")
+        try valid.validate(today: "2026-08-09")
+        #expect(
+            try CI.Contract.ReleaseFloorException.resolve(
+                swiftVersion: "6.4", exception: valid, today: "2026-08-09") == valid.image)
+
+        // The tag the pre-floor workflow used: an existing image, but a
+        // mutable identity, which is exactly what this class refuses.
+        #expect(
+            throws: CI.Contract.ReleaseFloorException.Error.image(
+                "swiftlang/swift:nightly-6.4.x-jammy")
+        ) {
+            try CI.Contract.ReleaseFloorException(
+                swiftVersion: "6.4",
+                image: "swiftlang/swift:nightly-6.4.x-jammy",
+                upstreamRelease:
+                    "https://github.com/swiftlang/swift/releases/tag/swift-6.4-RELEASE",
+                recheck: "2026-09-09").validate(today: "2026-08-09")
+        }
+
+        // An upstream coordinate for a different release cannot justify
+        // substituting for THIS floor.
+        #expect(
+            throws: CI.Contract.ReleaseFloorException.Error.upstreamRelease(
+                "https://github.com/swiftlang/swift/releases/tag/swift-6.3-RELEASE")
+        ) {
+            try CI.Contract.ReleaseFloorException(
+                swiftVersion: "6.4",
+                image:
+                    "swiftlang/swift@sha256:28424ece0fa465ad87d8cf55be685fc89f8286e91e86ebb7503418561c0a71d1",
+                upstreamRelease:
+                    "https://github.com/swiftlang/swift/releases/tag/swift-6.3-RELEASE",
+                recheck: "2026-09-09").validate(today: "2026-08-09")
+        }
+
+        // Past the RC/stable boundary: refused at authoring time, not merely
+        // when it eventually expires.
+        #expect(
+            throws: CI.Contract.ReleaseFloorException.Error.beyondBoundary(
+                recheck: "2026-10-01", boundary: "2026-09-09")
+        ) {
+            try CI.Contract.ReleaseFloorException(
+                swiftVersion: "6.4",
+                image:
+                    "swiftlang/swift@sha256:28424ece0fa465ad87d8cf55be685fc89f8286e91e86ebb7503418561c0a71d1",
+                upstreamRelease:
+                    "https://github.com/swiftlang/swift/releases/tag/swift-6.4-RELEASE",
+                recheck: "2026-10-01").validate(today: "2026-08-09")
+        }
+
+        // Expired: the run fails closed rather than pulling on unexamined.
+        #expect(
+            throws: CI.Contract.ReleaseFloorException.Error.expired(
+                recheck: "2026-09-09", today: "2026-09-10")
+        ) {
+            try CI.Contract.ReleaseFloorException.resolve(
+                swiftVersion: "6.4", exception: valid, today: "2026-09-10")
+        }
+
+        #expect(throws: CI.Contract.ReleaseFloorException.Error.swiftVersion("main")) {
+            try CI.Contract.ReleaseFloorException(
+                swiftVersion: "main",
+                image:
+                    "swiftlang/swift@sha256:28424ece0fa465ad87d8cf55be685fc89f8286e91e86ebb7503418561c0a71d1",
+                upstreamRelease:
+                    "https://github.com/swiftlang/swift/releases/tag/swift-main-RELEASE",
+                recheck: "2026-09-09").validate(today: "2026-08-09")
+        }
+    }
+
     @Test
     func ordinaryPushSelectsBuildTierWithLinuxPrimary() throws {
         let plan = try CI.Contract.Plan(

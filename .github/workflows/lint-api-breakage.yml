@@ -32,6 +32,16 @@ on:
         description: |
           If true, breakage findings emit warnings only and the workflow
           exits 0. Used during the γ-1c 4-week observation pilot.
+      swift-image:
+        type: string
+        default: ""
+        description: |
+          Exact container image for this workflow's Swift job, supplied by the
+          universal swift-ci.yml as `needs.plan.outputs.linux-image`. Empty
+          (the standalone/dispatch path) falls back to `swift:<swift-version>`,
+          which is the terminal state once the floor's release image exists.
+          Carries the ONE release-floor exception rather than restating it
+          (swift-institute/.github#491).
       swift-version:
         type: string
         default: "6.3"
@@ -72,7 +82,7 @@ jobs:
     name: API breakage diagnose
     if: ${{ github.event_name == 'pull_request' && !github.event.repository.private }}
     runs-on: ubuntu-latest
-    container: swift:${{ inputs.swift-version }}
+    container: ${{ inputs.swift-image || format('swift:{0}', inputs.swift-version) }}
     timeout-minutes: 20
     permissions:
       contents: read

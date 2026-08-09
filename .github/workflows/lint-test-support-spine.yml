@@ -39,6 +39,16 @@ on:
         description: |
           If true, findings emit warnings only and the workflow exits 0
           regardless of violation count.
+      swift-image:
+        type: string
+        default: ""
+        description: |
+          Exact container image for this workflow's Swift job, supplied by the
+          universal swift-ci.yml as `needs.plan.outputs.linux-image`. Empty
+          (the standalone/dispatch path) falls back to `swift:<swift-version>`,
+          which is the terminal state once the floor's release image exists.
+          Carries the ONE release-floor exception rather than restating it
+          (swift-institute/.github#491).
       swift-version:
         type: string
         default: "6.3"
@@ -76,7 +86,7 @@ jobs:
     name: Test Support Spine audit
     if: ${{ !github.event.repository.private }}     # [CI-032]
     runs-on: ubuntu-latest
-    container: swift:${{ inputs.swift-version }}    # [CI-011] toolchain pin
+    container: ${{ inputs.swift-image || format('swift:{0}', inputs.swift-version) }}    # [CI-011] toolchain pin
     timeout-minutes: 10
     permissions:
       contents: read
