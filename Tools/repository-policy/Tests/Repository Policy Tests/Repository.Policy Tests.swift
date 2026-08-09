@@ -791,8 +791,11 @@ struct RepositoryPolicyTests {
         #expect(workflow.contains("permission-checks: read"))
         #expect(workflow.contains("permission-issues: read"))
         #expect(workflow.contains("repositories: ${{ steps.target.outputs.name }}"))
+        let whitespaceNormalized = workflow
+            .components(separatedBy: .whitespacesAndNewlines)
+            .joined(separator: " ")
         #expect(
-            workflow.contains(
+            whitespaceNormalized.contains(
                 "(inputs.route == 'public' && !github.event.repository.private) || "
                     + "(inputs.route == 'private' && github.event.repository.private)"
             )
