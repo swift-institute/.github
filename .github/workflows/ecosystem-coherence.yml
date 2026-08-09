@@ -160,8 +160,12 @@ jobs:
             echo "::error::clean runner unexpectedly already exposes an institute command"
             exit 1
           fi
-          swift run --package-path Application institute install
-          test "$(command -v institute)" = "$HOME/.local/bin/workspace"
+          # TX-APP1Z: the package is at the repository root after the flatten;
+          # Application/ is only reachable through a pre-flatten ref.
+          institute_package_path=.
+          if [ -f Application/Package.swift ]; then institute_package_path=Application; fi
+          swift run --package-path "$institute_package_path" institute install
+          test "$(command -v institute)" = "$HOME/.local/bin/institute"
           institute --help >/dev/null
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 

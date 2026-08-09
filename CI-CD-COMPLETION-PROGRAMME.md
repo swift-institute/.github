@@ -603,15 +603,15 @@ workspace inventory effective \
 
 The version-1 JSON object has exactly the top-level members `schemaVersion`, `scope`, `public`, `private`, `combined`, and `unmeasured`. `public`, `private`, and `combined` each carry their canonically sorted population and SHA-256 digest; `unmeasured` carries typed inaccessible/error residue rather than an invented absence. `scope=public` emits no private coordinate and marks the private limb `not-requested`; `scope=effective` requires authorized private discovery. Canonical bytes exclude only fields expressly declared volatile by the schema. Exit `0` means complete for the requested scope, `1` means invalid input or semantic failure, and `2` means `UNMEASURED`; TX2/TX3 accept only `0`.
 
-**Operator sequence.** From the frozen Workspace root, run, in order:
+**Operator sequence.** From the frozen institute-application root, run, in order:
 
 ```text
-swift run --package-path Application workspace inventory regenerate --dry-run
-swift run --package-path Application workspace package test --package-path Application --fresh
-swift run --package-path Application workspace inventory effective \
+swift run institute inventory regenerate --dry-run
+swift run institute package test --package-path . --fresh
+swift run institute inventory effective \
   --inventory-scope public \
   --inventory-output .ci-cd-completion/workspace/inventory-public.json
-swift run --package-path Application workspace inventory effective \
+swift run institute inventory effective \
   --inventory-scope effective \
   --inventory-output .ci-cd-completion/private/inventory-effective.json
 ```
@@ -1126,22 +1126,22 @@ Closure requires: canonical count equals classified records; accessible ordinary
 Run and record:
 
 ```text
-# from swift-institute/Workspace
-swift run --package-path Application workspace doctor
-swift run --package-path Application workspace inventory regenerate --dry-run
-swift run --package-path Application workspace inventory effective \
+# from swift-institute/institute-application
+swift run institute doctor
+swift run institute inventory regenerate --dry-run
+swift run institute inventory effective \
   --inventory-scope public \
   --inventory-output .ci-cd-completion/workspace/inventory-public.json
-swift run --package-path Application workspace package test \
-  --package-path Application --fresh
+swift run institute package test \
+  --package-path . --fresh
 
 # in the authorized private containment boundary; never upload this output
-swift run --package-path Application workspace inventory effective \
+swift run institute inventory effective \
   --inventory-scope effective \
   --inventory-output .ci-cd-completion/private/inventory-effective.json
 
 # from swift-institute/.github
-workspace package test --package-path Tools/RepositoryPolicy --fresh
+institute package test --package-path Tools/RepositoryPolicy --fresh
 python3 -m unittest discover -s .github/scripts -p 'test-*.py'
 actionlint
 ```

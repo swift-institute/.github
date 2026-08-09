@@ -666,7 +666,17 @@ jobs:
           # uuid-dev: the typed F2/F10 provisioning input (swift-linux-standard's
           # CLinuxKernelShim includes uuid/uuid.h); absent on the bare runner.
           sudo apt-get update -qq && sudo apt-get install -qq -y uuid-dev
-          swift run --package-path .workspace/Application institute package build --package-path "${RUNNER_TEMP}/institute-ci-sources" --argument=--static-swift-stdlib
+          # TX-APP1Z: institute-application's Swift package moved from Application/ to
+          # the repository root. This checkout is pinned to a caller-supplied or
+          # hard-pinned revision, so it must build either layout. The probe retires
+          # once every pin in the fleet is post-flatten.
+
+
+          workspace_package_path=.workspace
+          if [ -f .workspace/Application/Package.swift ]; then
+            workspace_package_path=.workspace/Application
+          fi
+          swift run --package-path "$workspace_package_path" institute package build --package-path "${RUNNER_TEMP}/institute-ci-sources" --argument=--static-swift-stdlib
           mkdir -p .institute-ci-entry/bin
           cp "$(find "${RUNNER_TEMP}/institute-ci-sources/.build" -name institute-ci -type f -perm /111 | head -1)" .institute-ci-entry/bin/institute-ci
           .institute-ci-entry/bin/institute-ci bootstrap-manifest --workspace-revision 72d4b2ae1e5b6a2b49fc22e0240dad0a34a9618f --sources-revision "$SOURCES_TREE" --toolchain swift-6.3 --os linux --arch x86_64 --provisioning uuid-dev,static-swift-stdlib --root .institute-ci-entry --executables bin/institute-ci --producer-run "$GITHUB_RUN_ID" > .institute-ci-entry/manifest.json
@@ -2744,7 +2754,17 @@ jobs:
           # uuid-dev: the typed F2/F10 provisioning input (swift-linux-standard's
           # CLinuxKernelShim includes uuid/uuid.h); absent on the bare runner.
           sudo apt-get update -qq && sudo apt-get install -qq -y uuid-dev
-          swift run --package-path .workspace/Application institute package build --package-path "$GITHUB_WORKSPACE/institute-receipt/Tools/institute-ci" --argument=--static-swift-stdlib
+          # TX-APP1Z: institute-application's Swift package moved from Application/ to
+          # the repository root. This checkout is pinned to a caller-supplied or
+          # hard-pinned revision, so it must build either layout. The probe retires
+          # once every pin in the fleet is post-flatten.
+
+
+          workspace_package_path=.workspace
+          if [ -f .workspace/Application/Package.swift ]; then
+            workspace_package_path=.workspace/Application
+          fi
+          swift run --package-path "$workspace_package_path" institute package build --package-path "$GITHUB_WORKSPACE/institute-receipt/Tools/institute-ci" --argument=--static-swift-stdlib
           mkdir -p .institute-ci-entry/bin
           cp "$(find institute-receipt/Tools/institute-ci/.build -name institute-ci -type f -perm /111 | head -1)" .institute-ci-entry/bin/institute-ci
           .institute-ci-entry/bin/institute-ci bootstrap-manifest --workspace-revision 72d4b2ae1e5b6a2b49fc22e0240dad0a34a9618f --sources-revision "$SOURCES_TREE" --toolchain swift-6.3 --os linux --arch x86_64 --provisioning uuid-dev,static-swift-stdlib --root .institute-ci-entry --executables bin/institute-ci --producer-run "$GITHUB_RUN_ID" > .institute-ci-entry/manifest.json

@@ -98,5 +98,15 @@ jobs:
           PACKAGE: ${{ matrix.package }}
         run: |
           set -euo pipefail
-          swift run --package-path .workspace/Application institute package test \
+          # TX-APP1Z: institute-application's Swift package moved from Application/ to
+          # the repository root. This checkout is pinned to a caller-supplied or
+          # hard-pinned revision, so it must build either layout. The probe retires
+          # once every pin in the fleet is post-flatten.
+
+
+          workspace_package_path=.workspace
+          if [ -f .workspace/Application/Package.swift ]; then
+            workspace_package_path=.workspace/Application
+          fi
+          swift run --package-path "$workspace_package_path" institute package test \
             --package-path "Tools/${PACKAGE}"
