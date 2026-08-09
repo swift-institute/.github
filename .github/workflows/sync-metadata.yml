@@ -236,6 +236,13 @@ jobs:
           # entitled. The cause is org-wide, so probing every remaining repo
           # would cost 2 API calls each per night to relearn the same fact.
           sub_unsupported=0
+          # Repository names are useful diagnostics for public targets, but
+          # this workflow itself runs publicly. A private (or otherwise
+          # non-public) target therefore receives only a stable ordinal in
+          # every log, annotation, preview, and step-summary path below.
+          # This is deliberately not a hash: a public correlation token would
+          # still disclose a durable private-repository identity.
+          target_ordinal=0
 
           # Build target list — single-repo mode bypasses enumeration; org-mode
           # reads from the enumerate-org-public-repos composite output.
@@ -277,16 +284,29 @@ jobs:
 
           # Per-repo sync -------------------------------------------------------
           for target in "${targets[@]}"; do
+            target_ordinal=$((target_ordinal + 1))
+            reported_target="target #${target_ordinal}"
+            visibility_error="$RUNNER_TEMP/sync-metadata-visibility-${target_ordinal}.err"
+            if ! target_visibility=$(gh api "repos/$target" --jq '.visibility' 2>"$visibility_error"); then
+              rm -f "$visibility_error"
+              echo "::error::${reported_target}: could not read repository visibility."
+              exit 1
+            fi
+            rm -f "$visibility_error"
+            if [[ "$target_visibility" == "public" ]]; then
+              reported_target="$target"
+            fi
+
             # 1. Read .github/metadata.yaml from the target's main branch.
             yaml_content=$(gh api "repos/${target}/contents/.github/metadata.yaml" \
               --jq '.content' 2>/dev/null | base64 -d 2>/dev/null) || {
-              echo "  ${target}: skipped (no .github/metadata.yaml)"
+              echo "  ${reported_target}: skipped (no .github/metadata.yaml)"
               continue
             }
 
             # 2. Parse YAML; bail loud on malformed.
-            desired=$(echo "$yaml_content" | yq -o=json) || {
-              echo "  ${target}: ERROR — malformed metadata.yaml"
+            desired=$(echo "$yaml_content" | yq -o=json 2>/dev/null) || {
+              echo "  ${reported_target}: ERROR — malformed metadata.yaml"
               exit 1
             }
 
@@ -300,8 +320,14 @@ jobs:
             desired_branch=$(echo "$desired" | jq -r '.settings.defaultBranch // "main"')
 
             # 3. Read current GitHub state.
-            current=$(gh repo view "$target" \
-              --json description,repositoryTopics,homepageUrl,hasIssuesEnabled,hasDiscussionsEnabled,hasWikiEnabled,hasProjectsEnabled,defaultBranchRef,mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed,deleteBranchOnMerge,visibility)
+            current_error="$RUNNER_TEMP/sync-metadata-current-${target_ordinal}.err"
+            if ! current=$(gh repo view "$target" \
+              --json description,repositoryTopics,homepageUrl,hasIssuesEnabled,hasDiscussionsEnabled,hasWikiEnabled,hasProjectsEnabled,defaultBranchRef,mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed,deleteBranchOnMerge,visibility 2>"$current_error"); then
+              rm -f "$current_error"
+              echo "::error::${reported_target}: could not read repository metadata."
+              exit 1
+            fi
+            rm -f "$current_error"
 
             current_desc=$(echo "$current" | jq -r '.description // ""')
             current_homepage=$(echo "$current" | jq -r '.homepageUrl // ""')
@@ -407,7 +433,13 @@ jobs:
                 desired_np=false
                 desired_vc=false
               fi
-              sec=$(gh api "repos/$target" --jq '{ss:(.security_and_analysis.secret_scanning.status // "disabled"), pp:(.security_and_analysis.secret_scanning_push_protection.status // "disabled"), np:(.security_and_analysis.secret_scanning_non_provider_patterns.status // "disabled"), vc:(.security_and_analysis.secret_scanning_validity_checks.status // "disabled")}')
+              security_error="$RUNNER_TEMP/sync-metadata-security-${target_ordinal}.err"
+              if ! sec=$(gh api "repos/$target" --jq '{ss:(.security_and_analysis.secret_scanning.status // "disabled"), pp:(.security_and_analysis.secret_scanning_push_protection.status // "disabled"), np:(.security_and_analysis.secret_scanning_non_provider_patterns.status // "disabled"), vc:(.security_and_analysis.secret_scanning_validity_checks.status // "disabled")}' 2>"$security_error"); then
+                rm -f "$security_error"
+                echo "::error::${reported_target}: could not read security settings."
+                exit 1
+              fi
+              rm -f "$security_error"
               current_ss=$([[ "$(echo "$sec" | jq -r .ss)" == "enabled" ]] && echo true || echo false)
               current_pp=$([[ "$(echo "$sec" | jq -r .pp)" == "enabled" ]] && echo true || echo false)
               current_np=$([[ "$(echo "$sec" | jq -r .np)" == "enabled" ]] && echo true || echo false)
@@ -424,46 +456,63 @@ jobs:
               fi
               repo_diffs=$((repo_diffs + ${#sec_args[@]} + ${#sub_args[@]}))
             else
-              echo "  ${target}: security settings skipped (not public — no security_and_analysis surface exists)"
+              echo "  ${reported_target}: security settings skipped (not public — no security_and_analysis surface exists)"
             fi
 
             diffs_found=$((diffs_found + repo_diffs))
 
             # 5. Apply (or print).
             if [[ $repo_diffs -eq 0 ]]; then
-              echo "  ${target}: converged"
+              echo "  ${reported_target}: converged"
               continue
             fi
 
             if [[ "$DRY_RUN" == "true" ]]; then
-              echo "  ${target}: ${repo_diffs} diff(s) — would run:"
-              if [[ ${#edit_args[@]} -gt 0 ]]; then
-                printf '    gh repo edit %q' "$target"
-                for a in "${edit_args[@]}"; do printf ' %q' "$a"; done
-                printf '\n'
+              echo "  ${reported_target}: ${repo_diffs} diff(s) — would run:"
+              if [[ "$target_visibility" == "public" ]]; then
+                if [[ ${#edit_args[@]} -gt 0 ]]; then
+                  printf '    gh repo edit %q' "$target"
+                  for a in "${edit_args[@]}"; do printf ' %q' "$a"; done
+                  printf '\n'
+                fi
+                if [[ ${#merge_args[@]} -gt 0 ]]; then
+                  printf '    gh api -X PATCH %q' "repos/$target"
+                  for a in "${merge_args[@]}"; do printf ' %q' "$a"; done
+                  printf '\n'
+                fi
+                if [[ ${#sec_args[@]} -gt 0 ]]; then
+                  printf '    gh api -X PATCH %q  # security_and_analysis: secret_scanning=%s push_protection=%s\n' "repos/$target" "$desired_ss" "$desired_pp"
+                fi
+                if [[ ${#sub_args[@]} -gt 0 ]]; then
+                  printf '    gh api -X PATCH %q  # security_and_analysis: non_provider_patterns=%s validity_checks=%s\n' "repos/$target" "$desired_np" "$desired_vc"
+                fi
+              else
+                echo "    ${reported_target}: mutation preview suppressed"
               fi
-              if [[ ${#merge_args[@]} -gt 0 ]]; then
-                printf '    gh api -X PATCH %q' "repos/$target"
-                for a in "${merge_args[@]}"; do printf ' %q' "$a"; done
-                printf '\n'
-              fi
-              if [[ ${#sec_args[@]} -gt 0 ]]; then
-                printf '    gh api -X PATCH %q  # security_and_analysis: secret_scanning=%s push_protection=%s\n' "repos/$target" "$desired_ss" "$desired_pp"
-              fi
-              if [[ ${#sub_args[@]} -gt 0 ]]; then
-                printf '    gh api -X PATCH %q  # security_and_analysis: non_provider_patterns=%s validity_checks=%s\n' "repos/$target" "$desired_np" "$desired_vc"
-              fi
-              summary_lines+=("- \`${target}\`: ${repo_diffs} field(s) — dry-run preview")
+              summary_lines+=("- \`${reported_target}\`: ${repo_diffs} field(s) — dry-run preview")
             else
-              echo "  ${target}: ${repo_diffs} diff(s) — applying"
-              [[ ${#edit_args[@]} -gt 0 ]] && gh repo edit "$target" "${edit_args[@]}"
-              [[ ${#merge_args[@]} -gt 0 ]] && gh api -X PATCH "repos/$target" "${merge_args[@]}" >/dev/null
+              echo "  ${reported_target}: ${repo_diffs} diff(s) — applying"
+              operation_error="$RUNNER_TEMP/sync-metadata-operation-${target_ordinal}.err"
+              if [[ ${#edit_args[@]} -gt 0 ]] && ! gh repo edit "$target" "${edit_args[@]}" >/dev/null 2>"$operation_error"; then
+                rm -f "$operation_error"
+                echo "::error::${reported_target}: metadata edit failed."
+                exit 1
+              fi
+              if [[ ${#merge_args[@]} -gt 0 ]] && ! gh api -X PATCH "repos/$target" "${merge_args[@]}" >/dev/null 2>"$operation_error"; then
+                rm -f "$operation_error"
+                echo "::error::${reported_target}: merge-method edit failed."
+                exit 1
+              fi
               if [[ ${#sec_args[@]} -gt 0 ]]; then
                 ss_status=$([[ "$desired_ss" == true ]] && echo enabled || echo disabled)
                 pp_status=$([[ "$desired_pp" == true ]] && echo enabled || echo disabled)
                 jq -nc --arg ss "$ss_status" --arg pp "$pp_status" \
                   '{security_and_analysis:{secret_scanning:{status:$ss},secret_scanning_push_protection:{status:$pp}}}' \
-                  | gh api -X PATCH "repos/$target" --input - >/dev/null
+                  | gh api -X PATCH "repos/$target" --input - >/dev/null 2>"$operation_error" || {
+                    rm -f "$operation_error"
+                    echo "::error::${reported_target}: security-settings edit failed."
+                    exit 1
+                  }
               fi
               # Second PATCH: sub-features, after secret scanning is known on.
               # These two are Secret Protection (Advanced Security) features.
@@ -476,20 +525,29 @@ jobs:
                 vc_status=$([[ "$desired_vc" == true ]] && echo enabled || echo disabled)
                 jq -nc --arg np "$np_status" --arg vc "$vc_status" \
                   '{security_and_analysis:{secret_scanning_non_provider_patterns:{status:$np},secret_scanning_validity_checks:{status:$vc}}}' \
-                  | gh api -X PATCH "repos/$target" --input - >/dev/null
-                readback=$(gh api "repos/$target" --jq '{np:(.security_and_analysis.secret_scanning_non_provider_patterns.status // "disabled"), vc:(.security_and_analysis.secret_scanning_validity_checks.status // "disabled")}')
+                  | gh api -X PATCH "repos/$target" --input - >/dev/null 2>"$operation_error" || {
+                    rm -f "$operation_error"
+                    echo "::error::${reported_target}: security sub-feature edit failed."
+                    exit 1
+                  }
+                if ! readback=$(gh api "repos/$target" --jq '{np:(.security_and_analysis.secret_scanning_non_provider_patterns.status // "disabled"), vc:(.security_and_analysis.secret_scanning_validity_checks.status // "disabled")}' 2>"$operation_error"); then
+                  rm -f "$operation_error"
+                  echo "::error::${reported_target}: could not read back security sub-features."
+                  exit 1
+                fi
                 got_np=$(echo "$readback" | jq -r .np)
                 got_vc=$(echo "$readback" | jq -r .vc)
                 if [[ "$got_np" != "$np_status" || "$got_vc" != "$vc_status" ]]; then
-                  echo "    ${target}: sub-features did not take effect (want np=${np_status} vc=${vc_status}, got np=${got_np} vc=${got_vc}) — not retrying the rest of this run"
+                  echo "    ${reported_target}: sub-features did not take effect (want np=${np_status} vc=${vc_status}, got np=${got_np} vc=${got_vc}) — not retrying the rest of this run"
                   repo_diffs=$((repo_diffs - ${#sub_args[@]}))
                   unentitled=$((unentitled+1))
-                  [[ -z "$unentitled_sample" ]] && unentitled_sample="$target"
+                  [[ -z "$unentitled_sample" ]] && unentitled_sample="$reported_target"
                   sub_unsupported=1
                 fi
               fi
+              rm -f "$operation_error"
               edits_applied=$((edits_applied + repo_diffs))
-              summary_lines+=("- \`${target}\`: ${repo_diffs} field(s) applied")
+              summary_lines+=("- \`${reported_target}\`: ${repo_diffs} field(s) applied")
             fi
           done
 

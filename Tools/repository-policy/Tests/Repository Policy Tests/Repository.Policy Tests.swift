@@ -687,6 +687,42 @@ struct RepositoryPolicyTests {
         )
     }
 
+    // The public metadata workflow may converge private targets during the
+    // nightly all-visibility sweep. Public targets keep their actionable
+    // coordinate; a private target is represented only by its in-run ordinal
+    // in normal progress, dry-run previews, failures, and the step summary.
+    @Test
+    func syncJobKeepsPrivateTargetCoordinatesOutOfPublicReporting() throws {
+        let url = URL(filePath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appending(path: ".github/workflows/sync-metadata.yml")
+        let workflow = try String(contentsOf: url, encoding: .utf8)
+        let sync = try #require(workflow.range(of: "\n  sync:\n"))
+        let rulesets = try #require(workflow.range(of: "\n  rulesets:\n"))
+        let syncJob = workflow[sync.upperBound..<rulesets.lowerBound]
+
+        // Positive control: public repositories retain their actionable name.
+        #expect(syncJob.contains("if [[ \"$target_visibility\" == \"public\" ]]; then"))
+        #expect(syncJob.contains("reported_target=\"$target\""))
+        #expect(syncJob.contains("printf '    gh repo edit %q' \"$target\""))
+
+        // Negative controls cover ordinary reporting, dry-run command
+        // previews, fatal failures, and summary generation. The ordinal is
+        // intentionally not derived from or correlated with the coordinate.
+        #expect(syncJob.contains("reported_target=\"target #${target_ordinal}\""))
+        #expect(syncJob.contains("echo \"    ${reported_target}: mutation preview suppressed\""))
+        #expect(syncJob.contains("echo \"::error::${reported_target}: could not read repository visibility.\""))
+        #expect(syncJob.contains("summary_lines+=(\"- \\`${reported_target}\\`: ${repo_diffs} field(s) — dry-run preview\")"))
+        #expect(syncJob.contains("summary_lines+=(\"- \\`${reported_target}\\`: ${repo_diffs} field(s) applied\")"))
+        #expect(!syncJob.contains("echo \"  ${target}:"))
+        #expect(!syncJob.contains("::error::${target}"))
+        #expect(!syncJob.contains("summary_lines+=(\"- \\`${target}\\`:"))
+    }
+
     @Test
     func botReviewTransactionSourcesCollectionsFromFiles() throws {
         let url = URL(filePath: #filePath)
