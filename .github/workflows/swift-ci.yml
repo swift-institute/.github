@@ -1820,6 +1820,7 @@ jobs:
         run: swiftlint --version
 
       - name: Lint
+        shell: bash
         run: |
           if [ -f .swiftlint.yml ]; then
             swiftlint lint --strict --reporter github-actions-logging

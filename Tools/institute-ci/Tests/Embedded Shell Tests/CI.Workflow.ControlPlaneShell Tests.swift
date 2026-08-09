@@ -426,6 +426,13 @@ struct ControlPlaneShellTests {
     /// bytes against the pinned Linux SwiftLint release, not a command shim.
     @Suite
     struct SwiftLintConfigSelection {
+        @Test func `the production Lint step declares Bash for its array-based script`() throws {
+            let shell = try EmbeddedShell.workflowStep(
+                ControlPlaneShellTests.workflow, job: "lint", step: "Lint")
+            #expect(shell.shell == "bash")
+            #expect(shell.script.contains("mapfile -d '' files"))
+        }
+
         static func run(hasRootConfig: Bool, source: String? = nil) throws -> EmbeddedShell.Result {
             let shell = try EmbeddedShell.workflowStep(
                 ControlPlaneShellTests.workflow, job: "lint", step: "Lint")
@@ -524,6 +531,11 @@ struct ControlPlaneShellTests {
         {
             let script = directory.appendingPathComponent("lint.sh")
             try shell.script.write(to: script, atomically: true, encoding: .utf8)
+            // GitHub runs a container step with `sh` unless this exact
+            // workflow step declares another shell. Execute through the
+            // extracted declaration so removing `shell: bash` makes this
+            // array-using script fail under the same default.
+            let interpreter = shell.shell ?? "sh"
 
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
@@ -544,7 +556,7 @@ struct ControlPlaneShellTests {
                 unzip -q /tmp/swiftlint.zip -d /tmp/swiftlint
                 install -m 755 /tmp/swiftlint/swiftlint /usr/local/bin/swiftlint
                 set +e
-                bash lint.sh
+                \(interpreter) lint.sh
                 status=$?
                 set -e
                 test -f .swiftlint.yml
