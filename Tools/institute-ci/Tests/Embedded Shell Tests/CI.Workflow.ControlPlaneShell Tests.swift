@@ -533,7 +533,7 @@ struct ControlPlaneShellTests {
                 """
                 set -euo pipefail
                 apt-get update -qq
-                apt-get install -qq -y ca-certificates curl unzip
+                apt-get install -qq -y ca-certificates curl libxml2 unzip
                 curl -fsSL -o /tmp/swiftlint.zip \\
                   https://github.com/realm/SwiftLint/releases/download/0.63.3/swiftlint_linux_amd64.zip
                 echo '26db741d43f2f2dc26c0cf16911100a3e186c3d1dbb59e55ad3ac87b0de4538f  /tmp/swiftlint.zip' | sha256sum -c -
