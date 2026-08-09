@@ -527,8 +527,17 @@ jobs:
       # commit of THIS workflow file (the called reusable, not the caller),
       # so the executed script cannot differ from the workflow revision
       # that invoked it (#43 item 3).
+      # #506: this checkout and the two F12 identity/bootstrap chains below
+      # run UNCONDITIONALLY (not gated on `inputs.job == ''`) because the
+      # "Classify tier" step that consumes the institute-ci binary runs on
+      # every event — including single-job ci-dispatch.yml, whose downstream
+      # Linux legs bind `needs.plan.outputs.linux-image`. Gating the
+      # bootstrap while Classify stayed ungated made every dispatch fail
+      # with exit 127 (`.institute-ci-entry/bin/institute-ci: No such file`).
+      # The identity-conflict fast-check, branch-pin guard, and subject
+      # checkout keep their dispatch-bypass gates — those are the checks a
+      # debug repro deliberately skips; the planner binary is not one.
       - name: Checkout CI scripts
-        if: ${{ inputs.job == '' }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: swift-institute/.github
@@ -543,7 +552,6 @@ jobs:
       # that is not 40-hex refuses fail-closed rather than minting a
       # malformed cache key.
       - name: Institute CI source identity
-        if: ${{ inputs.job == '' }}
         id: institute-ci-identity
         shell: bash
         run: |
@@ -636,19 +644,18 @@ jobs:
       # stashed by "Institute CI source identity" above, before the
       # identity-conflict fast-check dropped the scripts checkout.
       - name: Restore Institute CI (exact key, acceleration only)
-        if: ${{ inputs.job == '' }}
         id: institute-ci-restore
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .institute-ci-entry
           key: institute-ci-${{ steps.institute-ci-identity.outputs.sources-tree }}-72d4b2ae1e5b6a2b49fc22e0240dad0a34a9618f-linux-x86_64-swift-6.3-static
       - name: Swift toolchain (cold bootstrap only)
-        if: ${{ inputs.job == '' && steps.institute-ci-restore.outputs.cache-hit != 'true' }}
+        if: ${{ steps.institute-ci-restore.outputs.cache-hit != 'true' }}
         uses: SwiftyLab/setup-swift@38f54a76b70d989321de9dc7c840618c08cf56e9  # v1.14.0
         with:
           swift-version: "6.3"
       - name: Checkout Workspace at exact main pin (cold bootstrap only)
-        if: ${{ inputs.job == '' && steps.institute-ci-restore.outputs.cache-hit != 'true' }}
+        if: ${{ steps.institute-ci-restore.outputs.cache-hit != 'true' }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: swift-institute/institute-application
@@ -657,7 +664,7 @@ jobs:
           path: .workspace
           persist-credentials: false
       - name: Cold bootstrap through the sanctioned Workspace coordinate
-        if: ${{ inputs.job == '' && steps.institute-ci-restore.outputs.cache-hit != 'true' }}
+        if: ${{ steps.institute-ci-restore.outputs.cache-hit != 'true' }}
         shell: bash
         env:
           SOURCES_TREE: ${{ steps.institute-ci-identity.outputs.sources-tree }}
@@ -681,13 +688,12 @@ jobs:
           cp "$(find "${RUNNER_TEMP}/institute-ci-sources/.build" -name institute-ci -type f -perm /111 | head -1)" .institute-ci-entry/bin/institute-ci
           .institute-ci-entry/bin/institute-ci bootstrap-manifest --workspace-revision 72d4b2ae1e5b6a2b49fc22e0240dad0a34a9618f --sources-revision "$SOURCES_TREE" --toolchain swift-6.3 --os linux --arch x86_64 --provisioning uuid-dev,static-swift-stdlib --root .institute-ci-entry --executables bin/institute-ci --producer-run "$GITHUB_RUN_ID" > .institute-ci-entry/manifest.json
       - name: Save Institute CI cache entry (cold bootstrap only)
-        if: ${{ inputs.job == '' && steps.institute-ci-restore.outputs.cache-hit != 'true' }}
+        if: ${{ steps.institute-ci-restore.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .institute-ci-entry
           key: institute-ci-${{ steps.institute-ci-identity.outputs.sources-tree }}-72d4b2ae1e5b6a2b49fc22e0240dad0a34a9618f-linux-x86_64-swift-6.3-static
       - name: Verify Institute CI provenance before trust (fail closed)
-        if: ${{ inputs.job == '' }}
         shell: bash
         env:
           SOURCES_TREE: ${{ steps.institute-ci-identity.outputs.sources-tree }}
@@ -1863,8 +1869,22 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          pinned_tier1="${GITHUB_WORKSPACE}/.ci-central-swiftlint-config/.swiftlint.yml"
-          [ -f "$pinned_tier1" ] || { echo "::error::pinned Tier 1 .swiftlint.yml did not check out"; exit 1; }
+          pinned_tier1_src="${GITHUB_WORKSPACE}/.ci-central-swiftlint-config/.swiftlint.yml"
+          [ -f "$pinned_tier1_src" ] || { echo "::error::pinned Tier 1 .swiftlint.yml did not check out"; exit 1; }
+          # #505: SwiftLint resolves a parent config's `included:`/`excluded:`
+          # paths relative to the FILE THAT DECLARES THEM, not the child
+          # config or the invocation cwd. Rewriting parent_config to a file
+          # outside the consumer root (the sparse-checkout sibling dir, or
+          # RUNNER_TEMP) therefore made the Tier 1 `included: [Sources,
+          # Tests]` resolve against directories that don't exist, emptying
+          # the include set ("No lintable files found at paths: ''").
+          # Materialize every pinned config IN the consumer root so
+          # Sources/ and Tests/ stay consumer-relative — same reasoning the
+          # rootless branch of the Lint step already documents. The pinned
+          # filenames deliberately do not match the `.swiftlint.yml` find
+          # below, so they are never themselves treated as consumer configs.
+          pinned_tier1="${GITHUB_WORKSPACE}/.ci-pinned-tier1.swiftlint.yml"
+          cp "$pinned_tier1_src" "$pinned_tier1"
           tier1_re='^[[:space:]]*parent_config:[[:space:]]*https://raw\.githubusercontent\.com/swift-institute/\.github/([^/]+)/\.swiftlint\.yml[[:space:]]*$'
           tier2_re='^[[:space:]]*parent_config:[[:space:]]*https://raw\.githubusercontent\.com/([^/]+)/\.github/([^/]+)/\.swiftlint\.yml[[:space:]]*$'
           mapfile -d '' configs < <(find . -name '.swiftlint.yml' -not -path './.ci-central-swiftlint-config/*' -print0)
@@ -1882,7 +1902,10 @@ jobs:
                 continue
               fi
               tier2_url="https://raw.githubusercontent.com/${org}/.github/${ref}/.swiftlint.yml"
-              tier2_local="${RUNNER_TEMP}/tier2-${org}.swiftlint.yml"
+              # In the consumer root, not RUNNER_TEMP — same #505 relative-
+              # resolution class: a Tier 2 config declaring `included:` would
+              # otherwise resolve it against RUNNER_TEMP.
+              tier2_local="${GITHUB_WORKSPACE}/.ci-pinned-tier2-${org}.swiftlint.yml"
               if ! curl -fsSL -o "$tier2_local" "$tier2_url"; then
                 echo "::warning::$config: could not fetch Tier 2 config from $tier2_url — left unpinned (floating): $line"
                 continue
