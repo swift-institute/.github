@@ -473,10 +473,10 @@ struct ControlPlaneShellTests {
                 at: directory.appendingPathComponent("Sources"), withIntermediateDirectories: true)
             defer { try? manager.removeItem(at: directory) }
 
-            // `force_unwrapping` is a shipped default rule: the nonzero exit
-            // and the rendered consumer path prove that SwiftLint selected
-            // and linted this real file, rather than merely accepting the
-            // command line.
+            // `force_unwrapping` is enabled in this fixture's copied config:
+            // the nonzero exit and the rendered consumer path prove that
+            // SwiftLint selected and linted this real file, rather than
+            // merely accepting the command line.
             try "let value: Int? = nil\n_ = value!\n".write(
                 to: directory.appendingPathComponent("Sources/Example.swift"),
                 atomically: true, encoding: .utf8)
@@ -486,6 +486,10 @@ struct ControlPlaneShellTests {
                 at: checkedOut.deletingLastPathComponent(), withIntermediateDirectories: true)
             try manager.copyItem(
                 at: URL(fileURLWithPath: EmbeddedShell.repositoryRoot + "/.swiftlint.yml"), to: checkedOut)
+            let copiedConfiguration = try String(contentsOf: checkedOut, encoding: .utf8)
+            try copiedConfiguration.replacingOccurrences(
+                of: "opt_in_rules:\n", with: "opt_in_rules:\n  - force_unwrapping\n")
+                .write(to: checkedOut, atomically: true, encoding: .utf8)
 
             let shell = try EmbeddedShell.workflowStep(
                 ControlPlaneShellTests.workflow, job: "lint", step: "Lint")
@@ -528,7 +532,7 @@ struct ControlPlaneShellTests {
                 "--mount", "type=bind,source=\(directory.path),target=/fixture",
                 "--workdir", "/fixture",
                 "--env", "GITHUB_WORKSPACE=/fixture",
-                "ubuntu:24.04",
+                "swift:6.3-noble@sha256:d40382aaafd5da4b1012abb8f7689f927f18a4797825d7daaf02dd641057a167",
                 "bash", "-lc",
                 """
                 set -euo pipefail
