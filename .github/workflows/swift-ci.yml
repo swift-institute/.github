@@ -11,9 +11,9 @@ name: Swift CI (reusable)
 # ────────────────────────────────────────────────────────────────────────
 
 # Reusable CI workflow for Swift Institute packages. Provides the universal
-# test matrix that applies across all five layers: macOS 26 (Swift 6.3 debug)
-# + Ubuntu (Swift 6.3 release) + Ubuntu (Swift main nightly,
-# continue-on-error) + Windows (Swift 6.3).
+# test matrix that applies across all five layers: macOS (Swift 6.4 debug)
+# + Ubuntu (Swift 6.4 release) + Windows (Swift 6.4 debug). Swift main
+# nightly is a separately classified, time-bounded advisory exception.
 #
 # TIERED SCHEDULING (R1/R2 principal ruling 2026-07-20): the matrix SHAPE
 # above remains the ecosystem platform contract ([CI-010]/[CI-091] unchanged),
@@ -115,15 +115,15 @@ on:
     inputs:
       swift-version:
         type: string
-        default: "6.3"
-        description: "Swift version for the macOS, Ubuntu release, and Windows jobs. The nightly job is always Swift main (currently tracks 6.5-dev; floats as main moves)."
+        default: "6.4"
+        description: "Required Swift release floor for the macOS, Ubuntu release, and Windows jobs. The main-nightly advisory job is separately digest-pinned and must pass the typed exception check in plan."
       enable-private-repos:
         type: boolean
         default: true
         description: "If true, configure credentialed git url rewrites (App-token primary, PRIVATE_REPO_TOKEN fallback) for github.com clones. Default true: most consumers in the swift-primitives ecosystem have private deps and need the credentials; public-only consumers may pass false explicitly."
       macos-runner:
         type: string
-        default: "macos-26"
+        default: "xcode-27"
         description: "macOS runner image. Bump annually when GitHub adds a new image version. env.* is invalid in runs-on: per Actions context-availability rules — input is the working centralization mechanism."
       test-filter:
         type: string
@@ -179,7 +179,7 @@ on:
         description: "Pass-through override forwarded to the nested swift-docs.yml call's `exclude-modules` input (TX10: integrated docs are unconditional)."
       docs-swift-version:
         type: string
-        default: "6.3"
+        default: "6.4"
         description: "Swift toolchain version for the nested swift-docs.yml call's DocC build container (TX10: integrated docs are unconditional). Independent of this workflow's own `swift-version` input (a Linux-container axis for the release/nightly legs) — mirrors swift-docs.yml's own default so an integrated caller that never overrides either stays in lockstep with the standalone wrapper path."
     secrets:
       PRIVATE_REPO_TOKEN:
@@ -216,6 +216,11 @@ on:
 # release of each tool; bump on every workflow touch where a newer
 # release exists.
 env:
+  # The sole main-nightly exception. `plan` validates all three values before
+  # emitting any selected legs; expiry is inclusive and requires a new ruling.
+  SWIFT_MAIN_NIGHTLY_IMAGE: "swiftlang/swift@sha256:f577f95edfb85cf3bdc45eb0badaab09239de5c86c69b3b6d594cc62916c0a7d"
+  SWIFT_MAIN_NIGHTLY_UPSTREAM_ISSUE: "https://github.com/swiftlang/swift/issues/90275"
+  SWIFT_MAIN_NIGHTLY_RECHECK: "2026-09-14"
   SWIFTLINT_VERSION: "0.63.3"
   # [CI-082] sha256sum -c pin for swiftlint_linux_amd64.zip at SWIFTLINT_VERSION.
   # Re-lock on every version bump per the rule body's bump protocol.
@@ -227,7 +232,11 @@ env:
   # contradicts this one. swift-primitives carried a stale inert "26.4" until
   # 2026-07-28; removed there, rationale recorded in that file.
   #
-  # 26.6 is the CEILING on `macos-26`, not a conservative choice. Determined
+  # The 6.4 floor runs on `xcode-27` with Xcode 27.0. The previous 26.6
+  # ceiling record remains historical evidence only; this pin and runner must
+  # move together so the macOS check name cannot overstate its toolchain.
+  #
+  # 26.6 was the CEILING on `macos-26`, not a conservative choice. Determined
   # 2026-07-28 against actions/runner-images@main:
   #   - macos-26-arm64 (`macos-latest`, `macos-26`) installs 26.0.1 … 26.6
   #     (26.6 = 17F113); 26.6 became the image default 2026.07.21. There is no
@@ -282,7 +291,7 @@ env:
   # log is the only place the contradiction is visible. Move the two axes
   # together, or accept that the macOS leg's name is aspirational until the
   # Xcode pin catches up.
-  XCODE_VERSION: "26.6"
+  XCODE_VERSION: "27.0"
 
 jobs:
   # ─── Tier plan (R1/R2 principal ruling 2026-07-20) ───────────────────────
@@ -655,7 +664,7 @@ jobs:
           LINT_BUNDLE: ${{ inputs.lint-bundle }}
         run: |
           set -euo pipefail
-          PLAN_JSON="$(.institute-ci-entry/bin/institute-ci plan --tier "$FORCED_TIER" --ref "$GITHUB_REF" --head-message "$HEAD_MSG" --event "$EVENT_NAME" --platform-support "$PLATFORM_SUPPORT" --lint-bundle "$LINT_BUNDLE")"
+          PLAN_JSON="$(.institute-ci-entry/bin/institute-ci plan --tier "$FORCED_TIER" --ref "$GITHUB_REF" --head-message "$HEAD_MSG" --event "$EVENT_NAME" --platform-support "$PLATFORM_SUPPORT" --lint-bundle "$LINT_BUNDLE" --nightly-main-image "$SWIFT_MAIN_NIGHTLY_IMAGE" --nightly-main-upstream-issue "$SWIFT_MAIN_NIGHTLY_UPSTREAM_ISSUE" --nightly-main-recheck "$SWIFT_MAIN_NIGHTLY_RECHECK" --today "$(date -u +%F)")"
           TIER="$(jq -r '.tier' <<< "$PLAN_JSON")"
           LEGS="$(jq -r '.legs' <<< "$PLAN_JSON")"
           GATING="$(jq -r '.gating' <<< "$PLAN_JSON")"
@@ -843,9 +852,11 @@ jobs:
   linux-nightly:
     name: Ubuntu (Swift main nightly, release)
     needs: plan
-    if: ${{ !cancelled() && !github.event.repository.private && (inputs.job == 'linux-nightly' || (inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',linux-nightly,'))) && (inputs.platform-support == '' || contains(format(',{0},', inputs.platform-support), ',linux,')) }}
+    # This leg never uses the single-job debug escape hatch: only a completed
+    # typed plan may authorize its temporary advisory exception.
+    if: ${{ !cancelled() && !github.event.repository.private && inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',linux-nightly,') && (inputs.platform-support == '' || contains(format(',{0},', inputs.platform-support), ',linux,')) }}
     runs-on: ubuntu-latest
-    container: swiftlang/swift:nightly-main-jammy
+    container: ${{ env.SWIFT_MAIN_NIGHTLY_IMAGE }}
     continue-on-error: true
     timeout-minutes: 45
     permissions:

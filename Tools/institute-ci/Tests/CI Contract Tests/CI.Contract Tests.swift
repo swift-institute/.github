@@ -3,6 +3,25 @@ import Testing
 
 @Suite
 struct CIContractPlanTests {
+    @Test func mainNightlyExceptionRefusesMutableOrExpiredIdentity() {
+        try CI.Contract.NightlyException(
+            image: "swiftlang/swift@sha256:f577f95edfb85cf3bdc45eb0badaab09239de5c86c69b3b6d594cc62916c0a7d",
+            upstreamIssue: "https://github.com/swiftlang/swift/issues/90275",
+            recheck: "2026-09-14").validate(today: "2026-08-09")
+        #expect(throws: CI.Contract.NightlyException.Error.image("swiftlang/swift:nightly-main-jammy")) {
+            try CI.Contract.NightlyException(
+                image: "swiftlang/swift:nightly-main-jammy",
+                upstreamIssue: "https://github.com/swiftlang/swift/issues/90275",
+                recheck: "2026-09-14").validate(today: "2026-08-09")
+        }
+        #expect(throws: CI.Contract.NightlyException.Error.expired(recheck: "2026-09-14", today: "2026-09-15")) {
+            try CI.Contract.NightlyException(
+                image: "swiftlang/swift@sha256:f577f95edfb85cf3bdc45eb0badaab09239de5c86c69b3b6d594cc62916c0a7d",
+                upstreamIssue: "https://github.com/swiftlang/swift/issues/90275",
+                recheck: "2026-09-14").validate(today: "2026-09-15")
+        }
+    }
+
     @Test
     func ordinaryPushSelectsBuildTierWithLinuxPrimary() throws {
         let plan = try CI.Contract.Plan(

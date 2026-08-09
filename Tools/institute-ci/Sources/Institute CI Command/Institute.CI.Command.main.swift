@@ -53,6 +53,11 @@ switch arguments.first {
 case "plan":
     let rest = Array(arguments.dropFirst())
     do {
+        let nightlyException = CI.Contract.NightlyException(
+            image: value("--nightly-main-image", in: rest),
+            upstreamIssue: value("--nightly-main-upstream-issue", in: rest),
+            recheck: value("--nightly-main-recheck", in: rest))
+        try nightlyException.validate(today: value("--today", in: rest))
         let plan = try CI.Contract.Plan(
             forcedTier: value("--tier", in: rest),
             ref: value("--ref", in: rest),
