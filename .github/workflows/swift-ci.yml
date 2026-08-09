@@ -1828,7 +1828,12 @@ jobs:
             # file itself. Materialize the pinned policy in the consumer
             # root so Sources/ and Tests/ remain consumer-relative.
             cp "${GITHUB_WORKSPACE}/.ci-central-swiftlint-config/.swiftlint.yml" .swiftlint.yml
-            swiftlint lint . \
+            mapfile -d '' files < <(find Sources Tests -type f -name '*.swift' -print0 2>/dev/null || true)
+            if [ "${#files[@]}" -eq 0 ]; then
+              echo '::error::rootless consumer has no Swift files under Sources/ or Tests/ to lint.'
+              exit 1
+            fi
+            swiftlint lint "${files[@]}" \
               --strict --reporter github-actions-logging
           fi
 
