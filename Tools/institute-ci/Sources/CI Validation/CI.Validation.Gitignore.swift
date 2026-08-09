@@ -260,11 +260,15 @@ extension CI.Validation.Gitignore {
         process.currentDirectoryURL = root
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
+        // Serialized through the shared spawn queue: no pipes here, but
+        // a child forked while ANOTHER spawner's pipe write ends are
+        // momentarily open in this parent inherits them for its whole
+        // lifetime and starves that sibling's drain of its EOF.
         // swift-linter:disable:next try optional
         // REASON: `Process.run()` is an untyped cross-module throw; there
         // is no typed spelling of it, and its only failure here is "git
         // is not on this machine", which is the defect below.
-        guard (try? process.run()) != nil else {
+        guard (CI.Validation.PinnedContent.spawning.sync { try? process.run() }) != nil else {
             throw .missingSupportFile(path: "git")
         }
         process.waitUntilExit()

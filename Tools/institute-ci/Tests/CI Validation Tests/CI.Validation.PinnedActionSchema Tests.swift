@@ -1,4 +1,5 @@
 import CI_Contract
+import Foundation
 import Testing
 
 @testable import CI_Validation
@@ -113,6 +114,112 @@ struct CIValidationPinnedActionSchemaTests {
             #expect(findings.count == 1)
             #expect(findings[0].rule == "CI-118")
             #expect(findings[0].message.contains("unreachable"))
+        }
+    }
+
+    @Suite
+    struct `Committed vs Worktree` {
+        @Test func `resolution reads the pinned commit's object, never the current working tree`() throws {
+            // The #500/#501 bug class exactly: a caller trusts what the
+            // pin NAMES, not what happens to be on disk right now. Every
+            // other fixture in this suite has committed == worktree for
+            // action.yml, so none of them could catch an implementation
+            // that accidentally reads the working copy instead of the
+            // git object at the pinned SHA. Here the two diverge: the
+            // COMMITTED revision (what the pin names) does not declare
+            // `extra-input`, but the file on disk right now (as if HEAD
+            // moved on since the pin was taken) does. A correct
+            // `git cat-file -p <sha>:<path>` read is blind to that
+            // later edit and must still fire.
+            let repository = TemporaryRepository()
+            let sha = CIValidationPinnedActionSchemaTests.commitFixtureAction(
+                in: repository, actionName: "install-example",
+                inputs: ["platform"], outputs: [])
+            // Overwrite the working copy AFTER the commit, without
+            // committing again -- HEAD's tree (and the pinned SHA) both
+            // still lack `extra-input`; only the file on disk has it.
+            repository.write(
+                CIValidationPinnedActionSchemaTests.actionYML(
+                    inputs: ["platform", "extra-input"], outputs: []),
+                to: ".github/actions/install-example/action.yml")
+            repository.write(
+                CIValidationPinnedActionSchemaTests.workflow(
+                    """
+                          - uses: \(CIValidationPinnedActionSchemaTests.prefix)install-example@\(sha)
+                            with:
+                              platform: wasm-sdk
+                              extra-input: 'true'
+                    """
+                ),
+                to: ".github/workflows/fixture.yml"
+            )
+            let findings = try CI.Validation.PinnedActionSchema().findings(in: repository.subject)
+            #expect(findings.count == 1)
+            #expect(findings[0].message.contains("extra-input"))
+        }
+    }
+
+    @Suite
+    struct `Shallow Checkout` {
+        @Test func `a pinned commit older than the shallow boundary is fetched and resolved, not falsely flagged`() throws {
+            // CI's `tools-tests.yml` runs this very suite with
+            // `fetch-depth: 1`. A pin to a commit older than the
+            // shallow boundary is unreachable via LOCAL git object
+            // access even though it is a perfectly valid pin -- the
+            // fix is a targeted `git fetch --depth 1 <remote> <sha>`
+            // before concluding `.unreachable`. This reproduces that
+            // shape for real: a full-history origin repository, a
+            // shallow clone of it whose only local commit is the tip,
+            // and a workflow in the shallow clone pinning to the OLDER
+            // (locally-absent-but-fetchable) commit.
+            let origin = TemporaryRepository()
+            let oldSHA = CIValidationPinnedActionSchemaTests.commitFixtureAction(
+                in: origin, actionName: "install-example",
+                inputs: ["platform"], outputs: [])
+            // A second commit advances the tip so the shallow clone's
+            // one fetched commit is NOT the one the workflow pins to.
+            origin.write("advance\n", to: "NOTES.md")
+            origin.gitCommit()
+
+            let shallowRoot = NSTemporaryDirectory() + "institute-ci-tests/" + UUID().uuidString
+            let clone = Process()
+            clone.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+            // A plain local-path clone IGNORES --depth (git hardlinks the
+            // full object store); only a file:// URL clone is genuinely
+            // shallow. The cat-file probe below is the positive control
+            // that the pinned commit really is absent locally.
+            clone.arguments = [
+                "git", "clone", "-q", "--depth", "1",
+                "file://" + origin.root, shallowRoot,
+            ]
+            // Serialized like every other spawn in this process; see
+            // `TemporaryRepository.run`.
+            try CI.Validation.PinnedContent.spawning.sync { try clone.run() }
+            clone.waitUntilExit()
+            #expect(clone.terminationStatus == 0)
+            defer { try? FileManager.default.removeItem(atPath: shallowRoot) }
+
+            // Confirm the fixture actually reproduces the trap: the
+            // pinned commit must be genuinely absent from the shallow
+            // clone's local objects before the fetch-and-retry runs.
+            let probe = Process()
+            probe.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+            probe.arguments = ["git", "-C", shallowRoot, "cat-file", "-e", oldSHA]
+            probe.standardOutput = FileHandle.nullDevice
+            probe.standardError = FileHandle.nullDevice
+            try CI.Validation.PinnedContent.spawning.sync { try probe.run() }
+            probe.waitUntilExit()
+            #expect(probe.terminationStatus != 0)
+
+            let path = ".github/actions/install-example"
+            let coordinate = CI.Validation.PinnedContent.Coordinate(path: path, sha: oldSHA)
+            let resolution = CI.Validation.PinnedContent.resolve(coordinate, gitRoot: shallowRoot)
+            switch resolution {
+            case .resolved(let schema):
+                #expect(schema.inputs == ["platform"])
+            case .unreachable(let reason):
+                Issue.record("expected the shallow-clone fetch-and-retry to resolve; got: \(reason)")
+            }
         }
     }
 

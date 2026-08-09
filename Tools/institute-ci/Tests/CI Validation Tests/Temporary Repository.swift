@@ -95,15 +95,26 @@ struct TemporaryRepository: ~Copyable {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// Pipe creation and `Process.run()` are serialized through
+    /// `CI.Validation.PinnedContent.spawning` -- the same queue the
+    /// production subprocess runner uses -- because a child forked by
+    /// ANY spawner in this process while another spawner's pipe write
+    /// ends are momentarily open in the parent inherits those
+    /// descriptors and starves the sibling's drain of its EOF. Swift
+    /// Testing runs suites in parallel, so fixture git spawns and
+    /// production git spawns genuinely overlap.
     @discardableResult
     private static func run(_ arguments: [String]) -> String {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         process.arguments = arguments
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = Pipe()
-        try? process.run()
+        let pipe = CI.Validation.PinnedContent.spawning.sync {
+            let pipe = Pipe()
+            process.standardOutput = pipe
+            process.standardError = Pipe()
+            try? process.run()
+            return pipe
+        }
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
         return String(decoding: data, as: UTF8.self)
