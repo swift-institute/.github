@@ -9,6 +9,14 @@
 # it. An untriggered test suite is the same category of artifact as an
 # unproven gate: it looks like coverage and provides none.
 #
+# TX-1 of the reduction census (swift-institute/.github#515): the
+# pull-request-transaction suite now tests the seeded repository,
+# swift-institute/institute-pull-request-transaction, at its exact main
+# pin — not the retiring Tools/ copy. The seed is private, so its
+# generated ci.yml is zero-signal by design (visibility gate); this job
+# is its only hosted test evidence until the repository is public. The
+# matrix job retires when that happens (census TX-2..5 sequencing).
+#
 # One job per package, on Linux, through the sanctioned Workspace
 # coordinate — the same bootstrap shape swift-ci.yml's plan job and the
 # institute-ci composite action use, with `test` in place of `build`.
@@ -84,6 +92,34 @@ jobs:
           path: .workspace
           persist-credentials: false
 
+      # TX-1 (#515): the transaction package's sources come from its seeded
+      # private repository; transient contents:read App token scoped to
+      # exactly that repository (private-verification.yml's narrowed-mint
+      # shape), never persisted.
+      - name: Mint read-only token for the seeded transaction package
+        if: ${{ matrix.package == 'pull-request-transaction' }}
+        id: prt-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
+        with:
+          client-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: swift-institute
+          repositories: institute-pull-request-transaction
+          permission-contents: read
+
+      - name: Checkout the seeded transaction package at exact main pin
+        if: ${{ matrix.package == 'pull-request-transaction' }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: swift-institute/institute-pull-request-transaction
+          # Advance with pin-advance flow; must stay a full SHA (branch-pin
+          # guard). Same pin as review-pr-transaction.yml and
+          # verify-post-merge.yml.
+          ref: 5528f99b5792c6bd65269b74f19d6e54e8b8316d
+          path: .pr-transaction
+          token: ${{ steps.prt-token.outputs.token }}
+          persist-credentials: false
+
       # uuid-dev: the typed F2/F10 provisioning input (swift-linux-standard's
       # CLinuxKernelShim includes uuid/uuid.h); absent on the bare runner.
       - name: Install system dependencies
@@ -108,5 +144,11 @@ jobs:
           if [ -f .workspace/Application/Package.swift ]; then
             workspace_package_path=.workspace/Application
           fi
+          # TX-1 (#515): pull-request-transaction tests its seeded external
+          # checkout; every other package still tests its Tools/ sources.
+          subject_package_path="Tools/${PACKAGE}"
+          if [ "$PACKAGE" = "pull-request-transaction" ]; then
+            subject_package_path=".pr-transaction"
+          fi
           swift run --package-path "$workspace_package_path" institute package test \
-            --package-path "Tools/${PACKAGE}"
+            --package-path "$subject_package_path"
