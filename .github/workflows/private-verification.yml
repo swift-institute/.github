@@ -1,22 +1,18 @@
-# private-verification.yml — trusted read-only verifier + trusted publisher
-# for one private-repository subject (Task 2-02, swift-institute/.github#276
-# Phase 2, work object #253). Stages B and C of the three-stage trusted path;
-# Stage A is private-verification-sweep.yml, which dispatches this workflow.
+# Trusted read-only verifier + trusted publisher for ONE private subject —
+# Stages B and C of the three-stage path (#253); Stage A is
+# private-verification-sweep.yml, which dispatches this.
 #
-# WHY THIS EXISTS. A private repository produces no CI attestation at all
-# (swift-ci.yml's 18 `!github.event.repository.private` guards, deliberately
-# — see swift-institute/.github#253). Task 2-01 gave Workspace a typed
-# `institute verification seal`/`check` pair that performs the same
-# Swift-owned build/test/lint gates locally and seals a content-addressed
-# receipt. This workflow is the trusted control-plane path that runs that
-# instrument against a private subject's exact head from PUBLIC control-plane
-# minutes, and — because this repository's Actions run metadata and logs are
-# PUBLIC — never lets private repository names, refs, source paths, compiler
-# diagnostics, dependency URLs, test names, or raw receipts reach a public
-# run name, job name, log, summary, or artifact.
+# A private repository produces no CI attestation at all (swift-ci.yml's
+# visibility guards, deliberately). Workspace's `institute verification
+# seal`/`check` runs the same Swift-owned build/test/lint gates locally and
+# seals a content-addressed receipt; this workflow runs that instrument
+# against a private subject's exact head from PUBLIC control-plane minutes.
+# Because this repository's run metadata and logs are PUBLIC, no private
+# repository name, ref, source path, diagnostic, dependency URL, test name, or
+# raw receipt may reach a public run name, job name, log, summary, or artifact.
 #
-# THREAT MODEL. The `verify` job executes subject-controlled build/test code
-# (an adversarial `Package.swift` can run arbitrary Swift at build time). It
+# THREAT MODEL. The `verify` job executes subject-controlled build/test code —
+# an adversarial `Package.swift` runs arbitrary Swift at build time. It
 # therefore:
 #   - mints only a READ-ONLY App token (contents: read) scoped to the ONE
 #     subject repository — never checks/statuses: write;
@@ -41,20 +37,18 @@
 #     dishonest ENVELOPE, which `publish` independently re-validates against
 #     the run's own trusted event payload before minting any write token.
 #
-# The `publish` job (Stage C) never checks out the subject and never
-# executes repository-supplied code. It downloads only the safe envelope
-# artifact, verifies its digest and its nonce-based binding to THIS run's
-# own `github.event.client_payload` (repository, head, policy digest,
-# nonce — never trusted from the artifact alone), and mints a write-capable
-# token only after every check passes. This is what makes "replay this
-# envelope against a different repository or SHA" fail: the nonce is fresh
-# per dispatch (Stage A), and the digest binds it to the exact
-# (repository, head, policyDigest) tuple this run was dispatched for.
+# The `publish` job never checks out the subject and never executes
+# repository-supplied code. It downloads only the safe envelope, verifies its
+# digest and its nonce binding against THIS run's own
+# `github.event.client_payload` — repository, head, policy digest, nonce, never
+# trusted from the artifact alone — and mints a write token only after every
+# check passes. That is what makes replaying an envelope against a different
+# repository or SHA fail: the nonce is fresh per dispatch and the digest binds
+# it to the exact tuple this run was dispatched for.
 #
-# WORKSPACE REVISION. `workspace-revision` is a pinned Workspace commit SHA,
-# never `main` — the trusted verifier must run a fixed, auditable Workspace
-# build, not whatever `main` happens to be when the dispatch fires. Stage A
-# resolves and supplies it; this workflow never re-resolves it.
+# `workspace-revision` is a PINNED Workspace commit, never `main`: a trusted
+# verifier must run a fixed, auditable build. Stage A resolves it; this
+# workflow never re-resolves it.
 
 name: private-verification
 run-name: "private-verification · ${{ github.event.client_payload.requestId }}"
@@ -68,12 +62,10 @@ on:
 jobs:
   verify:
     if: ${{ github.event.client_payload.requestId != '' }}
-    # macos, not ubuntu: the pinned Workspace toolchain compiles only on
-    # Darwin today (App-token signing rides CoreFoundation/Security; its own
-    # CI is macos-26-only), so every ubuntu seal died runStatus=1
-    # toolchain-error (diagnostic run 31024168933). The Linux port is filed
-    # as Workspace residue; when it lands and its CI proves Linux, this can
-    # move back to ubuntu for queue throughput.
+    # macos, not ubuntu: the pinned Workspace toolchain compiles only on Darwin
+    # today (App-token signing rides CoreFoundation/Security), so every ubuntu
+    # seal died runStatus=1 toolchain-error. MOVE BACK to ubuntu for queue
+    # throughput once the Linux port lands and its CI proves Linux.
     runs-on: macos-26
     timeout-minutes: 90
     permissions:
