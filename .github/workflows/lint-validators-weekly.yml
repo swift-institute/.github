@@ -1,90 +1,36 @@
-# lint-validators-weekly.yml — weekly cross-org orchestrator for the
-# per-package-org-sweep validator corpus.
+# Weekly cross-org orchestrator for the per-package-org-sweep validator
+# corpus: dispatches each validator over the 17 active orgs. Findings surface
+# as per-cell step-summary tables plus one aggregated tracking issue
+# (idempotent upsert, close-on-clean).
 #
-# Phase D-2 execution of the 2026-05-14 CI Review arc. Operationalizes
-# the four cross-org-consumer-sweep validators by dispatching each over
-# the 17-active-org universe on a weekly schedule. Findings surface via
-# per-cell $GITHUB_STEP_SUMMARY tables and a single aggregated tracking
-# issue at swift-institute/.github (idempotent upsert; close-on-clean).
+# In scope: validate-thin-callers [CI-030]/[CI-059]/[GH-REPO-074],
+# validate-file-naming [API-IMPL-006], validate-github-metadata
+# [GH-REPO-METADATA], validate-package-structure [PACKAGE-STRUCTURE],
+# validate-gitignore [GH-IGNORE-001]/[GH-IGNORE-002]. NOT
+# validate-sub-org-wrappers — it self-fires on a different axis.
 #
-# Provenance:
-#   Design doc:  Audits/CI-REVIEW-PHASE-D-DESIGN-2026-05-14.md (sealed by
-#                principal adjudication 2026-05-14).
-#   Handoff:     HANDOFF-phase-d-2-execution.md (Phase D-2 execution).
-#   Structural precedent: .github/workflows/link-check-weekly.yml.
-#   Phase D-2.1 fix-forward: see § Phase D-2.1 below.
+# Cadence Tuesday 06:00 UTC: an uncongested slot against cron-audit-base
+# (Mon 06:00-06:45), link-check-weekly (Mon 06:00), validate-sub-org-wrappers
+# (Mon 05:00), and lint-org-bot-coverage-weekly (Sun 06:30).
 #
-# Validators in scope (manifest's discovery-mode: per-package-org-sweep
-# + status: active):
-#   - validate-thin-callers      [CI-030], [CI-059], [GH-REPO-074]
-#   - validate-file-naming       [API-IMPL-006]
-#   - validate-github-metadata   [GH-REPO-METADATA]
-#   - validate-package-structure [PACKAGE-STRUCTURE]
-#   - validate-gitignore         [GH-IGNORE-001], [GH-IGNORE-002]
+# Chain depth 2 of the [CI-004b] 4-level limit: orchestrator → validate-X.yml.
+# Standalone workflow, so [CI-090] deny-all floor + explicit per-job grants.
 #
-# Out of scope: validate-sub-org-wrappers (already self-firing with its
-# own hardcoded sub-org matrix; structurally different axis from the
-# cross-org-consumer-sweep axis this orchestrator covers).
+# TRAP that dictates the shape below: `uses:` is resolved BEFORE matrix
+# expansion, so `matrix.*` is unavailable there and a single 2D matrix over
+# {validator, org} fails workflow load with HTTP 422 "Unrecognized named-value:
+# 'matrix'". `inputs.*` and `vars.*` ARE available; `matrix.*` is not. Hence
+# ONE SCAN JOB PER VALIDATOR, each with a 1D matrix over `org` and a STATIC
+# `uses:`. Do not re-collapse them.
 #
-# Cadence: Tuesday 06:00 UTC. Picks an uncongested slot relative to the
-# cron-audit-base cohort's Monday 06:00-06:45 cluster, link-check-weekly's
-# Monday 06:00, validate-sub-org-wrappers' Monday 05:00, and
-# lint-org-bot-coverage-weekly's Sunday 06:30.
+# Tokens: the orchestrator pre-mints nothing. Each validate-X.yml mints its own
+# per-org App-installation token from the inherited secrets; the report job
+# mints its own swift-institute-scoped token for issues:write.
 #
-# Chain depth (per [CI-004b] 4-level workflow_call limit):
-#   orchestrator (L1) → validate-X.yml (L2). Depth 2 of 4; headroom 2.
-#
-# Per [CI-090] standalone workflow (no workflow_call: trigger) →
-# top-level permissions: {} deny-all floor + explicit per-job grants.
-#
-# Token-mint pattern: orchestrator does NOT pre-mint per-org tokens for
-# the scan jobs. Each validate-X.yml mints its own per-org-scoped
-# swift-institute-bot App-installation token internally (via
-# actions/create-github-app-token@v1.12.0). Orchestrator passes
-# secrets: inherit per [CI-059]; called workflows use the inherited
-# SWIFT_INSTITUTE_BOT_APP_CLIENT_ID + SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY
-# secrets. The report job mints its own swift-institute-scoped token
-# for issues:write.
-#
-# Tracking-issue grouping: one issue per orchestrator run, idempotent
-# upsert via swift-institute/.github/.github/actions/upsert-tracking-issue
-# (matches link-check-weekly.yml + cron-audit-base.yml report-job
-# precedent). Per-validator readability via H3 sectioning in body.
-# Auto-close when all 4 scan jobs report success across their respective
-# 17-org matrix cells (4 × 17 = 68 reusable-workflow invocations total).
-#
-# dry-run posture: defaults to false (matrix cells fail naturally on
-# findings; per-validator scan job result aggregates to 'failure'; report
-# job fires when ANY scan job is not 'success'). Matches
-# link-check-weekly.yml's `dry-run: ${{ inputs.dry-run || false }}`
-# precedent exactly. The design doc's Phase D-2 spec text included a
-# `dry-run: true` hardcode, but that posture is structurally
-# incompatible with the cited link-check-weekly precedent (it would
-# prevent the report job from distinguishing findings-present from
-# findings-absent runs without per-cell artifact aggregation, which is
-# forbidden under ground rule 7 "MUST NOT modify any per-validator
-# workflow file"). The deviation is noted in
-# Audits/Outcome-CI-REVIEW-Phase-D-2026-05-14.md.
-#
-# § Phase D-2.1 (2026-05-14) fix-forward
-#
-# The initial Phase D-2 commit (cec6778) authored the scan stage as a
-# single 2D-matrix job (`matrix: { validator: [...], org: [...] }`) with
-# matrix-interpolated `uses: ./.github/workflows/validate-${{ matrix.validator }}.yml`.
-# GitHub Actions rejected this at workflow-load time with HTTP 422
-# "Unrecognized named-value: 'matrix'" — the `uses:` field is resolved
-# BEFORE matrix expansion, so `matrix.*` context is not available in
-# `uses:` for reusable-workflow-call jobs at the job level. The
-# `inputs.*` and `vars.*` contexts ARE supported in `uses:`; `matrix.*`
-# is not.
-#
-# Phase D-2.1 rewrites the scan stage as 4 SEPARATE scan jobs, each
-# with its own 1D matrix over `org` and a STATIC `uses:` reference to
-# the corresponding validate-X.yml. Same effective coverage (4 × 17
-# = 68 reusable-workflow invocations across the 4 scan jobs); different
-# YAML shape. Matches link-check-weekly.yml's exact structural precedent
-# (single 1D matrix + static uses) extended to 4 parallel-shaped
-# scan jobs (one per validator).
+# dry-run defaults FALSE: cells fail naturally on findings and the report job
+# fires when any scan job is not 'success'. A `true` default would leave the
+# report unable to distinguish findings-present from findings-absent without
+# per-cell artifact aggregation.
 
 name: lint-validators-weekly
 
@@ -130,26 +76,17 @@ jobs:
           # validate-X.yml's gh repo list call (default: public).
           filter: '.name'
 
-  # Each scan-* job below: 1D matrix over orgs × static uses: to its
-  # respective validate-X.yml. Per [CI-106] caller's per-job grant
-  # (contents: read) must be ≥ the called reusable's per-job grant; each
-  # validate-X.yml's scan job either declares contents: read explicitly
-  # or inherits from caller. Verified by reading each .yml's scan: block.
+  # Every scan-* job below has the SAME shape: a 1D matrix over
+  # config.outputs.orgs plus a static `uses:`. Per [CI-106] the caller's
+  # per-job grant (contents: read) must be >= the called reusable's.
   #
-  # All twelve scan-* jobs below use the SAME shape: a 1D matrix.org from
-  # config.outputs.orgs (at most active-organization-count legs each — 17
-  # at last measurement, so at most 17 legs × 12 validators = at most 204
-  # jobs total across this workflow, each strategy well under GitHub's
-  # 256-job-per-matrix limit). The six validators below the first six
-  # (scan-docc-structure onward) previously depended on a repository-wide
-  # 2D (organization, repository) `resolve-targets` matrix instead —
-  # removed by Task 0B-01 (swift-institute/.github#280) because it does
-  # not scale under the 256-job limit (~478 public non-archived repos
-  # alone), and because a broken pagination fix once made it enumerate 0
-  # pairs, silently `skipped` all six, and had the report job count that
-  # as clean (see #62). Each of the six now enumerates its org's repos
-  # itself, inside the (validator, organization) job, through
-  # validate-base.yml's per-package-org-sweep discovery mode.
+  # Keep the 1D shape. A repository-wide 2D (org, repo) matrix was removed
+  # (#280): it does not scale under GitHub's 256-job-per-matrix limit (~478
+  # public non-archived repos), and a broken pagination fix once made it
+  # enumerate 0 pairs, silently skip every dependent validator, and have the
+  # report job score that as CLEAN (#62). Each validator now enumerates its
+  # org's repos inside the (validator, org) job via validate-base.yml's
+  # per-package-org-sweep discovery mode.
 
   scan-thin-callers:
     needs: config
@@ -241,11 +178,9 @@ jobs:
       visibility: ${{ inputs.visibility || 'public' }}
     secrets: inherit
 
-  # The remaining six scan-* jobs (originally Phase D Wave B, 2026-05-15)
-  # dispatch validate-*.yml callers whose scan job resolves
-  # discovery-mode to per-package-org-sweep (validate-base.yml) because
-  # `org:` is set and `repo:` is not — see Task 0B-01 comment above.
-  # Same 1D matrix.org shape as the first six scan-* jobs.
+  # The remaining scan-* jobs dispatch validate-*.yml callers whose scan job
+  # resolves discovery-mode to per-package-org-sweep because `org:` is set and
+  # `repo:` is not. Same 1D matrix shape.
 
   scan-docc-structure:
     needs: config
@@ -372,12 +307,10 @@ jobs:
           repositories: .github
           permission-issues: write
 
-      # The per-leg breakdown used to exist only in each cell's step summary,
-      # which is not reachable from the run list, the API, or a notification.
-      # So a reader who saw "72 jobs, some red" had to open cells one at a time
-      # to learn anything, and for three consecutive weeks nobody did. The job
-      # list for this very run IS available over the API, so name the failing
-      # legs in the issue itself.
+      # Name the failing legs in the issue itself: a cell's step summary is not
+      # reachable from the run list, the API, or a notification, so a red sweep
+      # otherwise costs one cell-open per leg to read. The run's job list IS
+      # available over the API.
       - name: Enumerate this run's failing legs
         id: legs
         env:
@@ -558,36 +491,25 @@ jobs:
             echo "CLEAN_RUN=false"
           } >> "$GITHUB_ENV"
 
-      # ON THE LABEL, because Skills/github forbids minting a taxonomy:
+      # ON THE LABEL. The github skill forbids minting a label taxonomy and
+      # bars encoding routing, priority, or ownership in one. `lint-validators`
+      # encodes none of those — it identifies WHICH SWEEP filed a bot-authored
+      # divergence report, and sibling workflows here already pass the same
+      # class of label to this composite (`link-check`, `license-audit`,
+      # `spine-audit`, `dep-graph`, `metadata-sync`, …). If the rule is meant to
+      # bind bot-filed sweep issues too, that fix is fleet-wide, not local.
       #
-      #   "Labels are stock GitHub defaults and carry no Institute meaning —
-      #    never encode routing, priority, or ownership in one, and do not mint
-      #    a taxonomy without changing this rule."
+      # It is NOT load-bearing: close-when-clean mirrors the upsert's
+      # title-prefix search, so auto-close works with or without a label. That
+      # mismatch WAS the defect — the close step searched `--label
+      # lint-validators` while the upsert searched by title and no label
+      # existed, so the two never named the same issue and auto-close could not
+      # fire even on a clean fleet.
       #
-      # `lint-validators` encodes none of routing, priority or ownership. It
-      # identifies WHICH SWEEP FILED a bot-authored divergence report — the
-      # category the same skill sets apart with "issues opened by
-      # swift-institute-bot report machine-detected divergence — do not board
-      # them and do not hand-close them". Eleven sibling workflows in this repo
-      # already pass exactly such a label to this same composite (`link-check`,
-      # `license-audit`, `spine-audit`, `dep-graph`, `metadata-sync`, …), so
-      # this is the twelfth instance of an established convention rather than a
-      # new taxonomy.
-      #
-      # Critically, it is NOT load-bearing. The close-when-clean step below
-      # mirrors the upsert's own title-prefix search, so auto-close works with
-      # or without a label. That was the actual defect: the close step searched
-      # `--label lint-validators` while the upsert searched by title, the label
-      # did not exist, and the two never referred to the same issue — so
-      # auto-close could not fire even on a fully clean fleet.
-      #
-      # If the rule is meant to bind bot-filed sweep issues too, the fix is
-      # fleet-wide across those twelve callers, not a local deviation here.
-      #
-      # Mechanics: upsert-tracking-issue applies the label on CREATE only, and
-      # silently falls back to a label-less create when the label does not
-      # exist. `lint-validators` did not exist when issue #34 was created on
-      # 2026-05-19, so it never got one, and the edit path cannot repair that.
+      # Mechanics: upsert-tracking-issue labels on CREATE only and silently
+      # falls back to a label-less create when the label does not exist, so an
+      # issue created before the label stays unlabelled — the edit path cannot
+      # repair it. Hence the reconcile step below.
       - name: Ensure the tracking label exists
         if: ${{ inputs.dry-run != true }}
         env:
@@ -614,11 +536,8 @@ jobs:
           label: 'lint-validators'
           gh-token: ${{ steps.token.outputs.token }}
 
-      # The upsert labels on CREATE only, so an issue that was created before
-      # the label existed stays unlabelled forever — it is edited, never
-      # recreated. Issue #34 had been in exactly that state since 2026-05-19.
-      # Applying the label on every run makes it self-healing, and `gh issue
-      # edit --add-label` is idempotent.
+      # Applying the label every run makes an issue created before the label
+      # existed self-healing; `gh issue edit --add-label` is idempotent.
       - name: Reconcile the label on the tracking issue
         if: ${{ env.FILE_ISSUE == 'true' && inputs.dry-run != true && steps.upsert.outputs.issue-number != '' }}
         env:
@@ -631,16 +550,12 @@ jobs:
             --add-label lint-validators
           echo "issue #${ISSUE} carries label lint-validators"
 
-      # `gh issue edit --body-file` rewrites the body and NOTIFIES NOBODY. That
-      # is the mechanism by which this sweep went unread: issue #34 was created
-      # once in May and silently rewritten every week after, accumulating zero
-      # comments and zero notifications while the fleet stayed red.
-      #
-      # A comment does notify, and it leaves a dated trail, so the tenth
-      # consecutive red week is visible as such instead of looking like the
-      # first. Posted only when the failing-leg count CHANGES, so the issue does
-      # not become a weekly drip that trains everyone to mute it — the case this
-      # is trying to fix, arrived at from the other direction.
+      # `gh issue edit --body-file` rewrites the body and NOTIFIES NOBODY —
+      # that is how this sweep went unread for months, silently rewritten every
+      # week while the fleet stayed red. A comment notifies and leaves a dated
+      # trail, so a tenth consecutive red week reads as one. Posted ONLY when
+      # the failing-leg count CHANGES, so it never becomes a weekly drip
+      # everyone learns to mute — the same failure from the other direction.
       - name: Comment when the failing-leg count changes
         if: ${{ env.FILE_ISSUE == 'true' && inputs.dry-run != true && steps.upsert.outputs.issue-number != '' }}
         env:
@@ -677,11 +592,10 @@ jobs:
             --body-file "${RUNNER_TEMP}/leg-comment.md"
           echo "commented: ${previous} -> ${current}"
 
-      # Mirrors the upsert's own lookup. This searched `--label lint-validators`
-      # while the upsert searches by title-prefix, and the issue carries no
-      # label — so the two never referred to the same issue and the close path
-      # could not fire even on a fully clean fleet. Guard mirror conditions on
-      # mirrored predicates, or the path you did not exercise is the broken one.
+      # MUST mirror the upsert's own lookup. It once searched by label while the
+      # upsert searched by title-prefix, so the two never named the same issue
+      # and close could not fire even on a clean fleet. Guard mirror conditions
+      # on mirrored predicates, or the path you never exercise is the broken one.
       - name: Close tracking issue when clean
         if: ${{ env.CLEAN_RUN == 'true' && inputs.dry-run != true }}
         env:
