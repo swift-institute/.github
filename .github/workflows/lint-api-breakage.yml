@@ -97,7 +97,7 @@ jobs:
           # Need full enough history to reach the PR base SHA.
           fetch-depth: 0
 
-      - uses: swift-institute/.github/.github/actions/configure-private-repos@6f73c2ebff00e4f05375794905926bdd7a0ca14b  # main 2026-08-04, identity-pin to main HEAD (swift-institute/.github#286); no functional change to this action in range
+      - uses: swift-institute/.github/.github/actions/configure-private-repos@6f73c2ebff00e4f05375794905926bdd7a0ca14b  # main 2026-08-04 (identity-pin)
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
           app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}

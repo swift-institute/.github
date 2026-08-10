@@ -137,7 +137,7 @@ jobs:
 
       - name: Read orgs manifest
         id: orgs
-        uses: swift-institute/.github/.github/actions/read-orgs@6f73c2ebff00e4f05375794905926bdd7a0ca14b  # main 2026-08-04, identity-pin to main HEAD (swift-institute/.github#286); no functional change to this action in range
+        uses: swift-institute/.github/.github/actions/read-orgs@6f73c2ebff00e4f05375794905926bdd7a0ca14b  # main 2026-08-04 (identity-pin)
         with:
           filter: '.name'
 
@@ -322,7 +322,7 @@ jobs:
 
       - name: Upsert tracking issue
         if: ${{ env.FAIL_COUNT != '0' }}
-        uses: swift-institute/.github/.github/actions/upsert-tracking-issue@6f73c2ebff00e4f05375794905926bdd7a0ca14b  # main 2026-08-04, identity-pin to main HEAD (swift-institute/.github#286); no functional change to this action in range
+        uses: swift-institute/.github/.github/actions/upsert-tracking-issue@6f73c2ebff00e4f05375794905926bdd7a0ca14b  # main 2026-08-04 (identity-pin)
         with:
           repo: ${{ github.repository }}
           title: "ci-sweep: full-matrix failures (nightly rotation)"

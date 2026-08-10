@@ -1,56 +1,35 @@
 name: reconcile-project-invariants
 
-# Scheduled reconciler for the Institute Work Project (org swift-institute,
-# ProjectV2 number 2) partitioned-authority invariants (#68, ratified
-# 2026-07-30; filed as #103).
+# Scheduled reconciler for the Institute Work Project (swift-institute,
+# ProjectV2 number 2) partitioned-authority invariants (#68/#103).
 #
-# The org is on the free plan: the Project has no auto-add/auto-archive
-# workflows and Actions has no ProjectV2 trigger, so the coordination
-# invariants of the partitioned-authority model are observable only if
-# something observes them on a schedule. This workflow observes and
-# reports; per the #114 ruling (ratified 2026-07-30, comment
-# 5129159993) it also applies exactly two idempotent mutations to the
-# Project itself, and — per #76/#121 (the org Issue Types permission was
-# confirmed granted on the installation, 2026-08-10) — assigns an org
-# issue type to open issues whose type is mechanically derivable from
-# the issue-form headers rendered in their bodies. Everything else it
-# finds remains report-only, and beyond that type assignment it never
-# mutates any issue except the lifecycle of its single divergence issue
-# in this repository.
+# The org is on the free plan — the Project has no auto-add/auto-archive
+# workflows and Actions has no ProjectV2 trigger — so these invariants are
+# observable ONLY if something observes them on a schedule.
 #
-# The two ratified mutations (#116):
-#   (a) set Priority = Normal on any Project row whose Priority is unset
-#       — the ratified admission default applied mechanically, not a
-#       judgment. Closes the known residue of the one adopted built-in
-#       workflow (auto-add sub-issues), whose rows always arrive with
-#       Priority unset.
-#   (b) clear the built-in Status field on any row where it is set —
-#       mechanical enforcement of the keep-Status-unset invariant.
-# The third mutation class (#76/#121): assign an issue type to any open
-# untyped issue in the minted org whose type is derivable from the
-# issue-form header signature in its body (each form in
-# .github/ISSUE_TEMPLATE stamps a `type:` on new filings, so the residue
-# is issues filed before the forms carried types, plus machine-filed
-# reports). Derivation is exact-signature matching, never guessing; the
-# underivable remainder is reported in its own section.
-# Not-planned row detection and removal stay report-only per the same
-# ruling: a mistaken not-planned closure would silently lose programme
-# history, so removal remains a coordinator judgment.
+# MUTATES exactly three things; everything else is report-only, and it never
+# touches any issue beyond the lifecycle of its own divergence issue here.
+#   (a) Priority = Normal on any row whose Priority is unset (#116) — the
+#       ratified admission default applied mechanically. Closes the residue of
+#       auto-add sub-issues, whose rows always arrive Priority-unset.
+#   (b) clear the built-in Status field wherever set — the keep-Status-unset
+#       invariant.
+#   (c) assign an issue type to an open untyped issue in the minted org when
+#       the type is derivable from the issue-form header signature in its body
+#       (#76/#121). EXACT-SIGNATURE matching, never guessing; the underivable
+#       remainder is reported, not assigned.
+# All three are idempotent, and each is reported under its own section rather
+# than counted as a gap — a row this run just fixed is not a divergence.
+# `dry-run` skips every mutation and the issue lifecycle, so a validation run
+# never writes to the live Project.
 #
-# Both mutations are idempotent (setting Normal on an already-Normal row,
-# or clearing an already-unset Status, is a no-op) and are listed in the
-# divergence report under their own section rather than folded into the
-# gap count — a row this run just fixed is not a lingering divergence.
-# `dry-run` (validation dispatches) skips both mutations as well as the
-# issue lifecycle, so a validation run never writes to the live Project.
+# Not-planned rows are DETECTED but never removed: a mistaken not-planned
+# closure would silently lose programme history, so removal stays a coordinator
+# judgment.
 #
-# One report section is informational rather than an invariant: assigned
-# open rows. Per the assignee-on-dispatch ruling (#68, ratified
-# 2026-07-30, comment 5130968260; reconciler change #119), an open
-# Issue's assignee asserts "in flight now", so the report lists every
-# assigned open row with its assignees and updatedAt. A nonzero set is
-# normal and never counts as divergence; a row lingering across runs is
-# drift for the coordinator to judge. Report-only — no third mutation.
+# Assigned open rows are informational, not an invariant: an open issue's
+# assignee asserts "in flight now", so a nonzero set is normal and never
+# divergence. A row lingering across runs is drift for the coordinator.
 #
 # Invariants checked each run:
 #   - every Project item has a Priority; every on-Project issue has an
@@ -74,44 +53,37 @@ name: reconcile-project-invariants
 #     decidable-core-only by design — the Status field predicate and the
 #     rest of §6's predicate catalogue are deferred, not covered here.
 #
-# Reporting mechanics: one divergence issue in this repository, found by
-# TITLE match — never by label (a prior sweep keyed control flow off a
-# label that had never been created, so its close-when-clean path could
-# not fire even on a clean fleet). The label passed to the upsert
-# composite is identification only; no step's control flow reads it.
-# The issue is closed when a run finds the fleet clean.
+# Reporting: one divergence issue here, found by TITLE match — NEVER by label.
+# A prior sweep keyed control flow off a label that had never been created, so
+# its close-when-clean path could not fire even on a clean fleet. The label
+# passed to the upsert composite is identification only; no control flow reads
+# it. Closed when a run finds the fleet clean.
 #
-# Failure shape: `gh api graphql` can exit 0 while reporting a GraphQL
-# error on stderr and null data on stdout (observed on run 30526232415:
-# "Resource not accessible by integration" followed by a jq
-# iterate-over-null crash). Every response is therefore validated with
-# `jq -e` before use, and a failed or null response fails the run with
-# the raw API error surfaced — never a downstream jq stack trace.
+# TRAP: `gh api graphql` can exit 0 while printing a GraphQL error on stderr
+# and null data on stdout ("Resource not accessible by integration", then a jq
+# iterate-over-null crash). Every response is validated with `jq -e` before
+# use, so a null response fails the run with the raw API error rather than a
+# downstream jq stack trace.
 #
-# Quota discipline: the REST/GraphQL budget is shared. One paginated
-# Project read, one paginated issue search per org, one issue-type read
-# per org, one field-metadata read; no polling. The ratified mutations
-# are necessarily per-item (a Project field-value write has no batch
-# form; neither does updateIssueIssueType), bounded to the rows actually
-# missing Priority, carrying a set Status, or missing a derivable issue
-# type, and idempotent.
+# Quota: the REST/GraphQL budget is shared. One paginated Project read, one
+# paginated issue search per org, one issue-type read per org, one
+# field-metadata read, no polling. The mutations must be per-item (neither a
+# Project field-value write nor updateIssueIssueType has a batch form), bounded
+# to the rows actually diverging.
 #
-# Known scope limits, recorded rather than silently assumed away:
-#   - the minted App token is the swift-institute org installation, so
-#     open issues in OTHER orgs' private repositories are not visible to
-#     the search leg (private repositories do not run CI and their
-#     issues are not expected on the Project);
-#   - Project rows whose content lives in a repository the token cannot
-#     read resolve with null/REDACTED content; they are reported in
-#     their own section instead of crashing or being misclassified;
-#   - the org issueTypes resource is org-local to the minted
-#     installation. The Issue Types permission is granted and minted
-#     here (issue_types: write, confirmed 2026-08-10 per #121), so the
-#     home-org read and the assignment mutation work — but a read
-#     against ANOTHER org can still come back FORBIDDEN, which degrades
-#     to a per-org "parity unobservable" line in the report instead of
-#     failing the run. Issue-type assignment is likewise bounded to the
-#     minted org; a derivable issue elsewhere is reported, not written.
+# Scope limits, recorded rather than assumed away:
+#   - the token is the swift-institute installation, so open issues in OTHER
+#     orgs' private repos are invisible to the search leg (private repos run no
+#     CI and are not expected on the Project);
+#   - rows whose content lives in a repo the token cannot read resolve as
+#     null/REDACTED and are reported in their own section, never crashed on or
+#     misclassified;
+#   - issueTypes is org-local to the installation. `issue_types: write` is
+#     granted here, so the home-org read and the assignment work, but a read
+#     against ANOTHER org can still return FORBIDDEN — that degrades to a
+#     per-org "parity unobservable" line, never a failed run. Assignment is
+#     likewise bounded to the minted org; a derivable issue elsewhere is
+#     reported, not written.
 
 on:
   schedule:
@@ -148,21 +120,15 @@ jobs:
 
       - name: Read Institute orgs
         id: orgs
-        uses: swift-institute/.github/.github/actions/read-orgs@6f73c2ebff00e4f05375794905926bdd7a0ca14b  # main 2026-08-04, identity-pin to main HEAD (swift-institute/.github#286); no functional change to this action in range
+        uses: swift-institute/.github/.github/actions/read-orgs@6f73c2ebff00e4f05375794905926bdd7a0ca14b  # main 2026-08-04 (identity-pin)
 
-      # organization-projects: write, per #116 — the ratified Priority and
-      # Status mutations write Project-owned fields (field-value writes are
-      # gated on the Projects permission; there is no separate item-mutate
-      # scope). issues: divergence-issue lifecycle plus issue content on
-      # items. pull-requests: item content casts (a PR row is itself a
-      # reported divergence, but reading it must not be denied).
-      # issue-types write: the org issueTypes read (parity) plus the
-      # updateIssueIssueType assignment mutation (#76/#121). The org
-      # Issue Types permission is in the installation's granted set
-      # (confirmed 2026-08-10; installation key `issue_types`), which
-      # supersedes the earlier organization-administration probe — that
-      # probe grant is dropped here. metadata is implied by any grant;
-      # named for clarity.
+      # Why each grant: organization-projects write — field-value writes are
+      # gated on the Projects permission and there is no separate item-mutate
+      # scope. issues — divergence-issue lifecycle plus item content.
+      # pull-requests — item content casts (a PR row is itself a reported
+      # divergence, but reading it must not be denied). issue-types write —
+      # the parity read plus the updateIssueIssueType mutation. metadata is
+      # implied by any grant; named for clarity.
       - name: Mint installation token (project read/write, issue + issue-type write)
         id: token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
@@ -738,7 +704,7 @@ jobs:
 
       - name: Upsert divergence issue
         if: ${{ steps.scan.outputs.gap-count != '0' && inputs.dry-run != true }}
-        uses: swift-institute/.github/.github/actions/upsert-tracking-issue@6f73c2ebff00e4f05375794905926bdd7a0ca14b  # main 2026-08-04, identity-pin to main HEAD (swift-institute/.github#286); no functional change to this action in range
+        uses: swift-institute/.github/.github/actions/upsert-tracking-issue@6f73c2ebff00e4f05375794905926bdd7a0ca14b  # main 2026-08-04 (identity-pin)
         with:
           repo: swift-institute/.github
           title: '[Project reconciler] Institute Work Project invariant divergence'
