@@ -1,25 +1,14 @@
-# lint-validator-fixtures.yml — run the validator fixture suite.
+# Runs the validator fixture suite — the failing controls for every validator.
+# .github/scripts/tests/ asserts each fixture under fail/ MUST produce a
+# finding and each under pass/ and edge/ MUST produce none, exiting nonzero
+# otherwise. A silent SKIP is also an error, so a fixture directory that no
+# longer resolves to a registered validator is caught rather than quietly lost.
 #
-# The suite in .github/scripts/tests/ asserts that every validator still fires
-# on the inputs it is supposed to reject: each fixture under fail/ MUST produce
-# a finding, each under pass/ and edge/ MUST produce none, and the gate exits
-# nonzero if any of that stops being true. It also fails on a silent SKIP, so a
-# fixture directory that no longer resolves to a registered validator is an
-# error rather than quiet attrition.
+# Fires on any change to a validator, the helper library, the runner, or a
+# fixture, plus weekly so bit-rot from a Python or PyYAML bump on the runner
+# image surfaces on a schedule instead of on an unlucky PR.
 #
-# Until now nothing ran it. An untriggered test suite is the same category of
-# artifact as an unproven gate: it looks like coverage and provides none. The
-# repository learned this the expensive way from the retired skill-description
-# gate, which reported success over a population it was violating wholesale
-# because nothing ever proved it could fail.
-#
-# Triggers on any change to a validator, the shared helper library, the runner
-# or a fixture, plus a weekly run so bit-rot from an external dependency (a
-# Python or PyYAML bump on the runner image) surfaces on a schedule rather than
-# on whichever unlucky pull request touches a validator next.
-#
-# Standalone workflow with no workflow_call trigger, so it carries a deny-all
-# permissions floor and grants read on the job that needs it.
+# Standalone workflow (no workflow_call), so deny-all floor + per-job grants.
 
 name: lint-validator-fixtures
 
@@ -34,20 +23,14 @@ on:
       - '.github/scripts/.branch-pin-baseline'
       - '.github/scripts/tests/**'
       - '.github/workflows/lint-validator-fixtures.yml'
-      # the embedded-shell controls and the Swift validators live here.
+      # embedded-shell controls + the Swift validators.
       - 'Tools/institute-ci/**'
       # the system-dependency control extracts the shipped action step.
       - '.github/actions/install-system-deps/action.yml'
-      # the embedded-shell controls extract their subjects from
-      # swift-ci.yml, so an edit there is an edit to what this suite tests.
+      # the embedded-shell controls extract their subjects from these, so an
+      # edit to one is an edit to what this suite tests.
       - '.github/workflows/swift-ci.yml'
-      # CI.Validation.Drift.LintValidatorsWeekly parses this file's report
-      # job; an edit here is an edit to what that checker's own test asserts.
       - '.github/workflows/lint-validators-weekly.yml'
-      # CI.Validation.Drift.ScheduledWorkflowAlert parses this file's watch
-      # list and every workflow's on: block (#123); an edit to the alert
-      # workflow or to any workflow's schedule: trigger is an edit to what
-      # that checker's own test asserts.
       - '.github/workflows/alert-scheduled-workflow-failure.yml'
       - '.github/workflows/*.yml'
   pull_request:
@@ -57,20 +40,14 @@ on:
       - '.github/scripts/.branch-pin-baseline'
       - '.github/scripts/tests/**'
       - '.github/workflows/lint-validator-fixtures.yml'
-      # the embedded-shell controls and the Swift validators live here.
+      # embedded-shell controls + the Swift validators.
       - 'Tools/institute-ci/**'
       # the system-dependency control extracts the shipped action step.
       - '.github/actions/install-system-deps/action.yml'
-      # the embedded-shell controls extract their subjects from
-      # swift-ci.yml, so an edit there is an edit to what this suite tests.
+      # the embedded-shell controls extract their subjects from these, so an
+      # edit to one is an edit to what this suite tests.
       - '.github/workflows/swift-ci.yml'
-      # CI.Validation.Drift.LintValidatorsWeekly parses this file's report
-      # job; an edit here is an edit to what that checker's own test asserts.
       - '.github/workflows/lint-validators-weekly.yml'
-      # CI.Validation.Drift.ScheduledWorkflowAlert parses this file's watch
-      # list and every workflow's on: block (#123); an edit to the alert
-      # workflow or to any workflow's schedule: trigger is an edit to what
-      # that checker's own test asserts.
       - '.github/workflows/alert-scheduled-workflow-failure.yml'
       - '.github/workflows/*.yml'
   schedule:
@@ -197,76 +174,38 @@ jobs:
             --filter 'ControlPlaneShellTests|SystemDependencyDerivationTests' \
             2>&1 | tee /tmp/embedded-shell-controls.txt
 
-      # The CI verdict inventory (Task 1-01, #276/#281) moved to Swift in
-      # F16 class C7: `CI.Inventory` in Tools/institute-ci, with its
-      # drift and live-run gates as `CI Inventory Tests`. It is verified
-      # by the tools-tests.yml gate (PS-3), which runs the full
-      # institute-ci suite through `workspace package test`, not by a
-      # step here, so a stale inventory fails the package rather than
-      # one workflow job.
+      # DELIBERATELY NOT STEPS HERE. Each capability below has a Swift owner in
+      # Tools/institute-ci whose controls run under tools-tests.yml via
+      # `workspace package test`, so a regression fails the PACKAGE rather than
+      # one workflow job. Do not re-add a step for any of them.
+      #   CI verdict inventory      → `CI.Inventory` / `CI Inventory Tests`
+      #   prebuilt-linter identity  → `Institute.Receipt.Bootstrap.Installer`
+      #   secret transport (#92/#108, incl. class-exactness of typed
+      #     exemptions)             → `CI.Validation.ThinCallers`
+      #   startup-failure detector  → `Institute.Receipt.Run.Startup` (the
+      #     `startup-failures` face startup-failure-probe-weekly.yml invokes)
+      #   branch-pin contract       → `CI.Validation.BranchPins`. Only the
+      #     Python CONTROLS were retired; validate-branch-pins.py itself stays
+      #     live as the permanent guard exception.
+      #   scan-leg drift (#117)     → `CI.Validation.Drift.LintValidatorsWeekly`
+      #   scheduled-alert watch list (#123)
+      #                             → `CI.Validation.Drift.ScheduledWorkflowAlert`
+      #   composite-action pins [CI-117]
+      #                             → `CI.Validation.CompositeActionPins`, whose
+      #     test_real_repository_workflows_are_clean runs against this
+      #     checkout's own workflows and reddens if a site reverts to `@main`.
+      # The two Drift checkers guard hand-synchronized copies of "which legs /
+      # which scheduled workflows exist" — the exact class that let a scheduled
+      # workflow fail silently (#120).
 
-
-      # The prebuilt-linter identity gate (#43 item 4) moved to Swift in F16
-      # class C6 as `Institute.Receipt.Bootstrap.Installer` with its controls
-      # as `Institute Receipt Tests`. It is verified by `workspace package
-      # test`, not by a step here.
-
-      # The secret-transport contract (#92 ruling, enforced per #108),
-      # including class-exactness of typed exemptions, moved to Swift in
-      # F16 class C3 as `CI.Validation.ThinCallers` with its controls as
-      # `CI.Validation.ThinCallers Tests`. It is verified by the
-      # tools-tests.yml gate (PS-3), not by a step here; the Python suite
-      # was retired in #446.
-
-      # Task 4-01 (swift-institute/.github#276, #284): the TEMPORARY
       # The file-naming validator's diagnostic-precedence rules operate on
-      # synthetic module trees the unit suite builds itself, a surface the corpus'
-      # repo-shaped fixtures do not exercise; until 2026-07-30 this suite
-      # existed but nothing ran it.
+      # synthetic module trees the unit suite builds itself — a surface the
+      # corpus' repo-shaped fixtures do not exercise.
       - name: Run file-naming validator controls
         shell: bash
         run: |
           set -euo pipefail
           python3 .github/scripts/tests/test-validate-file-naming.py 2>&1 | tee /tmp/file-naming-controls.txt
-
-      # The startup-failure detector moved to Swift in F16 class C6 as
-      # `Institute.Receipt.Run.Startup` (the `startup-failures` face
-      # startup-failure-probe-weekly.yml now invokes), with its
-      # prove-it-can-fail controls as `Institute Receipt Tests`.
-
-      # The branch-pin guard's contract surface (baseline suppression, the
-      # exit code the swift-ci fast-check keys on, --orgs-file resolution)
-      # is covered by `CI.Validation.BranchPins Tests`, the F16 class C2 port
-      # of these controls. validate-branch-pins.py itself remains live as the
-      # permanent guard exception; only its Python controls were retired.
-
-      # #117: lint-validators-weekly.yml's report job repeats its scan-leg
-      # set across five hand-synchronized surfaces with nothing checking
-      # they stay in correspondence with the scan-* jobs actually defined
-      # in the workflow. This suite's own leg-removed positive controls
-      # prove the checker can fail; its real-workflow assertion is the
-      # fail-closed gate itself.
-      # Owner: `CI.Validation.Drift.LintValidatorsWeekly` (F16 class C5),
-      # controls as `CI.Validation.Drift Tests`.
-
-      # #123: alert-scheduled-workflow-failure.yml's workflow_run trigger
-      # requires an exact name list of scheduled workflows, which is a
-      # second hand-maintained copy of "which workflows in this repository
-      # run on a schedule" and can drift the same way the #120 incident
-      # showed a scheduled workflow can fail silently. This suite's own
-      # leg-removed/leg-added positive controls prove the checker can
-      # fail; its real-watch-list assertion is the fail-closed gate itself.
-      # Owner: `CI.Validation.Drift.ScheduledWorkflowAlert` (F16 class C5),
-      # controls as `CI.Validation.Drift Tests`.
-
-      # [CI-117] (swift-institute/.github#286, corrigendum §11.1, R4/R4a/R4b):
-      # self-referential composite-action `uses:` sites must stay identity-
-      # pinned to a full 40-hex SHA. The mandatory positive control includes
-      # test_real_repository_workflows_are_clean, which runs the validator
-      # against this checkout's own workflows and is what turns red if a
-      # future PR reverts a converged site back to `@main`.
-      # Owner: `CI.Validation.CompositeActionPins` (F16 class C2), controls
-      # as `CI.Validation.CompositeActionPins Tests`.
 
       # The branch-pin baseline is a shrink-only ratchet: entries may be
       # pruned as repointings land, never added — a new branch pin is a

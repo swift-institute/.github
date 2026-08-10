@@ -1,53 +1,29 @@
-# validate-base.yml — reusable workflow extracting the 7-step skeleton
-# shared by all per-rule validate-*.yml workflows.
+# Reusable skeleton shared by every per-rule validate-*.yml. Callers stay thin
+# wrappers declaring only validator-script, rule-id-regex, discovery-mode, and
+# optional overrides; this file owns harden-runner, App-token mint, checkout,
+# target resolution, validator invocation, aggregation, and summary.
 #
-# Phase B-1 of CI-REVIEW-PHASE-B-DESIGN-2026-05-14. Per-rule callers become
-# thin wrappers (~25 lines) declaring only the validator-script, the
-# rule-id-regex for finding aggregation, the discovery-mode, and optional
-# overrides. The base owns the boilerplate (harden-runner, App-token mint,
-# checkout, target resolution, validator invocation, aggregation, summary).
+# Discovery modes:
+#   single-target           — clone one repo, run the validator once.
+#   wrapper-host-multi-file — clone one repo; the validator iterates files
+#                             itself. Body identical to single-target.
+#   per-package-org-sweep   — enumerate every repo in target-org via paginated
+#                             authenticated REST INSIDE this one job (never one
+#                             leaf job per repo), then run the validator per
+#                             repo. This replaced a repository-wide 2D
+#                             (org, repo) matrix that is capped by GitHub's
+#                             256-job strategy limit and once produced an EMPTY
+#                             matrix — silently `skipped`, not `success`.
 #
-# Three discovery modes per design doc §1:
+# Chain depth under [CI-004b]'s 4-level workflow_call limit: an ordinary caller
+# sits at L1, so nesting this puts it at L2. The two universal-nested
+# validators (validate-thin-callers, validate-file-naming) are ALREADY at L4
+# and MUST NOT migrate here — their manifest entries carry
+# `migrate-to-base: no (chain-C)`.
 #
-#   single-target            — clone one repo; run validator once.
-#   wrapper-host-multi-file  — clone one repo; validator iterates files
-#                              internally (e.g., every .github/workflows/*.yml).
-#                              Workflow body identical to single-target.
-#   per-package-org-sweep    — enumerate every repo in target-org through
-#                              paginated authenticated REST (inside this one
-#                              job, not one leaf job per repo), then run the
-#                              validator once per enumerated repo. Landed
-#                              Task 0B-01 (swift-institute/.github#280),
-#                              closing the Phase B-2 deferral: six single-
-#                              target callers (validate-docc-structure.yml,
-#                              validate-package-shape.yml,
-#                              validate-platform-architecture.yml,
-#                              validate-readme.yml,
-#                              validate-diagnostic-format.yml,
-#                              validate-layer-deps.yml) previously depended
-#                              on the orchestrator's repository-wide 2D
-#                              (organization, repository) `resolve-targets`
-#                              matrix, which is capped by GitHub's 256-job
-#                              strategy-matrix limit and produced an empty
-#                              matrix (silently `skipped`, not `success`) at
-#                              least once. This mode replaces that with an
-#                              organization matrix — at most
-#                              `active-organization-count` jobs per caller
-#                              validator — and moves repository enumeration
-#                              inside each org cell.
-#
-# Chain-depth accounting per [CI-004b] (4-level workflow_call limit):
-# Phase B-1 callers (e.g., validate-cache-policy.yml) sit at L1 when
-# triggered by their own paths-trigger or workflow_dispatch, so nesting
-# validate-base.yml puts the chain at L2 — well within budget. The two
-# universal-nested validators (validate-thin-callers.yml at swift-ci.yml:496
-# and validate-file-naming.yml at :504) sit at L4 already; they MUST NOT
-# migrate to validate-base.yml — manifest entries flag them with
-# `migrate-to-base: no (chain-C)` per CI-REVIEW-PHASE-B-DESIGN §5.
-#
-# Per [CI-090] this is a workflow_call reusable so NO top-level
-# `permissions:` block — per-job permissions provide the floor, the
-# caller's permissions cap the intersection.
+# workflow_call reusable, so NO top-level `permissions:` block ([CI-090]) —
+# that would cap every caller at zero through the intersection. Per-job
+# permissions provide the floor.
 
 name: validate-base
 
@@ -82,16 +58,12 @@ on:
         required: false
         default: 'public'
       crash-exit-min:
-        # Two incompatible per-script exit conventions already coexist among
-        # this file's callers: (a) called bare (no sys.exit) so the process
-        # always exits 0 unless an uncaught exception propagates — for THAT
-        # family, any nonzero rc unambiguously means a crash (default: 1,
-        # i.e. rc>=1); (b) called via `sys.exit(main(argv))` where main()
-        # returns 1 to mean "findings present" and 2 for a usage error — for
-        # THAT family, rc==1 is a normal finding, not a crash, and treating
-        # it as one (the validate-base.yml default before Task 0B-01)
-        # silently mislabeled every finding as an instrumentation failure.
-        # Set to 2 for a (b)-convention caller.
+        # Two incompatible exit conventions coexist among callers:
+        #   (a) bare call, no sys.exit — exits 0 unless an exception escapes,
+        #       so ANY nonzero rc is a crash (default 1).
+        #   (b) `sys.exit(main(argv))` — rc 1 means FINDINGS PRESENT, rc 2 a
+        #       usage error. SET THIS TO 2 for such a caller; leaving it at 1
+        #       mislabels every finding as an instrumentation failure.
         description: 'Minimum exit code from validator-script that counts as validator-crashed rather than findings-present. Default 1 (any nonzero rc is a crash) matches every pre-existing caller. Set 2 for a script whose main() returns 1 to mean "findings present" and reserves 2+ for a genuine crash/usage error.'
         type: number
         required: false
@@ -143,14 +115,12 @@ jobs:
           echo "::error::Unknown discovery-mode: '${MODE}'. Valid values: single-target | wrapper-host-multi-file | per-package-org-sweep."
           exit 1
 
-      # Dependabot and fork pull_request runs receive NO repository or
-      # organization secrets by design, so both App inputs arrive empty and
-      # create-github-app-token fails hard with "client-id ... must be set to a
-      # non-empty string". Every Dependabot PR in this repo therefore showed a
-      # wall of red across ~18 validator workflows. The damage was not the red
-      # itself: the reds were attributable to Dependabot and ignored, so a
-      # genuine regression arriving on such a PR would have been invisible in
-      # that noise.
+      # Dependabot and fork pull_request runs receive NO secrets by design, so
+      # both App inputs arrive empty and create-github-app-token fails hard
+      # ("client-id ... must be set to a non-empty string"), reddening ~18
+      # validator workflows at once. The cost is not the red — it is that such
+      # reds get attributed to Dependabot and ignored, hiding a genuine
+      # regression arriving on the same PR.
       - name: Mint installation token (swift-institute-bot)
         id: mint-token
         if: ${{ github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
@@ -158,22 +128,17 @@ jobs:
         with:
           client-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
           private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
-          # per-package-org-sweep scopes the token to the org actually being
-          # swept (matches validate-thin-callers.yml / validate-file-naming.yml
-          # precedent: `inputs.org || github.repository_owner`), so a
-          # visibility=private/internal/all sweep of a DIFFERENT org's
-          # installation can actually read it. target-org is empty for
-          # single-target/wrapper-host-multi-file, so this is a no-op for
-          # every other caller of this file (falls back to the prior
-          # unconditional github.repository_owner).
+          # Scope the token to the org actually being swept, so a
+          # private/internal sweep of a DIFFERENT org's installation can read
+          # it. target-org is empty for the single-target modes, so this falls
+          # back to github.repository_owner and is a no-op for them.
           owner: ${{ inputs.target-org || github.repository_owner }}
 
-      # Report which credential the scan will use. This is deliberately NOT
-      # written to $GITHUB_STEP_SUMMARY here: the Aggregate step writes that
-      # file with `>` (truncate), so anything logged there earlier is erased.
-      # The path is emitted as an annotation and as an output, and the Aggregate
-      # step renders it into the summary it owns -- a skip nobody can read is
-      # indistinguishable from a pass.
+      # Report which credential the scan uses. Deliberately NOT written to
+      # $GITHUB_STEP_SUMMARY here — Aggregate writes that file with `>`
+      # (truncate) and would erase it. Emitted as an annotation and an output,
+      # which Aggregate renders into the summary it owns: a skip nobody can
+      # read is indistinguishable from a pass.
       - name: Resolve scan credentials
         id: creds
         env:
@@ -188,10 +153,9 @@ jobs:
             echo "::notice title=Scan credentials::App secrets are unavailable on this event (Dependabot or fork PR), falling back to the automatic GITHUB_TOKEN. Public targets are scanned normally; a PRIVATE target cannot be cloned and will surface as clone-failed rather than passing quietly."
           fi
 
-      # Defaults to main, which is what every caller got before validator-ref
-      # existed. A caller that pins this workflow to a SHA should pin the same
-      # SHA here: otherwise it pins the workflow but not the script the workflow
-      # runs, and a green result still cannot be attributed to a version.
+      # A caller that pins this workflow to a SHA should pin the same SHA here:
+      # otherwise it pins the workflow but NOT the script the workflow runs,
+      # and a green result cannot be attributed to a version of the checker.
       - name: Checkout swift-institute/.github (validator host)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -212,19 +176,16 @@ jobs:
           echo "::notice title=Validator source::swift-institute/.github@${VALIDATOR_REF} resolved to ${resolved}"
           echo "validator-ref=${VALIDATOR_REF} resolved=${resolved}"
 
-      # ─── F16 cutover (Goal swift-institute/.github#358; home issue #404) ───
-      # The validators are moving from Python to Swift class by class, and
-      # this is the one place the fleet switches over. The binary is
-      # provisioned from the SAME checkout the Python was loaded from, so
-      # `validator-ref` still pins the checker exactly — a run's result
-      # remains attributable to one revision of one tree.
+      # THE one place the fleet switches Python → Swift validators. The binary
+      # is provisioned from the SAME checkout the Python was loaded from, so
+      # `validator-ref` still pins the checker exactly and a result stays
+      # attributable to one revision of one tree.
       #
-      # Cost is bounded and paid once per job: measured on the universal's
-      # plan job, a warm restore is 1-3s and the fail-closed provenance
-      # verification 9-10s. That is affordable HERE, where the scan loop
-      # already clones every target over the network; it is NOT affordable
-      # at swift-ci.yml's pre-toolchain branch-pin guard, which is why that
-      # one call site keeps its vendored Python (see the note there).
+      # Cost is paid once per job: ~1-3s warm restore + 9-10s fail-closed
+      # provenance verification. Affordable HERE, where the scan loop already
+      # clones every target over the network; NOT affordable at swift-ci.yml's
+      # pre-toolchain branch-pin guard, which is why that site keeps vendored
+      # Python.
       - name: Provision the Institute CI binary
         id: institute-ci
         uses: ./institute-github/.github/actions/institute-ci
@@ -250,17 +211,14 @@ jobs:
           echo "enumerated=1" >> "$GITHUB_OUTPUT"
           echo "excluded-archived=0" >> "$GITHUB_OUTPUT"
 
-      # per-package-org-sweep (Task 0B-01, swift-institute/.github#280).
-      # Enumerates every repo in target-org through paginated authenticated
-      # REST — NOT `gh repo list`, which is a known-broken instrument
-      # (owner-filtered repository listings have returned zero for
-      # swift-foundations; see the programme's §3 known-broken-instruments
-      # list). Mirrors the fixed pagination shape the orchestrator's retired
-      # `resolve-targets` job used: `--jq` runs once PER PAGE under
-      # `--paginate`, so the filter must emit one row per repo — never build
-      # an array — or a multi-page org silently loses every page but the
-      # last (the exact defect that left this discovery mode's six callers
-      # dispatching against an empty matrix).
+      # per-package-org-sweep. Enumerates target-org through paginated
+      # authenticated REST — NOT `gh repo list`, a known-broken instrument
+      # whose owner-filtered listings have returned zero for a populated org.
+      #
+      # PAGINATION TRAP: under `--paginate`, `--jq` runs once PER PAGE, so the
+      # filter must emit ONE ROW PER REPO and never build an array — otherwise
+      # a multi-page org silently keeps only the last page. That defect is what
+      # left this mode's callers dispatching against an empty matrix.
       - name: Resolve org-sweep targets
         id: org-sweep-targets
         if: ${{ inputs.discovery-mode == 'per-package-org-sweep' }}
