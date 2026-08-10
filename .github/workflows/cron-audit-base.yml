@@ -1,24 +1,12 @@
-# cron-audit-base.yml — reusable orchestrator skeleton for cross-org cron
-# audits.
+# Reusable orchestrator skeleton for cross-org cron audits — the shared shape
+# of the lint-license-header-weekly, lint-test-support-spine-weekly, and
+# lint-mechanical-hygiene-weekly orchestrators.
 #
-# Encodes the shared shape of the lint-license-header-weekly,
-# lint-test-support-spine-weekly, and lint-mechanical-hygiene-weekly
-# orchestrators (~80% structurally identical).
-#
-# (The lint-foundation-family-import-weekly orchestrator was a fourth
-# consumer until 2026-05-05; it was retired when γ-1a migrated to a
-# Tier 2 SwiftLint custom rule — see swift-institute/Research/
-# rollout-phase-1-results.md.)
-#
-# Phase C of the 2026-05-14 CI review (Q2=B sealed) refactored the
-# free-form `audit-step:` shell-string contract into the structured-
-# input contract below. The `institute-ci-control cron-audit` driver
-# (Tools/institute-ci-control, `Fleet.Audit`) is the only entry point;
-# callers MUST NOT supply shell snippets. This closes the
-# HIGH-CONDITIONAL template-injection finding from
-# CI-REVIEW-security-2026-05-14.md (the prior `audit-step:` interpolated
-# caller-supplied bash into a job that holds a cross-org App-installation
-# token at the matrix-org scope).
+# `institute-ci-control cron-audit` (`Fleet.Audit`) is the ONLY entry point and
+# callers MUST NOT supply shell snippets. The retired free-form `audit-step:`
+# interpolated caller-supplied bash into a job holding a cross-org
+# App-installation token at matrix-org scope — a template-injection surface
+# this structured contract exists to close. Do not reintroduce one.
 #
 # Each caller provides:
 #

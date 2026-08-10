@@ -1,31 +1,21 @@
-# verify-post-merge.yml — mandatory post-merge full-tier verification for a
-# wave-mode (waveMechanical) drained repository (swift-institute/.github#211).
+# Mandatory post-merge full-tier verification for a wave-mode drained
+# repository (#211). The wave-mode profile admits no full-tier requirement at
+# PR time — that IS the mechanical-remediation fast lane — so this is the
+# deferred gate: once a repository's wave-mode PRs have merged (one dispatch
+# per repository after its drain, not per PR), it invokes that repository's own
+# full-tier CI against the exact expected main head, waits for the conclusion,
+# and reports.
 #
-# The wave-mode profile in review-pr-transaction.yml deliberately admits no
-# full-tier requirement at PR-tier time — that is the entire point of the
-# mechanical-remediation fast lane. This workflow is the deferred gate: after
-# a repository's wave-mode PRs have merged (batchable — one dispatch per
-# repository after its drain completes, not per PR), dispatch invokes the
-# drained repository's own full-tier CI (the `workflow_dispatch` run of its
-# `ci.yml` thin caller — the same run the Swift verification in
-# PullRequest.Transaction+Verification.swift synthesizes as a `full-tier` check for
-# the `package` profile) against the exact expected main head, waits for its
-# conclusion, and reports on the outcome.
-#
-# A LOST WATCH IS NOT-GREEN (swift-institute/.github#213): the dispatch step
-# can end without ever reaching a confirmed conclusion — the job's own
-# 360-minute ceiling expiring while the awaited run is still queued (the
-# comment on `timeout-minutes` below records queueing up to 7h41m under
-# fleet-wide saturation), a transient `gh` read error, or the awaited run
-# never being discovered. Every one of those is treated as a `lost` outcome,
-# never as silence: the report step runs on `always()`, is driven by the
-# dispatch step's own built-in `outcome` plus whatever partial signal it
-# recorded before an early exit, and files a Bug on every outcome but a
-# confirmed green — naming the specific lost class, not just "something went
-# wrong". The 340-iteration poll bound below is deliberately short of the
-# 360-minute job ceiling so this classification happens because the script
-# decided the watch was lost, not because GitHub killed the job out from
-# under it.
+# A LOST WATCH IS NOT-GREEN (#213). The dispatch step can end without a
+# confirmed conclusion — the job ceiling expiring while the awaited run is
+# still queued (observed up to 7h41m under fleet saturation), a transient `gh`
+# read error, or the run never being discovered. Each is a typed `lost`
+# outcome, never silence: the report step runs on `always()`, is driven by the
+# dispatch step's own `outcome` plus any partial signal recorded before an
+# early exit, and files a Bug on every outcome but a confirmed green, NAMING
+# the lost class. The poll bound is deliberately short of the job ceiling so
+# the classification happens because the script decided the watch was lost,
+# not because GitHub killed the job first.
 #
 # SCOPE-DOWN (first landing, swift-institute/.github#211): outcome item 4
 # asks for a revert PR of the drained commits in addition to the Bug. Full
