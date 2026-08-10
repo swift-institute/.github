@@ -10,9 +10,13 @@ name: reconcile-project-invariants
 # something observes them on a schedule. This workflow observes and
 # reports; per the #114 ruling (ratified 2026-07-30, comment
 # 5129159993) it also applies exactly two idempotent mutations to the
-# Project itself — everything else it finds remains report-only, and it
-# never mutates any issue beyond the lifecycle of its single divergence
-# issue in this repository.
+# Project itself, and — per #76/#121 (the org Issue Types permission was
+# confirmed granted on the installation, 2026-08-10) — assigns an org
+# issue type to open issues whose type is mechanically derivable from
+# the issue-form headers rendered in their bodies. Everything else it
+# finds remains report-only, and beyond that type assignment it never
+# mutates any issue except the lifecycle of its single divergence issue
+# in this repository.
 #
 # The two ratified mutations (#116):
 #   (a) set Priority = Normal on any Project row whose Priority is unset
@@ -22,6 +26,13 @@ name: reconcile-project-invariants
 #       Priority unset.
 #   (b) clear the built-in Status field on any row where it is set —
 #       mechanical enforcement of the keep-Status-unset invariant.
+# The third mutation class (#76/#121): assign an issue type to any open
+# untyped issue in the minted org whose type is derivable from the
+# issue-form header signature in its body (each form in
+# .github/ISSUE_TEMPLATE stamps a `type:` on new filings, so the residue
+# is issues filed before the forms carried types, plus machine-filed
+# reports). Derivation is exact-signature matching, never guessing; the
+# underivable remainder is reported in its own section.
 # Not-planned row detection and removal stay report-only per the same
 # ruling: a mistaken not-planned closure would silently lose programme
 # history, so removal remains a coordinator judgment.
@@ -53,6 +64,9 @@ name: reconcile-project-invariants
 #     are surfaced for an admission decision — never auto-admitted
 #   - issue-type parity per org: Task/Bug/Feature everywhere; Goal only
 #     in swift-institute
+#   - every open issue in every reconciled org carries an issue type:
+#     derivable gaps in the minted org are assigned, everything else is
+#     reported (#76/#121)
 #   - every open Goal issue (swift-institute/.github, the only repository
 #     where the Goal issue type is enabled) carries the record-grammar
 #     core fields the goal.yml form renders (#126 §5/§6, filed as #129/
@@ -76,10 +90,11 @@ name: reconcile-project-invariants
 #
 # Quota discipline: the REST/GraphQL budget is shared. One paginated
 # Project read, one paginated issue search per org, one issue-type read
-# per org, one field-metadata read; no polling. The two ratified
-# mutations are necessarily per-item (a Project field-value write has no
-# batch form), bounded to the rows actually missing Priority or carrying
-# a set Status, and idempotent.
+# per org, one field-metadata read; no polling. The ratified mutations
+# are necessarily per-item (a Project field-value write has no batch
+# form; neither does updateIssueIssueType), bounded to the rows actually
+# missing Priority, carrying a set Status, or missing a derivable issue
+# type, and idempotent.
 #
 # Known scope limits, recorded rather than silently assumed away:
 #   - the minted App token is the swift-institute org installation, so
@@ -89,12 +104,14 @@ name: reconcile-project-invariants
 #   - Project rows whose content lives in a repository the token cannot
 #     read resolve with null/REDACTED content; they are reported in
 #     their own section instead of crashing or being misclassified;
-#   - the org issueTypes list is gated on the org-level Issue Types
-#     permission, which the App has not been granted on any
-#     installation, and the resource is org-local to the minted
-#     installation — a FORBIDDEN issue-type read therefore degrades to
-#     a per-org "parity unobservable" line in the report (run 30527206227
-#     showed all 17 orgs denied) instead of failing the run.
+#   - the org issueTypes resource is org-local to the minted
+#     installation. The Issue Types permission is granted and minted
+#     here (issue_types: write, confirmed 2026-08-10 per #121), so the
+#     home-org read and the assignment mutation work — but a read
+#     against ANOTHER org can still come back FORBIDDEN, which degrades
+#     to a per-org "parity unobservable" line in the report instead of
+#     failing the run. Issue-type assignment is likewise bounded to the
+#     minted org; a derivable issue elsewhere is reported, not written.
 
 on:
   schedule:
@@ -139,12 +156,14 @@ jobs:
       # scope). issues: divergence-issue lifecycle plus issue content on
       # items. pull-requests: item content casts (a PR row is itself a
       # reported divergence, but reading it must not be denied).
-      # organization-administration read: a probe of whether the
-      # org-settings read covers the home org's issueTypes list — the
-      # dedicated Issue Types org permission is not in the App's granted
-      # set, so it cannot be requested here. metadata is implied by any
-      # grant; named for clarity.
-      - name: Mint installation token (project read/write, issue write)
+      # issue-types write: the org issueTypes read (parity) plus the
+      # updateIssueIssueType assignment mutation (#76/#121). The org
+      # Issue Types permission is in the installation's granted set
+      # (confirmed 2026-08-10; installation key `issue_types`), which
+      # supersedes the earlier organization-administration probe — that
+      # probe grant is dropped here. metadata is implied by any grant;
+      # named for clarity.
+      - name: Mint installation token (project read/write, issue + issue-type write)
         id: token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
         with:
@@ -152,7 +171,7 @@ jobs:
           private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
           owner: swift-institute
           permission-organization-projects: write
-          permission-organization-administration: read
+          permission-issue-types: write
           permission-issues: write
           permission-pull-requests: read
           permission-metadata: read
@@ -399,7 +418,7 @@ jobs:
                   search(type: ISSUE, first: 100, after: \$endCursor,
                          query: \"org:${org} is:issue is:open archived:false\") {
                     pageInfo { hasNextPage endCursor }
-                    nodes { ... on Issue { url author { login } } }
+                    nodes { ... on Issue { id url body author { login } issueType { name } } }
                   }
                 }"; then
               org_failures=$((org_failures + 1)); continue
@@ -425,7 +444,7 @@ jobs:
             if gh api graphql -f query='
                 query($org: String!) {
                   organization(login: $org) {
-                    issueTypes(first: 25) { nodes { name isEnabled } }
+                    issueTypes(first: 25) { nodes { id name isEnabled } }
                   }
                 }' -f org="$org" > "$types_out" 2> "${types_out}.stderr" \
               && jq -e '.data.organization.issueTypes.nodes != null' "$types_out" > /dev/null; then
@@ -466,6 +485,98 @@ jobs:
             echo "::error::${org_failures} org sweep(s) failed; see the surfaced API errors above. Observation data is incomplete, so no report is filed."
             exit 1
           fi
+          # ── Issue-type enforcement (#76/#121) ───────────────────────
+          # Every open issue in a reconciled org must carry an org issue
+          # type. Where the type is mechanically derivable from the
+          # issue-form header signature rendered in the body, the
+          # reconciler assigns it; everything underivable is reported,
+          # never guessed. Assignment is bounded to the minted
+          # installation's org (swift-institute); a derivable issue in
+          # another org is reported as pending that org's own mint, not
+          # silently skipped.
+          #
+          # Header-signature derivation, mirroring .github/ISSUE_TEMPLATE
+          # (an Issue Forms field renders as a "### <Label>" header):
+          #   bug.yml           → Bug     (Observed behavior + Expected behavior)
+          #   goal.yml          → Goal    (Kind + Owner coordinate + Objective)
+          #   task.yml          → Task    (Kind + Owner coordinate + Problem + Proposed outcome)
+          #   documentation.yml → Task    (Documentation gap + Proposed correction)
+          #   change.yml        → Feature (Problem + Proposed outcome, without Kind)
+          # Order matters: the more specific signatures are tested first,
+          # so change.yml's pair only matches when task.yml's record-
+          # grammar headers are absent.
+          derive_type() {
+            local body="$1"
+            has_header() { grep -qFx "### $1" <<< "$body"; }
+            if has_header "Observed behavior" && has_header "Expected behavior"; then echo "Bug"
+            elif has_header "Kind" && has_header "Owner coordinate" && has_header "Objective"; then echo "Goal"
+            elif has_header "Kind" && has_header "Owner coordinate" && has_header "Problem" && has_header "Proposed outcome"; then echo "Task"
+            elif has_header "Documentation gap" && has_header "Proposed correction"; then echo "Task"
+            elif has_header "Problem" && has_header "Proposed outcome"; then echo "Feature"
+            else echo ""
+            fi
+          }
+
+          : > "$workdir/applied-type.txt"
+          : > "$workdir/type-underivable.txt"
+          : > "$workdir/type-derived-unapplied.txt"
+          type_mutation_failures=0
+          for org in $(jq -r '.[]' <<< "$ORGS"); do
+            [ -s "$workdir/search-${org}.json" ] || continue
+            jq -c '.[].data.search.nodes[]
+                    | select(. != null and .url != null and .issueType == null)
+                    | {id, url, body}' \
+              "$workdir/search-${org}.json" > "$workdir/untyped-${org}.jsonl"
+            while IFS= read -r row; do
+              [ -z "$row" ] && continue
+              issue_id=$(jq -r '.id' <<< "$row")
+              issue_url=$(jq -r '.url' <<< "$row")
+              issue_body=$(jq -r '.body // ""' <<< "$row")
+              derived=$(derive_type "$issue_body")
+              if [ -z "$derived" ]; then
+                echo "$issue_url" >> "$workdir/type-underivable.txt"
+                continue
+              fi
+              if [[ "$org" != "swift-institute" ]]; then
+                echo "${issue_url} — derivable as ${derived}; not applied (token is the swift-institute installation)" \
+                  >> "$workdir/type-derived-unapplied.txt"
+                continue
+              fi
+              if [[ "$DRY_RUN" == "true" ]]; then
+                echo "${issue_url} — derivable as ${derived} (dry-run: not applied)" \
+                  >> "$workdir/type-derived-unapplied.txt"
+                continue
+              fi
+              type_id=$(jq -r --arg n "$derived" \
+                '.data.organization.issueTypes.nodes[] | select(.name == $n and .isEnabled) | .id' \
+                "$workdir/types-swift-institute.json" 2>/dev/null || true)
+              if [[ -z "$type_id" || "$type_id" == "null" ]]; then
+                echo "::error::Derived type ${derived} has no enabled id in the swift-institute issueTypes read; refusing to mutate ${issue_url}"
+                type_mutation_failures=$((type_mutation_failures + 1))
+                continue
+              fi
+              out="$workdir/mutate-type-${issue_id//[!A-Za-z0-9]/_}.json"
+              if gh api graphql -f query='
+                  mutation($issue: ID!, $type: ID!) {
+                    updateIssueIssueType(input: { issueId: $issue, issueTypeId: $type }) {
+                      issue { id }
+                    }
+                  }' -f issue="$issue_id" -f type="$type_id" > "$out" 2> "${out}.stderr" \
+                && jq -e '.data.updateIssueIssueType.issue.id != null' "$out" > /dev/null; then
+                echo "${issue_url} — ${derived}" >> "$workdir/applied-type.txt"
+              else
+                echo "::error::Assigning issue type ${derived} failed for ${issue_url}; API response/error follows"
+                cat "${out}.stderr" >&2 2>/dev/null || true
+                [ -s "$out" ] && cat "$out" >&2
+                type_mutation_failures=$((type_mutation_failures + 1))
+              fi
+            done < "$workdir/untyped-${org}.jsonl"
+          done
+          if [[ "$type_mutation_failures" -gt 0 ]]; then
+            echo "::error::${type_mutation_failures} issue-type assignment(s) failed; see the surfaced API errors above. Refusing to file a report against an incompletely-applied mutation set."
+            exit 1
+          fi
+
           sort -u "$workdir/open-issues.txt" > "$workdir/open-issues-sorted.txt"
           comm -23 "$workdir/open-issues-sorted.txt" "$workdir/admitted-urls.txt" \
             > "$workdir/awaiting-admission.txt"
@@ -598,6 +709,15 @@ jobs:
             "$workdir/unreadable-rows.txt" \
             "Private or foreign-org content; verify these rows by hand or widen the App installation."
           section "Issue-type parity" "$workdir/type-parity.txt"
+          section_uncounted "Issue types assigned (mutation applied this run, #76/#121)" \
+            "$workdir/applied-type.txt" \
+            "Bounded to open issues in the minted org whose type is mechanically derivable from the issue-form header signature in their body. Not a lingering divergence."
+          section "Open issues with a derivable type not applied" \
+            "$workdir/type-derived-unapplied.txt" \
+            "Dry-run entries, plus issues outside the minted swift-institute installation — applying those needs that org's own installation mint."
+          section "Open issues without a derivable issue type" \
+            "$workdir/type-underivable.txt" \
+            "Reported, never guessed: no issue-form header signature matched. Machine-filed reports land here pending a typing ruling (#76)."
           section "Open issues awaiting an admission decision" \
             "$workdir/awaiting-admission.txt" \
             "Surfaced only; admission is a judgment no filter expresses, so nothing is auto-admitted."
