@@ -28,8 +28,30 @@ extension CI.Contract {
             }
         }
 
+        /// One leg the plan removed from `legs` with a stated reason —
+        /// the third audited state beside scheduled and absent (ruled
+        /// 2026-08-10, .github#488). Descheduling is typed, never silent:
+        /// ci-ok receives this list and verifies each entry actually
+        /// skipped, so an expiry-descheduled leg is distinguishable in the
+        /// audit from a platform-filter drop or a plan defect
+        /// (VALIDATOR-DISCIPLINE §3).
+        public struct Descheduled: Sendable, Equatable {
+            public enum Reason: String, Sendable, Equatable {
+                case nightlyExceptionExpired = "nightly-exception-expired"
+            }
+
+            public let leg: Leg
+            public let reason: Reason
+
+            public init(leg: Leg, reason: Reason) {
+                self.leg = leg
+                self.reason = reason
+            }
+        }
+
         public let tier: Tier
         public let legs: [Leg]
+        public let descheduled: [Descheduled]
         public var gating: [Leg] { legs.filter(\.gating) }
 
         static let fullTierLegs = [
@@ -51,13 +73,18 @@ extension CI.Contract {
         /// message (empty on PR events); `event` = the event name;
         /// `platformSupport` = the comma-separated family list;
         /// `lintBundle` = primitives|standards|institute.
+        /// - Parameter nightlyDisposition: the validated
+        ///   ``NightlyException`` disposition for this run. `.expired`
+        ///   deschedules the exception's classified leg with a typed
+        ///   record; the default `.active` schedules it as before.
         public init(
             forcedTier: String = "",
             ref: String,
             headMessage: String = "",
             event: String,
             platformSupport: String = "",
-            lintBundle: String
+            lintBundle: String,
+            nightlyDisposition: NightlyException.Disposition = .active
         ) throws(Error) {
             guard ["primitives", "standards", "institute"].contains(lintBundle) else {
                 throw .invalidLintBundle(lintBundle)
@@ -108,6 +135,21 @@ extension CI.Contract {
                     return families.contains(family)
                 }
             }
+            // An expired advisory-class exception deschedules exactly its
+            // classified leg — typed, after the platform filter, so the
+            // record names only a leg this run would otherwise have
+            // scheduled. A leg the tier or platform filter already excluded
+            // is absent, not descheduled.
+            var descheduled: [Descheduled] = []
+            if case .expired = nightlyDisposition {
+                let classified = NightlyException.classifiedLeg
+                if legIds.contains(classified.id) {
+                    legIds.removeAll { $0 == classified.id }
+                    descheduled.append(
+                        .init(leg: classified, reason: .nightlyExceptionExpired))
+                }
+            }
+            self.descheduled = descheduled
             let legs = legIds.map(Leg.init)
             guard legs.contains(where: { $0.gating && $0.buildLeg }) else {
                 throw .noGatingBuildLeg(tier: selected, platformSupport: platformSupport)

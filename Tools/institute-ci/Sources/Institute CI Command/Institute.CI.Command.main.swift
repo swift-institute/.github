@@ -58,7 +58,13 @@ case "plan":
             upstreamIssue: value("--nightly-main-upstream-issue", in: rest),
             recheck: value("--nightly-main-recheck", in: rest))
         let today = value("--today", in: rest)
-        try nightlyException.validate(today: today)
+        // Class-aware expiry (ruled 2026-08-10, .github#488): malformed
+        // fields refuse everywhere; a well-formed expired exception refuses
+        // only on the owner repository and deschedules the classified leg
+        // on every other subject.
+        let nightlyDisposition = try nightlyException.disposition(
+            today: today,
+            subjectRepository: value("--subject-repository", in: rest))
         // The release-floor exception is OPTIONAL by construction: an absent
         // `--release-floor-image` is the terminal state, resolving to the
         // official `swift:<floor>` image. Present, it must validate before any
@@ -79,12 +85,17 @@ case "plan":
             headMessage: value("--head-message", in: rest),
             event: value("--event", in: rest),
             platformSupport: value("--platform-support", in: rest),
-            lintBundle: value("--lint-bundle", in: rest))
+            lintBundle: value("--lint-bundle", in: rest),
+            nightlyDisposition: nightlyDisposition)
         let payload: [String: Any] = [
             "tier": plan.tier.rawValue,
             "legs": plan.legs.map(\.id).joined(separator: ","),
             "gating": plan.gating.map(\.id).joined(separator: ","),
             "linux-image": linuxImage,
+            // `leg=reason` records; empty when nothing was descheduled.
+            "descheduled": plan.descheduled
+                .map { "\($0.leg.id)=\($0.reason.rawValue)" }
+                .joined(separator: ","),
         ]
         let data = try JSONSerialization.data(
             withJSONObject: payload, options: [.sortedKeys])
@@ -111,7 +122,11 @@ case "aggregate":
         subjectRepository: value("--subject-repository", in: rest),
         subjectSha: value("--subject-sha", in: rest),
         tier: value("--tier", in: rest),
-        requireFullTier: rest.contains("--require-full-tier"))
+        requireFullTier: rest.contains("--require-full-tier"),
+        // `leg=reason` records from the plan; the audit keys on leg ids.
+        descheduled: value("--descheduled", in: rest)
+            .split(separator: ",")
+            .map { String($0.split(separator: "=")[0]) })
     for finding in verdict.findings {
         FileHandle.standardError.write(Data("institute-ci: \(finding)\n".utf8))
     }
