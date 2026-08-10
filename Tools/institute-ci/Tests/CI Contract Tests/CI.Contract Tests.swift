@@ -3,23 +3,72 @@ import Testing
 
 @Suite
 struct CIContractPlanTests {
-    @Test func mainNightlyExceptionRefusesMutableOrExpiredIdentity() throws {
-        try CI.Contract.NightlyException(
-            image: "swiftlang/swift@sha256:f577f95edfb85cf3bdc45eb0badaab09239de5c86c69b3b6d594cc62916c0a7d",
-            upstreamIssue: "https://github.com/swiftlang/swift/issues/90275",
-            recheck: "2026-09-14").validate(today: "2026-08-09")
-        #expect(throws: CI.Contract.NightlyException.Error.image("swiftlang/swift:nightly-main-jammy")) {
-            try CI.Contract.NightlyException(
-                image: "swiftlang/swift:nightly-main-jammy",
-                upstreamIssue: "https://github.com/swiftlang/swift/issues/90275",
-                recheck: "2026-09-14").validate(today: "2026-08-09")
+    static let currentNightlyException = CI.Contract.NightlyException(
+        image: "swiftlang/swift@sha256:f577f95edfb85cf3bdc45eb0badaab09239de5c86c69b3b6d594cc62916c0a7d",
+        upstreamIssue: "https://github.com/swiftlang/swift/issues/90275",
+        recheck: "2026-09-14")
+
+    @Test func mainNightlyExceptionRefusesMutableOrMalformedIdentity() throws {
+        #expect(try Self.currentNightlyException.disposition(
+            today: "2026-08-09", subjectRepository: "swift-standards/swift-fips-180-4")
+            == .active)
+        // Malformed fields refuse EVERYWHERE, owner and fleet alike —
+        // authoring defects are not calendar events.
+        for subject in [CI.Contract.NightlyException.owner, "o/r"] {
+            #expect(throws: CI.Contract.NightlyException.Error.image("swiftlang/swift:nightly-main-jammy")) {
+                try CI.Contract.NightlyException(
+                    image: "swiftlang/swift:nightly-main-jammy",
+                    upstreamIssue: "https://github.com/swiftlang/swift/issues/90275",
+                    recheck: "2026-09-14").disposition(today: "2026-08-09", subjectRepository: subject)
+            }
         }
+    }
+
+    /// The localized forcing function (ruled 2026-08-10, .github#488): an
+    /// expired advisory-class exception fails closed on the owner
+    /// repository alone — the positive control proving expiry still forces
+    /// a ruling — and deschedules, with the typed record, everywhere else.
+    @Test func expiredNightlyExceptionFailsOwnerAndDeschedulesFleet() throws {
         #expect(throws: CI.Contract.NightlyException.Error.expired(recheck: "2026-09-14", today: "2026-09-15")) {
-            try CI.Contract.NightlyException(
-                image: "swiftlang/swift@sha256:f577f95edfb85cf3bdc45eb0badaab09239de5c86c69b3b6d594cc62916c0a7d",
-                upstreamIssue: "https://github.com/swiftlang/swift/issues/90275",
-                recheck: "2026-09-14").validate(today: "2026-09-15")
+            try Self.currentNightlyException.disposition(
+                today: "2026-09-15",
+                subjectRepository: CI.Contract.NightlyException.owner)
         }
+        #expect(try Self.currentNightlyException.disposition(
+            today: "2026-09-15", subjectRepository: "swift-standards/swift-fips-180-4")
+            == .expired(recheck: "2026-09-14", today: "2026-09-15"))
+    }
+
+    /// The class is derived from the leg's mechanical facts, never
+    /// authored: the classified leg must not be gating (ci-ok needs).
+    /// Guards the class-gaming route the adversarial review named — if the
+    /// classified leg ever becomes gating, every disposition refuses.
+    @Test func nightlyExceptionClassifiesAnAdvisoryLegOnly() throws {
+        #expect(!CI.Contract.NightlyException.classifiedLeg.gating)
+        #expect(CI.Contract.Leg("linux-release").gating)
+    }
+
+    /// Expiry deschedules typed, not silent: the leg leaves `legs`, the
+    /// record names it with its reason, and a leg the tier never selected
+    /// is absent rather than descheduled.
+    @Test func expiredNightlyDispositionDeschedulesTheClassifiedLeg() throws {
+        let full = try CI.Contract.Plan(
+            forcedTier: "full", ref: "refs/heads/x", event: "push",
+            lintBundle: "standards",
+            nightlyDisposition: .expired(recheck: "2026-09-14", today: "2026-09-15"))
+        #expect(!full.legs.map(\.id).contains("linux-nightly"))
+        #expect(full.descheduled == [
+            .init(leg: .init("linux-nightly"), reason: .nightlyExceptionExpired)
+        ])
+        #expect(full.gating.map(\.id).contains("linux-release"))
+
+        // The build tier never schedules linux-nightly, so there is
+        // nothing to deschedule and the record stays empty.
+        let build = try CI.Contract.Plan(
+            ref: "refs/heads/x", event: "push", lintBundle: "standards",
+            nightlyDisposition: .expired(recheck: "2026-09-14", today: "2026-09-15"))
+        #expect(build.descheduled.isEmpty)
+        #expect(build.legs.map(\.id) == ["format", "lint", "swift-linter", "linux-release", "linux-6-4"])
     }
 
     /// The floor's image is `swift:<floor>` and nothing else — the terminal
@@ -303,6 +352,42 @@ struct CIContractAggregateTests {
             requireFullTier: false)
         #expect(!verdict.pass)
         #expect(verdict.findings.contains(.nothingBuilt))
+    }
+
+    /// The descheduled record is the audited third state: a descheduled leg
+    /// must have skipped, and it can never be gating.
+    @Test
+    func descheduledLegsAreAuditedNotAssumed() {
+        var results = needs(["format": "success", "lint": "success",
+                             "swift-linter": "success", "linux-release": "success"])
+        let gating = ["format", "lint", "swift-linter", "linux-release"]
+        let clean = CI.Contract.AggregateVerdict(
+            planResult: "success", results: results, gating: gating,
+            subjectRepository: "o/r", subjectSha: "abc", tier: "full",
+            requireFullTier: false, descheduled: ["linux-nightly"])
+        #expect(clean.pass)
+
+        // The record and the execution graph disagreeing is a failure.
+        results["linux-nightly"] = "success"
+        let ran = CI.Contract.AggregateVerdict(
+            planResult: "success", results: results, gating: gating,
+            subjectRepository: "o/r", subjectSha: "abc", tier: "full",
+            requireFullTier: false, descheduled: ["linux-nightly"])
+        #expect(!ran.pass)
+        #expect(ran.findings.contains(
+            .descheduledLegRan(job: "linux-nightly", result: "success")))
+
+        // A gating leg can never be accounted for by descheduling.
+        let gamed = CI.Contract.AggregateVerdict(
+            planResult: "success",
+            results: needs(["format": "success", "lint": "success",
+                            "swift-linter": "success", "linux-release": "success"]),
+            gating: gating,
+            subjectRepository: "o/r", subjectSha: "abc", tier: "full",
+            requireFullTier: false, descheduled: ["windows-release"])
+        #expect(!gamed.pass)
+        #expect(gamed.findings.contains(
+            .descheduledGatingLeg(job: "windows-release")))
     }
 
     @Test

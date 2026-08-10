@@ -218,6 +218,16 @@ on:
 env:
   # The sole main-nightly exception. `plan` validates all three values before
   # emitting any selected legs; expiry is inclusive and requires a new ruling.
+  # Expiry semantics are CLASS-AWARE (ruled 2026-08-10, #488; adversarial
+  # review on the same issue): this exception classifies an ADVISORY leg, so
+  # past the recheck date the plan DESCHEDULES linux-nightly fleet-wide with a
+  # typed `descheduled` record (ci-ok audits it as accounted-for-with-reason)
+  # instead of failing every consumer's required check. The forcing function
+  # survives, localized: on THIS repository (swift-institute/.github, the
+  # exception's owner) an expired exception still fails the plan closed until
+  # re-ratified. Malformed fields fail closed everywhere, owner and fleet
+  # alike. The gating-class ReleaseFloorException below keeps unconditional
+  # fail-closed expiry — it substitutes the image under gating legs.
   SWIFT_MAIN_NIGHTLY_IMAGE: "swiftlang/swift@sha256:f577f95edfb85cf3bdc45eb0badaab09239de5c86c69b3b6d594cc62916c0a7d"
   SWIFT_MAIN_NIGHTLY_UPSTREAM_ISSUE: "https://github.com/swiftlang/swift/issues/90275"
   SWIFT_MAIN_NIGHTLY_RECHECK: "2026-09-14"
@@ -378,6 +388,12 @@ jobs:
       tier: ${{ steps.classify.outputs.tier }}
       legs: ${{ steps.classify.outputs.legs }}
       gating: ${{ steps.classify.outputs.gating }}
+      # `leg=reason` records for legs the plan removed with a typed reason
+      # (currently only linux-nightly on an expired NightlyException).
+      # Empty on every current-date run. ci-ok audits each named leg as
+      # accounted-for-with-reason: it must have skipped and can never be
+      # gating (#488 ruling, 2026-08-10).
+      descheduled: ${{ steps.classify.outputs.descheduled }}
       # THE single container-image contract for the Linux legs. Every
       # containerized Linux job in this file — and every nested reusable it
       # calls with a container — binds this and never an image literal, so the
@@ -720,27 +736,36 @@ jobs:
           PLATFORM_SUPPORT: ${{ inputs.platform-support }}
           LINT_BUNDLE: ${{ inputs.lint-bundle }}
           SWIFT_VERSION: ${{ inputs.swift-version }}
+          SUBJECT_REPOSITORY: ${{ steps.resolve-subject.outputs.subject-repository }}
         run: |
           set -euo pipefail
-          PLAN_JSON="$(.institute-ci-entry/bin/institute-ci plan --tier "$FORCED_TIER" --ref "$GITHUB_REF" --head-message "$HEAD_MSG" --event "$EVENT_NAME" --platform-support "$PLATFORM_SUPPORT" --lint-bundle "$LINT_BUNDLE" --nightly-main-image "$SWIFT_MAIN_NIGHTLY_IMAGE" --nightly-main-upstream-issue "$SWIFT_MAIN_NIGHTLY_UPSTREAM_ISSUE" --nightly-main-recheck "$SWIFT_MAIN_NIGHTLY_RECHECK" --swift-version "$SWIFT_VERSION" --release-floor-image "$SWIFT_RELEASE_FLOOR_IMAGE" --release-floor-upstream-release "$SWIFT_RELEASE_FLOOR_UPSTREAM_RELEASE" --release-floor-recheck "$SWIFT_RELEASE_FLOOR_RECHECK" --today "$(date -u +%F)")"
+          PLAN_JSON="$(.institute-ci-entry/bin/institute-ci plan --tier "$FORCED_TIER" --ref "$GITHUB_REF" --head-message "$HEAD_MSG" --event "$EVENT_NAME" --platform-support "$PLATFORM_SUPPORT" --lint-bundle "$LINT_BUNDLE" --subject-repository "$SUBJECT_REPOSITORY" --nightly-main-image "$SWIFT_MAIN_NIGHTLY_IMAGE" --nightly-main-upstream-issue "$SWIFT_MAIN_NIGHTLY_UPSTREAM_ISSUE" --nightly-main-recheck "$SWIFT_MAIN_NIGHTLY_RECHECK" --swift-version "$SWIFT_VERSION" --release-floor-image "$SWIFT_RELEASE_FLOOR_IMAGE" --release-floor-upstream-release "$SWIFT_RELEASE_FLOOR_UPSTREAM_RELEASE" --release-floor-recheck "$SWIFT_RELEASE_FLOOR_RECHECK" --today "$(date -u +%F)")"
           TIER="$(jq -r '.tier' <<< "$PLAN_JSON")"
           LEGS="$(jq -r '.legs' <<< "$PLAN_JSON")"
           GATING="$(jq -r '.gating' <<< "$PLAN_JSON")"
           LINUX_IMAGE="$(jq -r '."linux-image"' <<< "$PLAN_JSON")"
+          DESCHEDULED="$(jq -r '.descheduled' <<< "$PLAN_JSON")"
           echo "tier=$TIER" >> "$GITHUB_OUTPUT"
           echo "legs=$LEGS" >> "$GITHUB_OUTPUT"
           echo "gating=$GATING" >> "$GITHUB_OUTPUT"
           echo "linux-image=$LINUX_IMAGE" >> "$GITHUB_OUTPUT"
+          echo "descheduled=$DESCHEDULED" >> "$GITHUB_OUTPUT"
           echo "Selected tier: $TIER"
           echo "legs: $LEGS"
           echo "gating: $GATING"
           echo "linux image: $LINUX_IMAGE"
+          echo "descheduled: ${DESCHEDULED:-none}"
           {
             echo "## CI tier: \`$TIER\` (planned by institute-ci)"
             echo ""
             echo "Selected legs: \`$LEGS\`"
             echo ""
             echo "Gating: \`$GATING\`. \`ci-ok\` attests the SELECTED tier and names it — a gating leg that is skipped without appearing here fails the run (2026-07-28)."
+            if [ -n "$DESCHEDULED" ]; then
+              echo ""
+              echo "> [!WARNING]"
+              echo "> Descheduled with reason: \`$DESCHEDULED\` — an advisory-leg exception has EXPIRED (#488 semantics). The leg is not running fleet-wide until the exception is re-ratified in swift-institute/.github, whose own plan is failing closed on this expiry."
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
   macos-release:
@@ -2705,6 +2730,7 @@ jobs:
       - name: Render advisory leg results to the run summary
         env:
           NEEDS_JSON: ${{ toJson(needs) }}
+          PLANNED_DESCHEDULED: ${{ needs.plan.outputs.descheduled }}
         run: |
           set -euo pipefail
           # Informational only — this job is excluded from ci-ok's needs and
@@ -2718,6 +2744,11 @@ jobs:
             echo "| Advisory leg | Result |"
             echo "| --- | --- |"
             jq -r 'to_entries | sort_by(.key)[] | "| \(.key) | \(.value.result) |"' <<< "$NEEDS_JSON"
+            if [ -n "$PLANNED_DESCHEDULED" ]; then
+              echo ""
+              echo "> [!WARNING]"
+              echo "> Descheduled with reason: \`$PLANNED_DESCHEDULED\` — an advisory-leg exception has EXPIRED (#488 semantics); re-ratify it in swift-institute/.github."
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
   # ─── Conclusion aggregator ────────────────────────────────────────────────
@@ -2864,6 +2895,7 @@ jobs:
           PLANNED_TIER: ${{ needs.plan.outputs.tier }}
           PLANNED_SUBJECT_REPOSITORY: ${{ needs.plan.outputs.subject-repository }}
           PLANNED_SUBJECT_SHA: ${{ needs.plan.outputs.subject-sha }}
+          PLANNED_DESCHEDULED: ${{ needs.plan.outputs.descheduled }}
           REQUIRE_FULL_TIER: ${{ github.ref == 'refs/heads/main' }}
         run: |
           set -euo pipefail
@@ -2872,7 +2904,7 @@ jobs:
             FLAGS+=(--require-full-tier)
           fi
           RC=0
-          VERDICT="$(.institute-ci-entry/bin/institute-ci aggregate --needs-json "$NEEDS_JSON" --gating "$PLANNED_GATING" --subject-repository "$PLANNED_SUBJECT_REPOSITORY" --subject-sha "$PLANNED_SUBJECT_SHA" --tier "$PLANNED_TIER" "${FLAGS[@]}" 2> >(tee /tmp/aggregate-findings.txt >&2))" || RC=$?
+          VERDICT="$(.institute-ci-entry/bin/institute-ci aggregate --needs-json "$NEEDS_JSON" --gating "$PLANNED_GATING" --subject-repository "$PLANNED_SUBJECT_REPOSITORY" --subject-sha "$PLANNED_SUBJECT_SHA" --tier "$PLANNED_TIER" --descheduled "$PLANNED_DESCHEDULED" "${FLAGS[@]}" 2> >(tee /tmp/aggregate-findings.txt >&2))" || RC=$?
           {
             if [ "$RC" -eq 0 ]; then
               echo "## ci-ok: pass (tier \`${PLANNED_TIER:-unknown}\`, aggregated by institute-ci)"
