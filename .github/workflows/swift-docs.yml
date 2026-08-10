@@ -1,102 +1,49 @@
 name: Swift DocC (reusable)
 
-# ─── Third-party consumer notice ────────────────────────────────────────
-# These reusable workflows are designed for swift-institute ecosystem
-# packages. Outside callers consume at their own risk and should pin to
-# an immutable SHA (`@<sha>`) rather than `@main`. The input/output
-# surface and behavior may change without notice; the swift-institute/
-# .github repo offers no compatibility guarantee to outside consumers.
-# Per swift-institute/Research/ci-cd-cross-ecosystem-reuse.md v1.1.1 §Q4
-# (third-party consumers are unintended-but-permitted).
-# ────────────────────────────────────────────────────────────────────────
-
-# ─── Acronym preservation list ────────────────────────────────────────
-# Umbrella metadata is now DISCOVERED from the single DocC catalog under
-# `Sources/*/*.docc` (the catalog's parent-directory basename is the display
-# name). The kebab→TitleCase repo-name heuristic — and this acronym list —
-# survive ONLY as a tiebreak when a repo ships MULTIPLE catalogs (all-caps
-# tokens preserved verbatim, e.g. `swift-cpu-primitives` → `CPU_Primitives`,
-# NOT `Cpu_Primitives`). Extend when a new spec acronym appears in a package
-# name. Keep alphabetically sorted; space-separated; uppercase. The list
-# itself lives in the `Derive umbrella metadata` step below.
-
-# ─── SCHEDULING: NOT ON EVERY PUSH (Team Lead ruling 2026-07-29) ────────
-# This job runs on TAG REFS, workflow_dispatch, schedule, the '[ci docs]'
-# commit token, and the nightly ci-sweep rotation (which passes
-# `target-repo`). An ordinary push does NOT build docs.
+# Reusable DocC validation for Institute packages on the umbrella-module
+# single-catalog pattern ([DOC-019a]). A build-time GATE: if `docc convert`
+# fails (broken cross-refs, unresolved symbols, schema drift, tutorial syntax)
+# the job goes red. The .doccarchive is deliberately NOT uploaded — Swift
+# Package Index serves visitor-facing docs from tagged releases and no other
+# consumer exists. Adding an upload later needs a tar wrapper: DocC slug
+# filenames contain `:` for `init(_:)`-shaped symbols, which
+# `actions/upload-artifact@v4+` rejects.
 #
-# Measured basis (swift-institute/Workspace#47, data from 2026-07-27):
-# every organization is capped at 20 concurrent runner-backed jobs, and
-# that cap is pinned for 94.7% of contended time. On the measured day this
-# job took 244 runner acquisitions and 21.7 slot-hours in swift-foundations
-# alone — 34.2% of the entire org's daily CI compute, the single largest
-# consumer, ahead of the release build leg. Recomputing that day's burst
-# against the 20-slot ceiling: taking DocC off per-push drops the drain
-# time from 151 to 100 minutes (-34%). Every other candidate change
-# measured under -5%.
+# Third-party consumers: unintended but permitted. No compatibility
+# guarantee — pin `@<sha>`, not `@main`.
 #
-# DO NOT EXPECT -34% IN PRACTICE, and do not conclude this change failed
-# when you do not see it. `linux-6-4` went to every-push in b0aa2c2 on
-# 2026-07-28 — one day AFTER the data above, so it is absent from it. It
-# is a release-mode Linux test leg costing 0.71x the 6.3 release leg
-# (paired sample, n=9, 2026-07-29; ratio ranges 0.57-1.22 and tracks
-# package size). Against the same storm that is ~+11.6 slot-hours versus
-# the 17.3 this change removes, so the two together land near -11%, not
-# -34%. The DocC removal is still the right call — without it the fleet
-# would now be strictly worse off than the measured baseline — but the
-# headline number belongs to a fleet that no longer exists.
+# Runner is a Linux container, not macOS: DocC ships in the Swift Linux
+# toolchain (`xcrun docc` was macOS-only convenience syntax), which is ~10x
+# cheaper to compile and needs no Xcode-version tracking. Same toolchain DocC,
+# so validation parity holds.
 #
-# What this trades away: docs regressions (broken cross-refs, unresolved
-# symbols, tutorial syntax) are now caught at the tag boundary and by the
-# weekly rotation, not within minutes of the push that caused them. That
-# was ruled acceptable pre-release — nothing consumes the published
-# archives yet, so staleness between tags costs nothing today. REVISIT
-# THIS RULING when the docs become visitor-facing: the argument for it is
-# entirely "no consumer", not "the check is low value".
+# SCHEDULING — NOT ON EVERY PUSH (ruling 2026-07-29). Runs on tag refs,
+# workflow_dispatch, schedule, the '[ci docs]' token, and the ci-sweep rotation
+# (which passes `target-repo`). Basis: an org is capped at 20 concurrent
+# runner-backed jobs, pinned for 94.7% of contended time, and on the measured
+# day this job alone took 21.7 slot-hours in swift-foundations — 34.2% of the
+# org's daily CI compute, its single largest consumer. Removing it from
+# per-push cut modelled drain from 151 to 100 minutes; every other candidate
+# measured under -5%. Expect nearer -11% in practice: `linux-6-4` went
+# every-push one day AFTER that data and adds back ~11.6 slot-hours.
 #
-# NOT a cost knob for anything else. The tier machinery in swift-ci.yml
-# deliberately keeps a build leg on every push because a docs-only diff
-# CAN change the build outcome on this fleet (deps float on `main` with no
-# Package.resolved). That reasoning does not transfer to this job: DocC
-# validates a documentation catalog against a symbol graph, and a
-# floating-dependency change that breaks the docs breaks the build first,
-# where the per-push build leg still catches it.
+# Trade-off: docs regressions surface at the tag boundary and weekly rotation,
+# not minutes after the push. Ruled acceptable ONLY because nothing consumes
+# the archives yet. REVISIT WHEN DOCS BECOME VISITOR-FACING — the argument is
+# "no consumer", not "low value".
 #
-# Reusable DocC validation workflow for Swift Institute packages using
-# the umbrella-module single-catalog pattern ([DOC-019a]). Acts as a
-# build-time gate — if `docc convert` fails (broken cross-refs,
-# unresolved symbols, schema drift, tutorial syntax errors), the job
-# fails and CI goes red. The resulting .doccarchive is intentionally
-# NOT uploaded as an artifact: visitor-facing docs are served by Swift
-# Package Index from each tagged release; no other consumer of the
-# archive currently exists. If a consumer materializes (e.g. a future
-# swift-institute.org aggregation), add an upload step gated on a tar
-# wrapper (DocC slug filenames contain `:` for `init(_:)`-shaped symbols,
-# which `actions/upload-artifact@v4+` rejects).
+# Not a precedent for other legs: swift-ci.yml keeps a build leg on every push
+# because a docs-only diff CAN change the build outcome here (deps float on
+# `main` with no Package.resolved). That does not transfer — a floating-dep
+# change that breaks docs breaks the build first.
 #
-# Runner: Linux container (swift:6.3) instead of macos-26. The DocC
-# binary ships in the Swift Linux toolchain alongside swift; `xcrun
-# docc` was macOS-only convenience syntax. Switching to Linux is ~10×
-# cheaper in compile time AND removes the Xcode-version-tracking
-# maintenance for swift-docs (the universal swift-ci.yml's macos-26
-# job retains Xcode tracking for actual macOS coverage). Validation
-# parity preserved — Linux DocC is the same toolchain DocC, just
-# without the xcrun front-end.
-#
-# ─── Integrated-chain caller (TEMPORARY compatibility) ──────────────────
-# CI/CD refactor programme Task 4-01 (swift-institute/.github#276, #284)
-# added a SECOND caller of this workflow: swift-ci.yml's own `docs` job
-# (this same repository), gated on its TEMPORARY `integrated-docs` input
-# [temp-integrated-docs-4-01]. That job reproduces this file's own
-# SCHEDULING guard below (tag/dispatch/schedule/'[ci docs]' token) one
-# level up rather than relying on this file's `target-repo != ''` disjunct
-# — the integrated caller always passes a resolved target-repo/ref for
-# subject-pinning, so treating that as the scheduling signal here would
-# run docs on every push. The two guards are independent evaluations of
-# the same inherited event context and never disagree. This file's own
-# behavior, inputs, and failure posture are UNCHANGED by that caller's
-# existence; see swift-ci.yml's `docs` job for the migration-input shape
-# and its Task 5-03 deletion predicate.
+# Acronym preservation list: umbrella metadata is DISCOVERED from the single
+# catalog under `Sources/*/*.docc` (parent-directory basename = display name).
+# The kebab→TitleCase heuristic and the acronym list survive ONLY as a tiebreak
+# when a repo ships MULTIPLE catalogs, preserving all-caps tokens verbatim
+# (`swift-cpu-primitives` → `CPU_Primitives`, not `Cpu_Primitives`). The list
+# lives in the `Derive umbrella metadata` step; keep it sorted, uppercase,
+# space-separated, and extend it when a new spec acronym appears.
 #
 # Consume via YOUR LAYER ORG's swift-docs.yml wrapper, NOT this workflow
 # directly. Org-secret delivery across an org boundary requires explicit
@@ -221,22 +168,16 @@ on:
 jobs:
   docs:
     name: DocC archive
-    # Scheduling guard — see the SCHEDULING block in this file's header for
-    # the measurement and the ruling. The disjuncts, in order:
-    #   target-repo != ''            the ci-sweep docs rotation
-    #   refs/tags/*                  the release boundary
-    #   workflow_dispatch            someone explicitly asking for it
-    #   schedule                     any scheduled caller
-    #   '[ci docs]' in the message   per-push opt-in escape hatch
-    # An ordinary push matches none of them and skips.
+    # Scheduling guard (see header). Disjuncts: target-repo != '' (ci-sweep
+    # rotation), refs/tags/* (release boundary), workflow_dispatch, schedule,
+    # '[ci docs]' (per-push opt-in). An ordinary push matches none and skips.
     #
-    # This guard SKIPS the job rather than short-circuiting inside it. That
-    # is the point: a skipped job acquires no runner, and a runner slot is
-    # the scarce resource (Workspace#47). A `if:` on the steps would still
-    # queue for and hold a slot to do nothing.
+    # It SKIPS THE JOB rather than short-circuiting inside it: a skipped job
+    # acquires no runner, and the runner slot is the scarce resource. An `if:`
+    # on the steps would still hold a slot to do nothing.
     #
-    # `github.event.head_commit` is null on pull_request events; `contains`
-    # coerces null to '' and returns false, so PRs take the skip path.
+    # `github.event.head_commit` is null on pull_request; `contains` coerces
+    # null to '' and returns false, so PRs take the skip path.
     if: >-
       ${{ !github.event.repository.private
           && ( inputs.target-repo != ''
@@ -258,10 +199,8 @@ jobs:
         with:
           egress-policy: audit
 
-      # Package checkout. `|| github.repository` keeps the non-sweep path
-      # bit-identical to the previous bare checkout. The scripts checkout
-      # further down stays pinned to swift-institute/.github and is NOT
-      # retargeted.
+      # Package checkout. The scripts checkout further down stays pinned to
+      # swift-institute/.github and is NOT retargeted.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ inputs.target-repo || github.repository }}
@@ -284,11 +223,10 @@ jobs:
           INPUT_UMBRELLA_BUNDLE_ID: ${{ inputs.umbrella-bundle-id }}
           INPUT_UMBRELLA_DOCC_PATH: ${{ inputs.umbrella-docc-path }}
           INPUT_EXCLUDE_MODULES: ${{ inputs.exclude-modules }}
-          # Must name the repo being DOCUMENTED, not the one that triggered
-          # the run — REPO_NAME feeds BUNDLE_ID and the multi-catalog
-          # heuristic. Under the ci-sweep docs rotation the triggering repo is
-          # swift-institute/.github, so `github.event.repository.name` would
-          # silently stamp every swept package with the sweeper's identity.
+          # Must name the repo being DOCUMENTED, not the trigger — REPO_NAME
+          # feeds BUNDLE_ID and the multi-catalog heuristic, and under the
+          # ci-sweep rotation the trigger is swift-institute/.github, which
+          # would stamp every swept package with the sweeper's identity.
           REPO_SLUG: ${{ inputs.target-repo || github.repository }}
         run: |
           set -euo pipefail
