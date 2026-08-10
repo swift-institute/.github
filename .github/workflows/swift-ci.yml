@@ -405,7 +405,7 @@ jobs:
       subject-sha: ${{ steps.resolve-subject.outputs.subject-sha }}
     steps:
       - name: Harden runner (audit-mode egress logging)
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: audit
 
@@ -778,7 +778,7 @@ jobs:
       contents: read
     steps:
       - name: Harden runner (audit-mode egress logging)
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: audit
 
@@ -808,7 +808,7 @@ jobs:
             exit 1
           fi
 
-      - uses: swift-institute/.github/.github/actions/configure-private-repos@d1af72d05bf8262fb3918a2f1607b82fafcafdf9  # main 2026-08-03, pin-advance to main HEAD (dependabot #224 via #232); no functional change to this action in range
+      - uses: swift-institute/.github/.github/actions/configure-private-repos@4eb5e080688dfca88bd99d09fdba6077c360534e  # main 2026-08-03, pin-advance to main HEAD (dependabot #224 via #232); no functional change to this action in range
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
           app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
@@ -858,7 +858,7 @@ jobs:
       contents: read
     steps:
       - name: Harden runner (audit-mode egress logging)
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: audit
 
@@ -888,7 +888,7 @@ jobs:
             exit 1
           fi
 
-      - uses: swift-institute/.github/.github/actions/configure-private-repos@d1af72d05bf8262fb3918a2f1607b82fafcafdf9  # main 2026-08-03, pin-advance to main HEAD (dependabot #224 via #232); no functional change to this action in range
+      - uses: swift-institute/.github/.github/actions/configure-private-repos@4eb5e080688dfca88bd99d09fdba6077c360534e  # main 2026-08-03, pin-advance to main HEAD (dependabot #224 via #232); no functional change to this action in range
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
           app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
@@ -896,7 +896,7 @@ jobs:
           app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
           enabled: ${{ inputs.enable-private-repos }}
 
-      - uses: swift-institute/.github/.github/actions/install-system-deps@d1af72d05bf8262fb3918a2f1607b82fafcafdf9  # main 2026-08-03, pin-advance to main HEAD (dependabot #224 via #232); no functional change to this action in range; pin does not cover apt-fetched packages
+      - uses: swift-institute/.github/.github/actions/install-system-deps@4eb5e080688dfca88bd99d09fdba6077c360534e  # main 2026-08-03, pin-advance to main HEAD (dependabot #224 via #232); no functional change to this action in range; pin does not cover apt-fetched packages
 
       - name: Print toolchain info
         run: |
@@ -949,7 +949,7 @@ jobs:
       contents: read
     steps:
       - name: Harden runner (audit-mode egress logging)
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: audit
 
@@ -979,7 +979,7 @@ jobs:
             exit 1
           fi
 
-      - uses: swift-institute/.github/.github/actions/configure-private-repos@d1af72d05bf8262fb3918a2f1607b82fafcafdf9  # main 2026-08-03, pin-advance to main HEAD (dependabot #224 via #232); no functional change to this action in range
+      - uses: swift-institute/.github/.github/actions/configure-private-repos@4eb5e080688dfca88bd99d09fdba6077c360534e  # main 2026-08-03, pin-advance to main HEAD (dependabot #224 via #232); no functional change to this action in range
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
           app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
@@ -987,7 +987,7 @@ jobs:
           app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
           enabled: ${{ inputs.enable-private-repos }}
 
-      - uses: swift-institute/.github/.github/actions/install-system-deps@d1af72d05bf8262fb3918a2f1607b82fafcafdf9  # main 2026-08-03, pin-advance to main HEAD (dependabot #224 via #232); no functional change to this action in range; pin does not cover apt-fetched packages
+      - uses: swift-institute/.github/.github/actions/install-system-deps@4eb5e080688dfca88bd99d09fdba6077c360534e  # main 2026-08-03, pin-advance to main HEAD (dependabot #224 via #232); no functional change to this action in range; pin does not cover apt-fetched packages
 
       - name: Print toolchain info
         run: |
@@ -1064,7 +1064,7 @@ jobs:
       contents: read
     steps:
       - name: Harden runner (audit-mode egress logging)
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: audit
 
@@ -1094,7 +1094,7 @@ jobs:
             exit 1
           fi
 
-      - uses: swift-institute/.github/.github/actions/configure-private-repos@d1af72d05bf8262fb3918a2f1607b82fafcafdf9  # main 2026-08-03, pin-advance to main HEAD (dependabot #224 via #232); no functional change to this action in range
+      - uses: swift-institute/.github/.github/actions/configure-private-repos@4eb5e080688dfca88bd99d09fdba6077c360534e  # main 2026-08-03, pin-advance to main HEAD (dependabot #224 via #232); no functional change to this action in range
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
           app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
@@ -1102,7 +1102,7 @@ jobs:
           app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
           enabled: ${{ inputs.enable-private-repos }}
 
-      - uses: swift-institute/.github/.github/actions/install-system-deps@d1af72d05bf8262fb3918a2f1607b82fafcafdf9  # main 2026-08-03, pin-advance to main HEAD (dependabot #224 via #232); no functional change to this action in range; pin does not cover apt-fetched packages
+      - uses: swift-institute/.github/.github/actions/install-system-deps@4eb5e080688dfca88bd99d09fdba6077c360534e  # main 2026-08-03, pin-advance to main HEAD (dependabot #224 via #232); no functional change to this action in range; pin does not cover apt-fetched packages
 
       - name: Print toolchain info
         run: |
@@ -1150,7 +1150,7 @@ jobs:
       contents: read
     steps:
       - name: Harden runner (audit-mode egress logging)
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: audit
 
@@ -1180,7 +1180,7 @@ jobs:
             exit 1
           fi
 
-      - uses: swift-institute/.github/.github/actions/configure-private-repos@d1af72d05bf8262fb3918a2f1607b82fafcafdf9  # main 2026-08-03, pin-advance to main HEAD (dependabot #224 via #232); no functional change to this action in range
+      - uses: swift-institute/.github/.github/actions/configure-private-repos@4eb5e080688dfca88bd99d09fdba6077c360534e  # main 2026-08-03, pin-advance to main HEAD (dependabot #224 via #232); no functional change to this action in range
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
           app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
@@ -1290,7 +1290,7 @@ jobs:
         platform: [iOS, tvOS, watchOS, visionOS]
     steps:
       - name: Harden runner (audit-mode egress logging)
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: audit
 
@@ -1320,7 +1320,7 @@ jobs:
             exit 1
           fi
 
-      - uses: swift-institute/.github/.github/actions/configure-private-repos@d1af72d05bf8262fb3918a2f1607b82fafcafdf9  # main 2026-08-03, pin-advance to main HEAD (dependabot #224 via #232); no functional change to this action in range
+      - uses: swift-institute/.github/.github/actions/configure-private-repos@4eb5e080688dfca88bd99d09fdba6077c360534e  # main 2026-08-03, pin-advance to main HEAD (dependabot #224 via #232); no functional change to this action in range
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
           app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
@@ -1423,7 +1423,7 @@ jobs:
       result: ${{ steps.build.outcome || steps.build-target.outcome }}
     steps:
       - name: Harden runner (audit-mode egress logging)
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: audit
 
@@ -1446,7 +1446,7 @@ jobs:
             exit 1
           fi
 
-      - uses: swift-institute/.github/.github/actions/configure-private-repos@d1af72d05bf8262fb3918a2f1607b82fafcafdf9  # main 2026-08-03, pin normalized to the deliberately advanced full SHA (TX7, swift-institute/.github#276); action blobs identical at both commits
+      - uses: swift-institute/.github/.github/actions/configure-private-repos@4eb5e080688dfca88bd99d09fdba6077c360534e  # main 2026-08-03, pin normalized to the deliberately advanced full SHA (TX7, swift-institute/.github#276); action blobs identical at both commits
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
           app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
@@ -1516,7 +1516,7 @@ jobs:
       result: ${{ steps.build.outcome }}
     steps:
       - name: Harden runner (audit-mode egress logging)
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: audit
 
@@ -1539,7 +1539,7 @@ jobs:
             exit 1
           fi
 
-      - uses: swift-institute/.github/.github/actions/configure-private-repos@d1af72d05bf8262fb3918a2f1607b82fafcafdf9  # main 2026-08-03, pin normalized to the deliberately advanced full SHA (TX7, swift-institute/.github#276); action blobs identical at both commits
+      - uses: swift-institute/.github/.github/actions/configure-private-repos@4eb5e080688dfca88bd99d09fdba6077c360534e  # main 2026-08-03, pin normalized to the deliberately advanced full SHA (TX7, swift-institute/.github#276); action blobs identical at both commits
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
           app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
@@ -1552,7 +1552,7 @@ jobs:
 
       - name: Install Embedded Wasm SDK matching container Swift
         id: install
-        uses: swift-institute/.github/.github/actions/install-swift-sdk@b4246ad5ee6ff39e6ad413a852c86d8311a83be8  # TX7 self-referential pin advance (swift-institute/.github#497 landing 1, PR #500, merged to main): merge SHA on main declares `skip-on-missing-release` input + `installed` output (verified)
+        uses: swift-institute/.github/.github/actions/install-swift-sdk@4eb5e080688dfca88bd99d09fdba6077c360534e  # TX7 self-referential pin advance (swift-institute/.github#497 landing 1, PR #500, merged to main): merge SHA on main declares `skip-on-missing-release` input + `installed` output (verified)
         with:
           platform: wasm-sdk
           bundle-suffix: wasm
@@ -1583,7 +1583,7 @@ jobs:
       result: ${{ steps.build.outcome }}
     steps:
       - name: Harden runner (audit-mode egress logging)
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: audit
 
@@ -1606,7 +1606,7 @@ jobs:
             exit 1
           fi
 
-      - uses: swift-institute/.github/.github/actions/configure-private-repos@d1af72d05bf8262fb3918a2f1607b82fafcafdf9  # main 2026-08-03, pin normalized to the deliberately advanced full SHA (TX7, swift-institute/.github#276); action blobs identical at both commits
+      - uses: swift-institute/.github/.github/actions/configure-private-repos@4eb5e080688dfca88bd99d09fdba6077c360534e  # main 2026-08-03, pin normalized to the deliberately advanced full SHA (TX7, swift-institute/.github#276); action blobs identical at both commits
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
           app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
@@ -1619,7 +1619,7 @@ jobs:
 
       - name: Install Android SDK matching container Swift
         id: install
-        uses: swift-institute/.github/.github/actions/install-swift-sdk@b4246ad5ee6ff39e6ad413a852c86d8311a83be8  # TX7 self-referential pin advance (swift-institute/.github#497 landing 1, PR #500, merged to main): merge SHA on main declares `skip-on-missing-release` input + `installed` output (verified)
+        uses: swift-institute/.github/.github/actions/install-swift-sdk@4eb5e080688dfca88bd99d09fdba6077c360534e  # TX7 self-referential pin advance (swift-institute/.github#497 landing 1, PR #500, merged to main): merge SHA on main declares `skip-on-missing-release` input + `installed` output (verified)
         with:
           platform: android-sdk
           bundle-suffix: android
@@ -1650,7 +1650,7 @@ jobs:
       result: ${{ steps.build.outcome }}
     steps:
       - name: Harden runner (audit-mode egress logging)
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: audit
 
@@ -1673,7 +1673,7 @@ jobs:
             exit 1
           fi
 
-      - uses: swift-institute/.github/.github/actions/configure-private-repos@d1af72d05bf8262fb3918a2f1607b82fafcafdf9  # main 2026-08-03, pin normalized to the deliberately advanced full SHA (TX7, swift-institute/.github#276); action blobs identical at both commits
+      - uses: swift-institute/.github/.github/actions/configure-private-repos@4eb5e080688dfca88bd99d09fdba6077c360534e  # main 2026-08-03, pin normalized to the deliberately advanced full SHA (TX7, swift-institute/.github#276); action blobs identical at both commits
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
           app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
@@ -1686,7 +1686,7 @@ jobs:
 
       - name: Install Static Linux SDK matching container Swift
         id: install
-        uses: swift-institute/.github/.github/actions/install-swift-sdk@b4246ad5ee6ff39e6ad413a852c86d8311a83be8  # TX7 self-referential pin advance (swift-institute/.github#497 landing 1, PR #500, merged to main): merge SHA on main declares `skip-on-missing-release` input + `installed` output (verified)
+        uses: swift-institute/.github/.github/actions/install-swift-sdk@4eb5e080688dfca88bd99d09fdba6077c360534e  # TX7 self-referential pin advance (swift-institute/.github#497 landing 1, PR #500, merged to main): merge SHA on main declares `skip-on-missing-release` input + `installed` output (verified)
         with:
           platform: static-sdk
           bundle-suffix: static-linux
@@ -1726,7 +1726,7 @@ jobs:
       contents: read
     steps:
       - name: Harden runner (audit-mode egress logging)
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: audit
 
@@ -1793,7 +1793,7 @@ jobs:
       contents: read
     steps:
       - name: Harden runner (audit-mode egress logging)
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: audit
 
@@ -2113,7 +2113,7 @@ jobs:
       contents: read
     steps:
       - name: Harden runner (audit-mode egress logging)
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: audit
 
@@ -2358,7 +2358,7 @@ jobs:
           fi
 
       - name: Configure private-dep access
-        uses: swift-institute/.github/.github/actions/configure-private-repos@d1af72d05bf8262fb3918a2f1607b82fafcafdf9  # main 2026-08-03, pin-advance to main HEAD (dependabot #224 via #232); no functional change to this action in range
+        uses: swift-institute/.github/.github/actions/configure-private-repos@4eb5e080688dfca88bd99d09fdba6077c360534e  # main 2026-08-03, pin-advance to main HEAD (dependabot #224 via #232); no functional change to this action in range
         with:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
           app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
@@ -2723,7 +2723,7 @@ jobs:
       contents: read
     steps:
       - name: Harden runner (audit-mode egress logging)
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: audit
 

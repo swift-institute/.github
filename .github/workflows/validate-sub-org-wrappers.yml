@@ -83,12 +83,12 @@ jobs:
       orgs: ${{ steps.read.outputs.orgs }}
     steps:
       - name: Harden runner (audit-mode egress logging)
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: audit
 
       - id: read
-        uses: swift-institute/.github/.github/actions/read-orgs@6f73c2ebff00e4f05375794905926bdd7a0ca14b  # main 2026-08-04, identity-pin to main HEAD (swift-institute/.github#286); no functional change to this action in range
+        uses: swift-institute/.github/.github/actions/read-orgs@4eb5e080688dfca88bd99d09fdba6077c360534e  # main 2026-08-04, identity-pin to main HEAD (swift-institute/.github#286); no functional change to this action in range
         with:
           filter: 'select((.name == "swift-primitives" or .name == "swift-standards" or .name == "swift-foundations" or .name == "swift-institute") | not) | .name'
           # Empty for every swift-institute path; a peer institute's
@@ -115,7 +115,7 @@ jobs:
         sub-org: ${{ fromJSON(needs.config.outputs.orgs) }}
     steps:
       - name: Harden runner
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: audit
 
