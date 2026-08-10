@@ -32,6 +32,10 @@ let package = Package(
             name: "Private Verification",
             targets: ["Private Verification"]
         ),
+        .library(
+            name: "Closure Evidence",
+            targets: ["Closure Evidence"]
+        ),
     ],
     dependencies: [
         .package(url: "https://github.com/swift-foundations/swift-github.git", branch: "main"),
@@ -65,12 +69,19 @@ let package = Package(
                 .product(name: "FIPS 180-4", package: "swift-fips-180-4"),
             ]
         ),
+        // The completed-closure evidence contract (#512): what a closing
+        // comment may cite, what a cited run resolves to, the verdict.
+        // Pure — the credentialed edge is the Application's.
+        .target(
+            name: "Closure Evidence"
+        ),
         .target(
             name: "Institute CI Control Application",
             dependencies: [
                 "GitHub Control", "Fleet Audit", "Fleet Inventory",
                 "Fleet Convergence",
                 "Private Verification",
+                "Closure Evidence",
             ]
         ),
         .executableTarget(
@@ -94,6 +105,10 @@ let package = Package(
         .testTarget(
             name: "Private Verification Tests",
             dependencies: ["Private Verification"]
+        ),
+        .testTarget(
+            name: "Closure Evidence Tests",
+            dependencies: ["Closure Evidence"]
         ),
     ],
     swiftLanguageModes: [.v6]
