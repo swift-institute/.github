@@ -1,36 +1,23 @@
-# Read the canonical Swift Institute ecosystem orgs manifest and emit a
-# JSON array of org names matching a jq filter expression.
+# Read the canonical ecosystem orgs manifest and emit a JSON array of org
+# names matching a jq filter. Orchestrators call this from one config job and
+# populate their matrix via fromJSON, instead of hardcoding an org list each.
 #
-# Replaces the inline matrix.org enumerations across 7+ orchestrators.
-# Each previously hardcoded its own org list (sync-metadata-nightly: all
-# 17, others: 1-pilot or 2-org subset). After extraction, each orchestrator
-# adds a single config job that calls this composite to populate the
-# matrix via fromJSON.
+# Manifest source of truth: `${github.action_path}/orgs.yaml` beside this
+# action. Adding an ecosystem org is an edit to that ONE file.
 #
-# Manifest source-of-truth: ${github.action_path}/orgs.yaml in the same
-# action directory. Adding an ecosystem org is an edit to that one file
-# rather than to N orchestrators.
+# PEER-INSTITUTE CONSUMPTION (#212). The manifest SOURCE is parameterizable so
+# a peer institute can consume these public reusables with its own org
+# population and its own App credentials. Precedence: `manifest-path` (a file
+# already on the runner) > `manifest-repository` (owner/repo whose
+# default-branch root orgs.yaml is fetched via the API) > the in-action
+# default. Both default empty, so an existing caller behaves byte-identically.
 #
-# PEER-INSTITUTE CONSUMPTION (#212). The manifest SOURCE is parameterizable
-# so a peer institute (e.g. rule-institute) can consume the public reusable
-# workflows with ITS OWN org population and ITS OWN GitHub App credentials.
-# Precedence: `manifest-path` (a file already on the runner) beats
-# `manifest-repository` (owner/repo whose default-branch root orgs.yaml is
-# fetched via the API) beats the in-action default. Both new inputs default
-# empty, so every existing caller resolves the in-action manifest exactly
-# as before — byte-identical behavior absent the new inputs.
+# This parameterizes CONSUMPTION, NOT enrollment: rule orgs never enter the
+# swift-institute manifest and swift-institute-bot is never installed on them.
+# No swift-institute workflow passes either input.
 #
-# This parameterizes CONSUMPTION of the workflows, not enrollment: the
-# 2026-07-28 ruling in orgs.yaml stands — rule orgs never enter the
-# swift-institute manifest and swift-institute-bot is never installed on
-# rule orgs. swift-institute's own automation scope is unchanged: no
-# swift-institute workflow passes either new input.
-#
-# Peer thin-caller pattern (drivers stay institute-local; the composite and
-# the per-org reusables are the shared surface). A peer writes its own
-# cron/dispatch driver in <peer>/.github, enumerates via this composite
-# with its own manifest, and fans out into the per-org reusable with its
-# own App credentials mapped onto the declared secret slots:
+# Peer thin-caller pattern — drivers stay institute-local; this composite and
+# the per-org reusables are the shared surface:
 #
 #   jobs:
 #     config:
@@ -57,32 +44,23 @@
 #         SWIFT_INSTITUTE_BOT_APP_CLIENT_ID: ${secrets.RULE_INSTITUTE_BOT_APP_CLIENT_ID}
 #         SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY: ${secrets.RULE_INSTITUTE_BOT_APP_PRIVATE_KEY}
 #
-# (Single-brace ${...} above stands for the GitHub ${{ ... }} expression
-# syntax, matching this header's existing spelling style.)
+# (Single-brace ${...} above stands for GitHub's ${{ ... }} syntax.)
 #
-# STATUS-FILTER NOTE for peer manifests: the automatic
-# `select(.status!="archived")` pre-filter encodes THIS manifest's status
-# vocabulary (active | archived). A peer manifest with a different
-# vocabulary (rule-institute uses active | reserved | frozen) is NOT
-# narrowed by it — measured 2026-08-03: the default filter passed
-# reserved and frozen rule orgs through. A peer therefore passes an
-# explicit filter such as `select(.status=="active") | .name`, as in the
-# example above.
+# TRAP for peer manifests: the automatic `select(.status!="archived")`
+# pre-filter encodes THIS manifest's status vocabulary (active | archived). A
+# peer vocabulary is NOT narrowed by it — measured 2026-08-03, the default
+# filter passed `reserved` and `frozen` orgs straight through. A peer must pass
+# an explicit filter such as `select(.status=="active") | .name`.
 #
-# The secret
-# SLOT names are the callee's binding names, not an assertion about whose
-# App is used — `secrets: inherit` does not cross the org boundary, so a
-# peer maps its own App credentials onto the declared slots explicitly.
-# Reusable workflows accepting these slots: sync-metadata.yml,
-# validate-branch-pins.yml, validate-sub-org-wrappers.yml (and swift-ci.yml
-# / swift-docs.yml, which declared them before #212). validate-branch-pins
-# and validate-sub-org-wrappers also accept `manifest-repository` directly
-# and thread it to their internal read-orgs calls end to end.
+# The secret SLOT names are the callee's binding names, not a claim about whose
+# App is used: `secrets: inherit` does not cross the org boundary, so a peer
+# maps its own credentials onto the slots explicitly. Reusables accepting them:
+# sync-metadata.yml, validate-branch-pins.yml, validate-sub-org-wrappers.yml,
+# swift-ci.yml, swift-docs.yml. The first two also accept
+# `manifest-repository` directly and thread it to their own read-orgs calls.
 #
-# Filter is a per-record jq expression (operates on one record at a time;
-# composite handles iteration and array-wrapping). Use `select(...)` to
-# narrow records and a final `.name` (or other field) to project the
-# desired value. Examples:
+# `filter` is a PER-RECORD jq expression — this action handles iteration and
+# array-wrapping. Use `select(...)` to narrow and a final `.name` to project:
 #   '.name'                                          (all orgs by name)
 #   'select(.layer=="L1") | .name'                   (L1 only)
 #   'select(.name=="swift-primitives") | .name'      (single org)

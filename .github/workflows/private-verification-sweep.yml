@@ -1,52 +1,37 @@
-# private-verification-sweep.yml — trusted central dispatcher, Stage A of
-# Task 2-02's three-stage trusted path (swift-institute/.github#276 Phase 2,
-# work object #253). Finds private-repository heads lacking a current
-# successful `verification / workspace` check and dispatches
-# private-verification.yml (Stages B/C) once per exact (repository, head,
-# policy digest) key. Runs entirely on public control-plane minutes; never
-# checks out a private subject and never runs subject code.
+# Trusted central dispatcher — Stage A of the three-stage private-verification
+# path (#253). Finds private heads lacking a current successful
+# `verification / workspace` check and dispatches private-verification.yml
+# (Stages B/C) once per exact (repository, head, policy digest) key. Runs
+# entirely on public control-plane minutes: it NEVER checks out a private
+# subject and never runs subject code.
 #
-# ENUMERATION. Lists each active organization's private repositories (via
-# the same `read-orgs` manifest every other fleet sweep uses) and keeps
-# those carrying a root `Package.swift` — an ordinary private package,
-# mirroring the `package` repositoryClass the surface policy already uses
-# for public repositories. Layer classification here is best-effort (a
-# `layer:<name>` repository topic, defaulting to `applications` when absent)
-# — this sweep does not yet call Workspace's live private-discovery pass
-# (`institute doctor --institute`, Task 0C-02's mechanism), which resolves
-# an authoritative layer per repository but at ~460 requests per invocation.
-# Wiring that exact population through a stable CLI-exposed JSON verb is
-# flagged as follow-on scope (recorded UNMEASURED in this task's receipt,
-# not silently assumed correct) rather than expanded here at Task 2-02's own
-# expense.
+# ENUMERATION: each active org's private repositories carrying a root
+# `Package.swift`. Layer classification is best-effort (a `layer:<name>` topic,
+# defaulting to `applications`) — this sweep does NOT yet call Workspace's live
+# private-discovery pass, which is authoritative but costs ~460 requests per
+# invocation. Recorded UNMEASURED in the receipt rather than assumed correct;
+# wiring it through a stable JSON verb is follow-on scope.
 #
-# DEDUPLICATION AND THE NONCE/REQUEST-ID SPLIT. Two different unpredictability
-# properties are needed and kept separate:
-#   - `requestId` is DETERMINISTIC: sha256(repository|head|policyRevision),
-#     truncated. It is the dedup key (point A.5) and the check run's
-#     `external_id` — recomputing it lets a later sweep pass recognize
-#     "already covered" without keeping external state, and it is opaque
-#     (unrecoverable without already knowing the three inputs) without being
-#     secret.
-#   - `nonce` is CRYPTOGRAPHICALLY RANDOM per dispatch. It is the secret
-#     private-verification.yml's publisher job binds the safe envelope to,
-#     so replaying an old envelope against a new dispatch of the same
-#     (repository, head, policy) fails: the new dispatch has a new nonce.
+# NONCE vs REQUEST-ID — two different unpredictability properties, deliberately
+# separate:
+#   requestId is DETERMINISTIC — truncated sha256(repository|head|
+#     policyRevision). It is the dedup key and the check run's `external_id`,
+#     so a later pass recognizes "already covered" with no external state. It
+#     is opaque without being secret.
+#   nonce is CRYPTOGRAPHICALLY RANDOM per dispatch — the secret the publisher
+#     binds the safe envelope to, so replaying an old envelope against a new
+#     dispatch of the same key fails.
 #
-# WRITE SCOPE. This workflow mints exactly one write-capable token action:
-# marking the trusted check `in_progress` at the exact head (point A.6),
-# narrowly scoped to `checks: write` on the one target repository, before
-# any subject code has run. It never mints `checks: write`/`statuses: write`
-# for the success/failure transition — that happens only in
-# private-verification.yml's `publish` job, after independent verification
-# (Task 2-02 point C.4).
+# WRITE SCOPE: exactly one write action here — marking the trusted check
+# `in_progress` at the exact head, scoped to `checks: write` on that one
+# repository, BEFORE any subject code runs. The success/failure transition is
+# never minted here; only private-verification.yml's `publish` job does that,
+# after independent verification.
 #
-# BOUNDED CONCURRENCY. Dispatch happens in a single job's bash loop, capped
-# at MAX_CONCURRENT concurrent `gh api` dispatch calls via a `wait -n`
-# semaphore, and at MAX_TOTAL candidates per sweep pass (well under the
-# document's 256 ceiling) — never a GitHub Actions matrix, so there is no
-# per-subject job or matrix-value display name for a private coordinate to
-# appear in (point A.7 is satisfied structurally, not by redaction).
+# BOUNDED CONCURRENCY via a single bash loop with a `wait -n` semaphore
+# (MAX_CONCURRENT) and MAX_TOTAL candidates per pass — NEVER an Actions matrix.
+# That is structural leak-safety, not redaction: with no matrix there is no
+# per-subject job or display name for a private coordinate to appear in.
 
 name: private-verification-sweep
 
@@ -105,10 +90,9 @@ jobs:
           permission-pull-requests: read
           permission-checks: read
 
-      # G1 repair: per-org read and checks-write tokens are minted inside
-      # the sweep step via the App JWT (create-github-app-token cannot mint
-      # cross-org tokens in one call — without `owner:` it scopes to THIS
-      # repository). This mint carries only the central-repository
+      # Per-org read and checks-write tokens are minted inside the sweep step
+      # via the App JWT — create-github-app-token cannot mint cross-org tokens
+      # in one call. This mint carries only the central-repository
       # contents:write the repository_dispatch POST needs; the checks-write
       # separation from read tokens is preserved per organization inside
       # the step.
@@ -134,23 +118,19 @@ jobs:
           test -n "$revision"
           echo "revision=${revision}" >> "$GITHUB_OUTPUT"
 
-      # The effective-inventory digest is computed by Workspace itself, at
-      # the same pinned revision this sweep dispatches with, from the
-      # roster this step enumerates (`Workspace.Inventory.Effective.Roster`
-      # — swift-institute/Workspace#147). The build is NOT cached
-      # ([CI-040], PS-2): Application's branch-pinned dependencies mean a
-      # key on the Workspace revision alone is not a graph identity, and
-      # the trusted verifier must not attest against artifacts built from
-      # a different dependency graph. A pass that cannot finish the build
-      # records a typed UNMEASURED cause rather than inventing a digest.
+      # The effective-inventory digest is computed by Workspace itself, at the
+      # same pinned revision this sweep dispatches with, from the roster this
+      # step enumerates. The build is NOT cached ([CI-040]): Application's
+      # branch-pinned dependencies mean a key on the Workspace revision alone is
+      # not a graph identity, and the trusted verifier must not attest against
+      # artifacts built from a different graph. A pass that cannot finish the
+      # build records a typed UNMEASURED cause rather than inventing a digest.
       # F10's digest-verified `bootstrap-verify` cache is the sanctioned
       # acceleration path.
 
-      # EXACT, not "6.3": Workspace's Application declares
-      # `swift-tools-version: 6.3.3`, and a 6.3.0 toolchain refuses such a
-      # package outright — which is why the digest command failed in about
-      # a minute in run 31139672101, long before it could have compiled
-      # anything.
+      # EXACT, not "6.3": Application declares `swift-tools-version: 6.3.3` and
+      # a 6.3.0 toolchain refuses the package outright, failing in about a
+      # minute before compiling anything.
       - name: Swift toolchain
         uses: SwiftyLab/setup-swift@38f54a76b70d989321de9dc7c840618c08cf56e9  # v1.14.0
         with:
@@ -178,17 +158,14 @@ jobs:
         id: sweep
         shell: bash
         env:
-          # G1 repair (swift-institute/.github#276): the two step-minted
-          # tokens above are scoped to THIS repository only
-          # (create-github-app-token without `owner:` scopes to the current
-          # repository, not the fleet), so cross-org private enumeration
-          # silently returned nothing and every cross-org check-run write
-          # would have 403'd. Per-org read and checks-write tokens are now
-          # minted inside this step via the App JWT; the repository-scoped
-          # GH_TOKEN below remains only for central-repository reads, and
-          # CENTRAL_DISPATCH_TOKEN (contents:write on the central
-          # repository alone) carries the repository_dispatch POST the
-          # read-only token never could.
+          # TRAP: create-github-app-token WITHOUT `owner:` scopes to the current
+          # repository, not the fleet — so cross-org private enumeration
+          # silently returned nothing and every cross-org check-run write 403'd.
+          # Per-org read and checks-write tokens are therefore minted inside
+          # this step via the App JWT. The repository-scoped GH_TOKEN below is
+          # for central-repository reads only, and CENTRAL_DISPATCH_TOKEN
+          # (contents:write on the central repository alone) carries the
+          # repository_dispatch POST a read-only token cannot.
           GH_TOKEN: ${{ steps.token.outputs.token }}
           CENTRAL_DISPATCH_TOKEN: ${{ steps.dispatch-token.outputs.token }}
           APP_CLIENT_ID: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
@@ -196,17 +173,11 @@ jobs:
           ORGS_JSON: ${{ steps.orgs.outputs.orgs }}
           WORKSPACE_REVISION: ${{ steps.workspace.outputs.revision }}
           # Identifies the receipt schema/policy generation this sweep
-          # requires — bumping it (a deliberate, reviewed change to this
-          # file) invalidates every prior "success" check as not-current,
-          # exactly the "current receipt schema/policy digest" test in
-          # point A.3.
-          #
-          # Bumped for the full contract: every prior success was sealed
-          # under a contract with no lint leg, or with a lint leg that
-          # could not measure. The dedupe key treats a current success as
-          # terminal, so without this bump the fleet — including the 23
-          # reduced-contract greens — would never be re-verified under
-          # the contract it now runs.
+          # requires. BUMPING IT invalidates every prior "success" check as
+          # not-current — the only way to force re-verification, because the
+          # dedupe key treats a current success as terminal. Bump whenever the
+          # contract strengthens, or greens sealed under the weaker contract
+          # are never revisited.
           POLICY_REVISION: "2026-08-07-1"
           DRY_RUN: ${{ inputs.dry-run || 'false' }}
           MAX_CONCURRENT: 8
