@@ -3,58 +3,39 @@
 # Two credential paths, applied in priority order via git's longest-prefix
 # insteadOf matching:
 #
-#   1. PRIMARY — swift-institute-bot App installation tokens. When the
-#      caller passes an App ID secret + `app-private-key` (the org-level
-#      SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY secret), the composite mints one
-#      short-lived installation token per dependency-hosting org — the three
-#      layer orgs (swift-primitives, swift-standards, swift-foundations) plus
-#      the per-authority sub-orgs that host private deps of public consumers
-#      (swift-iso, swift-microsoft, swift-arm-ltd, swift-intel,
-#      swift-linux-foundation, swift-ietf) — via
-#      actions/create-github-app-token@v3, downscoped to `contents: read`,
-#      and writes one org-prefixed rewrite rule per org:
+#   1. PRIMARY — swift-institute-bot App installation tokens. Given an App ID
+#      secret + `app-private-key`, mints one short-lived token per
+#      dependency-hosting org (the three layer orgs plus the per-authority
+#      sub-orgs hosting private deps of public consumers), downscoped to
+#      `contents: read`, and writes one org-prefixed rewrite per org:
 #
 #        url.https://x-access-token:<tok>@github.com/<org>/.insteadOf
 #          = https://github.com/<org>/
 #
-#      Tokens auto-expire (~1h) and are revoked by the action's post-step;
-#      values are auto-masked in logs. The bot App is installed org-wide
-#      (repository_selection: all), so NEW private repos are covered the
-#      moment they exist — no per-repo or per-rotation provisioning. Per
-#      Research/private-repo-secret-management-at-scale.md Option B.
+#      Tokens expire ~1h, are revoked by the action's post-step, and are
+#      auto-masked. The App is installed org-wide (repository_selection: all),
+#      so a NEW private repo is covered the moment it exists — no per-repo or
+#      per-rotation provisioning.
 #
-#      App ID secret names — two naming eras exist across orgs, both
-#      accepted (self-healing without admin ops):
-#        SWIFT_INSTITUTE_BOT_APP_CLIENT_ID  (preferred; Client ID value class)
-#        SWIFT_INSTITUTE_BOT_APP_ID         (legacy era, e.g. swift-primitives;
-#                                            numeric App ID value class)
-#      Callers pass both; this composite routes them into a SINGLE
-#      create-github-app-token input — `client-id: ${{ app-client-id ||
-#      app-id }}` — never the deprecated `app-id` input. Per that action's
-#      v2+ contract, `client-id` accepts either value class (Client ID or
-#      the legacy numeric App ID), so the fallback carries the same
-#      credential value the legacy input used to and mints identically;
-#      only the deprecation warning disappears (#139). Name-normalization
-#      to _APP_CLIENT_ID everywhere is a cosmetic follow-up; the fallback
-#      then goes dormant.
+#      Two App-ID naming eras coexist and BOTH are accepted, so no admin op is
+#      needed: SWIFT_INSTITUTE_BOT_APP_CLIENT_ID (preferred, Client ID class)
+#      and SWIFT_INSTITUTE_BOT_APP_ID (legacy, numeric class). Callers pass
+#      both; this routes them into ONE `client-id: ${{ app-client-id ||
+#      app-id }}` and NEVER the deprecated `app-id` input — `client-id` accepts
+#      either value class, so the fallback mints identically and only the
+#      deprecation warning differs.
 #
-#      Org-secret visibility (free plan): "Public repositories" delivery
-#      is the designed-for class. Org secrets CANNOT reach private repos
-#      on the free plan — and don't need to: [CI-032] gates every job off
-#      on private repos, so public-repo delivery is the only path CI uses.
-#      Never request all-repositories visibility.
+#      Org-secret visibility stays "Public repositories". Org secrets cannot
+#      reach private repos on the free plan and do not need to: [CI-032] gates
+#      every job off on private repos. NEVER request all-repositories.
 #
-#      The org list is deliberately hardcoded as unrolled steps: composite
-#      actions cannot loop a `uses:` step ([CI-070](a)), and the transitive
-#      dependency graph is unknowable before resolve, so "narrowest org scope
-#      that resolves the graph" = the fixed set of orgs that host package
-#      dependencies. Currently nine: the three layer orgs plus six sub-orgs
-#      (swift-iso, swift-microsoft, swift-arm-ltd, swift-intel,
-#      swift-linux-foundation, swift-ietf) added 2026-06-24 when swift-linter
-#      (a public consumer) brought their private deps into a public graph.
-#      When another per-authority sub-org first hosts a PRIVATE dep of a
-#      public consumer, add one mint step + one env var + one emit line here —
-#      this composite is the single edit point.
+#      The org list is hardcoded as UNROLLED steps because composite actions
+#      cannot loop a `uses:` step ([CI-070](a)), and the transitive graph is
+#      unknowable before resolve — so "narrowest scope that resolves the graph"
+#      is the fixed set of orgs hosting package dependencies. TO EXTEND: when
+#      another sub-org first hosts a private dep of a public consumer, add one
+#      mint step + one env var + one emit line here. This is the single edit
+#      point.
 #
 #   2. FALLBACK — legacy PRIVATE_REPO_TOKEN. When non-empty, a github.com-
 #      wide rewrite rule is written (`url.https://<token>@github.com/`).
@@ -81,14 +62,8 @@
 #       app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
 #       enabled: ${{ inputs.enable-private-repos }}
 #
-# Provenance: extracted from 11 inline `git config --global url …` blocks
-# across 4 workflows in the swift-institute + swift-primitives `.github`
-# repos (lint-api-breakage.yml × 1, swift-docs.yml × 1, universal
-# swift-ci.yml × 4, layer-wrapper swift-ci.yml × 5). App-token primary path
-# added 2026-06-04 (the 5 private MSB packages entering public dep graphs
-# exposed the empty-PRIVATE_REPO_TOKEN fallback as dep-resolution redness
-# across the public cohort). Per [CI-030], consumers reference this
-# composite via `@main` during active dev.
+# Per [CI-030], consumers reference this composite via `@main` during active
+# development.
 
 name: 'Configure private repos'
 description: >

@@ -1,66 +1,41 @@
-# ecosystem-coherence.yml — weekly composed-graph coherence measurement (#125).
+# Weekly composed-graph coherence measurement (#125). Per-package CI proves
+# each package against its OWN resolution; nothing else measures whether the
+# fleet's canonical `main` heads compose as one graph. Workspace owns the
+# instrument (`institute coherence`: sync → doctor → graph → build →
+# population, emitting a content-addressed receipt); this file owns the wiring
+# — cadence, quota placement, receipt persistence, failure observability.
 #
-# PURPOSE
-# Per-package CI proves each package against its own resolution; nothing
-# measures whether the fleet's canonical `main` heads compose as one graph.
-# swift-institute/Workspace#80 shipped the instrument (`institute coherence`:
-# sync -> doctor -> graph -> build -> population, emitting a content-addressed
-# receipt). This workflow is the Institute wiring around that instrument:
-# cadence, quota placement, receipt persistence, and scheduled-failure
-# observability. Per the ownership split recorded on #125, Workspace owns the
-# measurement; this repository owns everything below.
+# INSTRUMENT PIN — WHERE IT STOPS. The `uses:` references are commit-pinned,
+# but the Workspace CHECKOUT is deliberately `ref: main`: the point of this
+# lane is to measure Workspace's current main composed with the fleet's
+# current mains. That is not an unmeasured gap — the resolved Workspace SHA is
+# captured into the receipt (`instrument.workspaceCommit`), so every run is
+# self-describing about which revision produced it.
 #
-# INSTRUMENT PIN — WHERE IT DOES AND DOES NOT REACH
-# The `uses:` action references below are pinned to commits per [CI-030]/
-# doctrine. The Workspace *checkout* is deliberately NOT pinned — `ref: main`
-# is a floating ref on purpose, because the whole point of this lane is to
-# measure Workspace's own current main composed with the rest of the fleet's
-# current mains. That is not a "green tick proves nothing" gap: the resolved
-# Workspace commit SHA is captured into the receipt itself
-# (`instrument.workspaceCommit`), so every run is self-describing about
-# exactly which Workspace revision produced it, even though the trigger that
-# selected it floats.
+# CADENCE: dispatch for calibration, plus one weekly schedule chosen off
+# GitHub's global peaks and off this repository's own cron cluster (04:00
+# metadata sync, 05:15 Project reconciler, the 06:xx weekly family). NOT per
+# push — a multi-hour job per push is strictly wrong against the 20-job org cap.
 #
-# CADENCE (constraint: #71's 20-runner-backed-job org cap)
-# `workflow_dispatch` for on-demand calibration/attribution runs, plus a
-# weekly `schedule:` chosen off GitHub's global peaks and off this
-# repository's own cron cluster (04:00 UTC metadata sync, 05:15 UTC Project
-# reconciler, the 06:xx weekly family) — Sunday 02:40 UTC, per the #125
-# recorded disposition. Not per push: a multi-hour job per push would be
-# strictly wrong against the 20-job cap (#71).
+# QUOTA PLACEMENT: hosted here so the job runs under swift-institute's own
+# quota and never competes with consumer-push queues in the layer orgs — one
+# macOS job out of the 5-concurrent pool, weekly, off-peak.
 #
-# QUOTA PLACEMENT (ci-sweep.yml precedent)
-# Hosted here, in swift-institute/.github, so the job runs under the
-# `swift-institute` org's own quota and never competes with consumer-push
-# queues in the layer orgs — one macOS job, one of the 5-concurrent macOS
-# pool, weekly, off-peak. This placement also buys alert routing for free
-# (see below).
+# NO CREDENTIALS AND NO CACHES on the measured path: plain HTTPS clone with
+# `persist-credentials: false`, floor toolchain via `xcode-select`, and zero
+# caches because branch-based deps mean no key can prove it represents the
+# resolved graph — the from-scratch path IS the thing being measured.
 #
-# MATERIALIZATION AND CACHING
-# Steps mirror Workspace's own contributor-path.yml: no credentials on the
-# measured path (plain HTTPS clone, `persist-credentials: false`), floor
-# toolchain via `xcode-select`, zero caches (branch-based deps mean no cache
-# key can prove it represents the resolved graph — the from-scratch path is
-# the thing being measured).
+# `dry-run: true` proves this workflow's own wiring (bootstrap, CLI surface,
+# artifact upload, step summary) WITHOUT the real sync → build, so the wiring
+# can be verified without spending a multi-hour macOS slot or exercising the
+# tracking-issue path on synthetic data.
 #
-# CALIBRATION VS. REAL RUNS
-# `dry-run: true` verifies this workflow's own wiring — bootstrap install,
-# CLI surface, receipt-artifact upload, step summary — WITHOUT running the
-# real sync -> build measurement, so the wiring can be dispatched and proven
-# without spending a multi-hour macOS job slot or exercising the tracking-
-# issue path on synthetic data. `dry-run: false` (the schedule's own trigger,
-# and any calibration dispatch) runs the real instrument; per #125's recorded
-# sequencing, 2-3 such calibration dispatches establish wall-clock and 6-hour
-# fit before the cron is trusted, and are a separate decision from landing
-# this wiring.
-#
-# ALERT ROUTING (#123, zero new machinery)
-# This workflow's `name:` is entered in alert-scheduled-workflow-failure.yml's
-# `on.workflow_run.workflows` list below. check-scheduled-workflow-alert-
-# parity.py (run by lint-validator-fixtures.yml on every push touching any
-# workflow file) fails closed the moment a `schedule:`-triggered workflow's
-# name diverges from that list in either direction — landing this file next
-# to that list entry is therefore a checked pair, not an unchecked promise.
+# ALERT ROUTING: this workflow's `name:` must appear in
+# alert-scheduled-workflow-failure.yml's `on.workflow_run.workflows` list. A
+# parity checker fails closed the moment a `schedule:`-triggered workflow's
+# name diverges from that list in EITHER direction, so the pair is checked,
+# not promised.
 #
 # RECEIPT PERSISTENCE AND TRACKING ISSUE
 # The receipt (`receipt.canonical`, content-addressed per the #90/#94
