@@ -1,28 +1,21 @@
-# ci-sweep.yml — nightly full-matrix rotation sweep (R1/R2 ruling 2026-07-20).
+# Nightly full-matrix rotation sweep (R1/R2 ruling 2026-07-20). Per-push CI
+# runs a fast tier; the FULL platform contract ([CI-010]/[CI-091]) is
+# re-verified HERE on a rotating nightly slice, plus unconditionally on tags.
+# This is what replaces per-push breadth — every repo gets the advisory and
+# cross-platform gating legs at least once per rotation.
 #
-# PURPOSE
-# Per-push CI runs a fast tier (see swift-ci.yml's plan job); the FULL
-# platform contract ([CI-010]/[CI-091]) is re-verified here on a rotating
-# nightly slice of the public fleet, plus unconditionally on tag refs.
-# This replaces per-push breadth: the advisory legs (apple-simulator-build,
-# linux-nightly, linux-6-4) and the cross-platform gating legs run for every
-# repo at least once per rotation period instead of on every push.
+# ROTATION: the fleet (public, non-archived, non-fork repos of every active
+# org) is deterministically partitioned into `slices` buckets by a stable hash
+# of the repo name; each night runs bucket (day-of-year % slices). Default 7,
+# so every repo is fully verified at least weekly. Dispatch with an explicit
+# `repos` list for canary runs.
 #
-# ROTATION
-# The fleet (all public, non-archived, non-fork repos of every active org in
-# the orgs manifest) is deterministically partitioned into `slices` buckets
-# by a stable hash of the repo name; each night runs bucket
-# (day-of-year % slices). Default slices=7 → every repo gets a full-matrix
-# verification at least weekly. Dispatch with an explicit `repos` list for
-# canary/manual runs.
+# BUDGET: jobs run under swift-institute/.github's own org quota, so the sweep
+# never competes with consumer-push queues in the layer orgs. max-parallel
+# bounds simultaneous swift-ci calls — each spawns 5 macOS jobs against the
+# 5-concurrent free-tier pool.
 #
-# BUDGET
-# Jobs here run under swift-institute/.github's own org concurrency quota, so
-# the sweep never competes with consumer-push queues in the layer orgs.
-# max-parallel bounds simultaneous swift-ci calls (each spawns 5 macOS jobs
-# against the 5-concurrent free-tier macOS pool).
-#
-# CALL CHAIN (depth 3, under the 4-level workflow_call limit):
+# Call chain depth 3, under the 4-level limit:
 #   ci-sweep.yml (1) -> swift-ci.yml (2, tier=full) -> advisory reusables (3)
 #
 # REPORTING

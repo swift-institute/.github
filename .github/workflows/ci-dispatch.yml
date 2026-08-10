@@ -1,33 +1,16 @@
-# ci-dispatch.yml — on-demand single-job CI dispatch surface (debug-only).
+# On-demand single-job CI dispatch surface (DEBUG ONLY). Runs exactly ONE job
+# of the universal swift-ci.yml against a chosen package without pushing to it
+# — for reproducing a single failing leg from a central place.
 #
-# PURPOSE
-# Lets an operator run exactly ONE job of the universal swift-ci.yml against a
-# chosen package, on demand, without pushing to that package. Useful for
-# reproducing a single failing leg (e.g. linux-release) of a target repo from a
-# central place. Per the ratified D3 CI-refactor design.
+# Call chain depth 3, under the 4-level workflow_call limit:
+#   ci-dispatch.yml (1) -> swift-ci.yml (2) -> advisory reusables (3)
 #
-# CALL CHAIN (depth 3 — safely under GitHub's 4-level workflow_call limit):
-#   ci-dispatch.yml  (1, workflow_dispatch)
-#     -> swift-ci.yml  (2, workflow_call; universal matrix + quality gates)
-#       -> advisory reusables  (3, e.g. lint-yaml.yml / lint-license-header.yml)
+# The `job` enum is the dispatch-meaningful jobs of swift-ci.yml, each selected
+# by its guard `inputs.job == '' || inputs.job == '<id>'`.
 #
-# THE `job` ENUM — the 13 dispatch-meaningful jobs of swift-ci.yml:
-#   macos-release, linux-release, linux-nightly, linux-6-4, windows-release,
-#   apple-simulator-build, format, lint, swift-linter, lint-yaml,
-#   lint-broken-symlink, lint-license-header, lint-test-support-spine.
-# Each is selected by swift-ci.yml's per-job guard
-# `inputs.job == '' || inputs.job == '<id>'`.
-#
-# EXCLUDED from the enum (ruled by the seat):
-#   - ci-ok            — the conclusion aggregator, not a unit of work. A
-#                        single-job dispatch sets `inputs.job != ''`, and
-#                        ci-ok's `if:` requires `inputs.job == ''`, so ci-ok is
-#                        skipped on any dispatch — offering it would run nothing
-#                        and only muddy the result.
-#   - advisory-summary — the informational advisory-leg renderer, not a unit of
-#                        work. Excluded identically to ci-ok: its `if:` also
-#                        requires `inputs.job == ''`, so it skips on any
-#                        single-job dispatch — offering it would render nothing.
+# EXCLUDED by ruling: ci-ok and advisory-summary. Both require
+# `inputs.job == ''`, so both SKIP on any single-job dispatch — offering them
+# would run nothing and muddy the result.
 #   - lint-api-breakage,
 #     lint-pr-title    — PR-only jobs (`if: github.event_name ==
 #                        'pull_request'`). A workflow_dispatch is not a
