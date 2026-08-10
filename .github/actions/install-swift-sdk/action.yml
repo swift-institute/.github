@@ -26,6 +26,30 @@
 #      to $GITHUB_ENV so the caller's downstream `swift build` step can
 #      reference env.<NAME>.
 #
+# Floor pre-release (swift-institute/.github#497): swift.org publishes SDK
+# artifactbundles (wasm-sdk / android-sdk / static-sdk) ONLY on tagged
+# RELEASE records in releases.json — verified empirically 2026-08-09:
+# releases.json carries no nightly/dev-snapshot entries at all (its newest
+# name is the latest stable, e.g. "6.3.3"; there is no "6.4" record of any
+# kind). download.swift.org serves no directory index, so a bare-prefix
+# 404 (e.g. `.../wasm-sdk/`) is informationless — it 404s for real bundle
+# paths too. The actual positive control is the full artifactbundle URL
+# for a release that IS in releases.json:
+#   curl -sI https://download.swift.org/swift-6.3.3-release/wasm-sdk/swift-6.3.3-RELEASE/swift-6.3.3-RELEASE_wasm.artifactbundle.tar.gz
+#   -> HTTP/1.1 200 OK
+# confirming the endpoint and path shape work; the corresponding 6.4 URL
+# has no release/tag to construct because no 6.4 record exists at all.
+# So when the release floor is ahead of upstream (ReleaseFloorException's
+# containerized-Linux case, ci-cd skill), there is no nightly SDK
+# substitution to resolve to; the SDK legs are structurally not-applicable
+# until the floor's stable release ships. `skip-on-missing-release: 'true'`
+# turns the "no matching release, but the release SET itself resolved
+# non-empty" case from a hard failure into a clean, explicit skip (output
+# `installed: 'false'`) instead of trying to fabricate a nightly bundle URL
+# that has no upstream coordinate. A broken parse or an empty/failed
+# releases.json fetch is never read as a pre-release skip — see the guard
+# below.
+#
 # Constraint: invokable only from container-using jobs that ship as root
 # (e.g. the swift:6.3 family). The composite calls `apt-get install`
 # without sudo; bare ubuntu-latest runners would need a sudo prefix.
@@ -102,11 +126,33 @@ inputs:
       Wrappers adopt this when the #67 floor bump lands.
     required: false
     default: ''
+  skip-on-missing-release:
+    description: >
+      When the literal string `true`, a missing releases.json record for
+      the container's Swift version (swift-institute/.github#497: the
+      floor is ahead of upstream, e.g. an unreleased 6.4) is NOT a
+      failure. The step prints an explicit "floor pre-release: SDK leg
+      not applicable" notice to the job summary and log, skips the
+      install, and sets output `installed` to `false` so the caller can
+      skip its own build step. Default `false`: preserve the original
+      hard failure (a repository that declares this leg gating must not
+      have it silently disappear).
+    required: false
+    default: 'false'
+
+outputs:
+  installed:
+    description: >
+      `true` when an SDK was resolved and installed, `false` when
+      `skip-on-missing-release: 'true'` hit a missing release record and
+      skipped cleanly instead.
+    value: ${{ steps.resolve.outputs.installed }}
 
 runs:
   using: 'composite'
   steps:
     - name: Resolve and install Swift SDK
+      id: resolve
       shell: bash
       env:
         INPUT_PLATFORM: ${{ inputs.platform }}
@@ -115,6 +161,7 @@ runs:
         INPUT_SDK_ID: ${{ inputs.sdk-id }}
         INPUT_OUTPUT_ENV_VAR: ${{ inputs.output-env-var }}
         INPUT_EXPECTED_TAG: ${{ inputs.expected-tag }}
+        INPUT_SKIP_ON_MISSING_RELEASE: ${{ inputs.skip-on-missing-release }}
       run: |
         set -euo pipefail
         apt-get update -qq && apt-get install -qq -y curl jq
@@ -123,9 +170,38 @@ runs:
         fi
         SWIFT_VERSION="$(swift --version | head -n1 | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -n1)"
         echo "Container Swift version: ${SWIFT_VERSION}"
-        REC=$(curl -sf "https://www.swift.org/api/v1/install/releases.json" \
-          | jq --arg v "${SWIFT_VERSION}" '.[] | select(.name == $v)')
+        if [[ -z "${SWIFT_VERSION}" ]]; then
+          echo "::error::install-swift-sdk could not parse a Swift version from 'swift --version'. This is a broken instrument, not a floor pre-release — refusing to classify it as one." >&2
+          exit 1
+        fi
+        RELEASES_JSON="$(curl -sf "https://www.swift.org/api/v1/install/releases.json")"
+        RELEASES_COUNT="$(echo "${RELEASES_JSON}" | jq -er 'length' 2>/dev/null || echo 0)"
+        if [[ -z "${RELEASES_JSON}" || "${RELEASES_COUNT}" -eq 0 ]]; then
+          echo "::error::install-swift-sdk fetched an empty or invalid releases.json (parsed ${RELEASES_COUNT} records). This is a broken instrument or a fetch failure, not evidence that Swift ${SWIFT_VERSION} is unreleased — refusing to classify it as a floor pre-release." >&2
+          exit 1
+        fi
+        REC=$(echo "${RELEASES_JSON}" | jq --arg v "${SWIFT_VERSION}" '.[] | select(.name == $v)')
         if [[ -z "$REC" ]]; then
+          # A non-empty releases.json (positive control above) genuinely has
+          # no record named ${SWIFT_VERSION} — only NOW is "no matching
+          # release" a trustworthy floor-pre-release signal rather than a
+          # parse or fetch defect wearing the same empty-string shape.
+          if [[ "${INPUT_SKIP_ON_MISSING_RELEASE}" == "true" ]]; then
+            {
+              echo "### install-swift-sdk (${INPUT_PLATFORM}) — floor pre-release: SDK leg not applicable"
+              echo ""
+              echo "releases.json resolved ${RELEASES_COUNT} records but none named"
+              echo "\`${SWIFT_VERSION}\`. SDK artifactbundles (wasm-sdk / android-sdk /"
+              echo "static-sdk) are published only on tagged RELEASE records — never on"
+              echo "nightly or dev-snapshot branches (verified swift-institute/.github#497)"
+              echo "— so there is no nightly substitution to install against. This leg"
+              echo "resumes once Swift ${SWIFT_VERSION} ships stable."
+              echo ""
+            } >> "${GITHUB_STEP_SUMMARY}"
+            echo "::notice::floor pre-release: SDK leg not applicable — releases.json has ${RELEASES_COUNT} records but none matching Swift ${SWIFT_VERSION} (SDK bundles are release-only artifacts)"
+            echo "installed=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
           echo "No swift.org release matching Swift ${SWIFT_VERSION}" >&2
           exit 1
         fi
@@ -201,3 +277,4 @@ runs:
         if [[ -n "${INPUT_OUTPUT_ENV_VAR}" ]]; then
           echo "${INPUT_OUTPUT_ENV_VAR}=${RESOLVED_SDK_ID}" >> "${GITHUB_ENV}"
         fi
+        echo "installed=true" >> "${GITHUB_OUTPUT}"

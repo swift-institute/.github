@@ -11,9 +11,9 @@ name: Swift CI (reusable)
 # ────────────────────────────────────────────────────────────────────────
 
 # Reusable CI workflow for Swift Institute packages. Provides the universal
-# test matrix that applies across all five layers: macOS 26 (Swift 6.3 debug)
-# + Ubuntu (Swift 6.3 release) + Ubuntu (Swift main nightly,
-# continue-on-error) + Windows (Swift 6.3).
+# test matrix that applies across all five layers: macOS (Swift 6.4 debug)
+# + Ubuntu (Swift 6.4 release) + Windows (Swift 6.4 debug). Swift main
+# nightly is a separately classified, time-bounded advisory exception.
 #
 # TIERED SCHEDULING (R1/R2 principal ruling 2026-07-20): the matrix SHAPE
 # above remains the ecosystem platform contract ([CI-010]/[CI-091] unchanged),
@@ -115,15 +115,15 @@ on:
     inputs:
       swift-version:
         type: string
-        default: "6.3"
-        description: "Swift version for the macOS, Ubuntu release, and Windows jobs. The nightly job is always Swift main (currently tracks 6.5-dev; floats as main moves)."
+        default: "6.4"
+        description: "Required Swift release floor for the macOS, Ubuntu release, and Windows jobs. The main-nightly advisory job is separately digest-pinned and must pass the typed exception check in plan."
       enable-private-repos:
         type: boolean
         default: true
         description: "If true, configure credentialed git url rewrites (App-token primary, PRIVATE_REPO_TOKEN fallback) for github.com clones. Default true: most consumers in the swift-primitives ecosystem have private deps and need the credentials; public-only consumers may pass false explicitly."
       macos-runner:
         type: string
-        default: "macos-26"
+        default: "xcode-27"
         description: "macOS runner image. Bump annually when GitHub adds a new image version. env.* is invalid in runs-on: per Actions context-availability rules — input is the working centralization mechanism."
       test-filter:
         type: string
@@ -179,7 +179,7 @@ on:
         description: "Pass-through override forwarded to the nested swift-docs.yml call's `exclude-modules` input (TX10: integrated docs are unconditional)."
       docs-swift-version:
         type: string
-        default: "6.3"
+        default: "6.4"
         description: "Swift toolchain version for the nested swift-docs.yml call's DocC build container (TX10: integrated docs are unconditional). Independent of this workflow's own `swift-version` input (a Linux-container axis for the release/nightly legs) — mirrors swift-docs.yml's own default so an integrated caller that never overrides either stays in lockstep with the standalone wrapper path."
     secrets:
       PRIVATE_REPO_TOKEN:
@@ -216,6 +216,46 @@ on:
 # release of each tool; bump on every workflow touch where a newer
 # release exists.
 env:
+  # The sole main-nightly exception. `plan` validates all three values before
+  # emitting any selected legs; expiry is inclusive and requires a new ruling.
+  SWIFT_MAIN_NIGHTLY_IMAGE: "swiftlang/swift@sha256:f577f95edfb85cf3bdc45eb0badaab09239de5c86c69b3b6d594cc62916c0a7d"
+  SWIFT_MAIN_NIGHTLY_UPSTREAM_ISSUE: "https://github.com/swiftlang/swift/issues/90275"
+  SWIFT_MAIN_NIGHTLY_RECHECK: "2026-09-14"
+  # ─── The sole release-floor exception (swift-institute/.github#491) ──────
+  # The 6.4 floor's containerized Linux legs resolve `swift:6.4`, which does
+  # not exist: Docker Hub returns 404 for `swift:6.4` AND `swift:6.4.0`
+  # (verified 2026-08-09 against registry-1.docker.io, with `swift:6.3` -> 200
+  # as the positive control), because Swift 6.4 stable is unreleased. Every
+  # fleet caller's Linux legs therefore died at 'Initialize containers',
+  # before checkout (swift-iso-9945 PR #75, run 31305975180).
+  #
+  # Until upstream publishes it, those legs run the Swift 6.4.x NIGHTLY image
+  # — pinned by exact digest, never by a mutable tag.
+  #
+  # swift-institute/.github#494: the `nightly-6.4.x-jammy` digest (Ubuntu
+  # 22.04, glibc 2.35) this exception first pinned made the pinned SwiftLint
+  # 0.63.3 / swift-linter binaries (GLIBC_2.38/GLIBCXX_3.4.32, Ubuntu 24.04)
+  # die at `--version` before linting anything — the build leg stayed green,
+  # but both lint legs failed at binary load. Repinned to the
+  # `nightly-6.4.x-noble` digest (Ubuntu 24.04, glibc 2.39 — verified via the
+  # image config blob's `org.opencontainers.image.version: "24.04"` label,
+  # 2026-08-09), the same tag family the pre-floor workflow's `linux-6-4` leg
+  # used, satisfying GLIBC_2.38+.
+  #
+  # `plan` validates all three values (CI.Contract.ReleaseFloorException) and
+  # emits the resolved image as `needs.plan.outputs.linux-image`; every
+  # containerized Linux leg below binds THAT and never an image literal, and
+  # `env.*` is unavailable at `container:` in any case ([CI-103]).
+  #
+  # RETIRING THIS IS A REMOVAL. When `swift:6.4` exists, delete these three
+  # values and the four `--release-floor-*`/`--swift-version` plan arguments;
+  # the exception falls away, plan resolves `swift:6.4`, and not one
+  # `container:`, job, or validator changes. Recheck may not outlive the
+  # RC/stable boundary — the typed boundary is 2026-09-09 and a later date is
+  # refused, not warned about.
+  SWIFT_RELEASE_FLOOR_IMAGE: "swiftlang/swift@sha256:8d614165059587ce9dcf6727a76aeff4cbf1cde41fde9a9281a43803be736224"
+  SWIFT_RELEASE_FLOOR_UPSTREAM_RELEASE: "https://github.com/swiftlang/swift/releases/tag/swift-6.4-RELEASE"
+  SWIFT_RELEASE_FLOOR_RECHECK: "2026-09-09"
   SWIFTLINT_VERSION: "0.63.3"
   # [CI-082] sha256sum -c pin for swiftlint_linux_amd64.zip at SWIFTLINT_VERSION.
   # Re-lock on every version bump per the rule body's bump protocol.
@@ -227,7 +267,11 @@ env:
   # contradicts this one. swift-primitives carried a stale inert "26.4" until
   # 2026-07-28; removed there, rationale recorded in that file.
   #
-  # 26.6 is the CEILING on `macos-26`, not a conservative choice. Determined
+  # The 6.4 floor runs on `xcode-27` with Xcode 27.0. The previous 26.6
+  # ceiling record remains historical evidence only; this pin and runner must
+  # move together so the macOS check name cannot overstate its toolchain.
+  #
+  # 26.6 was the CEILING on `macos-26`, not a conservative choice. Determined
   # 2026-07-28 against actions/runner-images@main:
   #   - macos-26-arm64 (`macos-latest`, `macos-26`) installs 26.0.1 … 26.6
   #     (26.6 = 17F113); 26.6 became the image default 2026.07.21. There is no
@@ -282,7 +326,7 @@ env:
   # log is the only place the contradiction is visible. Move the two axes
   # together, or accept that the macOS leg's name is aspirational until the
   # Xcode pin catches up.
-  XCODE_VERSION: "26.6"
+  XCODE_VERSION: "27.0"
 
 jobs:
   # ─── Tier plan (R1/R2 principal ruling 2026-07-20) ───────────────────────
@@ -334,6 +378,12 @@ jobs:
       tier: ${{ steps.classify.outputs.tier }}
       legs: ${{ steps.classify.outputs.legs }}
       gating: ${{ steps.classify.outputs.gating }}
+      # THE single container-image contract for the Linux legs. Every
+      # containerized Linux job in this file — and every nested reusable it
+      # calls with a container — binds this and never an image literal, so the
+      # release-floor exception has exactly one place to live and one place to
+      # be removed (swift-institute/.github#491).
+      linux-image: ${{ steps.classify.outputs.linux-image }}
       subject-repository: ${{ steps.resolve-subject.outputs.subject-repository }}
       subject-ref: ${{ steps.resolve-subject.outputs.subject-ref }}
       subject-sha: ${{ steps.resolve-subject.outputs.subject-sha }}
@@ -477,8 +527,17 @@ jobs:
       # commit of THIS workflow file (the called reusable, not the caller),
       # so the executed script cannot differ from the workflow revision
       # that invoked it (#43 item 3).
+      # #506: this checkout and the two F12 identity/bootstrap chains below
+      # run UNCONDITIONALLY (not gated on `inputs.job == ''`) because the
+      # "Classify tier" step that consumes the institute-ci binary runs on
+      # every event — including single-job ci-dispatch.yml, whose downstream
+      # Linux legs bind `needs.plan.outputs.linux-image`. Gating the
+      # bootstrap while Classify stayed ungated made every dispatch fail
+      # with exit 127 (`.institute-ci-entry/bin/institute-ci: No such file`).
+      # The identity-conflict fast-check, branch-pin guard, and subject
+      # checkout keep their dispatch-bypass gates — those are the checks a
+      # debug repro deliberately skips; the planner binary is not one.
       - name: Checkout CI scripts
-        if: ${{ inputs.job == '' }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: swift-institute/.github
@@ -493,7 +552,6 @@ jobs:
       # that is not 40-hex refuses fail-closed rather than minting a
       # malformed cache key.
       - name: Institute CI source identity
-        if: ${{ inputs.job == '' }}
         id: institute-ci-identity
         shell: bash
         run: |
@@ -586,19 +644,18 @@ jobs:
       # stashed by "Institute CI source identity" above, before the
       # identity-conflict fast-check dropped the scripts checkout.
       - name: Restore Institute CI (exact key, acceleration only)
-        if: ${{ inputs.job == '' }}
         id: institute-ci-restore
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .institute-ci-entry
           key: institute-ci-${{ steps.institute-ci-identity.outputs.sources-tree }}-72d4b2ae1e5b6a2b49fc22e0240dad0a34a9618f-linux-x86_64-swift-6.3-static
       - name: Swift toolchain (cold bootstrap only)
-        if: ${{ inputs.job == '' && steps.institute-ci-restore.outputs.cache-hit != 'true' }}
+        if: ${{ steps.institute-ci-restore.outputs.cache-hit != 'true' }}
         uses: SwiftyLab/setup-swift@38f54a76b70d989321de9dc7c840618c08cf56e9  # v1.14.0
         with:
           swift-version: "6.3"
       - name: Checkout Workspace at exact main pin (cold bootstrap only)
-        if: ${{ inputs.job == '' && steps.institute-ci-restore.outputs.cache-hit != 'true' }}
+        if: ${{ steps.institute-ci-restore.outputs.cache-hit != 'true' }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: swift-institute/institute-application
@@ -607,7 +664,7 @@ jobs:
           path: .workspace
           persist-credentials: false
       - name: Cold bootstrap through the sanctioned Workspace coordinate
-        if: ${{ inputs.job == '' && steps.institute-ci-restore.outputs.cache-hit != 'true' }}
+        if: ${{ steps.institute-ci-restore.outputs.cache-hit != 'true' }}
         shell: bash
         env:
           SOURCES_TREE: ${{ steps.institute-ci-identity.outputs.sources-tree }}
@@ -616,18 +673,27 @@ jobs:
           # uuid-dev: the typed F2/F10 provisioning input (swift-linux-standard's
           # CLinuxKernelShim includes uuid/uuid.h); absent on the bare runner.
           sudo apt-get update -qq && sudo apt-get install -qq -y uuid-dev
-          swift run --package-path .workspace/Application institute package build --package-path "${RUNNER_TEMP}/institute-ci-sources" --argument=--static-swift-stdlib
+          # TX-APP1Z: institute-application's Swift package moved from Application/ to
+          # the repository root. This checkout is pinned to a caller-supplied or
+          # hard-pinned revision, so it must build either layout. The probe retires
+          # once every pin in the fleet is post-flatten.
+
+
+          workspace_package_path=.workspace
+          if [ -f .workspace/Application/Package.swift ]; then
+            workspace_package_path=.workspace/Application
+          fi
+          swift run --package-path "$workspace_package_path" institute package build --package-path "${RUNNER_TEMP}/institute-ci-sources" --argument=--static-swift-stdlib
           mkdir -p .institute-ci-entry/bin
           cp "$(find "${RUNNER_TEMP}/institute-ci-sources/.build" -name institute-ci -type f -perm /111 | head -1)" .institute-ci-entry/bin/institute-ci
           .institute-ci-entry/bin/institute-ci bootstrap-manifest --workspace-revision 72d4b2ae1e5b6a2b49fc22e0240dad0a34a9618f --sources-revision "$SOURCES_TREE" --toolchain swift-6.3 --os linux --arch x86_64 --provisioning uuid-dev,static-swift-stdlib --root .institute-ci-entry --executables bin/institute-ci --producer-run "$GITHUB_RUN_ID" > .institute-ci-entry/manifest.json
       - name: Save Institute CI cache entry (cold bootstrap only)
-        if: ${{ inputs.job == '' && steps.institute-ci-restore.outputs.cache-hit != 'true' }}
+        if: ${{ steps.institute-ci-restore.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .institute-ci-entry
           key: institute-ci-${{ steps.institute-ci-identity.outputs.sources-tree }}-72d4b2ae1e5b6a2b49fc22e0240dad0a34a9618f-linux-x86_64-swift-6.3-static
       - name: Verify Institute CI provenance before trust (fail closed)
-        if: ${{ inputs.job == '' }}
         shell: bash
         env:
           SOURCES_TREE: ${{ steps.institute-ci-identity.outputs.sources-tree }}
@@ -653,18 +719,22 @@ jobs:
           HEAD_MSG: ${{ github.event.head_commit.message }}
           PLATFORM_SUPPORT: ${{ inputs.platform-support }}
           LINT_BUNDLE: ${{ inputs.lint-bundle }}
+          SWIFT_VERSION: ${{ inputs.swift-version }}
         run: |
           set -euo pipefail
-          PLAN_JSON="$(.institute-ci-entry/bin/institute-ci plan --tier "$FORCED_TIER" --ref "$GITHUB_REF" --head-message "$HEAD_MSG" --event "$EVENT_NAME" --platform-support "$PLATFORM_SUPPORT" --lint-bundle "$LINT_BUNDLE")"
+          PLAN_JSON="$(.institute-ci-entry/bin/institute-ci plan --tier "$FORCED_TIER" --ref "$GITHUB_REF" --head-message "$HEAD_MSG" --event "$EVENT_NAME" --platform-support "$PLATFORM_SUPPORT" --lint-bundle "$LINT_BUNDLE" --nightly-main-image "$SWIFT_MAIN_NIGHTLY_IMAGE" --nightly-main-upstream-issue "$SWIFT_MAIN_NIGHTLY_UPSTREAM_ISSUE" --nightly-main-recheck "$SWIFT_MAIN_NIGHTLY_RECHECK" --swift-version "$SWIFT_VERSION" --release-floor-image "$SWIFT_RELEASE_FLOOR_IMAGE" --release-floor-upstream-release "$SWIFT_RELEASE_FLOOR_UPSTREAM_RELEASE" --release-floor-recheck "$SWIFT_RELEASE_FLOOR_RECHECK" --today "$(date -u +%F)")"
           TIER="$(jq -r '.tier' <<< "$PLAN_JSON")"
           LEGS="$(jq -r '.legs' <<< "$PLAN_JSON")"
           GATING="$(jq -r '.gating' <<< "$PLAN_JSON")"
+          LINUX_IMAGE="$(jq -r '."linux-image"' <<< "$PLAN_JSON")"
           echo "tier=$TIER" >> "$GITHUB_OUTPUT"
           echo "legs=$LEGS" >> "$GITHUB_OUTPUT"
           echo "gating=$GATING" >> "$GITHUB_OUTPUT"
+          echo "linux-image=$LINUX_IMAGE" >> "$GITHUB_OUTPUT"
           echo "Selected tier: $TIER"
           echo "legs: $LEGS"
           echo "gating: $GATING"
+          echo "linux image: $LINUX_IMAGE"
           {
             echo "## CI tier: \`$TIER\` (planned by institute-ci)"
             echo ""
@@ -757,7 +827,7 @@ jobs:
     needs: plan
     if: ${{ !cancelled() && !github.event.repository.private && (inputs.job == 'linux-release' || (inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',linux-release,'))) && (inputs.platform-support == '' || contains(format(',{0},', inputs.platform-support), ',linux,')) }}
     runs-on: ubuntu-latest
-    container: swift:${{ inputs.swift-version }}
+    container: ${{ needs.plan.outputs.linux-image }}
     timeout-minutes: 45
     permissions:
       contents: read
@@ -843,9 +913,11 @@ jobs:
   linux-nightly:
     name: Ubuntu (Swift main nightly, release)
     needs: plan
-    if: ${{ !cancelled() && !github.event.repository.private && (inputs.job == 'linux-nightly' || (inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',linux-nightly,'))) && (inputs.platform-support == '' || contains(format(',{0},', inputs.platform-support), ',linux,')) }}
+    # This leg never uses the single-job debug escape hatch: only a completed
+    # typed plan may authorize its temporary advisory exception.
+    if: ${{ !cancelled() && !github.event.repository.private && inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',linux-nightly,') && (inputs.platform-support == '' || contains(format(',{0},', inputs.platform-support), ',linux,')) }}
     runs-on: ubuntu-latest
-    container: swiftlang/swift:nightly-main-jammy
+    container: swiftlang/swift@sha256:f577f95edfb85cf3bdc45eb0badaab09239de5c86c69b3b6d594cc62916c0a7d
     continue-on-error: true
     timeout-minutes: 45
     permissions:
@@ -1112,18 +1184,49 @@ jobs:
           } else {
             $filterArgs = @()
           }
+          # [swift-institute/.github#498] `--build-system native`.
+          #
+          # Swift Build is SwiftPM's DEFAULT build system on Windows only (since
+          # 6.2); the macOS and Linux legs above already run the native build
+          # system. On a large dependency closure Swift Build emits a per-product
+          # `Libtool` task whose command line names ONE `@<module>.objlib/args.resp`
+          # response file PER MODULE in the transitive closure, and that list of
+          # `@` paths is itself passed as argv. Past ~250 modules the argv exceeds
+          # the Windows CreateProcess 32,767-character ceiling and llvm-lib.exe
+          # cannot be spawned at all:
+          #   error: unable to spawn process '...\llvm-lib.exe'
+          #          (The filename or extension is too long.)
+          # Measured on the six fleet repositories this gated (2026-08-09):
+          # swift-machine-primitives 883 entries / 125,991 argv bytes;
+          # swift-{spm,rss,mailgun,github,email}-standard 349-363 entries /
+          # 45.4-50.0 KB. Shortening the build path (`--scratch-path C:\b`) is
+          # arithmetically INSUFFICIENT, not merely marginal: it takes
+          # swift-machine-primitives to 75,660 bytes, and even a zero-length
+          # directory prefix leaves 41,223 bytes of bare module names — still over
+          # the ceiling. The one-response-file-per-module shape, not the path
+          # length, is the defect, and consolidating it is a swift-build fix we do
+          # not own.
+          #
+          # The native build system has no whole-closure product `Libtool` step —
+          # it archives per target and links the test executable directly — so the
+          # class does not arise. Selecting it here costs no coverage: same
+          # compiler, same +Asserts toolchain, so the Windows leg remains the
+          # fleet's SIL-validity gate. This is NOT platform narrowing and NOT a
+          # cost knob; remove the flag when swift-build consolidates the Libtool
+          # response files upstream.
+          $buildSystemArgs = @('--build-system', 'native')
           # [swift-institute/.github#165] Detect the sanctioned nested-test-package
           # layout (Tests/Package.swift) and run its tests instead of a root
           # `swift test` that silently discovers zero tests and exits green.
           if (Test-Path "Tests/Package.swift") {
             Write-Host "Nested test package detected (Tests/Package.swift); running tests from Tests/"
             Push-Location Tests
-            swift test -c debug @filterArgs
+            swift test -c debug @buildSystemArgs @filterArgs
             $exitCode = $LASTEXITCODE
             Pop-Location
             if ($exitCode -ne 0) { exit $exitCode }
           } else {
-            swift test -c debug @filterArgs
+            swift test -c debug @buildSystemArgs @filterArgs
           }
 
   # ─── Apple-simulator build (γ advisory; resource-bundle CodeSign gate) ──
@@ -1379,7 +1482,7 @@ jobs:
     needs: plan
     if: ${{ !cancelled() && !github.event.repository.private && (inputs.job == 'embedded-wasm-sdk' || (inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',embedded-wasm-sdk,'))) }}
     runs-on: ubuntu-latest
-    container: swift:${{ inputs.swift-version }}
+    container: ${{ needs.plan.outputs.linux-image }}
     continue-on-error: true     # γ-3 advisory; classified soak. Drop after flip.
     timeout-minutes: 30
     permissions:
@@ -1423,15 +1526,22 @@ jobs:
         run: swift --version
 
       - name: Install Embedded Wasm SDK matching container Swift
-        uses: swift-institute/.github/.github/actions/install-swift-sdk@d1af72d05bf8262fb3918a2f1607b82fafcafdf9  # main 2026-08-03, pin normalized to the deliberately advanced full SHA (TX7, swift-institute/.github#276); action blobs identical at both commits
+        id: install
+        uses: swift-institute/.github/.github/actions/install-swift-sdk@b4246ad5ee6ff39e6ad413a852c86d8311a83be8  # TX7 self-referential pin advance (swift-institute/.github#497 landing 1, PR #500, merged to main): merge SHA on main declares `skip-on-missing-release` input + `installed` output (verified)
         with:
           platform: wasm-sdk
           bundle-suffix: wasm
           sdk-id: ${TAG}_wasm-embedded
           output-env-var: WASM_SDK_ID
+          # swift-institute/.github#497: the floor's Linux legs may run a
+          # pre-release nightly (ReleaseFloorException); swift.org never
+          # publishes SDK bundles for nightlies, so skip cleanly instead
+          # of failing red when no release record matches.
+          skip-on-missing-release: 'true'
 
       - name: Build (Embedded Wasm)
         id: build
+        if: steps.install.outputs.installed == 'true'
         run: swift build --swift-sdk "${WASM_SDK_ID}"
 
   android-build:
@@ -1439,7 +1549,7 @@ jobs:
     needs: plan
     if: ${{ !cancelled() && !github.event.repository.private && (inputs.job == 'android-build' || (inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',android-build,'))) }}
     runs-on: ubuntu-latest
-    container: swift:${{ inputs.swift-version }}
+    container: ${{ needs.plan.outputs.linux-image }}
     continue-on-error: true     # advisory; classified soak. Drop after flip.
     timeout-minutes: 30
     permissions:
@@ -1483,15 +1593,22 @@ jobs:
         run: swift --version
 
       - name: Install Android SDK matching container Swift
-        uses: swift-institute/.github/.github/actions/install-swift-sdk@d1af72d05bf8262fb3918a2f1607b82fafcafdf9  # main 2026-08-03, pin normalized to the deliberately advanced full SHA (TX7, swift-institute/.github#276); action blobs identical at both commits
+        id: install
+        uses: swift-institute/.github/.github/actions/install-swift-sdk@b4246ad5ee6ff39e6ad413a852c86d8311a83be8  # TX7 self-referential pin advance (swift-institute/.github#497 landing 1, PR #500, merged to main): merge SHA on main declares `skip-on-missing-release` input + `installed` output (verified)
         with:
           platform: android-sdk
           bundle-suffix: android
           sdk-id: ${TAG}_android
           output-env-var: ANDROID_SDK_ID
+          # swift-institute/.github#497: the floor's Linux legs may run a
+          # pre-release nightly (ReleaseFloorException); swift.org never
+          # publishes SDK bundles for nightlies, so skip cleanly instead
+          # of failing red when no release record matches.
+          skip-on-missing-release: 'true'
 
       - name: Build (Android)
         id: build
+        if: steps.install.outputs.installed == 'true'
         run: swift build --swift-sdk "${ANDROID_SDK_ID}"
 
   static-linux-musl-build:
@@ -1499,7 +1616,7 @@ jobs:
     needs: plan
     if: ${{ !cancelled() && !github.event.repository.private && (inputs.job == 'static-linux-musl-build' || (inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',static-linux-musl-build,'))) }}
     runs-on: ubuntu-latest
-    container: swift:${{ inputs.swift-version }}
+    container: ${{ needs.plan.outputs.linux-image }}
     continue-on-error: true     # γ-3b advisory; may remain permanently.
     timeout-minutes: 30
     permissions:
@@ -1543,15 +1660,22 @@ jobs:
         run: swift --version
 
       - name: Install Static Linux SDK matching container Swift
-        uses: swift-institute/.github/.github/actions/install-swift-sdk@d1af72d05bf8262fb3918a2f1607b82fafcafdf9  # main 2026-08-03, pin normalized to the deliberately advanced full SHA (TX7, swift-institute/.github#276); action blobs identical at both commits
+        id: install
+        uses: swift-institute/.github/.github/actions/install-swift-sdk@b4246ad5ee6ff39e6ad413a852c86d8311a83be8  # TX7 self-referential pin advance (swift-institute/.github#497 landing 1, PR #500, merged to main): merge SHA on main declares `skip-on-missing-release` input + `installed` output (verified)
         with:
           platform: static-sdk
           bundle-suffix: static-linux
           use-platform-version: 'true'
           sdk-id: x86_64-swift-linux-musl
+          # swift-institute/.github#497: the floor's Linux legs may run a
+          # pre-release nightly (ReleaseFloorException); swift.org never
+          # publishes SDK bundles for nightlies, so skip cleanly instead
+          # of failing red when no release record matches.
+          skip-on-missing-release: 'true'
 
       - name: Build (Static Linux musl, x86_64)
         id: build
+        if: steps.install.outputs.installed == 'true'
         run: swift build --swift-sdk x86_64-swift-linux-musl
 
   # ─── Ecosystem-wide quality gates ─────────────────────────────────────
@@ -1571,7 +1695,7 @@ jobs:
     needs: plan
     if: ${{ !cancelled() && !github.event.repository.private && (inputs.job == 'format' || (inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',format,'))) }}
     runs-on: ubuntu-latest
-    container: swift:${{ inputs.swift-version }}
+    container: ${{ needs.plan.outputs.linux-image }}
     timeout-minutes: 15
     permissions:
       contents: read
@@ -1638,7 +1762,7 @@ jobs:
     needs: plan
     if: ${{ !cancelled() && !github.event.repository.private && (inputs.job == 'lint' || (inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',lint,'))) }}
     runs-on: ubuntu-latest
-    container: swift:${{ inputs.swift-version }}
+    container: ${{ needs.plan.outputs.linux-image }}
     timeout-minutes: 15
     permissions:
       contents: read
@@ -1725,8 +1849,13 @@ jobs:
       #      canonical in between), rewrite it straight to the local pinned
       #      copy checked out above.
       #   2. Otherwise, if it points at some other org's own `.github`
-      #      canonical (the Tier 2 shape), fetch that Tier 2 file ONCE over
-      #      HTTPS, record the resolved org/ref/commit it actually served in
+      #      canonical (the Tier 2 shape), fetch that Tier 2 file ONCE via
+      #      git (#509: the release-floor container ships no curl, so the
+      #      former curl fetch failed as `command not found` and every
+      #      Tier 2 hop floated with a warning; git is already proven
+      #      present in this container by the checkout steps above, and a
+      #      shallow clone makes the fetch and the resolved-commit record
+      #      atomic), record the resolved org/ref/commit it actually served in
       #      the run log as an explicit, honest residual (this hop is
       #      pinned to "whatever main served at lint time", not to a fixed
       #      SHA — a real limitation, logged rather than hidden), rewrite
@@ -1745,8 +1874,22 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          pinned_tier1="${GITHUB_WORKSPACE}/.ci-central-swiftlint-config/.swiftlint.yml"
-          [ -f "$pinned_tier1" ] || { echo "::error::pinned Tier 1 .swiftlint.yml did not check out"; exit 1; }
+          pinned_tier1_src="${GITHUB_WORKSPACE}/.ci-central-swiftlint-config/.swiftlint.yml"
+          [ -f "$pinned_tier1_src" ] || { echo "::error::pinned Tier 1 .swiftlint.yml did not check out"; exit 1; }
+          # #505: SwiftLint resolves a parent config's `included:`/`excluded:`
+          # paths relative to the FILE THAT DECLARES THEM, not the child
+          # config or the invocation cwd. Rewriting parent_config to a file
+          # outside the consumer root (the sparse-checkout sibling dir, or
+          # RUNNER_TEMP) therefore made the Tier 1 `included: [Sources,
+          # Tests]` resolve against directories that don't exist, emptying
+          # the include set ("No lintable files found at paths: ''").
+          # Materialize every pinned config IN the consumer root so
+          # Sources/ and Tests/ stay consumer-relative — same reasoning the
+          # rootless branch of the Lint step already documents. The pinned
+          # filenames deliberately do not match the `.swiftlint.yml` find
+          # below, so they are never themselves treated as consumer configs.
+          pinned_tier1="${GITHUB_WORKSPACE}/.ci-pinned-tier1.swiftlint.yml"
+          cp "$pinned_tier1_src" "$pinned_tier1"
           tier1_re='^[[:space:]]*parent_config:[[:space:]]*https://raw\.githubusercontent\.com/swift-institute/\.github/([^/]+)/\.swiftlint\.yml[[:space:]]*$'
           tier2_re='^[[:space:]]*parent_config:[[:space:]]*https://raw\.githubusercontent\.com/([^/]+)/\.github/([^/]+)/\.swiftlint\.yml[[:space:]]*$'
           mapfile -d '' configs < <(find . -name '.swiftlint.yml' -not -path './.ci-central-swiftlint-config/*' -print0)
@@ -1764,18 +1907,38 @@ jobs:
                 continue
               fi
               tier2_url="https://raw.githubusercontent.com/${org}/.github/${ref}/.swiftlint.yml"
-              tier2_local="${RUNNER_TEMP}/tier2-${org}.swiftlint.yml"
-              if ! curl -fsSL -o "$tier2_local" "$tier2_url"; then
-                echo "::warning::$config: could not fetch Tier 2 config from $tier2_url — left unpinned (floating): $line"
+              # In the consumer root, not RUNNER_TEMP — same #505 relative-
+              # resolution class: a Tier 2 config declaring `included:` would
+              # otherwise resolve it against RUNNER_TEMP.
+              tier2_local="${GITHUB_WORKSPACE}/.ci-pinned-tier2-${org}.swiftlint.yml"
+              # #509: fetch via git, not curl — the release-floor container
+              # ships no curl (curl is only apt-installed later, and only on
+              # a SwiftLint cache miss), so a curl fetch here failed with
+              # `command not found` and floated every Tier 2 hop. git is
+              # already exercised in this container by the checkout steps
+              # above; a shallow clone also yields the resolved commit from
+              # the same fetch instead of a second, separately-timed
+              # ls-remote.
+              tier2_src_dir="$(mktemp -d)"
+              if ! git clone --quiet --depth 1 --branch "$ref" --no-tags "https://github.com/${org}/.github" "$tier2_src_dir"; then
+                echo "::warning::$config: could not fetch Tier 2 config source ${org}/.github@${ref} (git clone failed; expected file $tier2_url) — left unpinned (floating): $line"
+                rm -rf "$tier2_src_dir"
                 continue
               fi
+              if [ ! -f "${tier2_src_dir}/.swiftlint.yml" ]; then
+                echo "::warning::$config: ${org}/.github@${ref} serves no .swiftlint.yml ($tier2_url) — left unpinned (floating): $line"
+                rm -rf "$tier2_src_dir"
+                continue
+              fi
+              cp "${tier2_src_dir}/.swiftlint.yml" "$tier2_local"
               # Record the residual honestly: this hop is fetched fresh at
               # lint time from $org/.github@$ref, resolved to whatever
               # commit that ref names right now. That commit, not a fixed
               # SHA, is what's actually pinned for the remainder of THIS
               # run (both hops rewritten below stay stable within the run);
               # a re-run later can still resolve $ref to a different commit.
-              resolved_sha=$(git ls-remote "https://github.com/${org}/.github" "$ref" | cut -f1)
+              resolved_sha="$(git -C "$tier2_src_dir" rev-parse HEAD)"
+              rm -rf "$tier2_src_dir"
               echo "Materialized Tier 2 config for $config: ${org}/.github@${ref} (resolved ${resolved_sha:-unknown at fetch time}) -> $tier2_local — RESIDUAL: this hop is fetched live each run, not pinned to a fixed commit."
               tier2_line=$(grep -E '^[[:space:]]*parent_config:' "$tier2_local" || true)
               if [[ "$tier2_line" =~ $tier1_re ]]; then
@@ -1919,7 +2082,7 @@ jobs:
     needs: plan
     if: ${{ !cancelled() && !github.event.repository.private && (inputs.job == 'swift-linter' || (inputs.job == '' && contains(format(',{0},', needs.plan.outputs.legs), ',swift-linter,'))) }}
     runs-on: ubuntu-latest
-    container: swift:${{ inputs.swift-version }}
+    container: ${{ needs.plan.outputs.linux-image }}
     timeout-minutes: 30
     permissions:
       contents: read
@@ -2356,6 +2519,7 @@ jobs:
     with:
       advisory: true     # Phase β. Drop in Phase γ.
       swift-version: ${{ inputs.swift-version }}
+      swift-image: ${{ needs.plan.outputs.linux-image }}
       subject-repository: ${{ needs.plan.outputs.subject-repository }}
       subject-sha: ${{ needs.plan.outputs.subject-sha }}
 
@@ -2364,11 +2528,17 @@ jobs:
 
   lint-api-breakage:
     name: API breakage (γ-1c, advisory pilot)
+    # `needs: plan` is the container-image contract, not scheduling: this leg
+    # runs in a Swift container and must take its image from the single
+    # resolved plan output like every other containerized leg
+    # (swift-institute/.github#491). The PR-only `if:` is unchanged.
+    needs: plan
     if: ${{ github.event_name == 'pull_request' && !github.event.repository.private }}
     uses: ./.github/workflows/lint-api-breakage.yml
     with:
       advisory: true
       swift-version: ${{ inputs.swift-version }}
+      swift-image: ${{ needs.plan.outputs.linux-image }}
     secrets: inherit
 
   lint-pr-title:
@@ -2458,6 +2628,12 @@ jobs:
       exclude-modules: ${{ inputs.docs-exclude-modules }}
       enable-private-repos: ${{ inputs.enable-private-repos }}
       swift-version: ${{ inputs.docs-swift-version }}
+      # The release-floor exception applies to the docs container ONLY while
+      # docs sits on the same floor as the build legs — which is the default,
+      # and the case that #491 broke. A caller that deliberately moves
+      # `docs-swift-version` off the floor keeps its own `swift:<version>`
+      # rather than silently inheriting the floor's substitute image.
+      swift-image: ${{ inputs.docs-swift-version == inputs.swift-version && needs.plan.outputs.linux-image || '' }}
       # Full coordinate stays same-repo (swift-institute/.github calling
       # its own swift-docs.yml); target-repo/ref bind the DOCUMENTED
       # package's checkout, not this hop's own identity.
@@ -2654,7 +2830,17 @@ jobs:
           # uuid-dev: the typed F2/F10 provisioning input (swift-linux-standard's
           # CLinuxKernelShim includes uuid/uuid.h); absent on the bare runner.
           sudo apt-get update -qq && sudo apt-get install -qq -y uuid-dev
-          swift run --package-path .workspace/Application institute package build --package-path "$GITHUB_WORKSPACE/institute-receipt/Tools/institute-ci" --argument=--static-swift-stdlib
+          # TX-APP1Z: institute-application's Swift package moved from Application/ to
+          # the repository root. This checkout is pinned to a caller-supplied or
+          # hard-pinned revision, so it must build either layout. The probe retires
+          # once every pin in the fleet is post-flatten.
+
+
+          workspace_package_path=.workspace
+          if [ -f .workspace/Application/Package.swift ]; then
+            workspace_package_path=.workspace/Application
+          fi
+          swift run --package-path "$workspace_package_path" institute package build --package-path "$GITHUB_WORKSPACE/institute-receipt/Tools/institute-ci" --argument=--static-swift-stdlib
           mkdir -p .institute-ci-entry/bin
           cp "$(find institute-receipt/Tools/institute-ci/.build -name institute-ci -type f -perm /111 | head -1)" .institute-ci-entry/bin/institute-ci
           .institute-ci-entry/bin/institute-ci bootstrap-manifest --workspace-revision 72d4b2ae1e5b6a2b49fc22e0240dad0a34a9618f --sources-revision "$SOURCES_TREE" --toolchain swift-6.3 --os linux --arch x86_64 --provisioning uuid-dev,static-swift-stdlib --root .institute-ci-entry --executables bin/institute-ci --producer-run "$GITHUB_RUN_ID" > .institute-ci-entry/manifest.json

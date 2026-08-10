@@ -111,6 +111,9 @@ jobs:
           if [[ "$SWEEP_RESULT" == "success" ]]; then
             echo "All orgs converged cleanly — no tracking issue needed."
             echo "FILE_ISSUE=false" >> "$GITHUB_ENV"
+            # Convergence self-closure (#159): a clean sweep closes its own
+            # open tracking issue in the same run (step below).
+            echo "CLOSE_ISSUE=true" >> "$GITHUB_ENV"
             exit 0
           fi
 
@@ -145,3 +148,35 @@ jobs:
           body-file: ${{ runner.temp }}/issue-body.md
           label: 'metadata-sync'
           gh-token: ${{ steps.token.outputs.token }}
+
+      # Convergence self-closure (swift-institute/.github#159): a clean sweep
+      # closes its own open tracking issue, per the bot-issue contract.
+      # Title-matched, never label-keyed — a label that was never created
+      # would silently disable this close path. Dry-run runs never close
+      # (a dry-run success plans edits without applying them, so it is not
+      # convergence evidence).
+      - name: Close tracking issue on clean convergence
+        if: ${{ env.CLOSE_ISSUE == 'true' && inputs.dry-run != true }}
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          TITLE_PREFIX: 'Metadata sync run'
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          existing=$(gh issue list \
+            --repo swift-institute/.github \
+            --state open \
+            --search "\"${TITLE_PREFIX}\" in:title" \
+            --json number \
+            --jq '.[].number' || echo "")
+          if [[ -z "$existing" ]]; then
+            echo "Sweep clean and no open tracking issue to close."
+            exit 0
+          fi
+          for n in $existing; do
+            gh issue close "$n" \
+              --repo swift-institute/.github \
+              --reason completed \
+              --comment "Clean sweep: every org leg converged — ${RUN_URL}. An issue stays open only if the perfect end-state contains its fix; convergence proven by the cited clean run closes it. Auto-closed as completed by the owning workflow."
+            echo "closed #${n}"
+          done

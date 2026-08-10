@@ -168,6 +168,16 @@ on:
         type: boolean
         default: true
         description: "If true, configure credentialed git url rewrites (App-token primary, PRIVATE_REPO_TOKEN fallback) for github.com clones during DocC's `swift build`. Default true: most consumers depend on private deps; public-only consumers may pass false explicitly."
+      swift-image:
+        type: string
+        default: ""
+        description: |
+          Exact container image for this workflow's Swift job, supplied by the
+          universal swift-ci.yml as `needs.plan.outputs.linux-image`. Empty
+          (the standalone/dispatch path) falls back to `swift:<swift-version>`,
+          which is the terminal state once the floor's release image exists.
+          Carries the ONE release-floor exception rather than restating it
+          (swift-institute/.github#491).
       swift-version:
         type: string
         default: "6.3"
@@ -235,7 +245,7 @@ jobs:
             || github.event_name == 'schedule'
             || contains(github.event.head_commit.message, '[ci docs]') ) }}
     runs-on: ubuntu-latest
-    container: swift:${{ inputs.swift-version }}
+    container: ${{ inputs.swift-image || format('swift:{0}', inputs.swift-version) }}
     timeout-minutes: 60
     permissions:
       contents: read

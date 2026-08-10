@@ -485,7 +485,7 @@ jobs:
           inventory_digest_cause=""
           if [[ "$enumerated_private" -eq 0 ]]; then
             inventory_digest_cause="the sweep enumerated no private repositories, so there is no population to digest"
-          elif ! (cd .workspace && swift run --package-path Application -c release \
+          elif ! (cd .workspace && swift run -c release --package-path "$(test -f Application/Package.swift && echo Application || echo .)" \
                     institute inventory effective \
                       --inventory-scope effective \
                       --inventory-private-roster "$roster_file" \

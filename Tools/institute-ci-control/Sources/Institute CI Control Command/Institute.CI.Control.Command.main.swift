@@ -135,6 +135,32 @@ case "dependency-snapshot":
     }
     print(json)
 
+case "closure-evidence-audit":
+    // The #512 sweep face: verify that issues closed as completed cite
+    // run-URL evidence. `--orgs` is a comma-separated org list (the
+    // read-orgs composite's output, joined); GH_TOKEN carries the App
+    // installation token; `--dry-run` reports without mutating.
+    let rest = Array(arguments.dropFirst())
+    let organizations = value("--orgs", in: rest)
+        .split(separator: ",")
+        .map { $0.trimmingCharacters(in: .whitespaces) }
+        .filter { !$0.isEmpty }
+    if organizations.isEmpty { fail("closure-evidence-audit requires --orgs <org,org,...>") }
+    let sinceDays = Int(value("--since-days", in: rest)) ?? 2
+    let summary = environment("GITHUB_STEP_SUMMARY")
+    do throws(Institute.CI.Control.Application.ClosureEvidence.Error) {
+        let outcome = try Institute.CI.Control.Application.ClosureEvidence.audit(
+            organizations: organizations,
+            sinceDays: sinceDays,
+            token: environment("GH_TOKEN"),
+            mutate: !rest.contains("--dry-run"),
+            reportPath: value("--report", in: rest).isEmpty ? nil : value("--report", in: rest),
+            summaryPath: summary.isEmpty ? nil : summary)
+        print("compliant=\(outcome.compliant) violations=\(outcome.violations.count)")
+    } catch {
+        fail("closure-evidence-audit: \(error)")
+    }
+
 default:
-    fail("usage: institute-ci-control audit|audit-setup|cron-audit|dependency-snapshot ...")
+    fail("usage: institute-ci-control audit|audit-setup|closure-evidence-audit|cron-audit|dependency-snapshot ...")
 }

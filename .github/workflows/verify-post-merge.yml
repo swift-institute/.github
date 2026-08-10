@@ -40,7 +40,7 @@
 #
 # DESIGN NOTE — classification lives in Swift, dispatch stays bash glue
 # (swift-institute/.github#213): red/green/lost classification and the Bug
-# title/body are PullRequest.Transaction.PostMerge (Tools/pull-request-transaction), tested with
+# title/body are PullRequest.Transaction.PostMerge (swift-institute/institute-pull-request-transaction), tested with
 # fixtures per the deny-by-default discipline — the same engine the
 # wave-mode admission predicate lives in. The dispatch-and-poll machinery
 # around it (workflow_dispatch, discovery, status polling) has no decision
@@ -108,13 +108,41 @@ jobs:
         with:
           swift-version: '6.3'
 
+      # TX-1 of the reduction census (swift-institute/.github#515): the
+      # classifier now lives in its seeded repository,
+      # swift-institute/institute-pull-request-transaction, consumed here
+      # instead of the retiring Tools/ copy. The seed is private, so the
+      # checkout rides a transient App token scoped to exactly that one
+      # repository with contents:read (private-verification.yml's
+      # narrowed-mint shape); the source is pinned, never PR-controlled.
+      - name: Mint read-only token for the seeded transaction package
+        id: prt-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: swift-institute
+          repositories: institute-pull-request-transaction
+          permission-contents: read
+
+      - name: Checkout the seeded transaction package at exact main pin
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: swift-institute/institute-pull-request-transaction
+          # Advance with pin-advance flow; must stay a full SHA (branch-pin
+          # guard). Same pin as review-pr-transaction.yml and tools-tests.yml.
+          ref: 5528f99b5792c6bd65269b74f19d6e54e8b8316d
+          path: .pr-transaction
+          token: ${{ steps.prt-token.outputs.token }}
+          persist-credentials: false
+
       - name: Build the post-merge classifier
         id: build
         shell: bash
         run: |
           set -euo pipefail
-          swift build --package-path "Tools/pull-request-transaction" --product pr-transaction
-          bin_path=$(swift build --package-path "Tools/pull-request-transaction" --product pr-transaction --show-bin-path)
+          swift build --package-path ".pr-transaction" --product pr-transaction
+          bin_path=$(swift build --package-path ".pr-transaction" --product pr-transaction --show-bin-path)
           echo "bin-path=${bin_path}" >> "$GITHUB_OUTPUT"
 
       - name: Resolve exact drained repository
@@ -302,7 +330,7 @@ jobs:
             fallback_body=$(cat <<EOF
           ### Observed behavior
 
-          The mandatory post-merge full-tier verification watch on \`${TARGET_REPOSITORY}\` at \`${EXPECTED_HEAD}\` could not be classified: verify-post-merge.yml's own Swift classifier (Tools/pull-request-transaction) failed to build or run in this job.
+          The mandatory post-merge full-tier verification watch on \`${TARGET_REPOSITORY}\` at \`${EXPECTED_HEAD}\` could not be classified: verify-post-merge.yml's own Swift classifier (swift-institute/institute-pull-request-transaction) failed to build or run in this job.
 
           ### Expected behavior
 

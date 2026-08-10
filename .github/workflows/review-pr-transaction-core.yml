@@ -96,6 +96,38 @@ jobs:
           ref: ${{ job.workflow_sha }}
           persist-credentials: false
 
+      # TX-1 of the reduction census (swift-institute/.github#515): the
+      # transaction model now lives in its seeded repository,
+      # swift-institute/institute-pull-request-transaction, and this workflow
+      # consumes it from there instead of the retiring Tools/ copy. The seed
+      # is private, so the checkout rides a transient App token scoped to
+      # exactly that one repository with contents:read — the same
+      # narrowed-mint shape private-verification.yml uses for its subject.
+      # The token is minted BEFORE the reviewer token below and is never
+      # persisted; the source it fetches is pinned, not PR-controlled, so
+      # the "never execute PR-controlled source while the App token exists"
+      # invariant on the self-checkout above is preserved.
+      - name: Mint read-only token for the seeded transaction package
+        id: prt-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: swift-institute
+          repositories: institute-pull-request-transaction
+          permission-contents: read
+
+      - name: Checkout the seeded transaction package at exact main pin
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: swift-institute/institute-pull-request-transaction
+          # Advance with pin-advance flow; must stay a full SHA (branch-pin
+          # guard). Same pin as verify-post-merge.yml and tools-tests.yml.
+          ref: 5528f99b5792c6bd65269b74f19d6e54e8b8316d
+          path: .pr-transaction
+          token: ${{ steps.prt-token.outputs.token }}
+          persist-credentials: false
+
       - name: Select Swift 6.3
         uses: SwiftyLab/setup-swift@38f54a76b70d989321de9dc7c840618c08cf56e9 # v1.14.0
         with:
@@ -510,9 +542,9 @@ jobs:
                 }
               }
             ' > producer-input.json
-          swift run --package-path Tools/pull-request-transaction pr-transaction produce producer-input.json \
+          swift run --package-path .pr-transaction pr-transaction produce producer-input.json \
             > transaction.json
-          swift run --package-path Tools/pull-request-transaction pr-transaction review transaction.json
+          swift run --package-path .pr-transaction pr-transaction review transaction.json
           # The plan already passed the closed-union `verification` gate
           # above, so its sole top-level key is exactly one of the four
           # known profile names — safe to interpolate into the approval

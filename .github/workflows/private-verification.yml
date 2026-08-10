@@ -257,7 +257,7 @@ jobs:
           # Run from inside the Workspace checkout: `lint install` targets
           # the hierarchy of the root it is standing in, and that
           # hierarchy is the subject's ancestor by construction above.
-          (cd "$WORKSPACE_DIR" && swift run --package-path Application -c release \
+          (cd "$WORKSPACE_DIR" && swift run -c release --package-path "$(test -f Application/Package.swift && echo Application || echo .)" \
             institute lint install)
 
       - name: Run Workspace verification seal — subject code, fully contained

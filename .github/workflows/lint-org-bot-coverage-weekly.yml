@@ -61,13 +61,12 @@ jobs:
         if: ${{ needs.audit.outputs.gap-count != '0' && needs.audit.outputs.gap-count != '' }}
         uses: swift-institute/.github/.github/actions/upsert-tracking-issue@6f73c2ebff00e4f05375794905926bdd7a0ca14b  # main 2026-08-04, identity-pin to main HEAD (swift-institute/.github#286); no functional change to this action in range
         with:
-          token: ${{ steps.token.outputs.token }}
-          owner: swift-institute
-          repo: .github
+          repo: swift-institute/.github
           title-prefix: '[Org coverage]'
           title: '[Org coverage] Bot App / org secret / wrapper-file coverage gaps'
           label: 'org-coverage'
-          body-path: ${{ runner.temp }}/coverage-body/issue-body.md
+          body-file: ${{ runner.temp }}/coverage-body/issue-body.md
+          gh-token: ${{ steps.token.outputs.token }}
 
       - name: Close tracking issue when clean
         if: ${{ needs.audit.outputs.gap-count == '0' }}
