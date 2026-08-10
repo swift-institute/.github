@@ -724,7 +724,7 @@ jobs:
 
       - name: Enumerate org repos
         if: ${{ inputs.repo == '' }}
-        id: enum
+        id: enum-public
         uses: swift-institute/.github/.github/actions/enumerate-org-public-repos@6f73c2ebff00e4f05375794905926bdd7a0ca14b  # main 2026-08-04, identity-pin to main HEAD (swift-institute/.github#286); no functional change to this action in range
         with:
           org: ${{ inputs.org }}
@@ -745,7 +745,7 @@ jobs:
           SINGLE_REPO: ${{ inputs.repo }}
           INPUT_ORG: ${{ inputs.org }}
           INPUT_VISIBILITY: public
-          ENUM_REPOS: ${{ steps.enum.outputs.repos }}
+          ENUM_REPOS: ${{ steps.enum-public.outputs.repos }}
           APPLY_RULESETS: ${{ inputs.apply-rulesets }}
           REVERSE_DIR: ${{ runner.temp }}/reverse-payloads
         run: |

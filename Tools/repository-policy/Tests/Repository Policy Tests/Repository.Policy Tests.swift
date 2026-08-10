@@ -792,7 +792,7 @@ struct RepositoryPolicyTests {
         #expect(workflow.contains("permission-issues: read"))
         #expect(workflow.contains("repositories: ${{ steps.target.outputs.name }}"))
         let whitespaceNormalized = workflow
-            .components(separatedBy: .whitespacesAndNewlines)
+            .split(whereSeparator: \.isWhitespace)
             .joined(separator: " ")
         #expect(
             whitespaceNormalized.contains(
