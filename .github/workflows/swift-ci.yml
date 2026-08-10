@@ -1849,8 +1849,13 @@ jobs:
       #      canonical in between), rewrite it straight to the local pinned
       #      copy checked out above.
       #   2. Otherwise, if it points at some other org's own `.github`
-      #      canonical (the Tier 2 shape), fetch that Tier 2 file ONCE over
-      #      HTTPS, record the resolved org/ref/commit it actually served in
+      #      canonical (the Tier 2 shape), fetch that Tier 2 file ONCE via
+      #      git (#509: the release-floor container ships no curl, so the
+      #      former curl fetch failed as `command not found` and every
+      #      Tier 2 hop floated with a warning; git is already proven
+      #      present in this container by the checkout steps above, and a
+      #      shallow clone makes the fetch and the resolved-commit record
+      #      atomic), record the resolved org/ref/commit it actually served in
       #      the run log as an explicit, honest residual (this hop is
       #      pinned to "whatever main served at lint time", not to a fixed
       #      SHA — a real limitation, logged rather than hidden), rewrite
@@ -1906,17 +1911,34 @@ jobs:
               # resolution class: a Tier 2 config declaring `included:` would
               # otherwise resolve it against RUNNER_TEMP.
               tier2_local="${GITHUB_WORKSPACE}/.ci-pinned-tier2-${org}.swiftlint.yml"
-              if ! curl -fsSL -o "$tier2_local" "$tier2_url"; then
-                echo "::warning::$config: could not fetch Tier 2 config from $tier2_url — left unpinned (floating): $line"
+              # #509: fetch via git, not curl — the release-floor container
+              # ships no curl (curl is only apt-installed later, and only on
+              # a SwiftLint cache miss), so a curl fetch here failed with
+              # `command not found` and floated every Tier 2 hop. git is
+              # already exercised in this container by the checkout steps
+              # above; a shallow clone also yields the resolved commit from
+              # the same fetch instead of a second, separately-timed
+              # ls-remote.
+              tier2_src_dir="$(mktemp -d)"
+              if ! git clone --quiet --depth 1 --branch "$ref" --no-tags "https://github.com/${org}/.github" "$tier2_src_dir"; then
+                echo "::warning::$config: could not fetch Tier 2 config source ${org}/.github@${ref} (git clone failed; expected file $tier2_url) — left unpinned (floating): $line"
+                rm -rf "$tier2_src_dir"
                 continue
               fi
+              if [ ! -f "${tier2_src_dir}/.swiftlint.yml" ]; then
+                echo "::warning::$config: ${org}/.github@${ref} serves no .swiftlint.yml ($tier2_url) — left unpinned (floating): $line"
+                rm -rf "$tier2_src_dir"
+                continue
+              fi
+              cp "${tier2_src_dir}/.swiftlint.yml" "$tier2_local"
               # Record the residual honestly: this hop is fetched fresh at
               # lint time from $org/.github@$ref, resolved to whatever
               # commit that ref names right now. That commit, not a fixed
               # SHA, is what's actually pinned for the remainder of THIS
               # run (both hops rewritten below stay stable within the run);
               # a re-run later can still resolve $ref to a different commit.
-              resolved_sha=$(git ls-remote "https://github.com/${org}/.github" "$ref" | cut -f1)
+              resolved_sha="$(git -C "$tier2_src_dir" rev-parse HEAD)"
+              rm -rf "$tier2_src_dir"
               echo "Materialized Tier 2 config for $config: ${org}/.github@${ref} (resolved ${resolved_sha:-unknown at fetch time}) -> $tier2_local — RESIDUAL: this hop is fetched live each run, not pinned to a fixed commit."
               tier2_line=$(grep -E '^[[:space:]]*parent_config:' "$tier2_local" || true)
               if [[ "$tier2_line" =~ $tier1_re ]]; then
