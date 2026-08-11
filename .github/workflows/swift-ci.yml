@@ -829,22 +829,25 @@ jobs:
         env:
           TEST_FILTER: ${{ inputs.test-filter }}
         run: |
-          # [swift-institute/.github#165] A root-shape `swift test` over the
-          # sanctioned nested-test-package layout (Tests/Package.swift, which
-          # reaches the parent via `.package(path: "..")`) finds zero tests at
-          # the root and exits green without ever running them. Detect the
-          # nested layout and run the nested package's tests instead so the
-          # gate is non-vacuous. (POSIX sh — no bash arrays: some legs run
-          # inside a container image where `sh` is the default step shell.)
-          if [ -f Tests/Package.swift ]; then
-            echo "Nested test package detected (Tests/Package.swift); running tests from Tests/"
-            cd Tests
-          fi
+          # [swift-institute/.github#165/#538] The root and Tests/ manifests
+          # are independent package owners. Always test the root; when the
+          # sanctioned nested package exists, test it second as well. This
+          # preserves root-only and nested-only coverage while making the
+          # mixed layout non-lossy. (POSIX sh — no bash arrays.)
           if [ -n "$TEST_FILTER" ]; then
             FILTER=$(echo "$TEST_FILTER" | tr '-' '_')
             swift test -c debug --filter "$FILTER"
           else
             swift test -c debug
+          fi
+          if [ -f Tests/Package.swift ]; then
+            echo "Nested test package detected (Tests/Package.swift); running it after the root package"
+            cd Tests
+            if [ -n "$TEST_FILTER" ]; then
+              swift test -c debug --filter "$FILTER"
+            else
+              swift test -c debug
+            fi
           fi
 
   linux-release:
@@ -919,20 +922,22 @@ jobs:
             swift build -c release
             exit 0
           fi
-          # [swift-institute/.github#165] Detect the sanctioned nested-test-package
-          # layout (Tests/Package.swift) and run its tests instead of a root
-          # `swift test` that silently discovers zero tests and exits green.
-          # (POSIX sh — no bash arrays: some legs run inside a container image
-          # where `sh` is the default step shell.)
-          if [ -f Tests/Package.swift ]; then
-            echo "Nested test package detected (Tests/Package.swift); running tests from Tests/"
-            cd Tests
-          fi
+          # [swift-institute/.github#165/#538] Test the root package first,
+          # then the independent nested package when present (POSIX sh).
           if [ -n "$TEST_FILTER" ]; then
             FILTER=$(echo "$TEST_FILTER" | tr '-' '_')
             swift test -c release --filter "$FILTER"
           else
             swift test -c release
+          fi
+          if [ -f Tests/Package.swift ]; then
+            echo "Nested test package detected (Tests/Package.swift); running it after the root package"
+            cd Tests
+            if [ -n "$TEST_FILTER" ]; then
+              swift test -c release --filter "$FILTER"
+            else
+              swift test -c release
+            fi
           fi
 
   linux-nightly:
@@ -1001,20 +1006,22 @@ jobs:
         env:
           TEST_FILTER: ${{ inputs.test-filter }}
         run: |
-          # [swift-institute/.github#165] Detect the sanctioned nested-test-package
-          # layout (Tests/Package.swift) and run its tests instead of a root
-          # `swift test` that silently discovers zero tests and exits green.
-          # (POSIX sh — no bash arrays: some legs run inside a container image
-          # where `sh` is the default step shell.)
-          if [ -f Tests/Package.swift ]; then
-            echo "Nested test package detected (Tests/Package.swift); running tests from Tests/"
-            cd Tests
-          fi
+          # [swift-institute/.github#165/#538] Test the root package first,
+          # then the independent nested package when present (POSIX sh).
           if [ -n "$TEST_FILTER" ]; then
             FILTER=$(echo "$TEST_FILTER" | tr '-' '_')
             swift test -c release --filter "$FILTER"
           else
             swift test -c release
+          fi
+          if [ -f Tests/Package.swift ]; then
+            echo "Nested test package detected (Tests/Package.swift); running it after the root package"
+            cd Tests
+            if [ -n "$TEST_FILTER" ]; then
+              swift test -c release --filter "$FILTER"
+            else
+              swift test -c release
+            fi
           fi
 
   # ─── Swift 6.4.x release-branch nightly (advisory; upcoming-release signal) ──
@@ -1124,20 +1131,22 @@ jobs:
             swift build -c release
             exit 0
           fi
-          # [swift-institute/.github#165] Detect the sanctioned nested-test-package
-          # layout (Tests/Package.swift) and run its tests instead of a root
-          # `swift test` that silently discovers zero tests and exits green.
-          # (POSIX sh — no bash arrays: some legs run inside a container image
-          # where `sh` is the default step shell.)
-          if [ -f Tests/Package.swift ]; then
-            echo "Nested test package detected (Tests/Package.swift); running tests from Tests/"
-            cd Tests
-          fi
+          # [swift-institute/.github#165/#538] Test the root package first,
+          # then the independent nested package when present (POSIX sh).
           if [ -n "$TEST_FILTER" ]; then
             FILTER=$(echo "$TEST_FILTER" | tr '-' '_')
             swift test -c release --filter "$FILTER"
           else
             swift test -c release
+          fi
+          if [ -f Tests/Package.swift ]; then
+            echo "Nested test package detected (Tests/Package.swift); running it after the root package"
+            cd Tests
+            if [ -n "$TEST_FILTER" ]; then
+              swift test -c release --filter "$FILTER"
+            else
+              swift test -c release
+            fi
           fi
 
   windows-release:
@@ -1240,18 +1249,17 @@ jobs:
           # cost knob; remove the flag when swift-build consolidates the Libtool
           # response files upstream.
           $buildSystemArgs = @('--build-system', 'native')
-          # [swift-institute/.github#165] Detect the sanctioned nested-test-package
-          # layout (Tests/Package.swift) and run its tests instead of a root
-          # `swift test` that silently discovers zero tests and exits green.
+          # [swift-institute/.github#165/#538] Test the root package first,
+          # then the independent nested package when present.
+          swift test -c debug @buildSystemArgs @filterArgs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if (Test-Path "Tests/Package.swift") {
-            Write-Host "Nested test package detected (Tests/Package.swift); running tests from Tests/"
+            Write-Host "Nested test package detected (Tests/Package.swift); running it after the root package"
             Push-Location Tests
             swift test -c debug @buildSystemArgs @filterArgs
             $exitCode = $LASTEXITCODE
             Pop-Location
             if ($exitCode -ne 0) { exit $exitCode }
-          } else {
-            swift test -c debug @buildSystemArgs @filterArgs
           }
 
   # ─── Apple-simulator build (γ advisory; resource-bundle CodeSign gate) ──

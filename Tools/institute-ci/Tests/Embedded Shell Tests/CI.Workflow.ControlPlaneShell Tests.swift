@@ -18,6 +18,44 @@ struct ControlPlaneShellTests {
     static let workflow = ".github/workflows/swift-ci.yml"
     static let resolveSubjectStep = "Resolve CI subject"
 
+    /// The two manifests are two package owners, not an either/or layout.
+    /// These source controls cover every universal test leg without running
+    /// a package, so deleting either invocation from one platform fails the
+    /// workflow fixture before a consumer can receive a vacuous green.
+    @Suite
+    struct TestPackageSelection {
+        static let sites = [
+            ("macos-release", "Test"),
+            ("linux-release", "Build or test (release)"),
+            ("linux-nightly", "Test (release)"),
+            ("linux-6-4", "Build or test (release)"),
+            ("windows-release", "Test"),
+        ]
+
+        @Test(arguments: sites)
+        func `a nested manifest adds a second test run after the root`(
+            job: String, step: String
+        ) throws {
+            let shell = try EmbeddedShell.workflowStep(
+                ControlPlaneShellTests.workflow, job: job, step: step)
+            let rootRun: String
+            let nestedDetection: String
+            if job == "windows-release" {
+                rootRun = "swift test -c debug @buildSystemArgs @filterArgs"
+                nestedDetection = "if (Test-Path \"Tests/Package.swift\")"
+            } else {
+                rootRun = job == "macos-release"
+                    ? "swift test -c debug"
+                    : "swift test -c release"
+                nestedDetection = "if [ -f Tests/Package.swift ]; then"
+            }
+            let root = try #require(shell.script.range(of: rootRun))
+            let nested = try #require(shell.script.range(of: nestedDetection))
+            #expect(root.lowerBound < nested.lowerBound)
+            #expect(shell.script[nested.lowerBound...].contains(rootRun))
+        }
+    }
+
     /// The configured-rule path must not report a clean run over no
     /// measure.
     @Suite
