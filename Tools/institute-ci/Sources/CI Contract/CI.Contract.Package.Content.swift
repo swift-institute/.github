@@ -7,7 +7,7 @@ extension CI.Contract {
     /// resolution, compilation, or tests and therefore selects package work.
     public enum Package {
         public struct Content: Sendable, Equatable {
-            public struct Change: Sendable, Equatable {
+            public struct Change: Sendable, Equatable, Hashable {
                 public let path: String
                 public let previousPath: String?
 

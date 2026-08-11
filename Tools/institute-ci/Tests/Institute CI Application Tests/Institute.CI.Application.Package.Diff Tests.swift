@@ -13,7 +13,7 @@ struct `Package Diff Tests` {
             ])
             let changed = Institute.CI.Application.PackageDiff.packageContentChanged(
                 event: "pull_request",
-                payload: ["number": 1],
+                payload: ["number": 1, "pull_request": ["changed_files": 2]],
                 repository: "o/r",
                 workspace: workspace,
                 response: { _ in response }
@@ -29,7 +29,7 @@ struct `Package Diff Tests` {
             ]])
             let changed = Institute.CI.Application.PackageDiff.packageContentChanged(
                 event: "pull_request",
-                payload: ["number": 1],
+                payload: ["number": 1, "pull_request": ["changed_files": 1]],
                 repository: "o/r",
                 workspace: workspace,
                 response: { _ in response }
@@ -48,7 +48,7 @@ struct `Package Diff Tests` {
         try withWorkspace { workspace in
             let changed = Institute.CI.Application.PackageDiff.packageContentChanged(
                 event: "pull_request",
-                payload: ["number": 1],
+                payload: ["number": 1, "pull_request": ["changed_files": 1]],
                 repository: "o/r",
                 workspace: workspace,
                 response: { _ in Data(response.utf8) }
@@ -74,6 +74,72 @@ struct `Package Diff Tests` {
                 response: { _ in response }
             )
             #expect(changed)
+        }
+    }
+
+    @Test func `missing invalid or capped pull request count selects package work`() throws {
+        try withWorkspace { workspace in
+            let response = try JSONSerialization.data(withJSONObject: [[
+                ["filename": "Research/receipt.md"],
+            ]])
+            for pullRequest: [String: Any] in [
+                [:],
+                ["changed_files": "1"],
+                ["changed_files": true],
+                ["changed_files": 1.0],
+                ["changed_files": -1],
+                ["changed_files": 3_000],
+            ] {
+                let changed = Institute.CI.Application.PackageDiff.packageContentChanged(
+                    event: "pull_request",
+                    payload: ["number": 1, "pull_request": pullRequest],
+                    repository: "o/r",
+                    workspace: workspace,
+                    response: { _ in response }
+                )
+                #expect(changed)
+            }
+        }
+    }
+
+    @Test(arguments: [
+        (1, [["filename": "Research/receipt.md"], ["filename": "Research/other.md"]]),
+        (2, [["filename": "Research/receipt.md"], ["filename": "Research/receipt.md"]]),
+        (2, [
+            ["filename": "Research/receipt.md", "previous_filename": "Research/old-a.md"],
+            ["filename": "Research/receipt.md", "previous_filename": "Research/old-b.md"],
+        ]),
+    ])
+    func `mismatched or duplicate pull request records select package work`(
+        expected: Int,
+        records: [[String: String]]
+    ) throws {
+        try withWorkspace { workspace in
+            let response = try JSONSerialization.data(withJSONObject: [records])
+            let changed = Institute.CI.Application.PackageDiff.packageContentChanged(
+                event: "pull_request",
+                payload: ["number": 1, "pull_request": ["changed_files": expected]],
+                repository: "o/r",
+                workspace: workspace,
+                response: { _ in response }
+            )
+            #expect(changed)
+        }
+    }
+
+    @Test func `complete pull request count immediately below cap remains non package work`() throws {
+        try withWorkspace { workspace in
+            let expected = Institute.CI.Application.PackageDiff.pullRequestFileLimit - 1
+            let records = (0..<expected).map { ["filename": "Research/\($0).md"] }
+            let response = try JSONSerialization.data(withJSONObject: [records])
+            let changed = Institute.CI.Application.PackageDiff.packageContentChanged(
+                event: "pull_request",
+                payload: ["number": 1, "pull_request": ["changed_files": expected]],
+                repository: "o/r",
+                workspace: workspace,
+                response: { _ in response }
+            )
+            #expect(!changed)
         }
     }
 

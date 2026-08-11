@@ -9,6 +9,11 @@ extension Institute.CI.Application {
     public enum PackageDiff {
         enum Error: Swift.Error { case event, comparison, response }
 
+        /// GitHub's pull-files endpoint stops after this many records. An
+        /// advertised count at the limit cannot prove that the list is
+        /// complete, even when the decoded response contains 3,000 records.
+        static let pullRequestFileLimit = 3_000
+
         public static func packageContentChanged(
             event: String,
             eventPath: String,
@@ -38,9 +43,14 @@ extension Institute.CI.Application {
             do throws(Error) {
                 let changes: [CI.Contract.Package.Content.Change]
                 if event == "pull_request" {
-                    guard let number = payload["number"] as? Int else { throw .event }
-                    changes = try files(
+                    guard let number = integer(payload["number"]), number > 0,
+                        let pullRequest = payload["pull_request"] as? [String: Any],
+                        let expected = integer(pullRequest["changed_files"]),
+                        expected >= 0, expected < pullRequestFileLimit
+                    else { throw .event }
+                    changes = try pullRequestFiles(
                         at: "repos/\(repository)/pulls/\(number)/files?per_page=100",
+                        expected: expected,
                         response: response
                     )
                 } else {
@@ -105,6 +115,23 @@ extension Institute.CI.Application {
                     response: response
                 )
             }
+            return changes
+        }
+
+        /// The event's advertised cardinality binds the paginated response.
+        /// Without it, a capped or short response can be valid JSON and still
+        /// be incomplete. Duplicate filenames are ambiguous as well: GitHub
+        /// advertises a pull request's changed files as distinct records.
+        static func pullRequestFiles(
+            at endpoint: String,
+            expected: Int,
+            response: (String) throws(Error) -> Data
+        ) throws(Error) -> [CI.Contract.Package.Content.Change] {
+            let changes = try files(at: endpoint, response: response)
+            guard changes.count == expected,
+                Set(changes).count == expected,
+                Set(changes.map(\.path)).count == expected
+            else { throw .response }
             return changes
         }
 
@@ -201,6 +228,20 @@ extension Institute.CI.Application {
 
         static func isZero(_ revision: String) -> Bool {
             revision.count == 40 && revision.allSatisfy { $0 == "0" }
+        }
+
+        /// `JSONSerialization` represents JSON numbers as `NSNumber`. Do
+        /// not accept a boolean, floating-point value, string, or a value
+        /// that cannot be represented exactly as Swift's `Int` for an event
+        /// field whose schema is an integer.
+        static func integer(_ value: Any?) -> Int? {
+            guard let number = value as? NSNumber,
+                CFGetTypeID(number) != CFBooleanGetTypeID(),
+                ["c", "C", "s", "S", "i", "I", "l", "L", "q", "Q"].contains(
+                    String(cString: number.objCType)
+                )
+            else { return nil }
+            return Int(number.stringValue)
         }
     }
 }
