@@ -263,6 +263,63 @@ struct CIContractPlanTests {
 }
 
 @Suite
+struct CIContractPackageContentTests {
+    let content = CI.Contract.Package.Content(declaredRoots: ["", "Tools/Generator"])
+
+    @Test func packageInputsSelectAutomaticBuildAndTestWork() {
+        for path in [
+            "Package.swift", "Tools/Generator/Package.swift", "Sources/Library/Value.swift",
+            "Tools/Generator/Sources/Generator/Value.swift",
+            "Tests/Library Tests/Value Tests.swift", "Tools/Generator/Tests/Generator Tests.swift",
+            "Plugins/Generator/plugin.swift",
+            "Resources/fixture.json", "Sources/C/module.modulemap", "Sources/C/include/value.h",
+            ".swiftpm/configuration/registries.json",
+        ] {
+            #expect(content.changed([.init(path: path)]), Comment(rawValue: path))
+        }
+    }
+
+    @Test func researchExperimentsAndOrdinaryDocumentationDoNotSelectPackageWork() {
+        #expect(!content.changed([
+            .init(path: "Research/path-planning.md"),
+            .init(path: "Experiments/comparison.json"),
+            .init(path: "Documentation/migration.md"),
+            .init(path: "README.md"),
+            .init(path: "Provenance/receipt.json"),
+        ]))
+    }
+
+    @Test func renamedPackageInputUsesBothSidesOfTheRename() {
+        #expect(content.changed([
+            .init(path: "Research/moved.md", previousPath: "Sources/Library/Value.swift")
+        ]))
+    }
+
+    @Test func removingTheLastPackageInputFromMixedDiffChangesOnlyTheBuildSelection() throws {
+        let mixed = try CI.Contract.Plan(
+            ref: "refs/heads/feature", event: "pull_request", lintBundle: "institute",
+            packageContentChanged: content.changed([
+                .init(path: "Research/receipt.md"), .init(path: "Sources/Library/Value.swift"),
+            ]))
+        let nonPackage = try CI.Contract.Plan(
+            ref: "refs/heads/feature", event: "pull_request", lintBundle: "institute",
+            packageContentChanged: content.changed([.init(path: "Research/receipt.md")]))
+        #expect(mixed.legs.map(\.id) == ["format", "lint", "swift-linter", "linux-release", "linux-6-4"])
+        #expect(nonPackage.legs.map(\.id) == ["format", "lint", "swift-linter"])
+        #expect(nonPackage.gating.map(\.id) == ["format", "lint", "swift-linter"])
+    }
+
+    @Test func fullDispatchKeepsBuildAndTestWorkWhenItsDiffIsNonPackage() throws {
+        let plan = try CI.Contract.Plan(
+            ref: "refs/heads/feature", event: "workflow_dispatch", lintBundle: "institute",
+            packageContentChanged: false)
+        #expect(plan.tier == .full)
+        #expect(plan.legs.map(\.id).contains("linux-release"))
+        #expect(plan.legs.map(\.id).contains("windows-release"))
+    }
+}
+
+@Suite
 struct CIContractAggregateTests {
     static let participants = ["macos-release", "linux-release", "windows-release",
                                "format", "lint", "swift-linter"]
@@ -352,6 +409,18 @@ struct CIContractAggregateTests {
             requireFullTier: false)
         #expect(!verdict.pass)
         #expect(verdict.findings.contains(.nothingBuilt))
+    }
+
+    @Test
+    func policySkippedBuildLegIsNotConfusedWithASelectedSkippedLeg() {
+        let verdict = CI.Contract.AggregateVerdict(
+            planResult: "success",
+            results: needs(["format": "success", "lint": "success", "swift-linter": "success"]),
+            gating: ["format", "lint", "swift-linter"],
+            subjectRepository: "o/r", subjectSha: "abc", tier: "build",
+            requireFullTier: false, packageContentChanged: false)
+        #expect(verdict.pass)
+        #expect(verdict.built.isEmpty)
     }
 
     /// The descheduled record is the audited third state: a descheduled leg

@@ -45,6 +45,7 @@ extension CI.Contract {
             subjectSha: String,
             tier: String,
             requireFullTier: Bool,
+            packageContentChanged: Bool = true,
             descheduled: [String] = []
         ) {
             var findings: [Finding] = []
@@ -85,7 +86,7 @@ extension CI.Contract {
                     built.append(job)
                 }
             }
-            if built.isEmpty {
+            if packageContentChanged && built.isEmpty {
                 findings.append(.nothingBuilt)
             }
             self.findings = findings

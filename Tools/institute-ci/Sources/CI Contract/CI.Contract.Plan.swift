@@ -52,6 +52,7 @@ extension CI.Contract {
         public let tier: Tier
         public let legs: [Leg]
         public let descheduled: [Descheduled]
+        public let packageContentChanged: Bool
         public var gating: [Leg] { legs.filter(\.gating) }
 
         static let fullTierLegs = [
@@ -84,6 +85,7 @@ extension CI.Contract {
             event: String,
             platformSupport: String = "",
             lintBundle: String,
+            packageContentChanged: Bool = true,
             nightlyDisposition: NightlyException.Disposition = .active
         ) throws(Error) {
             guard ["primitives", "standards", "institute"].contains(lintBundle) else {
@@ -108,6 +110,8 @@ extension CI.Contract {
             if ref == "refs/heads/main" { tier = .full }
             let selected = tier ?? .build
             self.tier = selected
+            let packageContentChanged = packageContentChanged || event == "workflow_dispatch"
+            self.packageContentChanged = packageContentChanged
 
             var legIds: [String]
             switch selected {
@@ -128,6 +132,12 @@ extension CI.Contract {
             }
             if lintBundle == "primitives" {
                 legIds += Self.primitivesAdvisoryLegs
+            }
+            if !packageContentChanged {
+                legIds.removeAll { Leg($0).buildLeg || [
+                    "linux-6-4", "linux-nightly", "apple-simulator-build", "embedded",
+                    "embedded-wasm-sdk", "android-build", "static-linux-musl-build",
+                ].contains($0) }
             }
             if !families.isEmpty {
                 legIds = legIds.filter { id in
@@ -151,7 +161,7 @@ extension CI.Contract {
             }
             self.descheduled = descheduled
             let legs = legIds.map(Leg.init)
-            guard legs.contains(where: { $0.gating && $0.buildLeg }) else {
+            guard !packageContentChanged || legs.contains(where: { $0.gating && $0.buildLeg }) else {
                 throw .noGatingBuildLeg(tier: selected, platformSupport: platformSupport)
             }
             self.legs = legs

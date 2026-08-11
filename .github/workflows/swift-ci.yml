@@ -37,11 +37,13 @@ name: Swift CI (reusable)
 # across 288 repositories. One of them hid a Signal 4 trap in
 # swift-array-primitives for six days (swift-primitives/swift-array-primitives#3).
 #
-# Its premise — "a docs-only diff cannot change the build outcome" — is false
-# on this fleet, because packages float their dependencies on `main` with no
-# Package.resolved. The tree that a mechanical push builds is not the tree the
-# last build-tier run verified. A sound fast path would have to key on the
-# resolved graph, not on the diff; until something does, `build` is the floor.
+# PACKAGE-CONTENT PLANNING (#533): the Swift-owned planner retrieves the full
+# event diff and selects no automatic package build/test work only for a
+# complete, allowlisted non-package transaction. Unknown paths, incomplete
+# ranges, new/deleted push ranges, and API failures select package work. This
+# narrows scheduling only: policy/style checks, documentation, shape
+# enforcement, and ci-ok still execute; an explicit workflow dispatch remains
+# full-tier regardless of its event diff.
 #
 # Consume from a caller package's .github/workflows/ci.yml via:
 #
@@ -388,6 +390,7 @@ jobs:
       tier: ${{ steps.classify.outputs.tier }}
       legs: ${{ steps.classify.outputs.legs }}
       gating: ${{ steps.classify.outputs.gating }}
+      package-content-changed: ${{ steps.classify.outputs.package-content-changed }}
       # `leg=reason` records for legs the plan removed with a typed reason
       # (currently only linux-nightly on an expired NightlyException).
       # Empty on every current-date run. ci-ok audits each named leg as
@@ -732,6 +735,9 @@ jobs:
         env:
           FORCED_TIER: ${{ inputs.tier }}
           EVENT_NAME: ${{ github.event_name }}
+          EVENT_PATH: ${{ github.event_path }}
+          WORKFLOW_REPOSITORY: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
           HEAD_MSG: ${{ github.event.head_commit.message }}
           PLATFORM_SUPPORT: ${{ inputs.platform-support }}
           LINT_BUNDLE: ${{ inputs.lint-bundle }}
@@ -739,28 +745,33 @@ jobs:
           SUBJECT_REPOSITORY: ${{ steps.resolve-subject.outputs.subject-repository }}
         run: |
           set -euo pipefail
-          PLAN_JSON="$(.institute-ci-entry/bin/institute-ci plan --tier "$FORCED_TIER" --ref "$GITHUB_REF" --head-message "$HEAD_MSG" --event "$EVENT_NAME" --platform-support "$PLATFORM_SUPPORT" --lint-bundle "$LINT_BUNDLE" --subject-repository "$SUBJECT_REPOSITORY" --nightly-main-image "$SWIFT_MAIN_NIGHTLY_IMAGE" --nightly-main-upstream-issue "$SWIFT_MAIN_NIGHTLY_UPSTREAM_ISSUE" --nightly-main-recheck "$SWIFT_MAIN_NIGHTLY_RECHECK" --swift-version "$SWIFT_VERSION" --release-floor-image "$SWIFT_RELEASE_FLOOR_IMAGE" --release-floor-upstream-release "$SWIFT_RELEASE_FLOOR_UPSTREAM_RELEASE" --release-floor-recheck "$SWIFT_RELEASE_FLOOR_RECHECK" --today "$(date -u +%F)")"
+          PLAN_JSON="$(.institute-ci-entry/bin/institute-ci plan --tier "$FORCED_TIER" --ref "$GITHUB_REF" --head-message "$HEAD_MSG" --event "$EVENT_NAME" --event-path "$EVENT_PATH" --workflow-repository "$WORKFLOW_REPOSITORY" --workspace "$GITHUB_WORKSPACE" --platform-support "$PLATFORM_SUPPORT" --lint-bundle "$LINT_BUNDLE" --subject-repository "$SUBJECT_REPOSITORY" --nightly-main-image "$SWIFT_MAIN_NIGHTLY_IMAGE" --nightly-main-upstream-issue "$SWIFT_MAIN_NIGHTLY_UPSTREAM_ISSUE" --nightly-main-recheck "$SWIFT_MAIN_NIGHTLY_RECHECK" --swift-version "$SWIFT_VERSION" --release-floor-image "$SWIFT_RELEASE_FLOOR_IMAGE" --release-floor-upstream-release "$SWIFT_RELEASE_FLOOR_UPSTREAM_RELEASE" --release-floor-recheck "$SWIFT_RELEASE_FLOOR_RECHECK" --today "$(date -u +%F)")"
           TIER="$(jq -r '.tier' <<< "$PLAN_JSON")"
           LEGS="$(jq -r '.legs' <<< "$PLAN_JSON")"
           GATING="$(jq -r '.gating' <<< "$PLAN_JSON")"
           LINUX_IMAGE="$(jq -r '."linux-image"' <<< "$PLAN_JSON")"
           DESCHEDULED="$(jq -r '.descheduled' <<< "$PLAN_JSON")"
+          PACKAGE_CONTENT_CHANGED="$(jq -r '."package-content-changed"' <<< "$PLAN_JSON")"
           echo "tier=$TIER" >> "$GITHUB_OUTPUT"
           echo "legs=$LEGS" >> "$GITHUB_OUTPUT"
           echo "gating=$GATING" >> "$GITHUB_OUTPUT"
           echo "linux-image=$LINUX_IMAGE" >> "$GITHUB_OUTPUT"
           echo "descheduled=$DESCHEDULED" >> "$GITHUB_OUTPUT"
+          echo "package-content-changed=$PACKAGE_CONTENT_CHANGED" >> "$GITHUB_OUTPUT"
           echo "Selected tier: $TIER"
           echo "legs: $LEGS"
           echo "gating: $GATING"
           echo "linux image: $LINUX_IMAGE"
           echo "descheduled: ${DESCHEDULED:-none}"
+          echo "package content changed: $PACKAGE_CONTENT_CHANGED"
           {
             echo "## CI tier: \`$TIER\` (planned by institute-ci)"
             echo ""
             echo "Selected legs: \`$LEGS\`"
             echo ""
             echo "Gating: \`$GATING\`. \`ci-ok\` attests the SELECTED tier and names it — a gating leg that is skipped without appearing here fails the run (2026-07-28)."
+            echo ""
+            echo "Package content changed: \`$PACKAGE_CONTENT_CHANGED\`. When false, package build/test legs are absent while quality gates and ci-ok remain selected."
             if [ -n "$DESCHEDULED" ]; then
               echo ""
               echo "> [!WARNING]"
@@ -2896,6 +2907,7 @@ jobs:
           PLANNED_SUBJECT_REPOSITORY: ${{ needs.plan.outputs.subject-repository }}
           PLANNED_SUBJECT_SHA: ${{ needs.plan.outputs.subject-sha }}
           PLANNED_DESCHEDULED: ${{ needs.plan.outputs.descheduled }}
+          PLANNED_PACKAGE_CONTENT_CHANGED: ${{ needs.plan.outputs.package-content-changed }}
           REQUIRE_FULL_TIER: ${{ github.ref == 'refs/heads/main' }}
         run: |
           set -euo pipefail
@@ -2904,7 +2916,7 @@ jobs:
             FLAGS+=(--require-full-tier)
           fi
           RC=0
-          VERDICT="$(.institute-ci-entry/bin/institute-ci aggregate --needs-json "$NEEDS_JSON" --gating "$PLANNED_GATING" --subject-repository "$PLANNED_SUBJECT_REPOSITORY" --subject-sha "$PLANNED_SUBJECT_SHA" --tier "$PLANNED_TIER" --descheduled "$PLANNED_DESCHEDULED" "${FLAGS[@]}" 2> >(tee /tmp/aggregate-findings.txt >&2))" || RC=$?
+          VERDICT="$(.institute-ci-entry/bin/institute-ci aggregate --needs-json "$NEEDS_JSON" --gating "$PLANNED_GATING" --subject-repository "$PLANNED_SUBJECT_REPOSITORY" --subject-sha "$PLANNED_SUBJECT_SHA" --tier "$PLANNED_TIER" --package-content-changed "$PLANNED_PACKAGE_CONTENT_CHANGED" --descheduled "$PLANNED_DESCHEDULED" "${FLAGS[@]}" 2> >(tee /tmp/aggregate-findings.txt >&2))" || RC=$?
           {
             if [ "$RC" -eq 0 ]; then
               echo "## ci-ok: pass (tier \`${PLANNED_TIER:-unknown}\`, aggregated by institute-ci)"
