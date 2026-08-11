@@ -15,21 +15,45 @@ extension Institute.CI.Application {
             repository: String,
             workspace: String
         ) -> Bool {
-            guard event == "pull_request" || event == "push" else { return true }
             do throws(Error) {
                 let payload = try eventPayload(at: eventPath)
+                return packageContentChanged(
+                    event: event,
+                    payload: payload,
+                    repository: repository,
+                    workspace: workspace,
+                    response: response(at:)
+                )
+            } catch { return true }
+        }
+
+        static func packageContentChanged(
+            event: String,
+            payload: [String: Any],
+            repository: String,
+            workspace: String,
+            response: (String) throws(Error) -> Data
+        ) -> Bool {
+            guard event == "pull_request" || event == "push" else { return true }
+            do throws(Error) {
                 let changes: [CI.Contract.Package.Content.Change]
                 if event == "pull_request" {
                     guard let number = payload["number"] as? Int else { throw .event }
                     changes = try files(
-                        at: "repos/\(repository)/pulls/\(number)/files?per_page=100"
+                        at: "repos/\(repository)/pulls/\(number)/files?per_page=100",
+                        response: response
                     )
                 } else {
                     guard let before = payload["before"] as? String,
                         let after = payload["after"] as? String,
                         !isZero(before), !isZero(after)
                     else { throw .comparison }
-                    changes = try pushChanges(repository: repository, before: before, after: after)
+                    changes = try pushChanges(
+                        repository: repository,
+                        before: before,
+                        after: after,
+                        response: response
+                    )
                 }
                 return CI.Contract.Package.Content(declaredRoots: packageRoots(in: workspace))
                     .changed(changes)
@@ -49,39 +73,87 @@ extension Institute.CI.Application {
         static func pushChanges(
             repository: String,
             before: String,
-            after: String
+            after: String,
+            response: (String) throws(Error) -> Data
         ) throws(Error) -> [CI.Contract.Package.Content.Change] {
             let pages = try objects(
-                at: "repos/\(repository)/compare/\(before)...\(after)?per_page=100"
+                at: "repos/\(repository)/compare/\(before)...\(after)?per_page=100",
+                response: response
             )
             guard !pages.isEmpty else { throw .comparison }
-            let expected = pages.compactMap { $0["total_commits"] as? Int }.max() ?? 0
-            let commits = Set(
-                pages.flatMap {
-                    ($0["commits"] as? [[String: Any]] ?? [])
-                        .compactMap { $0["sha"] as? String }
+            guard let expected = pages.first?["total_commits"] as? Int, expected >= 0 else {
+                throw .comparison
+            }
+            var commits: [String] = []
+            for page in pages {
+                guard page["total_commits"] as? Int == expected,
+                    let records = page["commits"] as? [Any]
+                else { throw .comparison }
+                for record in records {
+                    guard let object = record as? [String: Any],
+                        let sha = object["sha"] as? String,
+                        !sha.isEmpty
+                    else { throw .comparison }
+                    commits.append(sha)
                 }
-            )
-            guard commits.count == expected else { throw .comparison }
+            }
+            guard commits.count == expected, Set(commits).count == expected else { throw .comparison }
             var changes: [CI.Contract.Package.Content.Change] = []
-            for commit in commits.sorted() {
-                changes += try files(at: "repos/\(repository)/commits/\(commit)?per_page=100")
+            for commit in commits {
+                changes += try files(
+                    at: "repos/\(repository)/commits/\(commit)?per_page=100",
+                    response: response
+                )
             }
             return changes
         }
 
-        static func files(at endpoint: String) throws(Error) -> [CI.Contract.Package.Content.Change]
-        {
-            try objects(at: endpoint).flatMap { object in
-                let files: [[String: Any]] = object["files"] as? [[String: Any]] ?? [object]
-                return files.compactMap { file -> CI.Contract.Package.Content.Change? in
-                    guard let path = file["filename"] as? String else { return nil }
-                    return .init(path: path, previousPath: file["previous_filename"] as? String)
+        static func files(
+            at endpoint: String,
+            response: (String) throws(Error) -> Data
+        ) throws(Error) -> [CI.Contract.Package.Content.Change] {
+            var changes: [CI.Contract.Package.Content.Change] = []
+            for page in try pages(from: response(endpoint)) {
+                let records: [Any]
+                if let object = page as? [String: Any] {
+                    guard let files = object["files"] as? [Any] else { throw .response }
+                    records = files
+                } else if let array = page as? [Any] {
+                    records = array
+                } else {
+                    throw .response
+                }
+                for record in records {
+                    guard let file = record as? [String: Any],
+                        let path = file["filename"] as? String,
+                        !path.isEmpty
+                    else { throw .response }
+                    let previousPath: String?
+                    if let previous = file["previous_filename"] {
+                        guard let path = previous as? String, !path.isEmpty else { throw .response }
+                        previousPath = path
+                    } else {
+                        previousPath = nil
+                    }
+                    changes.append(.init(path: path, previousPath: previousPath))
                 }
             }
+            return changes
         }
 
-        static func objects(at endpoint: String) throws(Error) -> [[String: Any]] {
+        static func objects(
+            at endpoint: String,
+            response: (String) throws(Error) -> Data
+        ) throws(Error) -> [[String: Any]] {
+            var objects: [[String: Any]] = []
+            for page in try pages(from: response(endpoint)) {
+                guard let object = page as? [String: Any] else { throw .response }
+                objects.append(object)
+            }
+            return objects
+        }
+
+        static func response(at endpoint: String) throws(Error) -> Data {
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
             process.arguments = ["gh", "api", "--paginate", "--slurp", endpoint]
@@ -94,22 +166,18 @@ extension Institute.CI.Application {
             guard (try? process.run()) != nil else { throw .response }
             process.waitUntilExit()
             guard process.terminationStatus == 0 else { throw .response }
-            // swift-linter:disable:next try optional
-            // REASON: JSONSerialization reports an untyped decoding error; an unreadable response is fail-closed.
-            // swiftlint:disable no_try_optional
-            guard
-                let object = try? JSONSerialization.jsonObject(
-                    with: output.fileHandleForReading.readDataToEndOfFile()
-                )
-            else { throw .response }
-            // swiftlint:enable no_try_optional
-            return flatten(object)
+            return output.fileHandleForReading.readDataToEndOfFile()
         }
 
-        static func flatten(_ object: Any) -> [[String: Any]] {
-            if let dictionary = object as? [String: Any] { return [dictionary] }
-            if let array = object as? [Any] { return array.flatMap(flatten) }
-            return []
+        static func pages(from data: Data) throws(Error) -> [Any] {
+            // swift-linter:disable:next try optional
+            // REASON: JSONSerialization reports an untyped decoding error; malformed complete-diff output is fail-closed.
+            // swiftlint:disable:next no_try_optional
+            guard let object = try? JSONSerialization.jsonObject(with: data),
+                let pages = object as? [Any],
+                !pages.isEmpty
+            else { throw .response }
+            return pages
         }
 
         static func packageRoots(in workspace: String) -> [String] {

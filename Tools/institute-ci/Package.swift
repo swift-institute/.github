@@ -123,6 +123,13 @@ let package = Package(
             dependencies: ["CI Contract"]
         ),
         .testTarget(
+            name: "Institute CI Application Tests",
+            dependencies: [
+                .target(name: "Institute CI Application"),
+                .target(name: "Institute Receipt"),
+            ]
+        ),
+        .testTarget(
             name: "CI Workflow Tests",
             dependencies: ["CI Workflow"]
         ),
