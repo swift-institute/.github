@@ -168,6 +168,10 @@ on:
         type: boolean
         default: true
         description: "If true, configure credentialed git url rewrites (App-token primary, PRIVATE_REPO_TOKEN fallback) for github.com clones during DocC's `swift build`. Default true: most consumers depend on private deps; public-only consumers may pass false explicitly."
+      enabled:
+        type: boolean
+        default: false
+        description: "Temporary circuit breaker for the DocC archive job. Default false: the archive has no current consumer, while its fresh `institute-ci` bootstrap is disproportionately expensive. Restore to true only with a measured replacement for that bootstrap."
       swift-image:
         type: string
         default: ""
@@ -238,7 +242,8 @@ jobs:
     # `github.event.head_commit` is null on pull_request events; `contains`
     # coerces null to '' and returns false, so PRs take the skip path.
     if: >-
-      ${{ !github.event.repository.private
+      ${{ inputs.enabled
+          && !github.event.repository.private
           && ( inputs.target-repo != ''
             || startsWith(github.ref, 'refs/tags/')
             || github.event_name == 'workflow_dispatch'
