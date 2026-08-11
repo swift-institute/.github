@@ -1,4 +1,5 @@
 import CI_Contract
+import CoreFoundation
 import Foundation
 import Institute_Receipt
 
