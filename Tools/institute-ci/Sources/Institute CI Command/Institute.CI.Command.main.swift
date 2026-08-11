@@ -86,11 +86,17 @@ case "plan":
             event: value("--event", in: rest),
             platformSupport: value("--platform-support", in: rest),
             lintBundle: value("--lint-bundle", in: rest),
+            packageContentChanged: Institute.CI.Application.PackageDiff.packageContentChanged(
+                event: value("--event", in: rest),
+                eventPath: value("--event-path", in: rest),
+                repository: value("--workflow-repository", in: rest),
+                workspace: value("--workspace", in: rest)),
             nightlyDisposition: nightlyDisposition)
         let payload: [String: Any] = [
             "tier": plan.tier.rawValue,
             "legs": plan.legs.map(\.id).joined(separator: ","),
             "gating": plan.gating.map(\.id).joined(separator: ","),
+            "package-content-changed": plan.packageContentChanged,
             "linux-image": linuxImage,
             // `leg=reason` records; empty when nothing was descheduled.
             "descheduled": plan.descheduled
@@ -123,6 +129,7 @@ case "aggregate":
         subjectSha: value("--subject-sha", in: rest),
         tier: value("--tier", in: rest),
         requireFullTier: rest.contains("--require-full-tier"),
+        packageContentChanged: value("--package-content-changed", in: rest) != "false",
         // `leg=reason` records from the plan; the audit keys on leg ids.
         descheduled: value("--descheduled", in: rest)
             .split(separator: ",")
