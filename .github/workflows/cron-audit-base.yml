@@ -13,8 +13,9 @@
 # Phase C of the 2026-05-14 CI review (Q2=B sealed) refactored the
 # free-form `audit-step:` shell-string contract into the structured-
 # input contract below. The `institute-ci-control cron-audit` driver
-# (Tools/institute-ci-control, `Fleet.Audit`) is the only entry point;
-# callers MUST NOT supply shell snippets. This closes the
+# (swift-institute/institute-continuous-integration-control, `Fleet.Audit`;
+# extracted from the Tools/ copy by TX-3, swift-institute/.github#515) is
+# the only entry point; callers MUST NOT supply shell snippets. This closes the
 # HIGH-CONDITIONAL template-injection finding from
 # CI-REVIEW-security-2026-05-14.md (the prior `audit-step:` interpolated
 # caller-supplied bash into a job that holds a cross-org App-installation
@@ -194,7 +195,7 @@ jobs:
           # typed provisioning input as `.github/actions/institute-ci`; that
           # action installs it explicitly for the same reason this does —
           # `install-system-deps` derives from the workspace root, and this
-          # package lives under `.swift-institute-github/`, where the
+          # package lives under `.institute-ci-control/`, where the
           # derivation cannot see it.
           apt-get install -qq -y curl python3 git uuid-dev
           # gh CLI install on swift:* container (not in base; required for `gh repo list`)
@@ -241,33 +242,63 @@ jobs:
           # typed provisioning input as `.github/actions/institute-ci`; that
           # action installs it explicitly for the same reason this does —
           # `install-system-deps` derives from the workspace root, and this
-          # package lives under `.swift-institute-github/`, where the
+          # package lives under `.institute-ci-control/`, where the
           # derivation cannot see it.
           sudo apt-get update -qq
           sudo apt-get install -qq -y uuid-dev
 
-      - name: Fetch the control tool + any script audit (sparse-checkout from swift-institute/.github)
+      - name: Fetch any script audit (sparse-checkout from swift-institute/.github)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: swift-institute/.github
           ref: ${{ job.workflow_sha }}
           path: .swift-institute-github
           sparse-checkout: |
-            Tools/institute-ci-control
             ${{ inputs.audit }}
           sparse-checkout-cone-mode: false
+
+      # TX-3 of the reduction census (swift-institute/.github#515): the
+      # control tool now lives in its seeded repository,
+      # swift-institute/institute-continuous-integration-control, and
+      # this workflow consumes it from there instead of the retiring
+      # Tools/ copy. The seed is private, so the checkout rides a
+      # transient App token scoped to exactly that one repository with
+      # contents:read (the same narrowed-mint shape
+      # review-pr-transaction.yml and tools-tests.yml use), separate
+      # from the per-org sweep token minted above.
+      - name: Mint read-only token for the seeded institute-ci-control package
+        id: cicontrol-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: swift-institute
+          repositories: institute-continuous-integration-control
+          permission-contents: read
+
+      - name: Checkout the seeded institute-ci-control package at exact main pin
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: swift-institute/institute-continuous-integration-control
+          # Advance with pin-advance flow; must stay a full SHA (branch-pin
+          # guard). Same pin as tools-tests.yml and
+          # submit-dep-graph-weekly.yml.
+          ref: f9832144acacc43cbe6fb8d86b50435f68dd41c5
+          path: .institute-ci-control
+          token: ${{ steps.cicontrol-token.outputs.token }}
+          persist-credentials: false
 
       - name: Build the sweep runner
         shell: bash
         run: |
           set -euo pipefail
-          # Built at the pinned workflow_sha's own sources, once per
-          # matrix job, before any credential is used.
+          # Built at the pinned seed commit's own sources, once per
+          # matrix job, before the org sweep credential is used.
           swift build -c release \
-            --package-path .swift-institute-github/Tools/institute-ci-control \
+            --package-path .institute-ci-control \
             --product institute-ci-control
           bin_path="$(swift build -c release \
-            --package-path .swift-institute-github/Tools/institute-ci-control \
+            --package-path .institute-ci-control \
             --show-bin-path)"
           echo "${bin_path}" >> "$GITHUB_PATH"
 

@@ -18,7 +18,8 @@
 #     `swift package show-dependencies --format json` output.
 #
 # Snapshot helper:
-#   swift-institute/.github/Tools/institute-ci-control
+#   swift-institute/institute-continuous-integration-control (extracted
+#   from the Tools/ copy by TX-3, swift-institute/.github#515)
 # API endpoint:
 #   POST /repos/<owner>/<repo>/dependency-graph/snapshots
 #   https://docs.github.com/en/rest/dependency-graph/dependency-submission
@@ -182,7 +183,7 @@ jobs:
           # typed provisioning input as `.github/actions/institute-ci`; that
           # action installs it explicitly for the same reason this does —
           # `install-system-deps` derives from the workspace root, and this
-          # package lives under `.swift-institute-github/`, where the
+          # package lives under `.institute-ci-control/`, where the
           # derivation cannot see it.
           apt-get install -qq -y curl jq ca-certificates gnupg uuid-dev
           mkdir -p -m 755 /etc/apt/keyrings
@@ -199,27 +200,48 @@ jobs:
           apt-get update -qq
           apt-get install -qq -y gh
 
-      - name: Fetch the snapshot tool (sparse-checkout from swift-institute/.github)
+      # TX-3 of the reduction census (swift-institute/.github#515): the
+      # snapshot tool now lives in its seeded repository,
+      # swift-institute/institute-continuous-integration-control, and
+      # this workflow consumes it from there instead of the retiring
+      # Tools/ copy. The seed is private, so the checkout rides a
+      # transient App token scoped to exactly that one repository with
+      # contents:read (the same narrowed-mint shape
+      # review-pr-transaction.yml and tools-tests.yml use), separate
+      # from the per-org sweep token minted above.
+      - name: Mint read-only token for the seeded institute-ci-control package
+        id: cicontrol-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: swift-institute
+          repositories: institute-continuous-integration-control
+          permission-contents: read
+
+      - name: Checkout the seeded institute-ci-control package at exact main pin
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: swift-institute/.github
-          ref: ${{ job.workflow_sha }}
-          path: .swift-institute-github
-          sparse-checkout: Tools/institute-ci-control
-          sparse-checkout-cone-mode: false
+          repository: swift-institute/institute-continuous-integration-control
+          # Advance with pin-advance flow; must stay a full SHA (branch-pin
+          # guard). Same pin as tools-tests.yml and cron-audit-base.yml.
+          ref: f9832144acacc43cbe6fb8d86b50435f68dd41c5
+          path: .institute-ci-control
+          token: ${{ steps.cicontrol-token.outputs.token }}
+          persist-credentials: false
 
       - name: Build the snapshot tool
         shell: bash
         run: |
           set -euo pipefail
-          # Built at the pinned workflow_sha's own sources, once, before
+          # Built at the pinned seed commit's own sources, once, before
           # the sweep. The tool holds no credential — it renders the
           # document this job then POSTs.
           swift build -c release \
-            --package-path .swift-institute-github/Tools/institute-ci-control \
+            --package-path .institute-ci-control \
             --product institute-ci-control
           swift build -c release \
-            --package-path .swift-institute-github/Tools/institute-ci-control \
+            --package-path .institute-ci-control \
             --show-bin-path >> "$GITHUB_PATH"
 
       - name: Resolve visibility/exclude-archived defaults
