@@ -23,13 +23,20 @@
 #
 # TX-4 (#515): the repository-policy suite now tests the seeded
 # repository, swift-institute/institute-repository-policy, at its exact
-# main pin — checked out INTO Tools/repository-policy rather than a
-# separate flat path, unlike institute-ci-control above, because its
-# Sources/ and Tests/ locate the retained Tools/repository-policy/Policy/
-# data (and this repository's own workflow/fixture files) by a fixed
-# #filePath walk that assumes exactly that co-location. The engine's
-# other files (Package.swift, Sources/, Tests/, Lint.swift) are deleted
-# in this same transaction; only Policy/ remains under Tools/repository-policy.
+# main pin — checked out to a separate directory
+# (.repository-policy-engine), then its Package.swift/Lint.swift/
+# .gitignore/Sources/Tests are copied into Tools/repository-policy
+# beside the retained Policy/ data, rather than being checked out
+# directly into Tools/repository-policy. actions/checkout unconditionally
+# wipes its `path:` before cloning, so a direct checkout there would have
+# deleted the retained Policy/ this job's default self-checkout already
+# placed. The engine's Sources/ and Tests/ locate that Policy/ data (and
+# this repository's own workflow/fixture files) by a fixed #filePath walk
+# that assumes exactly the Tools/repository-policy co-location, so the
+# copy — not the checkout — is what recreates it. The engine's other
+# files (Package.swift, Sources/, Tests/, Lint.swift) were deleted from
+# this repository in the same transaction; only Policy/ remains tracked
+# under Tools/repository-policy.
 #
 # One job per package, on Linux, through the sanctioned Workspace
 # coordinate — the same bootstrap shape swift-ci.yml's plan job and the
