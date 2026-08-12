@@ -435,7 +435,12 @@ jobs:
             swift test -c debug
           fi
   apple-simulator-build:
-    name: Apple · ${{ matrix.platform }} Simulator
+    # Deliberately free of `matrix.platform`. A skipped matrix job never
+    # expands, so a name referring to the matrix has nothing to substitute
+    # and GitHub renders the template literally. This leg is exhaustive-tier
+    # only and therefore skipped in almost every run, so the unexpanded
+    # state is the one that is actually read.
+    name: Apple · Simulator
     needs: plan
     if: ${{ !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',apple-simulator-build,') }}
     runs-on: xcode-27
