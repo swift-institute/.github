@@ -617,7 +617,10 @@ jobs:
           set -euo pipefail
           apt-get update -qq && apt-get install -qq -y curl uuid-dev
           work="$(mktemp -d)"
-          for asset in SHA256SUMS swift-linter swift-linter-runner; do
+          # MANIFEST.txt is checksummed alongside the binaries by the
+          # publisher, so `--check` fails on its absence rather than
+          # skipping it. Downloading it is what makes the check complete.
+          for asset in SHA256SUMS swift-linter swift-linter-runner MANIFEST.txt; do
             curl --fail --silent --show-error --location --retry 2 \
               --output "$work/$asset" "$RELEASE/$asset"
           done
