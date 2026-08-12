@@ -192,9 +192,13 @@ extension Institute.CI.Application {
             // REASON: Process.run reports an untyped Foundation error; an unavailable client is fail-closed.
             // swiftlint:disable:next no_try_optional
             guard (try? process.run()) != nil else { throw .response }
+            // Drain the pipe before waiting on exit: `gh api --paginate --slurp` can write more
+            // than the OS pipe buffer, and waiting on a full, undrained pipe deadlocks the child
+            // against the parent.
+            let data = output.fileHandleForReading.readDataToEndOfFile()
             process.waitUntilExit()
             guard process.terminationStatus == 0 else { throw .response }
-            return output.fileHandleForReading.readDataToEndOfFile()
+            return data
         }
 
         static func pages(from data: Data) throws(Error) -> [Any] {
