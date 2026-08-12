@@ -122,9 +122,14 @@ runs:
         WORKSPACE_REVISION: ${{ inputs.workspace-revision }}
       run: |
         set -euo pipefail
+        # libcurl4-openssl-dev: --static-swift-stdlib links Foundation
+        # statically, which pulls in lib_CFURLSessionInterface.a and every
+        # libcurl symbol with it. Nothing here opens a socket — the diff is
+        # read by shelling out to `gh` — but the static link needs the
+        # symbols to resolve regardless of whether they are ever called.
         # uuid-dev: the typed F2/F10 provisioning input (swift-linux-standard's
         # CLinuxKernelShim includes uuid/uuid.h); absent on the bare runner.
-        sudo apt-get update -qq && sudo apt-get install -qq -y uuid-dev
+        sudo apt-get update -qq && sudo apt-get install -qq -y uuid-dev libcurl4-openssl-dev
         # TX-APP1Z: institute-application's Swift package moved from Application/ to
         # the repository root. This checkout is pinned to a caller-supplied or
         # hard-pinned revision, so it must build either layout. The probe retires
@@ -141,7 +146,7 @@ runs:
         .institute-ci-entry/bin/institute-continuous-integration bootstrap-manifest \
           --workspace-revision "$WORKSPACE_REVISION" --sources-revision "$SOURCES_REVISION" \
           --toolchain swift-6.3 --os linux --arch x86_64 \
-          --provisioning uuid-dev,static-swift-stdlib \
+          --provisioning uuid-dev,libcurl4-openssl-dev,static-swift-stdlib \
           --root .institute-ci-entry --executables bin/institute-continuous-integration \
           --producer-run "$GITHUB_RUN_ID" > .institute-ci-entry/manifest.json
 
@@ -166,6 +171,6 @@ runs:
         .institute-ci-entry/bin/institute-continuous-integration bootstrap-verify \
           --workspace-revision "$WORKSPACE_REVISION" --sources-revision "$SOURCES_REVISION" \
           --toolchain swift-6.3 --os linux --arch x86_64 \
-          --provisioning uuid-dev,static-swift-stdlib \
+          --provisioning uuid-dev,libcurl4-openssl-dev,static-swift-stdlib \
           --root .institute-ci-entry --manifest .institute-ci-entry/manifest.json
         echo "binary=$(pwd)/.institute-ci-entry/bin/institute-continuous-integration" >> "$GITHUB_OUTPUT"
