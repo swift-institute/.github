@@ -669,7 +669,16 @@ jobs:
             echo "| Leg | Result |"
             echo "| --- | --- |"
             jq -r 'to_entries | sort_by(.key)[] | select(.key != "plan") | "| \(.key) | \(.value.result) |"' <<< "$NEEDS_JSON"
-            [ -n "$DESCHEDULED" ] && echo "" && echo "> [!WARNING]" && echo "> Descheduled: \`$DESCHEDULED\`."
+            # `if`, not `&&`: this is the group's last command and the group
+            # is the script's last, so on the ordinary empty case the chain's
+            # status becomes the step's and set -e fails it. The two other
+            # `&&` chains in this file are safe — one is followed by further
+            # commands, the other by an explicit `exit`.
+            if [ -n "$DESCHEDULED" ]; then
+              echo ""
+              echo "> [!WARNING]"
+              echo "> Descheduled: \`$DESCHEDULED\`."
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
   # The single required status check. It attests that the SELECTED tier
