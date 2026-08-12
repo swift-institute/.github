@@ -200,9 +200,8 @@ jobs:
               echo "> Descheduled: \`$D\` — an exception has expired."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
-
   linux-release:
-    name: Ubuntu (Swift ${{ inputs.swift-version }}, release)
+    name: Linux · release
     needs: plan
     if: ${{ !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',linux-release,') }}
     runs-on: ubuntu-latest
@@ -236,79 +235,8 @@ jobs:
           else
             swift test -c release
           fi
-
-  macos-release:
-    name: macOS (Swift ${{ inputs.swift-version }}, debug)
-    needs: plan
-    if: ${{ !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',macos-release,') }}
-    runs-on: xcode-27
-    timeout-minutes: 45
-    permissions:
-      contents: read
-    steps:
-      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
-        with:
-          egress-policy: audit
-      - uses: swift-institute/.github/.github/actions/ci-subject@01edfb299b763f313b9e42e1acdd235ebc890c70
-        with:
-          repository: ${{ needs.plan.outputs.subject-repository }}
-          sha: ${{ needs.plan.outputs.subject-sha }}
-          app-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
-          app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
-      # This leg's Swift version comes from the Xcode pin, not from
-      # SWIFT_VERSION — which reaches it only through the job name. Move
-      # the two together or the name overstates the toolchain.
-      - run: sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
-      - name: Test
-        env:
-          TEST_FILTER: ${{ inputs.test-filter }}
-        run: |
-          swift --version
-          if [ -f Tests/Package.swift ]; then cd Tests; fi
-          if [ -n "$TEST_FILTER" ]; then
-            swift test -c debug --filter "$(echo "$TEST_FILTER" | tr '-' '_')"
-          else
-            swift test -c debug
-          fi
-
-  windows-release:
-    name: Windows (Swift ${{ inputs.swift-version }}, debug)
-    needs: plan
-    if: ${{ !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',windows-release,') }}
-    runs-on: windows-latest
-    timeout-minutes: 45
-    permissions:
-      contents: read
-    steps:
-      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
-        with:
-          egress-policy: audit
-      - uses: swift-institute/.github/.github/actions/ci-subject@01edfb299b763f313b9e42e1acdd235ebc890c70
-        with:
-          repository: ${{ needs.plan.outputs.subject-repository }}
-          sha: ${{ needs.plan.outputs.subject-sha }}
-          app-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
-          app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
-      - uses: SwiftyLab/setup-swift@38f54a76b70d989321de9dc7c840618c08cf56e9 # v1.14.0
-        with:
-          swift-version: ${{ env.SWIFT_VERSION }}
-      # Never relaxed and never continue-on-error: this is the fleet's only
-      # assertions-enabled compiler, and therefore its only SIL-validity gate.
-      - name: Test
-        shell: bash
-        env:
-          TEST_FILTER: ${{ inputs.test-filter }}
-        run: |
-          swift --version
-          if [ -f Tests/Package.swift ]; then cd Tests; fi
-          if [ -n "$TEST_FILTER" ]; then
-            swift test -c debug --filter "$(echo "$TEST_FILTER" | tr '-' '_')"
-          else
-            swift test -c debug
-          fi
-
   linux-6-4:
-    name: Ubuntu (Swift 6.4.x nightly, release)
+    name: Linux · 6.4.x nightly
     needs: plan
     if: ${{ !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',linux-6-4,') }}
     runs-on: ubuntu-latest
@@ -332,9 +260,8 @@ jobs:
         run: |
           swift --version
           swift build -c release
-
   linux-nightly:
-    name: Ubuntu (Swift main nightly, release)
+    name: Linux · main nightly
     needs: plan
     if: ${{ !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',linux-nightly,') }}
     runs-on: ubuntu-latest
@@ -358,39 +285,8 @@ jobs:
         run: |
           swift --version
           swift build -c release
-
-  apple-simulator-build:
-    name: ${{ matrix.platform }} Simulator (Swift ${{ inputs.swift-version }}, debug)
-    needs: plan
-    if: ${{ !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',apple-simulator-build,') }}
-    runs-on: xcode-27
-    continue-on-error: true
-    timeout-minutes: 45
-    permissions:
-      contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        platform: [iOS, tvOS, watchOS, visionOS]
-    steps:
-      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
-        with:
-          egress-policy: audit
-      - uses: swift-institute/.github/.github/actions/ci-subject@01edfb299b763f313b9e42e1acdd235ebc890c70
-        with:
-          repository: ${{ needs.plan.outputs.subject-repository }}
-          sha: ${{ needs.plan.outputs.subject-sha }}
-          app-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
-          app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
-      - run: sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
-      - name: Build (${{ matrix.platform }} Simulator)
-        run: |
-          swift --version
-          xcodebuild build -scheme "$(xcodebuild -list -json | jq -r '.workspace.schemes[0] // .project.targets[0]')" \
-            -destination "generic/platform=${{ matrix.platform }} Simulator"
-
   embedded:
-    name: Ubuntu (Swift main nightly, Embedded mode on host triple)
+    name: Linux · Embedded (host triple)
     needs: plan
     if: ${{ !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',embedded,') }}
     runs-on: ubuntu-latest
@@ -424,9 +320,8 @@ jobs:
           else
             swift build -Xswiftc -enable-experimental-feature -Xswiftc Embedded
           fi
-
   embedded-wasm-sdk:
-    name: Ubuntu (Embedded Wasm SDK build)
+    name: Linux · Embedded Wasm SDK
     needs: plan
     if: ${{ !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',embedded-wasm-sdk,') }}
     runs-on: ubuntu-latest
@@ -452,9 +347,8 @@ jobs:
           sdk-id: ${TAG}_wasm-embedded
           output-env-var: WASM_SDK_ID
       - run: swift build --swift-sdk "${WASM_SDK_ID}"
-
   android-build:
-    name: Ubuntu (Android SDK build)
+    name: Linux · Android SDK
     needs: plan
     if: ${{ !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',android-build,') }}
     runs-on: ubuntu-latest
@@ -480,9 +374,8 @@ jobs:
           sdk-id: ${TAG}_android
           output-env-var: ANDROID_SDK_ID
       - run: swift build --swift-sdk "${ANDROID_SDK_ID}"
-
   static-linux-musl-build:
-    name: Ubuntu (Static Linux musl build)
+    name: Linux · static musl
     needs: plan
     if: ${{ !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',static-linux-musl-build,') }}
     runs-on: ubuntu-latest
@@ -508,9 +401,105 @@ jobs:
           use-platform-version: 'true'
           sdk-id: x86_64-swift-linux-musl
       - run: swift build --swift-sdk x86_64-swift-linux-musl
-
+  macos-release:
+    name: Apple · macOS
+    needs: plan
+    if: ${{ !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',macos-release,') }}
+    runs-on: xcode-27
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+      - uses: swift-institute/.github/.github/actions/ci-subject@01edfb299b763f313b9e42e1acdd235ebc890c70
+        with:
+          repository: ${{ needs.plan.outputs.subject-repository }}
+          sha: ${{ needs.plan.outputs.subject-sha }}
+          app-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
+          app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+      # This leg's Swift version comes from the Xcode pin, not from
+      # SWIFT_VERSION — which reaches it only through the job name. Move
+      # the two together or the name overstates the toolchain.
+      - run: sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
+      - name: Test
+        env:
+          TEST_FILTER: ${{ inputs.test-filter }}
+        run: |
+          swift --version
+          if [ -f Tests/Package.swift ]; then cd Tests; fi
+          if [ -n "$TEST_FILTER" ]; then
+            swift test -c debug --filter "$(echo "$TEST_FILTER" | tr '-' '_')"
+          else
+            swift test -c debug
+          fi
+  apple-simulator-build:
+    name: Apple · ${{ matrix.platform }} Simulator
+    needs: plan
+    if: ${{ !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',apple-simulator-build,') }}
+    runs-on: xcode-27
+    continue-on-error: true
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [iOS, tvOS, watchOS, visionOS]
+    steps:
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+      - uses: swift-institute/.github/.github/actions/ci-subject@01edfb299b763f313b9e42e1acdd235ebc890c70
+        with:
+          repository: ${{ needs.plan.outputs.subject-repository }}
+          sha: ${{ needs.plan.outputs.subject-sha }}
+          app-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
+          app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+      - run: sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
+      - name: Build (${{ matrix.platform }} Simulator)
+        run: |
+          swift --version
+          xcodebuild build -scheme "$(xcodebuild -list -json | jq -r '.workspace.schemes[0] // .project.targets[0]')" \
+            -destination "generic/platform=${{ matrix.platform }} Simulator"
+  windows-release:
+    name: Windows · release
+    needs: plan
+    if: ${{ !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',windows-release,') }}
+    runs-on: windows-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+      - uses: swift-institute/.github/.github/actions/ci-subject@01edfb299b763f313b9e42e1acdd235ebc890c70
+        with:
+          repository: ${{ needs.plan.outputs.subject-repository }}
+          sha: ${{ needs.plan.outputs.subject-sha }}
+          app-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
+          app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+      - uses: SwiftyLab/setup-swift@38f54a76b70d989321de9dc7c840618c08cf56e9 # v1.14.0
+        with:
+          swift-version: ${{ env.SWIFT_VERSION }}
+      # Never relaxed and never continue-on-error: this is the fleet's only
+      # assertions-enabled compiler, and therefore its only SIL-validity gate.
+      - name: Test
+        shell: bash
+        env:
+          TEST_FILTER: ${{ inputs.test-filter }}
+        run: |
+          swift --version
+          if [ -f Tests/Package.swift ]; then cd Tests; fi
+          if [ -n "$TEST_FILTER" ]; then
+            swift test -c debug --filter "$(echo "$TEST_FILTER" | tr '-' '_')"
+          else
+            swift test -c debug
+          fi
   format:
-    name: swift-format lint
+    name: Quality · swift-format
     needs: plan
     if: ${{ !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',format,') }}
     runs-on: ubuntu-latest
@@ -544,9 +533,8 @@ jobs:
             -print0 2>/dev/null || true)
           if [ "${#files[@]}" -eq 0 ]; then echo "No Swift files to lint."; exit 0; fi
           swift-format lint --strict --ignore-unparsable-files "${files[@]}"
-
   lint:
-    name: SwiftLint
+    name: Quality · SwiftLint
     needs: plan
     if: ${{ !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',lint,') }}
     runs-on: ubuntu-latest
@@ -587,9 +575,8 @@ jobs:
         run: |
           swiftlint --version
           swiftlint lint --strict --reporter github-actions-logging
-
   swift-linter:
-    name: swift-linter
+    name: Quality · swift-linter
     needs: plan
     if: ${{ !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',swift-linter,') }}
     runs-on: ubuntu-latest
@@ -637,7 +624,6 @@ jobs:
           else
             swift-linter-runner "$GITHUB_WORKSPACE" --exit-policy strict
           fi
-
   advisory-summary:
     name: Advisory results (informational)
     needs:
