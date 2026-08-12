@@ -99,11 +99,14 @@ jobs:
     runs-on: ubuntu-latest
     # No longer builds anything: the binary is downloaded and verified.
     timeout-minutes: 10
+    # The generated caller grants `actions: read` and `contents: read`, and a
+    # called workflow cannot exceed that intersection — asking for anything
+    # more fails the run at startup, before a single job is scheduled. The
+    # plan reads the event's changed files through `gh`, which needs no
+    # further grant here: the visibility gate means every repository that
+    # reaches this step is public.
     permissions:
       contents: read
-      # The plan reads the event's changed files to decide whether package
-      # content moved at all; on a pull request that is a `gh` API call.
-      pull-requests: read
     outputs:
       tier: ${{ steps.classify.outputs.tier }}
       legs: ${{ steps.classify.outputs.legs }}
