@@ -7,7 +7,9 @@
 #
 # The decision half — classification and the rendered draft — lives in the
 # Swift owner `Repository.Policy.Metadata.Draft` behind the
-# `repository-policy draft-metadata` face (Tools/repository-policy). This
+# `repository-policy draft-metadata` face
+# (swift-institute/institute-repository-policy, extracted from the Tools/
+# copy by TX-4, swift-institute/.github#515). This
 # workflow keeps only the plumbing the Swift owner deliberately excludes:
 # target enumeration, the two idempotency skips, the Package.swift
 # description fetch, and the clone / commit / pull request that carry the
@@ -66,6 +68,44 @@ jobs:
         uses: SwiftyLab/setup-swift@38f54a76b70d989321de9dc7c840618c08cf56e9 # v1.14.0
         with:
           swift-version: '6.3'
+
+      # TX-4 of the reduction census (swift-institute/.github#515): the
+      # classifier engine now lives in its seeded repository,
+      # swift-institute/institute-repository-policy, and this workflow
+      # consumes it from there instead of the retiring Tools/ copy. It is
+      # checked out INTO the retained institute-github/Tools/repository-policy
+      # path — not a separate flat directory — because the engine's own
+      # Sources/ and Tests/ locate the retained Policy/ data (and, for the
+      # test suite, .github/workflows/*.yml and
+      # .github/scripts/tests/fixtures/callers/) by walking up a fixed
+      # number of #filePath parents that assumes exactly this co-location.
+      # `clean: false` keeps this checkout from deleting the
+      # already-checked-out Policy/ directory that sits beside it. The
+      # seed is private, so the checkout rides a transient App token
+      # scoped to exactly that one repository with contents:read (the
+      # same narrowed-mint shape review-pr-transaction.yml and
+      # tools-tests.yml use).
+      - name: Mint read-only token for the seeded repository-policy package
+        id: repo-policy-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
+        with:
+          client-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: swift-institute
+          repositories: institute-repository-policy
+          permission-contents: read
+
+      - name: Checkout the seeded repository-policy package at exact main pin
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: swift-institute/institute-repository-policy
+          # Advance with pin-advance flow; must stay a full SHA (branch-pin
+          # guard). Same pin as sync-metadata.yml and tools-tests.yml.
+          ref: 85f1e68106d6a30498077cc5ce6cb90b5d271409
+          path: institute-github/Tools/repository-policy
+          clean: false
+          token: ${{ steps.repo-policy-token.outputs.token }}
+          persist-credentials: false
 
       - name: Build repository-policy (Swift owner of the draft)
         id: policy

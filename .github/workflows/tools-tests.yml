@@ -21,6 +21,16 @@
 # at its exact main pin, the same shape as pull-request-transaction
 # above. The Tools/ copy is deleted in this same transaction.
 #
+# TX-4 (#515): the repository-policy suite now tests the seeded
+# repository, swift-institute/institute-repository-policy, at its exact
+# main pin — checked out INTO Tools/repository-policy rather than a
+# separate flat path, unlike institute-ci-control above, because its
+# Sources/ and Tests/ locate the retained Tools/repository-policy/Policy/
+# data (and this repository's own workflow/fixture files) by a fixed
+# #filePath walk that assumes exactly that co-location. The engine's
+# other files (Package.swift, Sources/, Tests/, Lint.swift) are deleted
+# in this same transaction; only Policy/ remains under Tools/repository-policy.
+#
 # One job per package, on Linux, through the sanctioned Workspace
 # coordinate — the same bootstrap shape swift-ci.yml's plan job and the
 # institute-ci composite action use, with `test` in place of `build`.
@@ -152,6 +162,42 @@ jobs:
           token: ${{ steps.cicontrol-token.outputs.token }}
           persist-credentials: false
 
+      # TX-4 (#515): the repository-policy package's sources come from its
+      # seeded private repository; transient contents:read App token scoped
+      # to exactly that repository, never persisted. Checked out INTO the
+      # retained Tools/repository-policy path (this job's default
+      # self-checkout above already put the whole repository, Policy/
+      # included, at the job root) — not a separate flat directory —
+      # because the engine's own Sources/ and Tests/ locate the retained
+      # Policy/ data, and this repository's own .github/workflows/*.yml and
+      # .github/scripts/tests/fixtures/callers/, by walking up a fixed
+      # number of #filePath parents that assumes exactly this co-location.
+      # `clean: false` keeps this checkout from deleting the
+      # already-checked-out Policy/ directory that sits beside it.
+      - name: Mint read-only token for the seeded repository-policy package
+        if: ${{ matrix.package == 'repository-policy' }}
+        id: repo-policy-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
+        with:
+          client-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: swift-institute
+          repositories: institute-repository-policy
+          permission-contents: read
+
+      - name: Checkout the seeded repository-policy package at exact main pin
+        if: ${{ matrix.package == 'repository-policy' }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: swift-institute/institute-repository-policy
+          # Advance with pin-advance flow; must stay a full SHA (branch-pin
+          # guard). Same pin as generate-metadata.yml and sync-metadata.yml.
+          ref: 85f1e68106d6a30498077cc5ce6cb90b5d271409
+          path: Tools/repository-policy
+          clean: false
+          token: ${{ steps.repo-policy-token.outputs.token }}
+          persist-credentials: false
+
       # uuid-dev: the typed F2/F10 provisioning input (swift-linux-standard's
       # CLinuxKernelShim includes uuid/uuid.h); absent on the bare runner.
       - name: Install system dependencies
@@ -177,8 +223,10 @@ jobs:
             workspace_package_path=.workspace/Application
           fi
           # TX-1/TX-3 (#515): pull-request-transaction and
-          # institute-ci-control test their seeded external checkouts;
-          # every other package still tests its Tools/ sources.
+          # institute-ci-control test their seeded external checkouts at a
+          # separate flat path; every other package, including TX-4's
+          # repository-policy (checked out INTO Tools/repository-policy,
+          # above), still tests at its Tools/ path.
           subject_package_path="Tools/${PACKAGE}"
           if [ "$PACKAGE" = "pull-request-transaction" ]; then
             subject_package_path=".pr-transaction"
