@@ -1,0 +1,280 @@
+# Dynamically resolve and install a swift.org Swift SDK matching the
+# container's running Swift version.
+#
+# Fetches https://www.swift.org/api/v1/install/releases.json, filters to
+# the record whose `name` matches the container's Swift version, then:
+#
+#   1. Extracts the release `tag` (e.g. swift-6.3.1-RELEASE).
+#   2. Looks up the platform record by the input `platform` key
+#      (releases.json `.platforms[].platform` — wasm-sdk / android-sdk /
+#      static-sdk are the currently exercised values).
+#   3. Reads the platform `checksum`.
+#   4. Optionally reads the platform `version` field and appends it to
+#      `bundle-suffix` as `${bundle-suffix}-${version}` when
+#      `use-platform-version: 'true'` (static-sdk's bundle URL convention).
+#   5. Constructs:
+#        ${TAG}_${bundle-suffix-final}.artifactbundle.tar.gz
+#      under https://download.swift.org/swift-${SWIFT}-release/${platform}/${TAG}/.
+#   6. Runs `swift sdk install <url> --checksum <checksum>`.
+#   7. For the Android SDK, installs the official r27d LTS Android NDK and
+#      runs the SDK bundle's setup script to populate its `ndk-sysroot`.
+#   8. Resolves the sdk-id input by replacing the literal token `${TAG}`
+#      with the resolved tag (a string-substitution, NOT GitHub Actions
+#      expression syntax). Inputs lacking `${TAG}` pass through unchanged
+#      (e.g. static-sdk's `x86_64-swift-linux-musl` triple).
+#   9. When `output-env-var` is non-empty, writes `<NAME>=<resolved-id>`
+#      to $GITHUB_ENV so the caller's downstream `swift build` step can
+#      reference env.<NAME>.
+#
+# Floor pre-release (swift-institute/.github#497): swift.org publishes SDK
+# artifactbundles (wasm-sdk / android-sdk / static-sdk) ONLY on tagged
+# RELEASE records in releases.json — verified empirically 2026-08-09:
+# releases.json carries no nightly/dev-snapshot entries at all (its newest
+# name is the latest stable, e.g. "6.3.3"; there is no "6.4" record of any
+# kind). download.swift.org serves no directory index, so a bare-prefix
+# 404 (e.g. `.../wasm-sdk/`) is informationless — it 404s for real bundle
+# paths too. The actual positive control is the full artifactbundle URL
+# for a release that IS in releases.json:
+#   curl -sI https://download.swift.org/swift-6.3.3-release/wasm-sdk/swift-6.3.3-RELEASE/swift-6.3.3-RELEASE_wasm.artifactbundle.tar.gz
+#   -> HTTP/1.1 200 OK
+# confirming the endpoint and path shape work; the corresponding 6.4 URL
+# has no release/tag to construct because no 6.4 record exists at all.
+# So when the release floor is ahead of upstream (ReleaseFloorException's
+# containerized-Linux case, ci-cd skill), there is no nightly SDK
+# substitution to resolve to; the SDK legs are structurally not-applicable
+# until the floor's stable release ships. `skip-on-missing-release: 'true'`
+# turns the "no matching release, but the release SET itself resolved
+# non-empty" case from a hard failure into a clean, explicit skip (output
+# `installed: 'false'`) instead of trying to fabricate a nightly bundle URL
+# that has no upstream coordinate. A broken parse or an empty/failed
+# releases.json fetch is never read as a pre-release skip — see the guard
+# below.
+#
+# Constraint: invokable only from container-using jobs that ship as root
+# (e.g. the swift:6.3 family). The composite calls `apt-get install`
+# without sudo; bare ubuntu-latest runners would need a sudo prefix.
+# All current call sites in the swift-primitives layer wrapper satisfy
+# this constraint.
+#
+# Provenance: extracts the dynamic-resolution shell block inlined in 3
+# layer-wrapper jobs (embedded-wasm-sdk, android-build,
+# static-linux-musl-build). Same authority as the inline pattern —
+# Research/wasm-ci-strategy-and-sdk-toolchain-coupling.md v1.0.0 §Q4
+# Option α; eliminates soak-taxonomy class C.2 by construction.
+#
+# Per [CI-030] callers reference @main during active dev:
+#   uses: swift-institute/.github/.github/actions/install-swift-sdk@main
+
+name: 'Install Swift SDK'
+description: >
+  Dynamically resolve and install a swift.org Swift SDK matching the
+  container's running Swift version. Fetches releases.json, extracts
+  the matching release record, optionally appends the platform's version
+  field to the bundle suffix, constructs the bundle URL, and runs
+  `swift sdk install` with the published checksum. Android SDK installs
+  also configure the required Android NDK. Optionally writes the resolved
+  SDK ID to GITHUB_ENV.
+
+inputs:
+  platform:
+    description: >
+      releases.json platform key. Selects the platforms-array entry from
+      the matching release. Currently exercised values: `wasm-sdk`,
+      `android-sdk`, `static-sdk`. Also forms the URL path component
+      `/swift-X.Y-release/<platform>/`.
+    required: true
+  bundle-suffix:
+    description: >
+      Bundle filename suffix. Forms the artifact name as
+      `TAG_<suffix>.artifactbundle.tar.gz` when use-platform-version is
+      false, or `TAG_<suffix>-<platform-version>.artifactbundle.tar.gz`
+      when true. Examples: `wasm`, `android`, `static-linux`.
+    required: true
+  use-platform-version:
+    description: >
+      When the literal string `true`, append the platform record's
+      `version` field from releases.json to bundle-suffix as
+      `<bundle-suffix>-<platform-version>`. Default `false` (no append).
+      Used by static-sdk whose bundle URL embeds the SDK's own version
+      (e.g. 0.1.0).
+    required: false
+    default: 'false'
+  sdk-id:
+    description: >
+      The SDK identifier passed to downstream `swift build --swift-sdk`.
+      The literal token `${TAG}` (six characters dollar-curly-TAG-curly)
+      is replaced with the resolved release tag after releases.json
+      lookup. Inputs without that token pass through unchanged. Examples:
+      `${TAG}_wasm-embedded`, `${TAG}_android`,
+      `x86_64-swift-linux-musl`.
+    required: true
+  output-env-var:
+    description: >
+      Optional GITHUB_ENV variable name. When non-empty, writes
+      `<NAME>=<resolved-sdk-id>` to $GITHUB_ENV so the caller's build
+      step can reference env.<NAME>. Default empty (no env write).
+    required: false
+    default: ''
+  expected-tag:
+    description: >
+      Optional deterministic-runtime pin (#43 item 5). When non-empty,
+      the run fails if the release tag resolved from releases.json
+      differs from this value (e.g. `swift-6.4-RELEASE`), so the SDK
+      identity is fully pinned per run instead of floating with
+      swift.org publication state. Default empty: keep the checksummed
+      dynamic resolve that pairs the SDK to the container toolchain.
+      Wrappers adopt this when the #67 floor bump lands.
+    required: false
+    default: ''
+  skip-on-missing-release:
+    description: >
+      When the literal string `true`, a missing releases.json record for
+      the container's Swift version (swift-institute/.github#497: the
+      floor is ahead of upstream, e.g. an unreleased 6.4) is NOT a
+      failure. The step prints an explicit "floor pre-release: SDK leg
+      not applicable" notice to the job summary and log, skips the
+      install, and sets output `installed` to `false` so the caller can
+      skip its own build step. Default `false`: preserve the original
+      hard failure (a repository that declares this leg gating must not
+      have it silently disappear).
+    required: false
+    default: 'false'
+
+outputs:
+  installed:
+    description: >
+      `true` when an SDK was resolved and installed, `false` when
+      `skip-on-missing-release: 'true'` hit a missing release record and
+      skipped cleanly instead.
+    value: ${{ steps.resolve.outputs.installed }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Resolve and install Swift SDK
+      id: resolve
+      shell: bash
+      env:
+        INPUT_PLATFORM: ${{ inputs.platform }}
+        INPUT_BUNDLE_SUFFIX: ${{ inputs.bundle-suffix }}
+        INPUT_USE_PLATFORM_VERSION: ${{ inputs.use-platform-version }}
+        INPUT_SDK_ID: ${{ inputs.sdk-id }}
+        INPUT_OUTPUT_ENV_VAR: ${{ inputs.output-env-var }}
+        INPUT_EXPECTED_TAG: ${{ inputs.expected-tag }}
+        INPUT_SKIP_ON_MISSING_RELEASE: ${{ inputs.skip-on-missing-release }}
+      run: |
+        set -euo pipefail
+        apt-get update -qq && apt-get install -qq -y curl jq
+        if [[ "${INPUT_PLATFORM}" == "android-sdk" ]]; then
+          apt-get install -qq -y unzip
+        fi
+        SWIFT_VERSION="$(swift --version | head -n1 | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -n1)"
+        echo "Container Swift version: ${SWIFT_VERSION}"
+        if [[ -z "${SWIFT_VERSION}" ]]; then
+          echo "::error::install-swift-sdk could not parse a Swift version from 'swift --version'. This is a broken instrument, not a floor pre-release — refusing to classify it as one." >&2
+          exit 1
+        fi
+        RELEASES_JSON="$(curl -sf "https://www.swift.org/api/v1/install/releases.json")"
+        RELEASES_COUNT="$(echo "${RELEASES_JSON}" | jq -er 'length' 2>/dev/null || echo 0)"
+        if [[ -z "${RELEASES_JSON}" || "${RELEASES_COUNT}" -eq 0 ]]; then
+          echo "::error::install-swift-sdk fetched an empty or invalid releases.json (parsed ${RELEASES_COUNT} records). This is a broken instrument or a fetch failure, not evidence that Swift ${SWIFT_VERSION} is unreleased — refusing to classify it as a floor pre-release." >&2
+          exit 1
+        fi
+        REC=$(echo "${RELEASES_JSON}" | jq --arg v "${SWIFT_VERSION}" '.[] | select(.name == $v)')
+        if [[ -z "$REC" ]]; then
+          # A non-empty releases.json (positive control above) genuinely has
+          # no record named ${SWIFT_VERSION} — only NOW is "no matching
+          # release" a trustworthy floor-pre-release signal rather than a
+          # parse or fetch defect wearing the same empty-string shape.
+          if [[ "${INPUT_SKIP_ON_MISSING_RELEASE}" == "true" ]]; then
+            {
+              echo "### install-swift-sdk (${INPUT_PLATFORM}) — floor pre-release: SDK leg not applicable"
+              echo ""
+              echo "releases.json resolved ${RELEASES_COUNT} records but none named"
+              echo "\`${SWIFT_VERSION}\`. SDK artifactbundles (wasm-sdk / android-sdk /"
+              echo "static-sdk) are published only on tagged RELEASE records — never on"
+              echo "nightly or dev-snapshot branches (verified swift-institute/.github#497)"
+              echo "— so there is no nightly substitution to install against. This leg"
+              echo "resumes once Swift ${SWIFT_VERSION} ships stable."
+              echo ""
+            } >> "${GITHUB_STEP_SUMMARY}"
+            echo "::notice::floor pre-release: SDK leg not applicable — releases.json has ${RELEASES_COUNT} records but none matching Swift ${SWIFT_VERSION} (SDK bundles are release-only artifacts)"
+            echo "installed=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          echo "No swift.org release matching Swift ${SWIFT_VERSION}" >&2
+          exit 1
+        fi
+        TAG=$(echo "$REC" | jq -r '.tag')
+        PLATFORM_REC=$(echo "$REC" | jq --arg p "${INPUT_PLATFORM}" '.platforms[] | select(.platform == $p)')
+        CHECKSUM=$(echo "$PLATFORM_REC" | jq -r '.checksum')
+        if [[ -z "$CHECKSUM" || "$CHECKSUM" == "null" ]]; then
+          echo "No ${INPUT_PLATFORM} published for Swift ${SWIFT_VERSION}" >&2
+          exit 1
+        fi
+        BUNDLE_SUFFIX="${INPUT_BUNDLE_SUFFIX}"
+        if [[ "${INPUT_USE_PLATFORM_VERSION}" == "true" ]]; then
+          PLATFORM_VERSION=$(echo "${PLATFORM_REC}" | jq -r '.version')
+          BUNDLE_SUFFIX="${BUNDLE_SUFFIX}-${PLATFORM_VERSION}"
+          echo "Resolved version:  ${PLATFORM_VERSION}"
+        fi
+        SDK_URL="https://download.swift.org/swift-${SWIFT_VERSION}-release/${INPUT_PLATFORM}/${TAG}/${TAG}_${BUNDLE_SUFFIX}.artifactbundle.tar.gz"
+        # Resolve sdk-id by replacing the literal token ${TAG} with the resolved tag.
+        # Use sed with `|` delimiter (TAG values may contain `/` in pathological cases).
+        RESOLVED_SDK_ID=$(echo "${INPUT_SDK_ID}" | sed 's|${TAG}|'"${TAG}"'|g')
+        echo "Resolved tag:      ${TAG}"
+        echo "Resolved checksum: ${CHECKSUM}"
+        echo "Resolved URL:      ${SDK_URL}"
+        echo "Resolved SDK ID:   ${RESOLVED_SDK_ID}"
+        # Run identity (#43 item 5): the tag + checksum resolved at run time
+        # ARE this run's SDK identity — record them where a reader of the
+        # run can see them without opening the raw log.
+        {
+          echo "### install-swift-sdk resolved identity (${INPUT_PLATFORM})"
+          echo ""
+          echo "| Field | Value |"
+          echo "|---|---|"
+          echo "| Release tag | \`${TAG}\` |"
+          echo "| Bundle checksum | \`${CHECKSUM}\` |"
+          echo "| Bundle URL | \`${SDK_URL}\` |"
+          echo "| SDK ID | \`${RESOLVED_SDK_ID}\` |"
+          echo ""
+        } >> "${GITHUB_STEP_SUMMARY}"
+        if [[ -n "${INPUT_EXPECTED_TAG}" && "${TAG}" != "${INPUT_EXPECTED_TAG}" ]]; then
+          echo "::error::install-swift-sdk resolved tag ${TAG} but expected-tag pins ${INPUT_EXPECTED_TAG}; the SDK identity moved out from under the pin."
+          exit 1
+        fi
+        swift sdk install "${SDK_URL}" --checksum "${CHECKSUM}"
+        if [[ "${INPUT_PLATFORM}" == "android-sdk" ]]; then
+          # Swift 6.3's official Android setup requires NDK r27d or later:
+          # https://www.swift.org/documentation/articles/swift-sdk-for-android-getting-started.html
+          # Google identifies r27d as LTS revision 27.3.13750724 and publishes
+          # SHA-1 22105e410cf29afcf163760cc95522b9fb981121 for this Linux archive.
+          # CI-082 requires the corresponding SHA-256 pin used below.
+          NDK_VERSION="r27d"
+          NDK_SHA256="601246087a682d1944e1e16dd85bc6e49560fe8b6d61255be2829178c8ed15d9"
+          NDK_WORK_DIR="$(mktemp -d)"
+          NDK_ARCHIVE="${NDK_WORK_DIR}/android-ndk-${NDK_VERSION}-linux.zip"
+          curl -fsSL --retry 3 \
+            -o "${NDK_ARCHIVE}" \
+            "https://dl.google.com/android/repository/android-ndk-${NDK_VERSION}-linux.zip"
+          printf '%s  %s\n' "${NDK_SHA256}" "${NDK_ARCHIVE}" | sha256sum -c -
+          unzip -q "${NDK_ARCHIVE}" -d "${NDK_WORK_DIR}"
+
+          CURRENT_USER_HOME="$(getent passwd "$(id -u)" | cut -d: -f6)"
+          ANDROID_SDK_DIR="${CURRENT_USER_HOME}/.swiftpm/swift-sdks/${TAG}_${BUNDLE_SUFFIX}.artifactbundle/swift-android"
+          if [[ ! -f "${ANDROID_SDK_DIR}/scripts/setup-android-sdk.sh" ]]; then
+            echo "Android SDK setup script not found at ${ANDROID_SDK_DIR}" >&2
+            exit 1
+          fi
+          ANDROID_NDK_HOME="${NDK_WORK_DIR}/android-ndk-${NDK_VERSION}" \
+            bash "${ANDROID_SDK_DIR}/scripts/setup-android-sdk.sh"
+          if [[ ! -f "${ANDROID_SDK_DIR}/ndk-sysroot/usr/include/semaphore.h" ]]; then
+            echo "Android SDK setup did not produce a valid NDK sysroot" >&2
+            exit 1
+          fi
+        fi
+        if [[ -n "${INPUT_OUTPUT_ENV_VAR}" ]]; then
+          echo "${INPUT_OUTPUT_ENV_VAR}=${RESOLVED_SDK_ID}" >> "${GITHUB_ENV}"
+        fi
+        echo "installed=true" >> "${GITHUB_OUTPUT}"

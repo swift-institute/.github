@@ -1,0 +1,282 @@
+# Configure git so `swift package resolve` can clone private deps.
+#
+# Two credential paths, applied in priority order via git's longest-prefix
+# insteadOf matching:
+#
+#   1. PRIMARY — swift-institute-bot App installation tokens. When the
+#      caller passes an App ID secret + `app-private-key` (the org-level
+#      SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY secret), the composite mints one
+#      short-lived installation token per dependency-hosting org — the three
+#      layer orgs (swift-primitives, swift-standards, swift-foundations) plus
+#      the per-authority sub-orgs that host private deps of public consumers
+#      (swift-iso, swift-microsoft, swift-arm-ltd, swift-intel,
+#      swift-linux-foundation, swift-ietf) — via
+#      actions/create-github-app-token@v3, downscoped to `contents: read`,
+#      and writes one org-prefixed rewrite rule per org:
+#
+#        url.https://x-access-token:<tok>@github.com/<org>/.insteadOf
+#          = https://github.com/<org>/
+#
+#      Tokens auto-expire (~1h) and are revoked by the action's post-step;
+#      values are auto-masked in logs. The bot App is installed org-wide
+#      (repository_selection: all), so NEW private repos are covered the
+#      moment they exist — no per-repo or per-rotation provisioning. Per
+#      Research/private-repo-secret-management-at-scale.md Option B.
+#
+#      App ID secret names — two naming eras exist across orgs, both
+#      accepted (self-healing without admin ops):
+#        SWIFT_INSTITUTE_BOT_APP_CLIENT_ID  (preferred; Client ID value class)
+#        SWIFT_INSTITUTE_BOT_APP_ID         (legacy era, e.g. swift-primitives;
+#                                            numeric App ID value class)
+#      Callers pass both; this composite routes them into a SINGLE
+#      create-github-app-token input — `client-id: ${{ app-client-id ||
+#      app-id }}` — never the deprecated `app-id` input. Per that action's
+#      v2+ contract, `client-id` accepts either value class (Client ID or
+#      the legacy numeric App ID), so the fallback carries the same
+#      credential value the legacy input used to and mints identically;
+#      only the deprecation warning disappears (#139). Name-normalization
+#      to _APP_CLIENT_ID everywhere is a cosmetic follow-up; the fallback
+#      then goes dormant.
+#
+#      Org-secret visibility (free plan): "Public repositories" delivery
+#      is the designed-for class. Org secrets CANNOT reach private repos
+#      on the free plan — and don't need to: [CI-032] gates every job off
+#      on private repos, so public-repo delivery is the only path CI uses.
+#      Never request all-repositories visibility.
+#
+#      The org list is deliberately hardcoded as unrolled steps: composite
+#      actions cannot loop a `uses:` step ([CI-070](a)), and the transitive
+#      dependency graph is unknowable before resolve, so "narrowest org scope
+#      that resolves the graph" = the fixed set of orgs that host package
+#      dependencies. Currently nine: the three layer orgs plus six sub-orgs
+#      (swift-iso, swift-microsoft, swift-arm-ltd, swift-intel,
+#      swift-linux-foundation, swift-ietf) added 2026-06-24 when swift-linter
+#      (a public consumer) brought their private deps into a public graph.
+#      When another per-authority sub-org first hosts a PRIVATE dep of a
+#      public consumer, add one mint step + one env var + one emit line here —
+#      this composite is the single edit point.
+#
+#   2. FALLBACK — legacy PRIVATE_REPO_TOKEN. When non-empty, a github.com-
+#      wide rewrite rule is written (`url.https://<token>@github.com/`).
+#      Org-prefixed rules out-prefix it, so it only serves orgs without a
+#      minted token. When BOTH the App inputs and the token are empty, no
+#      rule is written and git fetches anonymously — viable on public-only
+#      dep graphs. See [CI-058] for the empty-secret fallback contract.
+#
+# Config is env-scoped, not file-scoped: rules are exported as
+# GIT_CONFIG_COUNT / GIT_CONFIG_KEY_n / GIT_CONFIG_VALUE_n via $GITHUB_ENV,
+# so every subsequent step's git processes (SwiftPM resolve, docc build)
+# inherit them for the job's lifetime without writing any gitconfig file.
+# No token material is ever written to a tracked file or printed.
+#
+# Composite action contract: secrets cannot be referenced via `secrets.*`
+# inside a composite — the caller must pass values through `with:`.
+# The canonical caller shape is:
+#
+#   - uses: swift-institute/.github/.github/actions/configure-private-repos@main
+#     with:
+#       token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+#       app-client-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_CLIENT_ID }}
+#       app-id: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_ID }}
+#       app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+#       enabled: ${{ inputs.enable-private-repos }}
+#
+# Provenance: extracted from 11 inline `git config --global url …` blocks
+# across 4 workflows in the swift-institute + swift-primitives `.github`
+# repos (lint-api-breakage.yml × 1, swift-docs.yml × 1, universal
+# swift-ci.yml × 4, layer-wrapper swift-ci.yml × 5). App-token primary path
+# added 2026-06-04 (the 5 private MSB packages entering public dep graphs
+# exposed the empty-PRIVATE_REPO_TOKEN fallback as dep-resolution redness
+# across the public cohort). Per [CI-030], consumers reference this
+# composite via `@main` during active dev.
+
+name: 'Configure private repos'
+description: >
+  Configure git url rewrites so swift package resolve can clone private
+  intra-Institute dependencies. Primary path mints per-job
+  swift-institute-bot App installation tokens (contents:read) for the
+  layer orgs, accepting either App ID secret-name era (app-client-id
+  preferred, app-id legacy); legacy PRIVATE_REPO_TOKEN is the
+  github.com-wide fallback. Env-scoped (GIT_CONFIG_* via GITHUB_ENV); no
+  gitconfig file writes. No-op when enabled=false. All-empty credentials
+  fall back to anonymous fetch (works on public-only deps).
+
+inputs:
+  token:
+    description: >
+      Legacy PRIVATE_REPO_TOKEN value. Caller passes the secret via `with:`
+      since composite actions cannot read `secrets` context directly. Empty
+      string is permitted; when the App inputs are also empty this produces
+      the anonymous-fetch fallback.
+    required: false
+    default: ''
+  app-client-id:
+    description: >
+      swift-institute-bot App Client ID (SWIFT_INSTITUTE_BOT_APP_CLIENT_ID
+      org secret; preferred name era). Routed to create-github-app-token's
+      `client-id` input. When this and `app-id` are both empty, App-token
+      minting is skipped and the composite falls back to `token`.
+    required: false
+    default: ''
+  app-id:
+    description: >
+      swift-institute-bot numeric App ID (SWIFT_INSTITUTE_BOT_APP_ID org
+      secret; legacy name era, e.g. swift-primitives). Routed into
+      create-github-app-token's `client-id` input as the fallback value
+      when `app-client-id` is empty (that action's v2+ contract accepts
+      either value class through `client-id`; the deprecated `app-id`
+      input is never passed).
+    required: false
+    default: ''
+  app-private-key:
+    description: >
+      swift-institute-bot App private key (SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY
+      org secret). Empty skips App-token minting and falls back to `token`.
+    required: false
+    default: ''
+  enabled:
+    description: >
+      When the literal string 'false' the step is a no-op. Default 'true'
+      mirrors the universal reusable input default (most consumers depend
+      on private deps). Composite-action booleans are strings — pass
+      'true' / 'false', or forward the caller's workflow_call boolean
+      input which serializes correctly.
+    required: false
+    default: 'true'
+
+runs:
+  using: 'composite'
+  steps:
+    - id: mint-primitives
+      if: ${{ inputs.enabled == 'true' && (inputs.app-client-id != '' || inputs.app-id != '') && inputs.app-private-key != '' }}
+      name: Mint App token (swift-primitives, contents:read)
+      uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
+      with:
+        client-id: ${{ inputs.app-client-id || inputs.app-id }}
+        private-key: ${{ inputs.app-private-key }}
+        owner: swift-primitives
+        permission-contents: read
+
+    - id: mint-standards
+      if: ${{ inputs.enabled == 'true' && (inputs.app-client-id != '' || inputs.app-id != '') && inputs.app-private-key != '' }}
+      name: Mint App token (swift-standards, contents:read)
+      uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
+      with:
+        client-id: ${{ inputs.app-client-id || inputs.app-id }}
+        private-key: ${{ inputs.app-private-key }}
+        owner: swift-standards
+        permission-contents: read
+
+    - id: mint-foundations
+      if: ${{ inputs.enabled == 'true' && (inputs.app-client-id != '' || inputs.app-id != '') && inputs.app-private-key != '' }}
+      name: Mint App token (swift-foundations, contents:read)
+      uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
+      with:
+        client-id: ${{ inputs.app-client-id || inputs.app-id }}
+        private-key: ${{ inputs.app-private-key }}
+        owner: swift-foundations
+        permission-contents: read
+
+    # Per-authority sub-orgs that host private deps of public consumers
+    # (added 2026-06-24 for swift-linter's graph; see header note). One
+    # unrolled mint per org — composite actions cannot loop a `uses:` step.
+    - id: mint-iso
+      if: ${{ inputs.enabled == 'true' && (inputs.app-client-id != '' || inputs.app-id != '') && inputs.app-private-key != '' }}
+      name: Mint App token (swift-iso, contents:read)
+      uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
+      with:
+        client-id: ${{ inputs.app-client-id || inputs.app-id }}
+        private-key: ${{ inputs.app-private-key }}
+        owner: swift-iso
+        permission-contents: read
+
+    - id: mint-microsoft
+      if: ${{ inputs.enabled == 'true' && (inputs.app-client-id != '' || inputs.app-id != '') && inputs.app-private-key != '' }}
+      name: Mint App token (swift-microsoft, contents:read)
+      uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
+      with:
+        client-id: ${{ inputs.app-client-id || inputs.app-id }}
+        private-key: ${{ inputs.app-private-key }}
+        owner: swift-microsoft
+        permission-contents: read
+
+    - id: mint-arm-ltd
+      if: ${{ inputs.enabled == 'true' && (inputs.app-client-id != '' || inputs.app-id != '') && inputs.app-private-key != '' }}
+      name: Mint App token (swift-arm-ltd, contents:read)
+      uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
+      with:
+        client-id: ${{ inputs.app-client-id || inputs.app-id }}
+        private-key: ${{ inputs.app-private-key }}
+        owner: swift-arm-ltd
+        permission-contents: read
+
+    - id: mint-intel
+      if: ${{ inputs.enabled == 'true' && (inputs.app-client-id != '' || inputs.app-id != '') && inputs.app-private-key != '' }}
+      name: Mint App token (swift-intel, contents:read)
+      uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
+      with:
+        client-id: ${{ inputs.app-client-id || inputs.app-id }}
+        private-key: ${{ inputs.app-private-key }}
+        owner: swift-intel
+        permission-contents: read
+
+    - id: mint-linux-foundation
+      if: ${{ inputs.enabled == 'true' && (inputs.app-client-id != '' || inputs.app-id != '') && inputs.app-private-key != '' }}
+      name: Mint App token (swift-linux-foundation, contents:read)
+      uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
+      with:
+        client-id: ${{ inputs.app-client-id || inputs.app-id }}
+        private-key: ${{ inputs.app-private-key }}
+        owner: swift-linux-foundation
+        permission-contents: read
+
+    - id: mint-ietf
+      if: ${{ inputs.enabled == 'true' && (inputs.app-client-id != '' || inputs.app-id != '') && inputs.app-private-key != '' }}
+      name: Mint App token (swift-ietf, contents:read)
+      uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
+      with:
+        client-id: ${{ inputs.app-client-id || inputs.app-id }}
+        private-key: ${{ inputs.app-private-key }}
+        owner: swift-ietf
+        permission-contents: read
+
+    - if: ${{ inputs.enabled == 'true' }}
+      name: Configure git url rewrites (env-scoped)
+      shell: bash
+      env:
+        LEGACY_TOKEN: ${{ inputs.token }}
+        TOKEN_PRIMITIVES: ${{ steps.mint-primitives.outputs.token }}
+        TOKEN_STANDARDS: ${{ steps.mint-standards.outputs.token }}
+        TOKEN_FOUNDATIONS: ${{ steps.mint-foundations.outputs.token }}
+        TOKEN_ISO: ${{ steps.mint-iso.outputs.token }}
+        TOKEN_MICROSOFT: ${{ steps.mint-microsoft.outputs.token }}
+        TOKEN_ARM_LTD: ${{ steps.mint-arm-ltd.outputs.token }}
+        TOKEN_INTEL: ${{ steps.mint-intel.outputs.token }}
+        TOKEN_LINUX_FOUNDATION: ${{ steps.mint-linux-foundation.outputs.token }}
+        TOKEN_IETF: ${{ steps.mint-ietf.outputs.token }}
+      run: |
+        set -euo pipefail
+        i=0
+        emit() { # $1 = org slug, $2 = installation token
+          echo "GIT_CONFIG_KEY_${i}=url.https://x-access-token:${2}@github.com/${1}/.insteadOf" >> "$GITHUB_ENV"
+          echo "GIT_CONFIG_VALUE_${i}=https://github.com/${1}/" >> "$GITHUB_ENV"
+          i=$((i + 1))
+        }
+        if [ -n "${TOKEN_PRIMITIVES}" ]; then emit swift-primitives "${TOKEN_PRIMITIVES}"; fi
+        if [ -n "${TOKEN_STANDARDS}" ]; then emit swift-standards "${TOKEN_STANDARDS}"; fi
+        if [ -n "${TOKEN_FOUNDATIONS}" ]; then emit swift-foundations "${TOKEN_FOUNDATIONS}"; fi
+        if [ -n "${TOKEN_ISO}" ]; then emit swift-iso "${TOKEN_ISO}"; fi
+        if [ -n "${TOKEN_MICROSOFT}" ]; then emit swift-microsoft "${TOKEN_MICROSOFT}"; fi
+        if [ -n "${TOKEN_ARM_LTD}" ]; then emit swift-arm-ltd "${TOKEN_ARM_LTD}"; fi
+        if [ -n "${TOKEN_INTEL}" ]; then emit swift-intel "${TOKEN_INTEL}"; fi
+        if [ -n "${TOKEN_LINUX_FOUNDATION}" ]; then emit swift-linux-foundation "${TOKEN_LINUX_FOUNDATION}"; fi
+        if [ -n "${TOKEN_IETF}" ]; then emit swift-ietf "${TOKEN_IETF}"; fi
+        if [ -n "${LEGACY_TOKEN}" ]; then
+          echo "GIT_CONFIG_KEY_${i}=url.https://${LEGACY_TOKEN}@github.com/.insteadOf" >> "$GITHUB_ENV"
+          echo "GIT_CONFIG_VALUE_${i}=https://github.com/" >> "$GITHUB_ENV"
+          i=$((i + 1))
+        fi
+        if [ "$i" -gt 0 ]; then
+          echo "GIT_CONFIG_COUNT=${i}" >> "$GITHUB_ENV"
+        fi
+        echo "Configured ${i} git url rewrite rule(s) (env-scoped; tokens masked)."
