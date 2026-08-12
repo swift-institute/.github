@@ -164,16 +164,17 @@ jobs:
 
       # TX-4 (#515): the repository-policy package's sources come from its
       # seeded private repository; transient contents:read App token scoped
-      # to exactly that repository, never persisted. Checked out INTO the
-      # retained Tools/repository-policy path (this job's default
-      # self-checkout above already put the whole repository, Policy/
-      # included, at the job root) — not a separate flat directory —
-      # because the engine's own Sources/ and Tests/ locate the retained
-      # Policy/ data, and this repository's own .github/workflows/*.yml and
-      # .github/scripts/tests/fixtures/callers/, by walking up a fixed
-      # number of #filePath parents that assumes exactly this co-location.
-      # `clean: false` keeps this checkout from deleting the
-      # already-checked-out Policy/ directory that sits beside it.
+      # to exactly that repository, never persisted. The engine's own
+      # Sources/ and Tests/ locate the retained Tools/repository-policy/
+      # Policy/ data — and this repository's own .github/workflows/*.yml
+      # and .github/scripts/tests/fixtures/callers/ — by walking up a fixed
+      # number of #filePath parents that assumes exactly the original
+      # Tools/repository-policy co-location. actions/checkout unconditionally
+      # deletes the contents of its `path:` before cloning (regardless of
+      # `clean:`), so checking out directly into Tools/repository-policy
+      # would delete the Policy/ this job's default self-checkout above
+      # already placed there. Check out to a separate directory instead and
+      # copy the engine files in, leaving Policy/ untouched.
       - name: Mint read-only token for the seeded repository-policy package
         if: ${{ matrix.package == 'repository-policy' }}
         id: repo-policy-token
@@ -193,10 +194,18 @@ jobs:
           # Advance with pin-advance flow; must stay a full SHA (branch-pin
           # guard). Same pin as generate-metadata.yml and sync-metadata.yml.
           ref: 85f1e68106d6a30498077cc5ce6cb90b5d271409
-          path: Tools/repository-policy
-          clean: false
+          path: .repository-policy-engine
           token: ${{ steps.repo-policy-token.outputs.token }}
           persist-credentials: false
+
+      - name: Copy the seeded engine into Tools/repository-policy, beside the retained Policy/
+        if: ${{ matrix.package == 'repository-policy' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp -R .repository-policy-engine/Package.swift .repository-policy-engine/Lint.swift \
+            .repository-policy-engine/.gitignore .repository-policy-engine/Sources \
+            .repository-policy-engine/Tests Tools/repository-policy/
 
       # uuid-dev: the typed F2/F10 provisioning input (swift-linux-standard's
       # CLinuxKernelShim includes uuid/uuid.h); absent on the bare runner.
