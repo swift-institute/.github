@@ -1,0 +1,171 @@
+name: 'Institute CI binary'
+description: >-
+  Provision the `institute-continuous-integration` executable at an exact
+  revision, through the sanctioned Workspace coordinate, and verify its
+  provenance before any caller trusts it. Revision-keyed cache is
+  acceleration only.
+
+# The control plane's binary channel. The validator workflows and the
+# universal share ONE bootstrap owner rather than growing a second,
+# drifting copy (F10/F12 precedent).
+#
+# The sources are swift-institute/institute-continuous-integration, not a
+# directory inside this repository: this repository owns GitHub
+# integration, and the semantics the binary implements are owned by their
+# packages. The cache key is the raw identity tuple — the pinned source
+# commit, the Workspace pin, the runner platform, the toolchain, and the
+# provisioning set. A commit is exact content identity, so a change to
+# the sources invalidates the entry and nothing else does.
+#
+# Cache-key transport is the raw tuple rather than the witness digest
+# because the digest is computed by the binary itself and cannot exist
+# before the binary does on a cold consumer. The digest identity is still
+# minted into, and verified against, the entry manifest. Typed deviation,
+# recorded on #390.
+
+inputs:
+  sources-revision:
+    description: >-
+      Exact commit of swift-institute/institute-continuous-integration to
+      provision. Leave empty — the default — to read the single authority,
+      `.institute-ci-pin` at this repository's root. Supply a value only to
+      provision a revision other than the fleet's, and then it must still be
+      a full 40-hex SHA: the refusal is the inline check in the identity
+      step below, not an external guard.
+    required: false
+    default: ''
+  workspace-revision:
+    description: >-
+      Exact commit of swift-institute/institute-application used as the build coordinate.
+      Must stay a full 40-hex SHA; the refusal is the inline check in the
+      identity step below, not an external guard.
+    required: false
+    default: '72d4b2ae1e5b6a2b49fc22e0240dad0a34a9618f'
+
+outputs:
+  binary:
+    description: >-
+      Absolute path to the verified `institute-continuous-integration`
+      executable.
+    value: ${{ steps.entry.outputs.binary }}
+  sources-revision:
+    description: 'Commit of institute-continuous-integration the binary was built from.'
+    value: ${{ steps.identity.outputs.sources-revision }}
+  cache-hit:
+    description: "'true' when the binary was restored rather than built."
+    value: ${{ steps.restore.outputs.cache-hit }}
+
+runs:
+  using: composite
+  steps:
+    # A revision that is not 40-hex refuses fail-closed rather than
+    # minting a malformed cache key that would silently collide across
+    # revisions.
+    - name: Institute CI source identity
+      id: identity
+      shell: bash
+      env:
+        SOURCES_REVISION: ${{ inputs.sources-revision }}
+      run: |
+        set -euo pipefail
+        # One authority. `.institute-ci-pin` sits three levels above this
+        # action file, at the repository root; reading it here rather than
+        # copying its value into each caller is what keeps the cache
+        # namespace from silently splitting when a pin advance is partial.
+        if [ -z "$SOURCES_REVISION" ]; then
+          PIN_FILE="${GITHUB_ACTION_PATH}/../../../.institute-ci-pin"
+          [ -f "$PIN_FILE" ] \
+            || { echo "no Institute CI pin at $PIN_FILE" >&2; exit 1; }
+          SOURCES_REVISION="$(tr -d '[:space:]' < "$PIN_FILE")"
+        fi
+        [[ "$SOURCES_REVISION" =~ ^[0-9a-f]{40}$ ]] \
+          || { echo "refusing malformed Institute CI source revision: '$SOURCES_REVISION'" >&2; exit 1; }
+        echo "sources-revision=$SOURCES_REVISION" >> "$GITHUB_OUTPUT"
+
+    - name: Restore Institute CI (exact key, acceleration only)
+      id: restore
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: .institute-ci-entry
+        key: institute-ci-${{ steps.identity.outputs.sources-revision }}-${{ inputs.workspace-revision }}-linux-x86_64-swift-6.3-static
+
+    - name: Swift toolchain (cold bootstrap only)
+      if: ${{ steps.restore.outputs.cache-hit != 'true' }}
+      uses: SwiftyLab/setup-swift@38f54a76b70d989321de9dc7c840618c08cf56e9 # v1.14.0
+      with:
+        swift-version: "6.3"
+
+    - name: Checkout Institute CI sources at exact pin (cold bootstrap only)
+      if: ${{ steps.restore.outputs.cache-hit != 'true' }}
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        repository: swift-institute/institute-continuous-integration
+        ref: ${{ steps.identity.outputs.sources-revision }}
+        path: .institute-ci-sources
+        persist-credentials: false
+
+    - name: Checkout Workspace at exact main pin (cold bootstrap only)
+      if: ${{ steps.restore.outputs.cache-hit != 'true' }}
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        repository: swift-institute/institute-application
+        # Advance with pin-advance flow; must stay a full SHA.
+        ref: ${{ inputs.workspace-revision }}
+        path: .workspace
+        persist-credentials: false
+
+    - name: Cold bootstrap through the sanctioned Workspace coordinate
+      if: ${{ steps.restore.outputs.cache-hit != 'true' }}
+      shell: bash
+      env:
+        SOURCES_REVISION: ${{ steps.identity.outputs.sources-revision }}
+        WORKSPACE_REVISION: ${{ inputs.workspace-revision }}
+      run: |
+        set -euo pipefail
+        # uuid-dev: the typed F2/F10 provisioning input (swift-linux-standard's
+        # CLinuxKernelShim includes uuid/uuid.h); absent on the bare runner.
+        sudo apt-get update -qq && sudo apt-get install -qq -y uuid-dev
+        # TX-APP1Z: institute-application's Swift package moved from Application/ to
+        # the repository root. This checkout is pinned to a caller-supplied or
+        # hard-pinned revision, so it must build either layout. The probe retires
+        # once every pin in the fleet is post-flatten.
+        workspace_package_path=.workspace
+        if [ -f .workspace/Application/Package.swift ]; then
+          workspace_package_path=.workspace/Application
+        fi
+        swift run --package-path "$workspace_package_path" institute package build \
+          --package-path .institute-ci-sources --argument=--static-swift-stdlib
+        mkdir -p .institute-ci-entry/bin
+        cp "$(find .institute-ci-sources/.build -name institute-continuous-integration -type f -perm /111 | head -1)" \
+          .institute-ci-entry/bin/institute-continuous-integration
+        .institute-ci-entry/bin/institute-continuous-integration bootstrap-manifest \
+          --workspace-revision "$WORKSPACE_REVISION" --sources-revision "$SOURCES_REVISION" \
+          --toolchain swift-6.3 --os linux --arch x86_64 \
+          --provisioning uuid-dev,static-swift-stdlib \
+          --root .institute-ci-entry --executables bin/institute-continuous-integration \
+          --producer-run "$GITHUB_RUN_ID" > .institute-ci-entry/manifest.json
+
+    - name: Save Institute CI cache entry (cold bootstrap only)
+      if: ${{ steps.restore.outputs.cache-hit != 'true' }}
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: .institute-ci-entry
+        key: institute-ci-${{ steps.identity.outputs.sources-revision }}-${{ inputs.workspace-revision }}-linux-x86_64-swift-6.3-static
+
+    # Every restored entry is provenance-verified before any trust: a
+    # corrupt or wrong-identity entry refuses fail-closed rather than
+    # serving a binary nobody can attribute (run 31080609758).
+    - name: Verify Institute CI provenance before trust (fail closed)
+      id: entry
+      shell: bash
+      env:
+        SOURCES_REVISION: ${{ steps.identity.outputs.sources-revision }}
+        WORKSPACE_REVISION: ${{ inputs.workspace-revision }}
+      run: |
+        set -euo pipefail
+        .institute-ci-entry/bin/institute-continuous-integration bootstrap-verify \
+          --workspace-revision "$WORKSPACE_REVISION" --sources-revision "$SOURCES_REVISION" \
+          --toolchain swift-6.3 --os linux --arch x86_64 \
+          --provisioning uuid-dev,static-swift-stdlib \
+          --root .institute-ci-entry --manifest .institute-ci-entry/manifest.json
+        echo "binary=$(pwd)/.institute-ci-entry/bin/institute-continuous-integration" >> "$GITHUB_OUTPUT"

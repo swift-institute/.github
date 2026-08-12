@@ -1,0 +1,68 @@
+name: 'Central style configuration'
+description: >-
+  Materialize the one `.swift-format` and `.swiftlint.yml` the fleet is
+  measured against into the subject checkout, displacing any copy the
+  package carries.
+
+# There is one rule set, and it lives here. A package does not get to
+# elect a weaker one for itself, and a package that carries a stale copy
+# of the old one does not get measured against it by accident.
+#
+# The configs are placed at the subject root, and nowhere else, because
+# both tools resolve `included:`/`excluded:` paths relative to the file
+# that declares them: a config outside the checkout empties the include
+# set instead of widening it, and the run reports "no lintable files"
+# rather than failing.
+#
+# Nested copies deeper in the tree are removed rather than left in place.
+# SwiftLint prefers the nearest config to each file, so a leftover nested
+# copy would silently keep governing its own subtree — the exact
+# non-uniformity this action exists to end.
+#
+# Pinned to the workflow's own revision, so a given workflow revision
+# always resolves the identical rule set. The retired mechanism fetched
+# `main` live at lint time, which meant two runs of the same consumer
+# commit could be measured against different rules purely because of when
+# they ran.
+
+inputs:
+  ref:
+    description: >-
+      This workflow's own revision — pass `${{ job.workflow_sha }}`. The
+      configs are read from that exact commit, never from a moving ref.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Check out the central configuration
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        repository: swift-institute/.github
+        ref: ${{ inputs.ref }}
+        path: .ci-central-style
+        sparse-checkout: |
+          .swift-format
+          .swiftlint.yml
+        sparse-checkout-cone-mode: false
+
+    - name: Displace every package-local style configuration
+      shell: bash
+      env:
+        CENTRAL: ${{ github.workspace }}/.ci-central-style
+      run: |
+        set -euo pipefail
+        for name in .swift-format .swiftlint.yml; do
+          [ -f "$CENTRAL/$name" ] || {
+            echo "::error::central $name did not check out; refusing to lint against an unknown rule set."
+            exit 1
+          }
+        done
+        # Drop every copy the package carries, at any depth, before
+        # placing the central one. `-not -path` keeps the freshly
+        # checked-out originals out of their own sweep.
+        find . \( -name .swift-format -o -name .swiftlint.yml \) \
+          -not -path './.ci-central-style/*' -print -delete
+        cp "$CENTRAL/.swift-format" "$CENTRAL/.swiftlint.yml" .
+        rm -rf "$CENTRAL"
+        echo "Measuring against the central rule set at ${{ inputs.ref }}."
