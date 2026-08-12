@@ -130,7 +130,7 @@ jobs:
         with:
           repository: swift-institute/institute-pull-request-transaction
           # Advance with pin-advance flow; must stay a full SHA (branch-pin
-          # guard). Same pin as review-pr-transaction.yml and tools-tests.yml.
+          # guard). Same pin as review-pr-transaction.yml.
           ref: 5528f99b5792c6bd65269b74f19d6e54e8b8316d
           path: .pr-transaction
           token: ${{ steps.prt-token.outputs.token }}

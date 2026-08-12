@@ -24,7 +24,7 @@
 # the gate on the change.
 #
 # F16 port: the guard is Swift-owned — `CI.Validation.SchemaCorrespondence`
-# in Tools/institute-ci, retiring `validate-schema-workflow-keys.py`. The
+# in swift-institute/institute-continuous-integration, retiring `validate-schema-workflow-keys.py`. The
 # contract changed with the owner: findings travel on stdout as TSV and the
 # exit code answers only "did the validator run?" (0 = ran, 2 = could not),
 # so both steps below judge findings by the TSV, not the exit code.
@@ -64,7 +64,6 @@ on:
       - 'metadata-schema.json'
       - '.github/workflows/sync-metadata.yml'
       - '.github/scripts/validate-readme.py'
-      - 'Tools/institute-ci/**'
       - '.github/scripts/tests/schema-correspondence/**'
       - '.github/workflows/validate-schema-correspondence.yml'
   pull_request:
@@ -72,7 +71,6 @@ on:
       - 'metadata-schema.json'
       - '.github/workflows/sync-metadata.yml'
       - '.github/scripts/validate-readme.py'
-      - 'Tools/institute-ci/**'
       - '.github/scripts/tests/schema-correspondence/**'
       - '.github/workflows/validate-schema-correspondence.yml'
   workflow_dispatch: {}
@@ -108,8 +106,6 @@ jobs:
       - name: Provision the Institute CI binary
         id: institute-ci
         uses: ./.github/actions/institute-ci
-        with:
-          sources-root: ${{ github.workspace }}
 
       - name: Positive control — the guard must still be able to fail
         id: control

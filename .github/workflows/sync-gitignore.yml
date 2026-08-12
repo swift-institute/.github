@@ -154,8 +154,6 @@ jobs:
       - name: Provision the Institute CI binary
         id: institute-ci
         uses: ./institute-github/.github/actions/institute-ci
-        with:
-          sources-root: ${{ github.workspace }}/institute-github
 
       - name: Prove the renderer and the gate agree before writing anything
         # The fixture suite covers the gate; this covers the pair. A renderer

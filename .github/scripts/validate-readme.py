@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # RETAINED (F16, swift-institute/.github#404): PORTED but not yet deletable.
-# The Swift owner is `CI.Validation.Readme` (Tools/institute-ci), which
+# The Swift owner is `CI.Validation.Readme` (swift-institute/institute-continuous-integration), which
 # records this path as its `retiredScript`, so validate-base.yml dispatch and
 # the fixture harness are served by Swift -- this script no longer runs in CI
 # dispatch. It survives solely as DATA: the GH-REPO-063 guard
@@ -102,7 +102,7 @@ def strip_code_blocks(text: str) -> str:
 # alike to a reader.
 #
 # Both this tuple and FAMILIES below are read by the GH-REPO-063 guard
-# (`CI.Validation.SchemaCorrespondence` in Tools/institute-ci), which asserts
+# (`CI.Validation.SchemaCorrespondence` in swift-institute/institute-continuous-integration), which asserts
 # each is identical to the corresponding enum in metadata-schema.json's
 # `readme` block. It reads this file as data and looks these constants up BY
 # NAME at module level, so:

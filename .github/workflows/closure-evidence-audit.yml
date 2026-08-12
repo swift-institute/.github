@@ -118,7 +118,7 @@ jobs:
       # Tools/ copy. The seed is private, so the checkout rides a
       # transient App token scoped to exactly that one repository with
       # contents:read (the same narrowed-mint shape
-      # review-pr-transaction.yml and tools-tests.yml use), separate
+      # review-pr-transaction.yml uses), separate
       # from the issues/actions/contents-scoped audit token minted below.
       - name: Mint read-only token for the seeded institute-ci-control package
         id: cicontrol-token
@@ -135,7 +135,7 @@ jobs:
         with:
           repository: swift-institute/institute-continuous-integration-control
           # Advance with pin-advance flow; must stay a full SHA (branch-pin
-          # guard). Same pin as tools-tests.yml, cron-audit-base.yml, and
+          # guard). Same pin as cron-audit-base.yml and
           # submit-dep-graph-weekly.yml.
           ref: f9832144acacc43cbe6fb8d86b50435f68dd41c5
           path: .institute-ci-control

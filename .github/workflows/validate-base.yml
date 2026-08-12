@@ -228,8 +228,6 @@ jobs:
       - name: Provision the Institute CI binary
         id: institute-ci
         uses: ./institute-github/.github/actions/institute-ci
-        with:
-          sources-root: ${{ github.workspace }}/institute-github
 
       - name: Resolve target repo
         id: targets

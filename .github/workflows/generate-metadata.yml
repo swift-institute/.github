@@ -69,23 +69,16 @@ jobs:
         with:
           swift-version: '6.3'
 
-      # TX-4 of the reduction census (swift-institute/.github#515): the
-      # classifier engine now lives in its seeded repository,
-      # swift-institute/institute-repository-policy, and this workflow
-      # consumes it from there instead of the retiring Tools/ copy. The
-      # engine's own Sources/ and Tests/ locate the retained Policy/ data
-      # (and, for the test suite, .github/workflows/*.yml and
-      # .github/scripts/tests/fixtures/callers/) by walking up a fixed
-      # number of #filePath parents that assumes co-location inside
-      # institute-github/Tools/repository-policy. actions/checkout
-      # unconditionally deletes the contents of its `path:` before cloning
-      # (regardless of `clean:`), so checking out directly into that path
-      # would delete the Policy/ already checked out above. Check out to a
-      # separate directory instead and copy the engine files in, leaving
-      # Policy/ untouched. The seed is private, so the checkout rides a
+      # TX-4/TX-5 of the reduction census (swift-institute/.github#515):
+      # the classifier engine lives in its own repository,
+      # swift-institute/institute-repository-policy, and builds where it is
+      # checked out. The authored policy data stays here — it is fleet
+      # policy this repository writes, not engine source — and is now named
+      # explicitly on every invocation rather than found by walking
+      # #filePath parents, which only resolved while the engine sat inside
+      # this checkout. The seed is private, so the checkout rides a
       # transient App token scoped to exactly that one repository with
-      # contents:read (the same narrowed-mint shape
-      # review-pr-transaction.yml and tools-tests.yml use).
+      # contents:read.
       - name: Mint read-only token for the seeded repository-policy package
         id: repo-policy-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
@@ -101,26 +94,20 @@ jobs:
         with:
           repository: swift-institute/institute-repository-policy
           # Advance with pin-advance flow; must stay a full SHA (branch-pin
-          # guard). Same pin as sync-metadata.yml and tools-tests.yml.
+          # guard). Same pin as sync-metadata.yml.
           ref: 85f1e68106d6a30498077cc5ce6cb90b5d271409
           path: .repository-policy-engine
           token: ${{ steps.repo-policy-token.outputs.token }}
           persist-credentials: false
 
-      - name: Copy the seeded engine into institute-github/Tools/repository-policy, beside the retained Policy/
-        run: |
-          set -euo pipefail
-          cp -R .repository-policy-engine/Package.swift .repository-policy-engine/Lint.swift \
-            .repository-policy-engine/.gitignore .repository-policy-engine/Sources \
-            .repository-policy-engine/Tests institute-github/Tools/repository-policy/
 
       - name: Build repository-policy (Swift owner of the draft)
         id: policy
         run: |
           set -euo pipefail
-          swift build --package-path institute-github/Tools/repository-policy \
+          swift build --package-path .repository-policy-engine \
             --product repository-policy
-          bin=$(swift build --package-path institute-github/Tools/repository-policy \
+          bin=$(swift build --package-path .repository-policy-engine \
             --show-bin-path)
           echo "binary=${bin}/repository-policy" >> "$GITHUB_OUTPUT"
 

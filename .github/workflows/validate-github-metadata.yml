@@ -83,7 +83,7 @@ jobs:
   # The sweep's view of `main` for [GH-REPO-063]: the same correspondence
   # validate-schema-correspondence.yml gates on push/pull_request, re-asked
   # here so a drift that somehow landed is still seen weekly. Swift-owned:
-  # CI.Validation.SchemaCorrespondence in Tools/institute-ci, retiring
+  # CI.Validation.SchemaCorrespondence in swift-institute/institute-continuous-integration, retiring
   # `.github/scripts/validate-schema-workflow-keys.py`. Its own job rather
   # than a step of `scan` because the institute-ci binary channel
   # (./.github/actions/institute-ci) cannot bootstrap inside `scan`'s
@@ -112,8 +112,6 @@ jobs:
       - name: Provision the Institute CI binary
         id: institute-ci
         uses: ./institute-github/.github/actions/institute-ci
-        with:
-          sources-root: ${{ github.workspace }}/institute-github
 
       - name: Validate schema<->consumer correspondence [GH-REPO-063]
         shell: bash

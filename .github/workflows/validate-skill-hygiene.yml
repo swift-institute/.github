@@ -88,12 +88,10 @@ on:
     branches: [main]
     paths:
       - '.github/scripts/tests/fixtures/skill-**'
-      - 'Tools/institute-ci/**'
       - '.github/workflows/validate-skill-hygiene.yml'
   pull_request:
     paths:
       - '.github/scripts/tests/fixtures/skill-**'
-      - 'Tools/institute-ci/**'
       - '.github/workflows/validate-skill-hygiene.yml'
 
 jobs:
@@ -131,8 +129,6 @@ jobs:
       - name: Provision the Institute CI binary
         id: institute-ci
         uses: ./.github/actions/institute-ci
-        with:
-          sources-root: ${{ github.workspace }}
 
       - name: Run skill-hygiene fixtures
         shell: bash

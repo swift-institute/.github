@@ -12,9 +12,9 @@ not an option either: the harness fails on an unowned rule directory, and it
 was right to.
 
 F16 port: the guard is Swift-owned — `CI.Validation.SchemaCorrespondence` in
-`Tools/institute-ci`, retiring `validate-schema-workflow-keys.py`. Its
+`swift-institute/institute-continuous-integration`, retiring `validate-schema-workflow-keys.py`. Its
 `--schema/--sync-workflow/--readme-validator` face carries the same
-three-file shape, and `Tools/institute-ci/Tests/CI Validation Tests` runs
+three-file shape, and `institute-continuous-integration's validation tests` runs
 every scenario below in-process. These fixtures are corpus DATA, pinned by
 exact membership in the ManifestBinding stub guard; they are not edited
 alongside the validator.

@@ -34,8 +34,6 @@ on:
       - '.github/scripts/.branch-pin-baseline'
       - '.github/scripts/tests/**'
       - '.github/workflows/lint-validator-fixtures.yml'
-      # the embedded-shell controls and the Swift validators live here.
-      - 'Tools/institute-ci/**'
       # the system-dependency control extracts the shipped action step.
       - '.github/actions/install-system-deps/action.yml'
       # the embedded-shell controls extract their subjects from
@@ -57,8 +55,6 @@ on:
       - '.github/scripts/.branch-pin-baseline'
       - '.github/scripts/tests/**'
       - '.github/workflows/lint-validator-fixtures.yml'
-      # the embedded-shell controls and the Swift validators live here.
-      - 'Tools/institute-ci/**'
       # the system-dependency control extracts the shipped action step.
       - '.github/actions/install-system-deps/action.yml'
       # the embedded-shell controls extract their subjects from
@@ -155,8 +151,6 @@ jobs:
       - name: Provision the Institute CI binary
         id: institute-ci
         uses: ./.github/actions/institute-ci
-        with:
-          sources-root: ${{ github.workspace }}
 
       # F16: the corpus gate is `institute-ci validate-fixtures` — C0's
       # Swift owner of the retired `tests/run.sh`. `--scripts` arms the
@@ -183,40 +177,58 @@ jobs:
         with:
           swift-version: '6.3'
 
+      # The suites' subject is this repository's shipped bytes, but their
+      # code belongs with the reader it uses, so it lives in
+      # institute-continuous-integration. It is checked out here and told
+      # where the subject is; without INSTITUTE_CONTROL_PLANE_ROOT the
+      # suites decline rather than report green against a guessed root.
+      - name: Checkout Institute CI sources at exact pin
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: swift-institute/institute-continuous-integration
+          # Advance with pin-advance flow; must stay a full SHA (branch-pin guard).
+          ref: 58d7619b6e135c22ba5eb11d5fe3a73a2fa89cf3
+          path: .institute-ci-sources
+          persist-credentials: false
+
       # swift-ci.yml's ci-ok aggregator, subject resolver and configured
       # swift-linter path are shell embedded in a workflow, so the corpus'
       # repo-shaped fixtures cannot reach them; the shared system-dependency
       # action must likewise derive packages from every graph a Test step
-      # compiles, including Tests/Package.swift. Both suites extract the
-      # shipped step bodies by name and run them against hermetic shims.
+      # compiles, including Tests/Package.swift. All three suites extract
+      # the shipped step bodies by name and run them against hermetic
+      # shims — including the prebuilt-linter identity gate, whose subject
+      # is swift-ci.yml's installation step.
       - name: Run embedded-shell controls
         shell: bash
+        env:
+          INSTITUTE_CONTROL_PLANE_ROOT: ${{ github.workspace }}
         run: |
           set -euo pipefail
-          swift test --package-path Tools/institute-ci \
-            --filter 'ControlPlaneShellTests|SystemDependencyDerivationTests' \
+          swift test --package-path .institute-ci-sources \
+            --filter 'ControlPlaneShellTests|SystemDependencyDerivationTests|Installer' \
             2>&1 | tee /tmp/embedded-shell-controls.txt
 
       # The CI verdict inventory (Task 1-01, #276/#281) moved to Swift in
-      # F16 class C7: `CI.Inventory` in Tools/institute-ci, with its
+      # F16 class C7: `CI.Inventory` in swift-institute/institute-continuous-integration, with its
       # drift and live-run gates as `CI Inventory Tests`. It is verified
-      # by the tools-tests.yml gate (PS-3), which runs the full
-      # institute-ci suite through `workspace package test`, not by a
-      # step here, so a stale inventory fails the package rather than
-      # one workflow job.
+      # by institute-continuous-integration's own package tests, not by
+      # a step here, so a stale inventory fails the package that owns it
+      # rather than one workflow job.
 
 
       # The prebuilt-linter identity gate (#43 item 4) moved to Swift in F16
-      # class C6 as `Institute.Receipt.Bootstrap.Installer` with its controls
-      # as `Institute Receipt Tests`. It is verified by `workspace package
-      # test`, not by a step here.
+      # class C6 as `Institute.ContinuousIntegration.Receipt.Bootstrap
+      # .Installer`. Its subject is swift-ci.yml's installation step — bytes
+      # this repository ships — so it runs in the embedded-shell step above
+      # rather than in the owning package's own suite, which has no subject.
 
       # The secret-transport contract (#92 ruling, enforced per #108),
       # including class-exactness of typed exemptions, moved to Swift in
       # F16 class C3 as `CI.Validation.ThinCallers` with its controls as
       # `CI.Validation.ThinCallers Tests`. It is verified by the
-      # tools-tests.yml gate (PS-3), not by a step here; the Python suite
-      # was retired in #446.
+      # package that owns it, not by a step here; the Python suite was
+      # retired in #446.
 
       # Task 4-01 (swift-institute/.github#276, #284): the TEMPORARY
       # The file-naming validator's diagnostic-precedence rules operate on

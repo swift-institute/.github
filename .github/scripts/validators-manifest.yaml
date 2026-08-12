@@ -2,7 +2,7 @@
 # validator-script ↔ workflow-file binding.
 #
 # Phase B-1 of CI-REVIEW-PHASE-B-DESIGN-2026-05-14 §3. The binding
-# validator (`CI.Validation.ManifestBinding`, Tools/institute-ci;
+# validator (`CI.Validation.ManifestBinding`, swift-institute/institute-continuous-integration;
 # formerly validate-manifest-binding.py) cross-checks this manifest
 # for internal consistency. Phase B-1 scope = checks 2 + 4 only
 # (internal consistency); checks 1 + 3 (Skills cross-references)
@@ -249,7 +249,7 @@ validators:
     # resolves against the Swift registry (`institute-ci validate
     # --script`), and the Swift owner records the same path as its
     # `retiredScript`. The .py is deleted; the entry is not.
-    engine: swift (Tools/institute-ci, CI Validation)
+    engine: swift (institute-continuous-integration)
 
   # ─── Cross-cutting (gh-repo skill, shared with thin-callers) ───────
 
@@ -325,7 +325,7 @@ validators:
     # registry (`institute-ci validate --script`), and the Swift owner
     # records the same path as its `retiredScript`. The .py is deleted;
     # the entry is not.
-    engine: swift (Tools/institute-ci, CI Validation)
+    engine: swift (institute-continuous-integration)
 
   - rule-id: GH-IGNORE-002
     validator-script: .github/scripts/validate-gitignore.py
@@ -336,7 +336,7 @@ validators:
     rule-id-regex: '^GH-IGNORE-002'
     migrate-to-base: 'no (per-package-org-sweep deferred to B-2)'
     # #404 drain: ported to `CI.Validation.Gitignore` — see GH-IGNORE-001.
-    engine: swift (Tools/institute-ci, CI Validation)
+    engine: swift (institute-continuous-integration)
 
   - rule-id: GH-REPO-METADATA
     validator-script: .github/scripts/validate-github-metadata.py
@@ -400,7 +400,7 @@ validators:
     # FAMILIES constants as its correspondence consumer, pinning its
     # existence. The deletion rides GH-REPO-063's re-specification
     # against a Swift-owned consumer surface (see #404).
-    engine: swift (Tools/institute-ci, CI Validation)
+    engine: swift (institute-continuous-integration)
 
   - rule-id: PKG-DEP-008
     validator-script: .github/scripts/validate-package-identity.py
@@ -443,7 +443,7 @@ validators:
     # `retiredScript`. The .py is deleted; the entry is not. Unlike the
     # retired script the Swift owner speaks the C0 contract: findings as
     # TSV on stdout, exit 0 = ran / 2 = could not run.
-    engine: swift (Tools/institute-ci, CI Validation)
+    engine: swift (institute-continuous-integration)
     # Was `self-firing: deferred` until 2026-07-28. The guard ran only inside
     # validate-github-metadata.yml, which has no push/pull_request trigger and
     # checks out `ref: main`, so a pull request introducing the exact drift it
@@ -581,7 +581,7 @@ validators:
     # it is the key validate-base.yml resolves against the Swift
     # registry, and the Swift owner records the same path as its
     # `retiredScript`. The .py is deleted; the entry is not.
-    engine: swift (Tools/institute-ci, CI Validation)
+    engine: swift (institute-continuous-integration)
 
   # ─── Task 4-01 (swift-institute/.github#276, #284) ──────────────────
   # Not a numbered [CI-NNN] rule — no /promote-rule pilot slot claimed by

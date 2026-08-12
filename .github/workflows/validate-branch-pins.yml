@@ -215,8 +215,6 @@ jobs:
       - name: Provision the Institute CI binary
         uses: ./.github-shared/.github/actions/institute-ci
         id: institute-ci
-        with:
-          sources-root: ${{ github.workspace }}/.github-shared
 
       - name: Run branch-pin checks
         id: check

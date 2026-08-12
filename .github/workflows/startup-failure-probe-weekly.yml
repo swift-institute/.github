@@ -18,7 +18,7 @@
 # the cross-org token-mint pattern of cron-audit-base.yml / link-check-weekly.yml.
 #
 # Detection is a testable pure function in `Institute.Receipt.Run.Startup`
-# (Tools/institute-ci), reached through the binary's `startup-failures` face;
+# (swift-institute/institute-continuous-integration), reached through the binary's `startup-failures` face;
 # `Institute Receipt Tests` proves it flags synthetic startup_failure data
 # (non-zero exit) and passes on clean data. Ported from the retired
 # detect-startup-failures.py in F16 class C6.
@@ -85,8 +85,6 @@ jobs:
       - name: Provision the Institute CI binary
         id: institute-ci
         uses: ./.github/actions/institute-ci
-        with:
-          sources-root: ${{ github.workspace }}
 
       - name: Query recent runs and detect startup_failure
         env:

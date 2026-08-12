@@ -10,7 +10,7 @@
 # on swift-institute/.github#229 (comment 5166115277, 2026-08-03): the
 # 2026-07-28 Skills-corpus rebuild dropped every bracket-form citation the
 # corpus carried, so the check had no convention left to enforce. See the
-# Swift owner's doc comment (Tools/institute-ci/Sources/CI Validation/
+# Swift owner's doc comment (institute-continuous-integration Sources/
 # CI.Validation.ManifestBinding.swift) for the full rationale.
 #
 # Single checkout now (validator host only); no longer needs the
@@ -44,14 +44,12 @@ on:
       - '.github/scripts/validators-manifest.yaml'
       - '.github/scripts/validate-*.py'
       - '.github/workflows/validate-manifest-binding.yml'
-      - 'Tools/institute-ci/Sources/CI Validation/CI.Validation.ManifestBinding.swift'
 
   pull_request:
     paths:
       - '.github/scripts/validators-manifest.yaml'
       - '.github/scripts/validate-*.py'
       - '.github/workflows/validate-manifest-binding.yml'
-      - 'Tools/institute-ci/Sources/CI Validation/CI.Validation.ManifestBinding.swift'
 
   workflow_call:
     inputs:
@@ -122,8 +120,6 @@ jobs:
       - name: Provision the Institute CI binary
         id: institute-ci
         uses: ./institute-github/.github/actions/institute-ci
-        with:
-          sources-root: ${{ github.workspace }}/institute-github
 
       - name: Resolve target repo
         id: targets

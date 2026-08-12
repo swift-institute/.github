@@ -554,24 +554,16 @@ jobs:
         with:
           swift-version: '6.3'
 
-      # TX-4 of the reduction census (swift-institute/.github#515): the
-      # classifier engine now lives in its seeded repository,
-      # swift-institute/institute-repository-policy, and this workflow
-      # consumes it from there instead of the retiring Tools/ copy. The
-      # engine's own Sources/ and Tests/ locate the retained Policy/ data
-      # (and, for the test suite, .github/workflows/*.yml and
-      # .github/scripts/tests/fixtures/callers/) by walking up a fixed
-      # number of #filePath parents that assumes co-location inside
-      # institute-ci/Tools/repository-policy. actions/checkout
-      # unconditionally deletes the contents of its `path:` before cloning
-      # (regardless of `clean:`), so checking out directly into that path
-      # would delete the Policy/ already checked out above. Check out to a
-      # separate directory instead and copy the engine files in, leaving
-      # Policy/ untouched. The seed is private, so the checkout rides a
+      # TX-4/TX-5 of the reduction census (swift-institute/.github#515):
+      # the classifier engine lives in its own repository,
+      # swift-institute/institute-repository-policy, and builds where it is
+      # checked out. The authored policy data stays here — it is fleet
+      # policy this repository writes, not engine source — and is now named
+      # explicitly on every invocation rather than found by walking
+      # #filePath parents, which only resolved while the engine sat inside
+      # this checkout. The seed is private, so the checkout rides a
       # transient App token scoped to exactly that one repository with
-      # contents:read (the same narrowed-mint shape
-      # review-pr-transaction.yml and tools-tests.yml use), separate from
-      # the installation token minted below.
+      # contents:read.
       - name: Mint read-only token for the seeded repository-policy package
         id: repo-policy-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
@@ -587,19 +579,12 @@ jobs:
         with:
           repository: swift-institute/institute-repository-policy
           # Advance with pin-advance flow; must stay a full SHA (branch-pin
-          # guard). Same pin as generate-metadata.yml and tools-tests.yml.
+          # guard). Same pin as generate-metadata.yml.
           ref: 85f1e68106d6a30498077cc5ce6cb90b5d271409
           path: .repository-policy-engine
           token: ${{ steps.repo-policy-token.outputs.token }}
           persist-credentials: false
 
-      - name: Copy the seeded engine into institute-ci/Tools/repository-policy, beside the retained Policy/
-        shell: bash
-        run: |
-          set -euo pipefail
-          cp -R .repository-policy-engine/Package.swift .repository-policy-engine/Lint.swift \
-            .repository-policy-engine/.gitignore .repository-policy-engine/Sources \
-            .repository-policy-engine/Tests institute-ci/Tools/repository-policy/
 
       - name: Validate inputs
         env:
@@ -669,9 +654,9 @@ jobs:
           # control-plane contract. Visibility is NOT a fourth top-level
           # RepositoryClass — it selects among the package-class payloads
           # only (swift-institute/.github#276 Task 3-01).
-          desired_package_public=$(swift run --package-path institute-ci/Tools/repository-policy repository-policy ruleset --policy institute-ci/Tools/repository-policy/Policy/protected-main-ruleset.json --class package --visibility public)
-          desired_package_private=$(swift run --package-path institute-ci/Tools/repository-policy repository-policy ruleset --policy institute-ci/Tools/repository-policy/Policy/protected-main-private-ruleset.json --class package --visibility private)
-          desired_control=$(swift run --package-path institute-ci/Tools/repository-policy repository-policy ruleset --policy institute-ci/Tools/repository-policy/Policy/protected-main-control-ruleset.json --class control-plane)
+          desired_package_public=$(swift run --package-path .repository-policy-engine repository-policy ruleset --policy institute-ci/policy/protected-main-ruleset.json --class package --visibility public)
+          desired_package_private=$(swift run --package-path .repository-policy-engine repository-policy ruleset --policy institute-ci/policy/protected-main-private-ruleset.json --class package --visibility private)
+          desired_control=$(swift run --package-path .repository-policy-engine repository-policy ruleset --policy institute-ci/policy/protected-main-control-ruleset.json --class control-plane)
           normalize() {
             jq -S '{name, target, enforcement, conditions, bypass_actors, rules:(.rules | sort_by(.type) | map(if .parameters? then .parameters.required_status_checks? |= (if . then sort_by(.context) else . end) else . end))}'
           }
@@ -711,9 +696,9 @@ jobs:
           # regardless of manifest presence. Overrides are a config file
           # under source control, converged the same way as every other
           # target — never a hand-mutation of live ruleset state. See
-          # Tools/repository-policy/Policy/ruleset-class-overrides.json for
+          # policy/ruleset-class-overrides.json for
           # the current override list and each entry's cited rationale.
-          override_repos=$(jq -r '.controlPlaneOverrides[].repo' institute-ci/Tools/repository-policy/Policy/ruleset-class-overrides.json)
+          override_repos=$(jq -r '.controlPlaneOverrides[].repo' institute-ci/policy/ruleset-class-overrides.json)
 
           for target in "${targets[@]}"; do
             # Classify mechanically: a root Package.swift present at the
@@ -843,7 +828,7 @@ jobs:
             # scheduled-heal.
             existing_ruleset="false"
             [[ -n "$id" ]] && existing_ruleset="true"
-            decision=$(swift run --package-path institute-ci/Tools/repository-policy repository-policy ruleset-convergence --mode "$mode" --existing-ruleset "$existing_ruleset")
+            decision=$(swift run --package-path .repository-policy-engine repository-policy ruleset-convergence --mode "$mode" --existing-ruleset "$existing_ruleset")
             action=$(printf '%s' "$decision" | jq -r '.action')
             if [[ "$action" == "skipAbsentOnSchedule" ]]; then
               reason=$(printf '%s' "$decision" | jq -r '.reason')
@@ -949,24 +934,16 @@ jobs:
         with:
           swift-version: '6.3'
 
-      # TX-4 of the reduction census (swift-institute/.github#515): the
-      # classifier engine now lives in its seeded repository,
-      # swift-institute/institute-repository-policy, and this workflow
-      # consumes it from there instead of the retiring Tools/ copy. The
-      # engine's own Sources/ and Tests/ locate the retained Policy/ data
-      # (and, for the test suite, .github/workflows/*.yml and
-      # .github/scripts/tests/fixtures/callers/) by walking up a fixed
-      # number of #filePath parents that assumes co-location inside
-      # institute-ci/Tools/repository-policy. actions/checkout
-      # unconditionally deletes the contents of its `path:` before cloning
-      # (regardless of `clean:`), so checking out directly into that path
-      # would delete the Policy/ already checked out above. Check out to a
-      # separate directory instead and copy the engine files in, leaving
-      # Policy/ untouched. The seed is private, so the checkout rides a
+      # TX-4/TX-5 of the reduction census (swift-institute/.github#515):
+      # the classifier engine lives in its own repository,
+      # swift-institute/institute-repository-policy, and builds where it is
+      # checked out. The authored policy data stays here — it is fleet
+      # policy this repository writes, not engine source — and is now named
+      # explicitly on every invocation rather than found by walking
+      # #filePath parents, which only resolved while the engine sat inside
+      # this checkout. The seed is private, so the checkout rides a
       # transient App token scoped to exactly that one repository with
-      # contents:read (the same narrowed-mint shape
-      # review-pr-transaction.yml and tools-tests.yml use), separate from
-      # the installation token minted below.
+      # contents:read.
       - name: Mint read-only token for the seeded repository-policy package
         id: repo-policy-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
@@ -982,20 +959,13 @@ jobs:
         with:
           repository: swift-institute/institute-repository-policy
           # Advance with pin-advance flow; must stay a full SHA (branch-pin
-          # guard). Same pin as generate-metadata.yml, tools-tests.yml, and
+          # guard). Same pin as generate-metadata.yml and
           # the `rulesets` job above.
           ref: 85f1e68106d6a30498077cc5ce6cb90b5d271409
           path: .repository-policy-engine
           token: ${{ steps.repo-policy-token.outputs.token }}
           persist-credentials: false
 
-      - name: Copy the seeded engine into institute-ci/Tools/repository-policy, beside the retained Policy/
-        shell: bash
-        run: |
-          set -euo pipefail
-          cp -R .repository-policy-engine/Package.swift .repository-policy-engine/Lint.swift \
-            .repository-policy-engine/.gitignore .repository-policy-engine/Sources \
-            .repository-policy-engine/Tests institute-ci/Tools/repository-policy/
 
       - name: Validate inputs
         env:
@@ -1044,11 +1014,15 @@ jobs:
           INPUT_ORG: ${{ inputs.org }}
           DRY_RUN: ${{ inputs.dry-run }}
         run: |
+          # --surface-policy is explicit now. It used to fall through to the
+          # engine's package-relative default, which only found the data
+          # while the engine was copied in beside it.
           swift run \
-            --package-path institute-ci/Tools/repository-policy \
+            --package-path .repository-policy-engine \
             repository-policy \
             --repository "$INPUT_REPO" \
             --organization "$INPUT_ORG" \
             --dry-run "$DRY_RUN" \
+            --surface-policy institute-ci/policy/repository-surfaces.json \
             --journal "${RUNNER_TEMP}/repository-policy-journal.jsonl" \
             --receipt "${RUNNER_TEMP}/repository-policy-receipt.json"
