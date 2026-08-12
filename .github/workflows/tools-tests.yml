@@ -1,8 +1,8 @@
 # tools-tests.yml — run the test suites of the Tools packages on hosted CI.
 #
 # PS-3 (Goal swift-institute/.github#358, F18 review): the Tools
-# packages — institute-ci, institute-ci-control, repository-policy —
-# carry test suites, but until now no hosted gate ran them. lint-validator-fixtures.yml runs two filtered institute-ci suites
+# packages — institute-ci, repository-policy — carry test suites, but
+# until now no hosted gate ran them. lint-validator-fixtures.yml runs two filtered institute-ci suites
 # as embedded-shell controls, and everything else was "verified by
 # `institute package test`" only on whichever machine remembered to run
 # it. An untriggered test suite is the same category of artifact as an
@@ -15,6 +15,11 @@
 # generated ci.yml is zero-signal by design (visibility gate); this job
 # is its only hosted test evidence until the repository is public. The
 # matrix job retires when that happens (census TX-2..5 sequencing).
+#
+# TX-3 (#515): the institute-ci-control suite now tests the seeded
+# repository, swift-institute/institute-continuous-integration-control,
+# at its exact main pin, the same shape as pull-request-transaction
+# above. The Tools/ copy is deleted in this same transaction.
 #
 # One job per package, on Linux, through the sanctioned Workspace
 # coordinate — the same bootstrap shape swift-ci.yml's plan job and the
@@ -119,6 +124,34 @@ jobs:
           token: ${{ steps.prt-token.outputs.token }}
           persist-credentials: false
 
+      # TX-3 (#515): the institute-ci-control package's sources come from
+      # its seeded private repository; transient contents:read App token
+      # scoped to exactly that repository, never persisted. Same shape as
+      # the pull-request-transaction block above.
+      - name: Mint read-only token for the seeded institute-ci-control package
+        if: ${{ matrix.package == 'institute-ci-control' }}
+        id: cicontrol-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
+        with:
+          client-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: swift-institute
+          repositories: institute-continuous-integration-control
+          permission-contents: read
+
+      - name: Checkout the seeded institute-ci-control package at exact main pin
+        if: ${{ matrix.package == 'institute-ci-control' }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: swift-institute/institute-continuous-integration-control
+          # Advance with pin-advance flow; must stay a full SHA (branch-pin
+          # guard). Same pin as cron-audit-base.yml and
+          # submit-dep-graph-weekly.yml.
+          ref: f9832144acacc43cbe6fb8d86b50435f68dd41c5
+          path: .institute-ci-control
+          token: ${{ steps.cicontrol-token.outputs.token }}
+          persist-credentials: false
+
       # uuid-dev: the typed F2/F10 provisioning input (swift-linux-standard's
       # CLinuxKernelShim includes uuid/uuid.h); absent on the bare runner.
       - name: Install system dependencies
@@ -143,11 +176,14 @@ jobs:
           if [ -f .workspace/Application/Package.swift ]; then
             workspace_package_path=.workspace/Application
           fi
-          # TX-1 (#515): pull-request-transaction tests its seeded external
-          # checkout; every other package still tests its Tools/ sources.
+          # TX-1/TX-3 (#515): pull-request-transaction and
+          # institute-ci-control test their seeded external checkouts;
+          # every other package still tests its Tools/ sources.
           subject_package_path="Tools/${PACKAGE}"
           if [ "$PACKAGE" = "pull-request-transaction" ]; then
             subject_package_path=".pr-transaction"
+          elif [ "$PACKAGE" = "institute-ci-control" ]; then
+            subject_package_path=".institute-ci-control"
           fi
           swift run --package-path "$workspace_package_path" institute package test \
             --package-path "$subject_package_path"
