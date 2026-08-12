@@ -28,8 +28,11 @@ description: >-
 inputs:
   ref:
     description: >-
-      This workflow's own revision — pass `${{ job.workflow_sha }}`. The
-      configs are read from that exact commit, never from a moving ref.
+      This workflow's own revision, which callers pass as the job context's
+      workflow_sha. The configs are read from that exact commit, never from
+      a moving ref. Written in prose deliberately: an action manifest's
+      description is itself a template, so spelling the expression here
+      fails the whole action to load with "Unrecognized named-value".
     required: true
 
 runs:

@@ -190,7 +190,15 @@ jobs:
             echo "Legs: \`$(jq -r .legs <<< "$PLAN")\`"
             echo "Gating: \`$(jq -r .gating <<< "$PLAN")\`"
             D="$(jq -r .descheduled <<< "$PLAN")"
-            [ -n "$D" ] && echo "> [!WARNING]" && echo "> Descheduled: \`$D\` — an exception has expired."
+            # An `if`, not `[ -n "$D" ] && …`: the test is the last command in
+            # this group, so on the ordinary empty case the && chain returns 1,
+            # the group returns 1, and `set -e` fails the step after every
+            # output has already been written — a silent failure with a clean
+            # log above it.
+            if [ -n "$D" ]; then
+              echo "> [!WARNING]"
+              echo "> Descheduled: \`$D\` — an exception has expired."
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
   linux-release:
