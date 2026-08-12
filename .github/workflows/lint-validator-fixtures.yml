@@ -182,12 +182,23 @@ jobs:
       # institute-continuous-integration. It is checked out here and told
       # where the subject is; without INSTITUTE_CONTROL_PLANE_ROOT the
       # suites decline rather than report green against a guessed root.
+      # The pin comes from `.institute-ci-pin` in this repository's own
+      # checkout — the same single authority the composite action above
+      # resolved. Two readers, one fact.
+      - name: Resolve the Institute CI pin
+        id: institute-ci-pin
+        shell: bash
+        run: |
+          set -euo pipefail
+          REVISION="$(tr -d '[:space:]' < .institute-ci-pin)"
+          [[ "$REVISION" =~ ^[0-9a-f]{40}$ ]] || { echo "refusing malformed Institute CI pin: '$REVISION'" >&2; exit 1; }
+          echo "revision=$REVISION" >> "$GITHUB_OUTPUT"
+
       - name: Checkout Institute CI sources at exact pin
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: swift-institute/institute-continuous-integration
-          # Advance with pin-advance flow; must stay a full SHA (branch-pin guard).
-          ref: 58d7619b6e135c22ba5eb11d5fe3a73a2fa89cf3
+          ref: ${{ steps.institute-ci-pin.outputs.revision }}
           path: .institute-ci-sources
           persist-credentials: false
 

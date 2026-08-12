@@ -14,7 +14,7 @@
 # free-form `audit-step:` shell-string contract into the structured-
 # input contract below. The `institute-ci-control cron-audit` driver
 # (swift-institute/institute-continuous-integration-control, `Fleet.Audit`;
-# extracted from the Tools/ copy by TX-3, swift-institute/.github#515) is
+# extracted from this repository by TX-3, swift-institute/.github#515) is
 # the only entry point; callers MUST NOT supply shell snippets. This closes the
 # HIGH-CONDITIONAL template-injection finding from
 # CI-REVIEW-security-2026-05-14.md (the prior `audit-step:` interpolated
@@ -261,7 +261,7 @@ jobs:
       # control tool now lives in its seeded repository,
       # swift-institute/institute-continuous-integration-control, and
       # this workflow consumes it from there instead of the retiring
-      # Tools/ copy. The seed is private, so the checkout rides a
+      # own repository. The seed is private, so the checkout rides a
       # transient App token scoped to exactly that one repository with
       # contents:read (the same narrowed-mint shape
       # review-pr-transaction.yml uses), separate

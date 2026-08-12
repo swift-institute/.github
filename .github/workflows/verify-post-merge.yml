@@ -111,7 +111,7 @@ jobs:
       # TX-1 of the reduction census (swift-institute/.github#515): the
       # classifier now lives in its seeded repository,
       # swift-institute/institute-pull-request-transaction, consumed here
-      # instead of the retiring Tools/ copy. The seed is private, so the
+      # own repository. The seed is private, so the
       # checkout rides a transient App token scoped to exactly that one
       # repository with contents:read (private-verification.yml's
       # narrowed-mint shape); the source is pinned, never PR-controlled.

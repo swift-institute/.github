@@ -19,7 +19,7 @@
 #
 # Snapshot helper:
 #   swift-institute/institute-continuous-integration-control (extracted
-#   from the Tools/ copy by TX-3, swift-institute/.github#515)
+#   from this repository by TX-3, swift-institute/.github#515)
 # API endpoint:
 #   POST /repos/<owner>/<repo>/dependency-graph/snapshots
 #   https://docs.github.com/en/rest/dependency-graph/dependency-submission
@@ -204,7 +204,7 @@ jobs:
       # snapshot tool now lives in its seeded repository,
       # swift-institute/institute-continuous-integration-control, and
       # this workflow consumes it from there instead of the retiring
-      # Tools/ copy. The seed is private, so the checkout rides a
+      # own repository. The seed is private, so the checkout rides a
       # transient App token scoped to exactly that one repository with
       # contents:read (the same narrowed-mint shape
       # review-pr-transaction.yml uses), separate

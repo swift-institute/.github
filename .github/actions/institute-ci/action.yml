@@ -27,14 +27,18 @@ inputs:
   sources-revision:
     description: >-
       Exact commit of swift-institute/institute-continuous-integration to
-      provision. Must stay a full 40-hex SHA — the branch-pin guard rejects
-      anything else. Advance with the pin-advance flow.
+      provision. Leave empty — the default — to read the single authority,
+      `.institute-ci-pin` at this repository's root. Supply a value only to
+      provision a revision other than the fleet's, and then it must still be
+      a full 40-hex SHA: the refusal is the inline check in the identity
+      step below, not an external guard.
     required: false
-    default: '58d7619b6e135c22ba5eb11d5fe3a73a2fa89cf3'
+    default: ''
   workspace-revision:
     description: >-
       Exact commit of swift-institute/institute-application used as the build coordinate.
-      Must stay a full 40-hex SHA — the branch-pin guard rejects anything else.
+      Must stay a full 40-hex SHA; the refusal is the inline check in the
+      identity step below, not an external guard.
     required: false
     default: '72d4b2ae1e5b6a2b49fc22e0240dad0a34a9618f'
 
@@ -64,6 +68,16 @@ runs:
         SOURCES_REVISION: ${{ inputs.sources-revision }}
       run: |
         set -euo pipefail
+        # One authority. `.institute-ci-pin` sits three levels above this
+        # action file, at the repository root; reading it here rather than
+        # copying its value into each caller is what keeps the cache
+        # namespace from silently splitting when a pin advance is partial.
+        if [ -z "$SOURCES_REVISION" ]; then
+          PIN_FILE="${GITHUB_ACTION_PATH}/../../../.institute-ci-pin"
+          [ -f "$PIN_FILE" ] \
+            || { echo "no Institute CI pin at $PIN_FILE" >&2; exit 1; }
+          SOURCES_REVISION="$(tr -d '[:space:]' < "$PIN_FILE")"
+        fi
         [[ "$SOURCES_REVISION" =~ ^[0-9a-f]{40}$ ]] \
           || { echo "refusing malformed Institute CI source revision: '$SOURCES_REVISION'" >&2; exit 1; }
         echo "sources-revision=$SOURCES_REVISION" >> "$GITHUB_OUTPUT"
@@ -86,7 +100,7 @@ runs:
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         repository: swift-institute/institute-continuous-integration
-        ref: ${{ inputs.sources-revision }}
+        ref: ${{ steps.identity.outputs.sources-revision }}
         path: .institute-ci-sources
         persist-credentials: false
 
@@ -95,7 +109,7 @@ runs:
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         repository: swift-institute/institute-application
-        # Advance with pin-advance flow; must stay a full SHA (branch-pin guard).
+        # Advance with pin-advance flow; must stay a full SHA.
         ref: ${{ inputs.workspace-revision }}
         path: .workspace
         persist-credentials: false

@@ -12,7 +12,7 @@
 # MECHANISM
 # The predicate is Swift ([CI-081]/Institute-semantics-in-Swift):
 # `Closure.Evidence` (swift-institute/institute-continuous-integration-control,
-# extracted from the Tools/ copy by TX-3, swift-institute/.github#515) parses citations and
+# extracted from this repository by TX-3, swift-institute/.github#515) parses citations and
 # judges verdicts over recorded facts; the credentialed edge
 # (`Institute.CI.Control.Application.ClosureEvidence`) enumerates issues
 # closed as completed since the lookback window across the org
@@ -115,7 +115,7 @@ jobs:
       # tool now lives in its seeded repository,
       # swift-institute/institute-continuous-integration-control, and
       # this workflow consumes it from there instead of the retiring
-      # Tools/ copy. The seed is private, so the checkout rides a
+      # own repository. The seed is private, so the checkout rides a
       # transient App token scoped to exactly that one repository with
       # contents:read (the same narrowed-mint shape
       # review-pr-transaction.yml uses), separate

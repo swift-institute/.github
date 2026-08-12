@@ -14,7 +14,7 @@ was right to.
 F16 port: the guard is Swift-owned — `CI.Validation.SchemaCorrespondence` in
 `swift-institute/institute-continuous-integration`, retiring `validate-schema-workflow-keys.py`. Its
 `--schema/--sync-workflow/--readme-validator` face carries the same
-three-file shape, and `institute-continuous-integration's validation tests` runs
+three-file shape, and institute-continuous-integration's `Institute Continuous Integration Validation Tests` target runs
 every scenario below in-process. These fixtures are corpus DATA, pinned by
 exact membership in the ManifestBinding stub guard; they are not edited
 alongside the validator.

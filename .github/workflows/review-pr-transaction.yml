@@ -9,7 +9,8 @@
 # names>], "mechanical": true } }`; absent, empty, duplicate, or additional
 # profile fields fail closed. `reviewOnly` is reserved for legitimately
 # check-less PRs (paths outside every path-filtered workflow's trigger, e.g.
-# Tools-only changes in this repository — swift-institute/.github#200): the
+# a change confined to brand/ or social-preview/ — swift-institute/.github#200):
+# the
 # Swift verification (PullRequest.Transaction+Verification.swift) accepts it only when
 # the exact-head check-run collection is empty, and fails closed the instant
 # any check run — including a synthesized full-tier run — is cited at that
@@ -80,7 +81,7 @@ jobs:
       # TX-1 of the reduction census (swift-institute/.github#515): the
       # transaction model now lives in its seeded repository,
       # swift-institute/institute-pull-request-transaction, and this workflow
-      # consumes it from there instead of the retiring Tools/ copy. The seed
+      # consumes it from its own repository. The seed
       # is private, so the checkout rides a transient App token scoped to
       # exactly that one repository with contents:read — the same
       # narrowed-mint shape private-verification.yml uses for its subject.

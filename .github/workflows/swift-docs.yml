@@ -432,13 +432,38 @@ jobs:
           echo "Distribution symbol graphs:"
           ls "${DOCS_WORK}/symbol-graphs/"
 
+      # The pin is read, never repeated. This is a reusable workflow, so the
+      # caller's checkout is the subject and carries no control-plane files;
+      # `.institute-ci-pin` is fetched from swift-institute/.github at this
+      # workflow's own ref, which is the same trust anchor the composite
+      # actions above are pinned to.
+      - name: Fetch the Institute CI pin
+        if: ${{ success() && env.SKIP_DOCS != 'true' }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: swift-institute/.github
+          ref: ${{ job.workflow_sha }}
+          path: .institute-ci-pin-source
+          sparse-checkout: .institute-ci-pin
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Resolve the Institute CI pin
+        id: institute-ci-pin
+        if: ${{ success() && env.SKIP_DOCS != 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          REVISION="$(tr -d '[:space:]' < .institute-ci-pin-source/.institute-ci-pin)"
+          [[ "$REVISION" =~ ^[0-9a-f]{40}$ ]] || { echo "refusing malformed Institute CI pin: '$REVISION'" >&2; exit 1; }
+          echo "revision=$REVISION" >> "$GITHUB_OUTPUT"
+
       - name: Fetch the umbrella symbol-graph tool
         if: ${{ success() && env.SKIP_DOCS != 'true' }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: swift-institute/institute-continuous-integration
-          # Advance with pin-advance flow; must stay a full SHA (branch-pin guard).
-          ref: 58d7619b6e135c22ba5eb11d5fe3a73a2fa89cf3
+          ref: ${{ steps.institute-ci-pin.outputs.revision }}
           path: .institute-ci-sources
           persist-credentials: false
 
