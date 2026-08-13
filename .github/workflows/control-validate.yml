@@ -23,7 +23,7 @@ jobs:
     name: control
     permissions:
       contents: read
-    uses: swift-institute/institute-continuous-integration-control/.github/workflows/control-validate.yml@main
+    uses: swift-institute/institute-continuous-integration-control/.github/workflows/control-validate.yml@92759d8aa93fb3ef06b3076c2202a57d509dcb82
     with:
       repository: ${{ inputs.repository }}
       pull: ${{ inputs.pull }}
