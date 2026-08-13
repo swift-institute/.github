@@ -1,7 +1,7 @@
 # review-pr-transaction.yml — a manually invoked, exact-head bot approval.
 #
 # This workflow deliberately has no merge step. It approves only after the
-# independent transaction model accepts a public, exact-head plan and all
+# independent transaction model accepts an exact-head plan and all
 # current-head merge prerequisites other than the approval it is about to add.
 # `accepted-plan` is `Snapshot.Source.Plan` JSON. Its `verification` is exactly
 # `{ "package": {} }`, `{ "control": { "checks": [<non-empty names>] } }`,
@@ -24,6 +24,11 @@
 # the audit trail whenever it is the one that admitted the transaction.
 # The target App token is scoped to one selected repository. Minting fails when
 # that owner/repository is outside the App's existing Institute installations.
+# A private target is admitted only through a `control` profile that names
+# `verification / workspace`; the canonical transaction binary owns and
+# enforces that visibility rule. Workflow-run acquisition is needed only by
+# the public package profile, so every other profile supplies an explicit
+# complete empty page without broadening the reviewer App's permissions.
 #
 # The "Validate the guarded transaction" step never lets `set -e` fail a
 # predicate silently (swift-institute/.github#288 Defect B): every gate
@@ -321,9 +326,15 @@ jobs:
           gh api --paginate --slurp \
             "repos/${repository}/commits/${head}/check-runs?per_page=100" \
             > "$RUNNER_TEMP/check-pages.json"
-          gh api --paginate --slurp \
-            "repos/${repository}/actions/runs?head_sha=${head}&per_page=100" \
-            > "$RUNNER_TEMP/run-pages.json"
+          profile=$(jq -er '.verification | keys[0]' <<<"$plan")
+          if [[ "$profile" == "package" ]]; then
+            gh api --paginate --slurp \
+              "repos/${repository}/actions/runs?head_sha=${head}&per_page=100" \
+              > "$RUNNER_TEMP/run-pages.json"
+          else
+            printf '%s\n' '[{"total_count":0,"workflow_runs":[]}]' \
+              > "$RUNNER_TEMP/run-pages.json"
+          fi
           gh api graphql -F owner="$target_owner" -F name="$target_name" -F number="${PULL}" \
             -F taskOwner="$task_owner" -F taskName="$task_name" -F task="${task_number}" -f query='
             query(
@@ -495,7 +506,6 @@ jobs:
           # above, so its sole top-level key is exactly one of the four
           # known profile names — safe to interpolate into the approval
           # body verbatim below.
-          profile=$(jq -er '.verification | keys[0]' <<<"$plan")
           echo "head=${head}" >> "$GITHUB_OUTPUT"
           echo "profile=${profile}" >> "$GITHUB_OUTPUT"
 
