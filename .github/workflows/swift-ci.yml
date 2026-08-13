@@ -93,6 +93,10 @@ env:
   XCODE_VERSION: "27.0"
 
 jobs:
+# Top-level job names are intentionally static. GitHub may render
+# unresolved input or matrix expressions literally when a job is skipped
+# before those contexts are expanded; dynamic detail belongs in steps
+# and summaries instead.
   plan:
     name: Plan
     if: ${{ !github.event.repository.private }}
@@ -175,13 +179,13 @@ jobs:
           echo "requested=$REQUESTED" >> "$GITHUB_OUTPUT"
           echo "Resolved reusable workflow: ${REQUESTED} -> ${SHA}"
 
-      - uses: swift-institute/.github/.github/actions/ci-subject@e26894310338ae9143dd2f310c09113022ededcc
+      - uses: swift-institute/.github/.github/actions/ci-subject@7ed567c99c86277c935ebc6829c232c241898043
         with:
           repository: ${{ steps.subject.outputs.repository }}
           sha: ${{ steps.subject.outputs.sha }}
 
       - id: institute-ci
-        uses: swift-institute/.github/.github/actions/institute-ci@e26894310338ae9143dd2f310c09113022ededcc
+        uses: swift-institute/.github/.github/actions/institute-ci@7e43d4953c79103e57d07316ff79b1a856d6c296
 
       - name: Materialize fleet policy at the workflow revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -210,11 +214,12 @@ jobs:
           # The package-content predicate reads the event's file list
           # through `gh`, which authenticates from the environment only.
           GH_TOKEN: ${{ github.token }}
+          HEAD_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
           set -euo pipefail
           PLAN="$("$BINARY" package plan \
             --tier "${{ inputs.tier }}" --ref "$GITHUB_REF" \
-            --head-message "${{ github.event.head_commit.message }}" \
+            --head-message "$HEAD_MESSAGE" \
             --event "${{ github.event_name }}" --event-path "$GITHUB_EVENT_PATH" \
             --workflow-repository "${{ github.repository }}" --workspace "$GITHUB_WORKSPACE" \
             --platform-support "${{ inputs.platform-support }}" \
@@ -247,9 +252,9 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
   linux-release:
-    name: Linux · release
+    name: Build · Linux · release
     needs: plan
-    if: ${{ !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',linux-release,') }}
+    if: ${{ !github.event.repository.private && !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',linux-release,') }}
     runs-on: ubuntu-latest
     container: ${{ needs.plan.outputs.linux-image }}
     timeout-minutes: 45
@@ -259,13 +264,13 @@ jobs:
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
-      - uses: swift-institute/.github/.github/actions/ci-subject@e26894310338ae9143dd2f310c09113022ededcc
+      - uses: swift-institute/.github/.github/actions/ci-subject@7ed567c99c86277c935ebc6829c232c241898043
         with:
           repository: ${{ needs.plan.outputs.subject-repository }}
           sha: ${{ needs.plan.outputs.subject-sha }}
           app-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
           app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
-      - uses: swift-institute/.github/.github/actions/install-system-deps@e26894310338ae9143dd2f310c09113022ededcc
+      - uses: swift-institute/.github/.github/actions/install-system-deps@7ed567c99c86277c935ebc6829c232c241898043
       - name: Build or test
         env:
           CI_TIER: ${{ needs.plan.outputs.tier }}
@@ -282,9 +287,9 @@ jobs:
             swift test -c release
           fi
   linux-6-4:
-    name: Linux · 6.4.x nightly
+    name: Build · Linux · 6.4
     needs: plan
-    if: ${{ !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',linux-6-4,') }}
+    if: ${{ !github.event.repository.private && !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',linux-6-4,') }}
     runs-on: ubuntu-latest
     container: ${{ needs.plan.outputs.linux-image }}
     continue-on-error: true
@@ -295,21 +300,21 @@ jobs:
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
-      - uses: swift-institute/.github/.github/actions/ci-subject@e26894310338ae9143dd2f310c09113022ededcc
+      - uses: swift-institute/.github/.github/actions/ci-subject@7ed567c99c86277c935ebc6829c232c241898043
         with:
           repository: ${{ needs.plan.outputs.subject-repository }}
           sha: ${{ needs.plan.outputs.subject-sha }}
           app-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
           app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
-      - uses: swift-institute/.github/.github/actions/install-system-deps@e26894310338ae9143dd2f310c09113022ededcc
+      - uses: swift-institute/.github/.github/actions/install-system-deps@7ed567c99c86277c935ebc6829c232c241898043
       - name: Build
         run: |
           swift --version
           swift build -c release
   linux-nightly:
-    name: Linux · main nightly
+    name: Build · Linux · nightly
     needs: plan
-    if: ${{ !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',linux-nightly,') }}
+    if: ${{ !github.event.repository.private && !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',linux-nightly,') }}
     runs-on: ubuntu-latest
     container: swiftlang/swift@sha256:f577f95edfb85cf3bdc45eb0badaab09239de5c86c69b3b6d594cc62916c0a7d
     continue-on-error: true
@@ -320,204 +325,21 @@ jobs:
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
-      - uses: swift-institute/.github/.github/actions/ci-subject@e26894310338ae9143dd2f310c09113022ededcc
+      - uses: swift-institute/.github/.github/actions/ci-subject@7ed567c99c86277c935ebc6829c232c241898043
         with:
           repository: ${{ needs.plan.outputs.subject-repository }}
           sha: ${{ needs.plan.outputs.subject-sha }}
           app-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
           app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
-      - uses: swift-institute/.github/.github/actions/install-system-deps@e26894310338ae9143dd2f310c09113022ededcc
+      - uses: swift-institute/.github/.github/actions/install-system-deps@7ed567c99c86277c935ebc6829c232c241898043
       - name: Build
         run: |
           swift --version
           swift build -c release
-  embedded:
-    name: Linux · Embedded (host triple)
-    needs: plan
-    if: ${{ !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',embedded,') }}
-    runs-on: ubuntu-latest
-    container: swiftlang/swift:nightly-main-jammy
-    continue-on-error: true
-    timeout-minutes: 45
-    permissions:
-      contents: read
-    steps:
-      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
-        with:
-          egress-policy: audit
-      - uses: swift-institute/.github/.github/actions/ci-subject@e26894310338ae9143dd2f310c09113022ededcc
-        with:
-          repository: ${{ needs.plan.outputs.subject-repository }}
-          sha: ${{ needs.plan.outputs.subject-sha }}
-          app-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
-          app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
-      # No `.build` cache here, ever. The key can only hash manifests, so
-      # it is blind to the nightly toolchain and to branch-pinned
-      # dependency contents; a restored entry once turned this leg green
-      # in ten seconds with zero compilation, fleet-wide.
-      - name: Build (Embedded)
-        env:
-          TARGET: ${{ inputs.embedded-target }}
-        run: |
-          swift --version
-          if [ -n "$TARGET" ]; then
-            swift build --target "$TARGET" --disable-default-traits \
-              -Xswiftc -enable-experimental-feature -Xswiftc Embedded
-          else
-            swift build -Xswiftc -enable-experimental-feature -Xswiftc Embedded
-          fi
-  embedded-wasm-sdk:
-    name: Linux · Embedded Wasm SDK
-    needs: plan
-    if: ${{ !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',embedded-wasm-sdk,') }}
-    runs-on: ubuntu-latest
-    container: ${{ needs.plan.outputs.linux-image }}
-    continue-on-error: true
-    timeout-minutes: 30
-    permissions:
-      contents: read
-    steps:
-      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
-        with:
-          egress-policy: audit
-      - uses: swift-institute/.github/.github/actions/ci-subject@e26894310338ae9143dd2f310c09113022ededcc
-        with:
-          repository: ${{ needs.plan.outputs.subject-repository }}
-          sha: ${{ needs.plan.outputs.subject-sha }}
-          app-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
-          app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
-      - uses: swift-institute/.github/.github/actions/install-swift-sdk@e26894310338ae9143dd2f310c09113022ededcc
-        with:
-          platform: wasm-sdk
-          bundle-suffix: wasm
-          sdk-id: ${TAG}_wasm-embedded
-          output-env-var: WASM_SDK_ID
-      - run: swift build --swift-sdk "${WASM_SDK_ID}"
-  android-build:
-    name: Linux · Android SDK
-    needs: plan
-    if: ${{ !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',android-build,') }}
-    runs-on: ubuntu-latest
-    container: ${{ needs.plan.outputs.linux-image }}
-    continue-on-error: true
-    timeout-minutes: 30
-    permissions:
-      contents: read
-    steps:
-      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
-        with:
-          egress-policy: audit
-      - uses: swift-institute/.github/.github/actions/ci-subject@e26894310338ae9143dd2f310c09113022ededcc
-        with:
-          repository: ${{ needs.plan.outputs.subject-repository }}
-          sha: ${{ needs.plan.outputs.subject-sha }}
-          app-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
-          app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
-      - uses: swift-institute/.github/.github/actions/install-swift-sdk@e26894310338ae9143dd2f310c09113022ededcc
-        with:
-          platform: android-sdk
-          bundle-suffix: android
-          sdk-id: ${TAG}_android
-          output-env-var: ANDROID_SDK_ID
-      - run: swift build --swift-sdk "${ANDROID_SDK_ID}"
-  static-linux-musl-build:
-    name: Linux · static musl
-    needs: plan
-    if: ${{ !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',static-linux-musl-build,') }}
-    runs-on: ubuntu-latest
-    container: ${{ needs.plan.outputs.linux-image }}
-    continue-on-error: true
-    timeout-minutes: 30
-    permissions:
-      contents: read
-    steps:
-      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
-        with:
-          egress-policy: audit
-      - uses: swift-institute/.github/.github/actions/ci-subject@e26894310338ae9143dd2f310c09113022ededcc
-        with:
-          repository: ${{ needs.plan.outputs.subject-repository }}
-          sha: ${{ needs.plan.outputs.subject-sha }}
-          app-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
-          app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
-      - uses: swift-institute/.github/.github/actions/install-swift-sdk@e26894310338ae9143dd2f310c09113022ededcc
-        with:
-          platform: static-sdk
-          bundle-suffix: static-linux
-          use-platform-version: 'true'
-          sdk-id: x86_64-swift-linux-musl
-      - run: swift build --swift-sdk x86_64-swift-linux-musl
-  macos-release:
-    name: Apple · macOS
-    needs: plan
-    if: ${{ !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',macos-release,') }}
-    runs-on: xcode-27
-    timeout-minutes: 45
-    permissions:
-      contents: read
-    steps:
-      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
-        with:
-          egress-policy: audit
-      - uses: swift-institute/.github/.github/actions/ci-subject@e26894310338ae9143dd2f310c09113022ededcc
-        with:
-          repository: ${{ needs.plan.outputs.subject-repository }}
-          sha: ${{ needs.plan.outputs.subject-sha }}
-          app-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
-          app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
-      # This leg's Swift version comes from the Xcode pin, not from
-      # SWIFT_VERSION — which reaches it only through the job name. Move
-      # the two together or the name overstates the toolchain.
-      - run: sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
-      - name: Test
-        env:
-          TEST_FILTER: ${{ inputs.test-filter }}
-        run: |
-          swift --version
-          if [ -f Tests/Package.swift ]; then cd Tests; fi
-          if [ -n "$TEST_FILTER" ]; then
-            swift test -c debug --filter "$(echo "$TEST_FILTER" | tr '-' '_')"
-          else
-            swift test -c debug
-          fi
-  apple-simulator-build:
-    # Deliberately free of `matrix.platform`. A skipped matrix job never
-    # expands, so a name referring to the matrix has nothing to substitute
-    # and GitHub renders the template literally. This leg is exhaustive-tier
-    # only and therefore skipped in almost every run, so the unexpanded
-    # state is the one that is actually read.
-    name: Apple · Simulator
-    needs: plan
-    if: ${{ !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',apple-simulator-build,') }}
-    runs-on: xcode-27
-    continue-on-error: true
-    timeout-minutes: 45
-    permissions:
-      contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        platform: [iOS, tvOS, watchOS, visionOS]
-    steps:
-      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
-        with:
-          egress-policy: audit
-      - uses: swift-institute/.github/.github/actions/ci-subject@e26894310338ae9143dd2f310c09113022ededcc
-        with:
-          repository: ${{ needs.plan.outputs.subject-repository }}
-          sha: ${{ needs.plan.outputs.subject-sha }}
-          app-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
-          app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
-      - run: sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
-      - name: Build (${{ matrix.platform }} Simulator)
-        run: |
-          swift --version
-          xcodebuild build -scheme "$(xcodebuild -list -json | jq -r '.workspace.schemes[0] // .project.targets[0]')" \
-            -destination "generic/platform=${{ matrix.platform }} Simulator"
   windows-release:
-    name: Windows · release
+    name: Build · Windows · release
     needs: plan
-    if: ${{ !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',windows-release,') }}
+    if: ${{ !github.event.repository.private && !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',windows-release,') }}
     runs-on: windows-latest
     timeout-minutes: 45
     permissions:
@@ -526,7 +348,7 @@ jobs:
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
-      - uses: swift-institute/.github/.github/actions/ci-subject@e26894310338ae9143dd2f310c09113022ededcc
+      - uses: swift-institute/.github/.github/actions/ci-subject@7ed567c99c86277c935ebc6829c232c241898043
         with:
           repository: ${{ needs.plan.outputs.subject-repository }}
           sha: ${{ needs.plan.outputs.subject-sha }}
@@ -549,10 +371,193 @@ jobs:
           else
             swift test -c debug
           fi
+  macos-release:
+    name: Build · Apple · macOS
+    needs: plan
+    if: ${{ !github.event.repository.private && !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',macos-release,') }}
+    runs-on: xcode-27
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+      - uses: swift-institute/.github/.github/actions/ci-subject@7ed567c99c86277c935ebc6829c232c241898043
+        with:
+          repository: ${{ needs.plan.outputs.subject-repository }}
+          sha: ${{ needs.plan.outputs.subject-sha }}
+          app-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
+          app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+      # This leg's Swift version comes from the Xcode pin, not from
+      # SWIFT_VERSION — which reaches it only through the job name. Move
+      # the two together or the name overstates the toolchain.
+      - run: sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
+      - name: Test
+        env:
+          TEST_FILTER: ${{ inputs.test-filter }}
+        run: |
+          swift --version
+          if [ -f Tests/Package.swift ]; then cd Tests; fi
+          if [ -n "$TEST_FILTER" ]; then
+            swift test -c debug --filter "$(echo "$TEST_FILTER" | tr '-' '_')"
+          else
+            swift test -c debug
+          fi
+  embedded:
+    name: Extended · Embedded
+    needs: plan
+    if: ${{ !github.event.repository.private && !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',embedded,') }}
+    runs-on: ubuntu-latest
+    container: swiftlang/swift:nightly-main-jammy
+    continue-on-error: true
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+      - uses: swift-institute/.github/.github/actions/ci-subject@7ed567c99c86277c935ebc6829c232c241898043
+        with:
+          repository: ${{ needs.plan.outputs.subject-repository }}
+          sha: ${{ needs.plan.outputs.subject-sha }}
+          app-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
+          app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+      # No `.build` cache here, ever. The key can only hash manifests, so
+      # it is blind to the nightly toolchain and to branch-pinned
+      # dependency contents; a restored entry once turned this leg green
+      # in ten seconds with zero compilation, fleet-wide.
+      - name: Build (Embedded)
+        env:
+          TARGET: ${{ inputs.embedded-target }}
+        run: |
+          swift --version
+          if [ -n "$TARGET" ]; then
+            swift build --target "$TARGET" --disable-default-traits \
+              -Xswiftc -enable-experimental-feature -Xswiftc Embedded
+          else
+            swift build -Xswiftc -enable-experimental-feature -Xswiftc Embedded
+          fi
+  embedded-wasm-sdk:
+    name: Extended · Wasm
+    needs: plan
+    if: ${{ !github.event.repository.private && !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',embedded-wasm-sdk,') }}
+    runs-on: ubuntu-latest
+    container: ${{ needs.plan.outputs.linux-image }}
+    continue-on-error: true
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+      - uses: swift-institute/.github/.github/actions/ci-subject@7ed567c99c86277c935ebc6829c232c241898043
+        with:
+          repository: ${{ needs.plan.outputs.subject-repository }}
+          sha: ${{ needs.plan.outputs.subject-sha }}
+          app-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
+          app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+      - uses: swift-institute/.github/.github/actions/install-swift-sdk@7ed567c99c86277c935ebc6829c232c241898043
+        with:
+          platform: wasm-sdk
+          bundle-suffix: wasm
+          sdk-id: ${TAG}_wasm-embedded
+          output-env-var: WASM_SDK_ID
+      - run: swift build --swift-sdk "${WASM_SDK_ID}"
+  android-build:
+    name: Extended · Android
+    needs: plan
+    if: ${{ !github.event.repository.private && !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',android-build,') }}
+    runs-on: ubuntu-latest
+    container: ${{ needs.plan.outputs.linux-image }}
+    continue-on-error: true
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+      - uses: swift-institute/.github/.github/actions/ci-subject@7ed567c99c86277c935ebc6829c232c241898043
+        with:
+          repository: ${{ needs.plan.outputs.subject-repository }}
+          sha: ${{ needs.plan.outputs.subject-sha }}
+          app-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
+          app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+      - uses: swift-institute/.github/.github/actions/install-swift-sdk@7ed567c99c86277c935ebc6829c232c241898043
+        with:
+          platform: android-sdk
+          bundle-suffix: android
+          sdk-id: ${TAG}_android
+          output-env-var: ANDROID_SDK_ID
+      - run: swift build --swift-sdk "${ANDROID_SDK_ID}"
+  static-linux-musl-build:
+    name: Extended · static musl
+    needs: plan
+    if: ${{ !github.event.repository.private && !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',static-linux-musl-build,') }}
+    runs-on: ubuntu-latest
+    container: ${{ needs.plan.outputs.linux-image }}
+    continue-on-error: true
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+      - uses: swift-institute/.github/.github/actions/ci-subject@7ed567c99c86277c935ebc6829c232c241898043
+        with:
+          repository: ${{ needs.plan.outputs.subject-repository }}
+          sha: ${{ needs.plan.outputs.subject-sha }}
+          app-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
+          app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+      - uses: swift-institute/.github/.github/actions/install-swift-sdk@7ed567c99c86277c935ebc6829c232c241898043
+        with:
+          platform: static-sdk
+          bundle-suffix: static-linux
+          use-platform-version: 'true'
+          sdk-id: x86_64-swift-linux-musl
+      - run: swift build --swift-sdk x86_64-swift-linux-musl
+  apple-simulator-build:
+    # Deliberately free of `matrix.platform`. A skipped matrix job never
+    # expands, so a name referring to the matrix has nothing to substitute
+    # and GitHub renders the template literally. This leg is exhaustive-tier
+    # only and therefore skipped in almost every run, so the unexpanded
+    # state is the one that is actually read.
+    name: Extended · Apple Simulator
+    needs: plan
+    if: ${{ !github.event.repository.private && !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',apple-simulator-build,') }}
+    runs-on: xcode-27
+    continue-on-error: true
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [iOS, tvOS, watchOS, visionOS]
+    steps:
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+      - uses: swift-institute/.github/.github/actions/ci-subject@7ed567c99c86277c935ebc6829c232c241898043
+        with:
+          repository: ${{ needs.plan.outputs.subject-repository }}
+          sha: ${{ needs.plan.outputs.subject-sha }}
+          app-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
+          app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+      - run: sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
+      - name: Build (${{ matrix.platform }} Simulator)
+        run: |
+          swift --version
+          xcodebuild build -scheme "$(xcodebuild -list -json | jq -r '.workspace.schemes[0] // .project.targets[0]')" \
+            -destination "generic/platform=${{ matrix.platform }} Simulator"
   format:
     name: Quality · swift-format
     needs: plan
-    if: ${{ !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',format,') }}
+    if: ${{ !github.event.repository.private && !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',format,') }}
     runs-on: ubuntu-latest
     container: ${{ needs.plan.outputs.linux-image }}
     timeout-minutes: 15
@@ -562,11 +567,11 @@ jobs:
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
-      - uses: swift-institute/.github/.github/actions/ci-subject@e26894310338ae9143dd2f310c09113022ededcc
+      - uses: swift-institute/.github/.github/actions/ci-subject@7ed567c99c86277c935ebc6829c232c241898043
         with:
           repository: ${{ needs.plan.outputs.subject-repository }}
           sha: ${{ needs.plan.outputs.subject-sha }}
-      - uses: swift-institute/.github/.github/actions/central-style@e26894310338ae9143dd2f310c09113022ededcc
+      - uses: swift-institute/.github/.github/actions/central-style@7ed567c99c86277c935ebc6829c232c241898043
         with:
           ref: ${{ needs.plan.outputs.workflow-sha }}
       - name: Lint formatting
@@ -587,7 +592,7 @@ jobs:
   lint:
     name: Quality · SwiftLint
     needs: plan
-    if: ${{ !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',lint,') }}
+    if: ${{ !github.event.repository.private && !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',lint,') }}
     runs-on: ubuntu-latest
     container: ${{ needs.plan.outputs.linux-image }}
     timeout-minutes: 15
@@ -597,11 +602,11 @@ jobs:
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
-      - uses: swift-institute/.github/.github/actions/ci-subject@e26894310338ae9143dd2f310c09113022ededcc
+      - uses: swift-institute/.github/.github/actions/ci-subject@7ed567c99c86277c935ebc6829c232c241898043
         with:
           repository: ${{ needs.plan.outputs.subject-repository }}
           sha: ${{ needs.plan.outputs.subject-sha }}
-      - uses: swift-institute/.github/.github/actions/central-style@e26894310338ae9143dd2f310c09113022ededcc
+      - uses: swift-institute/.github/.github/actions/central-style@7ed567c99c86277c935ebc6829c232c241898043
         with:
           ref: ${{ needs.plan.outputs.workflow-sha }}
       - name: Cache SwiftLint binary
@@ -629,7 +634,7 @@ jobs:
   swift-linter:
     name: Quality · swift-linter
     needs: plan
-    if: ${{ !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',swift-linter,') }}
+    if: ${{ !github.event.repository.private && !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',swift-linter,') }}
     runs-on: ubuntu-latest
     container: ${{ needs.plan.outputs.linux-image }}
     timeout-minutes: 20
@@ -639,7 +644,7 @@ jobs:
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
-      - uses: swift-institute/.github/.github/actions/ci-subject@e26894310338ae9143dd2f310c09113022ededcc
+      - uses: swift-institute/.github/.github/actions/ci-subject@7ed567c99c86277c935ebc6829c232c241898043
         with:
           repository: ${{ needs.plan.outputs.subject-repository }}
           sha: ${{ needs.plan.outputs.subject-sha }}
@@ -676,7 +681,7 @@ jobs:
             swift-linter-runner "$GITHUB_WORKSPACE" --exit-policy strict
           fi
   advisory-summary:
-    name: Advisory results (informational)
+    name: Advisory results
     needs:
       - plan
       - linux-6-4
@@ -686,13 +691,16 @@ jobs:
       - embedded-wasm-sdk
       - android-build
       - static-linux-musl-build
-    if: ${{ !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',advisory-summary,') }}
+    if: ${{ !github.event.repository.private && !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',advisory-summary,') }}
     continue-on-error: true
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read
     steps:
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
       - name: Render advisory results
         env:
           NEEDS_JSON: ${{ toJson(needs) }}
@@ -738,12 +746,15 @@ jobs:
     permissions:
       contents: read
     steps:
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: swift-institute/.github
           ref: ${{ needs.plan.outputs.workflow-sha }}
       - id: institute-ci
-        uses: swift-institute/.github/.github/actions/institute-ci@e26894310338ae9143dd2f310c09113022ededcc
+        uses: swift-institute/.github/.github/actions/institute-ci@7e43d4953c79103e57d07316ff79b1a856d6c296
       # Runs on always(), so it must reach a verdict when plan itself
       # failed — which is exactly when its outputs are empty.
       - name: Aggregate
