@@ -277,14 +277,15 @@ jobs:
         run: |
           swift --version
           if [ "$CI_TIER" = "build" ]; then swift build -c release; exit 0; fi
-          # A root `swift test` over the sanctioned nested layout finds
-          # zero tests and exits green without running any.
-          if [ -f Tests/Package.swift ]; then cd Tests; fi
-          if [ -n "$TEST_FILTER" ]; then
-            swift test -c release --filter "$(echo "$TEST_FILTER" | tr '-' '_')"
-          else
-            swift test -c release
-          fi
+          test_package() {
+            if [ -n "$TEST_FILTER" ]; then
+              swift test -c release --filter "$(echo "$TEST_FILTER" | tr '-' '_')"
+            else
+              swift test -c release
+            fi
+          }
+          test_package
+          if [ -f Tests/Package.swift ]; then (cd Tests && test_package); fi
   linux-6-4:
     name: Build · Linux · 6.4
     needs: plan
@@ -364,12 +365,15 @@ jobs:
           TEST_FILTER: ${{ inputs.test-filter }}
         run: |
           swift --version
-          if [ -f Tests/Package.swift ]; then cd Tests; fi
-          if [ -n "$TEST_FILTER" ]; then
-            swift test -c debug --filter "$(echo "$TEST_FILTER" | tr '-' '_')"
-          else
-            swift test -c debug
-          fi
+          test_package() {
+            if [ -n "$TEST_FILTER" ]; then
+              swift test -c debug --filter "$(echo "$TEST_FILTER" | tr '-' '_')"
+            else
+              swift test -c debug
+            fi
+          }
+          test_package
+          if [ -f Tests/Package.swift ]; then (cd Tests && test_package); fi
   macos-release:
     name: Build · Apple · macOS
     needs: plan
@@ -397,12 +401,15 @@ jobs:
           TEST_FILTER: ${{ inputs.test-filter }}
         run: |
           swift --version
-          if [ -f Tests/Package.swift ]; then cd Tests; fi
-          if [ -n "$TEST_FILTER" ]; then
-            swift test -c debug --filter "$(echo "$TEST_FILTER" | tr '-' '_')"
-          else
-            swift test -c debug
-          fi
+          test_package() {
+            if [ -n "$TEST_FILTER" ]; then
+              swift test -c debug --filter "$(echo "$TEST_FILTER" | tr '-' '_')"
+            else
+              swift test -c debug
+            fi
+          }
+          test_package
+          if [ -f Tests/Package.swift ]; then (cd Tests && test_package); fi
   embedded:
     name: Extended · Embedded
     needs: plan
