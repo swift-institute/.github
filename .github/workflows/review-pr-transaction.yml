@@ -70,25 +70,10 @@ jobs:
         with:
           egress-policy: audit
 
-      - name: Checkout transaction guard
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          # Never execute PR-controlled source while the App token exists.
-          ref: ${{ github.event.repository.default_branch }}
-          persist-credentials: false
-
-      # TX-1 of the reduction census (swift-institute/.github#515): the
-      # transaction model now lives in its seeded repository,
-      # swift-institute/institute-pull-request-transaction, and this workflow
-      # consumes it from there instead of the retiring Tools/ copy. The seed
-      # is private, so the checkout rides a transient App token scoped to
-      # exactly that one repository with contents:read — the same
-      # narrowed-mint shape private-verification.yml uses for its subject.
-      # The token is minted BEFORE the reviewer token below and is never
-      # persisted; the source it fetches is pinned, not PR-controlled, so
-      # the "never execute PR-controlled source while the App token exists"
-      # invariant on the self-checkout above is preserved.
-      - name: Mint read-only token for the seeded transaction package
+      # The private transaction repository publishes one immutable,
+      # digest-named executable bundle. This read-only token can acquire only
+      # that repository's release assets and is never the reviewer token.
+      - name: Mint read-only token for the transaction binary
         id: prt-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
@@ -98,21 +83,49 @@ jobs:
           repositories: institute-pull-request-transaction
           permission-contents: read
 
-      - name: Checkout the seeded transaction package at exact main pin
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: swift-institute/institute-pull-request-transaction
-          # Advance with pin-advance flow; must stay a full SHA (branch-pin
-          # guard). Same pin as verify-post-merge.yml and tools-tests.yml.
-          ref: 5528f99b5792c6bd65269b74f19d6e54e8b8316d
-          path: .pr-transaction
-          token: ${{ steps.prt-token.outputs.token }}
-          persist-credentials: false
+      - name: Install the verified immutable transaction binary
+        id: transaction
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.prt-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          repository=swift-institute/institute-pull-request-transaction
+          release=transaction-binaries
+          pointer="$RUNNER_TEMP/pr-transaction-CURRENT"
+          bundle="$RUNNER_TEMP/pr-transaction-bundle"
+          mkdir -p "$bundle"
 
-      - name: Select Swift 6.3
-        uses: SwiftyLab/setup-swift@38f54a76b70d989321de9dc7c840618c08cf56e9 # v1.14.0
-        with:
-          swift-version: '6.3'
+          gh release download "$release" --repo "$repository" \
+            --pattern CURRENT --output "$pointer"
+          test "$(wc -l < "$pointer" | tr -d ' ')" = 2
+          digest="$(sed -n 's/^digest=//p' "$pointer")"
+          source="$(sed -n 's/^sources-revision=//p' "$pointer")"
+          [[ "$digest" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$source" =~ ^[0-9a-f]{40}$ ]]
+          main="$(gh api "repos/$repository/commits/main" --jq .sha)"
+          test "$source" = "$main"
+
+          binary="pr-transaction-${digest}"
+          manifest="MANIFEST-${digest}.txt"
+          checksums="SHA256SUMS-${digest}"
+          gh release download "$release" --repo "$repository" \
+            --pattern "$binary" --pattern "$manifest" --pattern "$checksums" \
+            --dir "$bundle"
+          test "$(find "$bundle" -type f | wc -l | tr -d ' ')" = 3
+          (cd "$bundle" && sha256sum -c "$checksums")
+          test "$(sed -n 's/^digest=//p' "$bundle/$manifest")" = "$digest"
+          test "$(sed -n 's/^sources-revision=//p' "$bundle/$manifest")" = "$source"
+          install -m 0755 "$bundle/$binary" "$RUNNER_TEMP/pr-transaction"
+          echo "PR_TRANSACTION_BINARY=$RUNNER_TEMP/pr-transaction" >> "$GITHUB_ENV"
+
+      - name: Revoke transaction binary reader before reviewer credentials
+        id: prt-revoke
+        if: ${{ always() && steps.prt-token.outcome == 'success' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.prt-token.outputs.token }}
+        run: gh api --method DELETE installation/token
 
       - name: Resolve exact target coordinate
         id: coordinate
@@ -476,9 +489,8 @@ jobs:
                 }
               }
             ' > producer-input.json
-          swift run --package-path .pr-transaction pr-transaction produce producer-input.json \
-            > transaction.json
-          swift run --package-path .pr-transaction pr-transaction review transaction.json
+          "$PR_TRANSACTION_BINARY" produce producer-input.json > transaction.json
+          "$PR_TRANSACTION_BINARY" review transaction.json
           # The plan already passed the closed-union `verification` gate
           # above, so its sole top-level key is exactly one of the four
           # known profile names — safe to interpolate into the approval
