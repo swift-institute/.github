@@ -83,7 +83,7 @@ jobs:
       contents: read
     steps:
       - name: Harden runner (audit-mode egress logging)
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
+        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40  # v2.20.1
         with:
           egress-policy: audit
 
@@ -94,7 +94,7 @@ jobs:
 
       - name: Read Institute orgs
         id: orgs
-        uses: swift-institute/.github/.github/actions/read-orgs@6f73c2ebff00e4f05375794905926bdd7a0ca14b  # main 2026-08-04, identity-pin to main HEAD (swift-institute/.github#286)
+        uses: swift-institute/.github/.github/actions/read-orgs@4a6824c8ccf6ef97bc1fdfb12a193d4bd9151329  # main 2026-08-04, identity-pin to main HEAD (swift-institute/.github#286)
 
       - name: Swift toolchain
         uses: SwiftyLab/setup-swift@38f54a76b70d989321de9dc7c840618c08cf56e9  # v1.14.0

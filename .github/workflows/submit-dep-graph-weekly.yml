@@ -118,12 +118,12 @@ jobs:
       orgs: ${{ steps.read.outputs.orgs }}
     steps:
       - name: Harden runner (audit-mode egress logging)
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: audit
 
       - id: read
-        uses: swift-institute/.github/.github/actions/read-orgs@6f73c2ebff00e4f05375794905926bdd7a0ca14b  # main 2026-08-04, identity-pin to main HEAD (swift-institute/.github#286); no functional change to this action in range
+        uses: swift-institute/.github/.github/actions/read-orgs@4a6824c8ccf6ef97bc1fdfb12a193d4bd9151329  # main 2026-08-04, identity-pin to main HEAD (swift-institute/.github#286); no functional change to this action in range
         with:
           # Pilot scope: swift-primitives only. Expansion candidates as
           # ecosystem orgs accept dep-graph submission: swift-standards,
@@ -157,7 +157,7 @@ jobs:
       contents: read
     steps:
       - name: Harden runner (audit-mode egress logging)
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: audit
 
@@ -271,7 +271,7 @@ jobs:
 
       - name: Enumerate org repos
         id: enum
-        uses: swift-institute/.github/.github/actions/enumerate-org-public-repos@6f73c2ebff00e4f05375794905926bdd7a0ca14b  # main 2026-08-04, identity-pin to main HEAD (swift-institute/.github#286); no functional change to this action in range
+        uses: swift-institute/.github/.github/actions/enumerate-org-public-repos@4a6824c8ccf6ef97bc1fdfb12a193d4bd9151329  # main 2026-08-04, identity-pin to main HEAD (swift-institute/.github#286); no functional change to this action in range
         with:
           org: ${{ matrix.org }}
           visibility: ${{ steps.defaults.outputs.visibility }}
@@ -432,7 +432,7 @@ jobs:
       contents: read
     steps:
       - name: Harden runner (audit-mode egress logging)
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: audit
 
@@ -560,7 +560,7 @@ jobs:
 
       - name: Upsert tracking issue
         if: env.FILE_ISSUE == 'true'
-        uses: swift-institute/.github/.github/actions/upsert-tracking-issue@6f73c2ebff00e4f05375794905926bdd7a0ca14b  # main 2026-08-04, identity-pin to main HEAD (swift-institute/.github#286); no functional change to this action in range
+        uses: swift-institute/.github/.github/actions/upsert-tracking-issue@4a6824c8ccf6ef97bc1fdfb12a193d4bd9151329  # main 2026-08-04, identity-pin to main HEAD (swift-institute/.github#286); no functional change to this action in range
         with:
           repo: swift-institute/.github
           title: ${{ env.ISSUE_TITLE }}
