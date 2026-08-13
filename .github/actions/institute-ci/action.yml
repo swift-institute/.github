@@ -1,146 +1,108 @@
 name: 'Institute CI binary'
 description: >-
-  Provision the `institute-ci` executable at exact sources, through the
-  sanctioned Workspace coordinate, and verify its provenance before any
-  caller trusts it. Revision-keyed cache is acceleration only.
+  Provision the `institute-continuous-integration` executable from its
+  published rolling release, verify its checksum and its recorded source
+  revision, and refuse before any caller trusts it.
 
-# The F16 port's binary channel, extracted from swift-ci.yml's plan job so
-# that the validator control plane and the universal share ONE bootstrap
-# owner rather than growing a second, drifting copy (F10/F12 precedent;
-# cache-key shape re-verified post-rename by canary 31151036569).
+# Installed, never compiled.
 #
-# Cache key is the raw identity tuple — the git tree OID of
-# `Tools/institute-ci` plus the Workspace pin, the runner platform, the
-# toolchain, and the provisioning set. The tree OID is exact content
-# identity that does not churn on unrelated commits, so a validator port
-# invalidates the entry and an unrelated workflow edit does not.
+# The retired mechanism built this package from source, on the consumer,
+# through the Workspace coordinate: a Swift toolchain install, two
+# checkouts, a SwiftPM build, and an apt provisioning set, all on the
+# critical path of the `plan` job — the first job of every run of every
+# package in the fleet. It was fast only while an actions/cache entry
+# happened to survive. The entry's key is exact by policy, so the first
+# change to the sources or the provisioning set forced the cold path, and
+# the cold path had gone unexecuted long enough to have broken (run
+# 31598019355: `--static-swift-stdlib` links Foundation statically, which
+# needs libcurl symbols the runner did not provide).
 #
-# Cache-key transport is the raw tuple rather than the witness digest
-# because the digest is computed by institute-ci itself and cannot exist
-# before the binary does on a cold consumer. The digest identity is still
-# minted into, and verified against, the entry manifest. Typed deviation,
-# recorded on #390.
+# The producer is publish-ci-binaries.yml in
+# swift-institute/institute-continuous-integration. Its MANIFEST.txt
+# records the source revision and every branch-resolved dependency HEAD
+# the published bytes were built from.
+#
+# Evidence class: tracked, verified, recorded. The release tag is not a
+# pin and is never treated as one — every run checks SHA256SUMS and
+# compares the manifest's recorded revision against the fleet pin before
+# executing anything, and reports the revision it resolved.
 
 inputs:
-  sources-root:
+  sources-revision:
     description: >-
-      Path to a checkout of swift-institute/.github whose `Tools/institute-ci`
-      is the exact source revision to provision. Its tree OID becomes the
-      cache key.
-    required: true
-  workspace-revision:
-    description: >-
-      Exact commit of swift-institute/institute-application used as the build coordinate.
-      Must stay a full 40-hex SHA — the branch-pin guard rejects anything else.
+      The exact commit of swift-institute/institute-continuous-integration
+      the published binary must have been built from. Empty — the default —
+      reads the single authority, `.institute-ci-pin` at this repository's
+      root. A value that is not a full 40-hex SHA refuses here.
     required: false
-    default: '72d4b2ae1e5b6a2b49fc22e0240dad0a34a9618f'
+    default: ''
 
 outputs:
   binary:
-    description: 'Absolute path to the verified `institute-ci` executable.'
-    value: ${{ steps.entry.outputs.binary }}
-  sources-tree:
-    description: 'Git tree OID of Tools/institute-ci that the binary was built from.'
-    value: ${{ steps.identity.outputs.sources-tree }}
-  cache-hit:
-    description: "'true' when the binary was restored rather than built."
-    value: ${{ steps.restore.outputs.cache-hit }}
+    description: 'Absolute path to the verified executable.'
+    value: ${{ steps.install.outputs.binary }}
+  sources-revision:
+    description: 'Commit the published binary was built from, as verified.'
+    value: ${{ steps.identity.outputs.sources-revision }}
 
 runs:
   using: composite
   steps:
-    # An OID that is not 40-hex refuses fail-closed rather than minting a
-    # malformed cache key that would silently collide across revisions.
     - name: Institute CI source identity
       id: identity
       shell: bash
       env:
-        SOURCES_ROOT: ${{ inputs.sources-root }}
+        SOURCES_REVISION: ${{ inputs.sources-revision }}
       run: |
         set -euo pipefail
-        SOURCES_TREE="$(git -C "$SOURCES_ROOT" rev-parse "HEAD:Tools/institute-ci")"
-        [[ "$SOURCES_TREE" =~ ^[0-9a-f]{40}$ ]] \
-          || { echo "refusing malformed Institute CI tree OID: '$SOURCES_TREE'" >&2; exit 1; }
-        cp -R "$SOURCES_ROOT/Tools/institute-ci" "${RUNNER_TEMP}/institute-ci-sources"
-        echo "sources-tree=$SOURCES_TREE" >> "$GITHUB_OUTPUT"
-
-    - name: Restore Institute CI (exact key, acceleration only)
-      id: restore
-      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-      with:
-        path: .institute-ci-entry
-        key: institute-ci-${{ steps.identity.outputs.sources-tree }}-${{ inputs.workspace-revision }}-linux-x86_64-swift-6.3-static
-
-    - name: Swift toolchain (cold bootstrap only)
-      if: ${{ steps.restore.outputs.cache-hit != 'true' }}
-      uses: SwiftyLab/setup-swift@38f54a76b70d989321de9dc7c840618c08cf56e9 # v1.14.0
-      with:
-        swift-version: "6.3"
-
-    - name: Checkout Workspace at exact main pin (cold bootstrap only)
-      if: ${{ steps.restore.outputs.cache-hit != 'true' }}
-      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      with:
-        repository: swift-institute/institute-application
-        # Advance with pin-advance flow; must stay a full SHA (branch-pin guard).
-        ref: ${{ inputs.workspace-revision }}
-        path: .workspace
-        persist-credentials: false
-
-    - name: Cold bootstrap through the sanctioned Workspace coordinate
-      if: ${{ steps.restore.outputs.cache-hit != 'true' }}
-      shell: bash
-      env:
-        SOURCES_TREE: ${{ steps.identity.outputs.sources-tree }}
-        WORKSPACE_REVISION: ${{ inputs.workspace-revision }}
-      run: |
-        set -euo pipefail
-        # uuid-dev: the typed F2/F10 provisioning input (swift-linux-standard's
-        # CLinuxKernelShim includes uuid/uuid.h); absent on the bare runner.
-        sudo apt-get update -qq && sudo apt-get install -qq -y uuid-dev
-        # TX-APP1Z: institute-application's Swift package moved from Application/ to
-        # the repository root. This checkout is pinned to a caller-supplied or
-        # hard-pinned revision, so it must build either layout. The probe retires
-        # once every pin in the fleet is post-flatten.
-
-
-        workspace_package_path=.workspace
-        if [ -f .workspace/Application/Package.swift ]; then
-          workspace_package_path=.workspace/Application
+        # One authority. `.institute-ci-pin` sits three levels above this
+        # action file, at the repository root; reading it here rather than
+        # copying its value into each caller is what keeps a partial pin
+        # advance from splitting the fleet across two revisions.
+        if [ -z "$SOURCES_REVISION" ]; then
+          PIN_FILE="${GITHUB_ACTION_PATH}/../../../.institute-ci-pin"
+          [ -f "$PIN_FILE" ] \
+            || { echo "::error::no Institute CI pin at $PIN_FILE"; exit 1; }
+          SOURCES_REVISION="$(tr -d '[:space:]' < "$PIN_FILE")"
         fi
-        swift run --package-path "$workspace_package_path" institute package build \
-          --package-path "${RUNNER_TEMP}/institute-ci-sources" --argument=--static-swift-stdlib
-        mkdir -p .institute-ci-entry/bin
-        cp "$(find "${RUNNER_TEMP}/institute-ci-sources/.build" -name institute-ci -type f -perm /111 | head -1)" \
-          .institute-ci-entry/bin/institute-ci
-        .institute-ci-entry/bin/institute-ci bootstrap-manifest \
-          --workspace-revision "$WORKSPACE_REVISION" --sources-revision "$SOURCES_TREE" \
-          --toolchain swift-6.3 --os linux --arch x86_64 \
-          --provisioning uuid-dev,static-swift-stdlib \
-          --root .institute-ci-entry --executables bin/institute-ci \
-          --producer-run "$GITHUB_RUN_ID" > .institute-ci-entry/manifest.json
+        [[ "$SOURCES_REVISION" =~ ^[0-9a-f]{40}$ ]] \
+          || { echo "::error::refusing malformed Institute CI source revision: '$SOURCES_REVISION'"; exit 1; }
+        echo "sources-revision=$SOURCES_REVISION" >> "$GITHUB_OUTPUT"
 
-    - name: Save Institute CI cache entry (cold bootstrap only)
-      if: ${{ steps.restore.outputs.cache-hit != 'true' }}
-      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-      with:
-        path: .institute-ci-entry
-        key: institute-ci-${{ steps.identity.outputs.sources-tree }}-${{ inputs.workspace-revision }}-linux-x86_64-swift-6.3-static
-
-    # Every restored entry is provenance-verified before any trust: a
-    # corrupt or wrong-identity entry refuses fail-closed rather than
-    # serving a binary nobody can attribute (run 31080609758).
-    - name: Verify Institute CI provenance before trust (fail closed)
-      id: entry
+    - name: Install the published Institute CI binary
+      id: install
       shell: bash
       env:
-        SOURCES_TREE: ${{ steps.identity.outputs.sources-tree }}
-        WORKSPACE_REVISION: ${{ inputs.workspace-revision }}
+        RELEASE: https://github.com/swift-institute/institute-continuous-integration/releases/download/ci-binaries
+        SOURCES_REVISION: ${{ steps.identity.outputs.sources-revision }}
       run: |
         set -euo pipefail
-        .institute-ci-entry/bin/institute-ci bootstrap-verify \
-          --workspace-revision "$WORKSPACE_REVISION" --sources-revision "$SOURCES_TREE" \
-          --toolchain swift-6.3 --os linux --arch x86_64 \
-          --provisioning uuid-dev,static-swift-stdlib \
-          --root .institute-ci-entry --manifest .institute-ci-entry/manifest.json
-        echo "binary=$(pwd)/.institute-ci-entry/bin/institute-ci" >> "$GITHUB_OUTPUT"
+        command -v curl >/dev/null || { apt-get update -qq && apt-get install -qq -y curl; }
+        work="$(mktemp -d)"
+        for asset in SHA256SUMS institute-continuous-integration MANIFEST.txt; do
+          curl --fail --silent --show-error --location --retry 2 \
+            --output "$work/$asset" "$RELEASE/$asset"
+        done
+        (cd "$work" && sha256sum --check SHA256SUMS)
+
+        # The checksum proves the bytes are the ones published; it says
+        # nothing about which sources they came from. The manifest does,
+        # and disagreeing with the fleet pin is fail-closed: a pin advance
+        # whose publish has not landed must stop here rather than run an
+        # older binary under a newer pin's name.
+        PUBLISHED="$(sed -n 's/^sources-revision=//p' "$work/MANIFEST.txt")"
+        if [ "$PUBLISHED" != "$SOURCES_REVISION" ]; then
+          echo "::error::published Institute CI binary was built from '$PUBLISHED', but the fleet pin is '$SOURCES_REVISION'. Run publish-ci-binaries.yml on institute-continuous-integration at the pinned revision, or correct .institute-ci-pin."
+          exit 1
+        fi
+        install -m 0755 "$work/institute-continuous-integration" "$work/bin-institute-continuous-integration"
+        echo "binary=$work/bin-institute-continuous-integration" >> "$GITHUB_OUTPUT"
+        {
+          echo "### Institute CI binary"
+          echo
+          echo "Verified against \`SHA256SUMS\`, built from \`${PUBLISHED}\`."
+          echo
+          echo '```'
+          cat "$work/MANIFEST.txt"
+          echo '```'
+        } >> "$GITHUB_STEP_SUMMARY"
