@@ -19,7 +19,6 @@ on:
 permissions: {}
 
 env:
-  INSTITUTE_REVISION: e7b52d10d9b770c92dcd95a0b70119cecdadac97
   SWIFT_VERSION: 6.3.3
   XCODE_VERSION: "27.0"
 
@@ -122,13 +121,7 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
         run: gh api --method DELETE installation/token
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: swift-institute/institute-application
-          ref: ${{ env.INSTITUTE_REVISION }}
-          path: i
-          persist-credentials: false
-      - name: Verify through the Institute coordinator
+      - name: Verify the exact candidate package
         working-directory: subject
         shell: bash
         env:
@@ -138,8 +131,11 @@ jobs:
           git config --global --add safe.directory "$GITHUB_WORKSPACE/subject"
           test "$(git rev-parse HEAD)" = "$TARGET_HEAD"
           swift --version
-          swift run -c release --package-path "$GITHUB_WORKSPACE/i" \
-            institute package test --fresh
+          # Match the terminal public package leg after the narrowed reader
+          # has been revoked. Building institute-application here made the
+          # verifier test that macOS-only application's dependency graph
+          # instead of the candidate and could not be correct on Windows.
+          swift test -c release
 
   windows:
     name: Windows · assertions
@@ -174,16 +170,10 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
         run: gh api --method DELETE installation/token
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: swift-institute/institute-application
-          ref: ${{ env.INSTITUTE_REVISION }}
-          path: i
-          persist-credentials: false
       - uses: SwiftyLab/setup-swift@38f54a76b70d989321de9dc7c840618c08cf56e9 # v1.14.0
         with:
           swift-version: ${{ env.SWIFT_VERSION }}
-      - name: Verify through the assertions-enabled Institute coordinator
+      - name: Verify the exact candidate package with assertions
         working-directory: subject
         shell: bash
         env:
@@ -193,9 +183,9 @@ jobs:
           git config --global --add safe.directory "$GITHUB_WORKSPACE/subject"
           test "$(git rev-parse HEAD)" = "$TARGET_HEAD"
           swift --version
-          swift run -c release --package-path "$GITHUB_WORKSPACE/i" \
-            institute package test --fresh \
-            --argument=-Xswiftc --argument=-enable-assertions
+          # Assertions are mandatory on Windows and this step remains
+          # gating. The candidate has no credential when SwiftPM executes.
+          swift test -c debug -Xswiftc -enable-assertions
 
   macos:
     name: Apple · macOS
@@ -230,14 +220,8 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
         run: gh api --method DELETE installation/token
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: swift-institute/institute-application
-          ref: ${{ env.INSTITUTE_REVISION }}
-          path: i
-          persist-credentials: false
       - run: sudo xcode-select --switch "/Applications/Xcode_${XCODE_VERSION}.app"
-      - name: Verify through the Institute coordinator
+      - name: Verify the exact candidate package
         working-directory: subject
         shell: bash
         env:
@@ -247,8 +231,7 @@ jobs:
           git config --global --add safe.directory "$GITHUB_WORKSPACE/subject"
           test "$(git rev-parse HEAD)" = "$TARGET_HEAD"
           swift --version
-          swift run -c release --package-path "$GITHUB_WORKSPACE/i" \
-            institute package test --fresh
+          swift test -c release
 
   publish:
     name: workspace
