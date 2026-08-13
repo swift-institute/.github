@@ -1,3 +1,0 @@
-# Companion
-
-Detail lives here.

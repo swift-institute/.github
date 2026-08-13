@@ -78,16 +78,6 @@ There are two independent ref knobs, easy to conflate:
 The surface is public-target-only by design. See the header of
 `.github/workflows/ci-dispatch.yml` for the full caveats.
 
-## Test package selection
-
-The universal workflow always tests the repository's root `Package.swift`.
-When it detects `Tests/Package.swift`, it then tests that nested package as a
-second, independent owner. No workflow input is required: adding the nested
-manifest is the opt-in. Root-only and nested-only repositories retain their
-existing coverage, while a mixed repository may keep internal-target tests in
-the root package and isolate third-party test dependencies in the nested one.
-The order is deterministic: root first, then `Tests/`.
-
 ## Code of Conduct
 
 All participation in the Swift Institute ecosystem is governed by the

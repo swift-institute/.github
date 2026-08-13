@@ -1,0 +1,71 @@
+name: 'CI subject'
+description: >-
+  Check out the exact revision under verification, prove the checkout is
+  that revision, and configure credentials for private intra-Institute
+  dependency resolution.
+
+# Every leg verifies the same subject. Before this action each one carried
+# its own copy of the checkout, the HEAD comparison, and the credential
+# step — fourteen copies of a nine-line proof, which is fourteen places
+# for it to drift and one place for it to be silently dropped.
+#
+# The subject is resolved once, by the plan job, and passed in. A leg that
+# re-derived it would be a second opinion about what is being verified.
+
+inputs:
+  repository:
+    description: 'Subject repository, from the plan job. Never re-derived.'
+    required: true
+  sha:
+    description: >-
+      Subject commit, from the plan job. A validated 40-hex SHA; the
+      checkout is refused if HEAD does not match it.
+    required: true
+  app-id:
+    description: >-
+      swift-institute-bot App client id, from the org variable. Passed in
+      rather than read here: a composite action has no `vars` context, so
+      reading it inside would silently resolve to empty.
+    required: false
+    default: ''
+  app-private-key:
+    description: >-
+      swift-institute-bot App private key. Empty is the ordinary case —
+      most consumers have no private dependency and receive no
+      credential — and configures nothing rather than failing.
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        repository: ${{ inputs.repository }}
+        ref: ${{ inputs.sha }}
+        persist-credentials: false
+
+    # A container job runs each step through a fresh `docker exec`, so a
+    # bare `git` call sees a checkout owned by the host UID and refuses it
+    # as dubious ownership. actions/checkout's own internal calls above do
+    # not hit this — they registered the path for themselves.
+    - name: Verify checked-out subject HEAD
+      shell: bash
+      env:
+        SUBJECT_SHA: ${{ inputs.sha }}
+      run: |
+        set -euo pipefail
+        git config --global --add safe.directory '*'
+        ACTUAL="$(git rev-parse HEAD)"
+        if [ "$ACTUAL" != "$SUBJECT_SHA" ]; then
+          echo "::error::checked-out HEAD '$ACTUAL' is not the plan's subject '$SUBJECT_SHA'. Refusing to verify an unintended revision."
+          exit 1
+        fi
+
+    - name: Configure private dependency credentials
+      if: ${{ inputs.app-private-key != '' }}
+      uses: swift-institute/.github/.github/actions/configure-private-repos@e26894310338ae9143dd2f310c09113022ededcc
+      with:
+        app-id: ${{ inputs.app-id }}
+        app-private-key: ${{ inputs.app-private-key }}
+        enabled: 'true'
