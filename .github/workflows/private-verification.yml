@@ -6,7 +6,7 @@ on:
 env:
   INSTITUTE_REVISION: e7b52d10d9b770c92dcd95a0b70119cecdadac97
   SWIFT_VERSION: 6.3.3
-  XCODE_VERSION: 27.0
+  XCODE_VERSION: "27.0"
 
 jobs:
   linux:
