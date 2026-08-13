@@ -1,0 +1,12 @@
+name: control-hostile-probe
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  hostile-probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@main
