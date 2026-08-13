@@ -21,12 +21,120 @@ permissions: {}
 jobs:
   control:
     name: control
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
-    uses: swift-institute/institute-continuous-integration-control/.github/workflows/control-validate.yml@92759d8aa93fb3ef06b3076c2202a57d509dcb82
-    with:
-      repository: ${{ inputs.repository }}
-      pull: ${{ inputs.pull }}
-      head: ${{ inputs.head }}
-    secrets:
-      SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Resolve target repository name
+        id: target
+        shell: bash
+        env:
+          TARGET_REPOSITORY: ${{ inputs.repository }}
+        run: |
+          set -euo pipefail
+          [[ "$TARGET_REPOSITORY" =~ ^swift-institute/[A-Za-z0-9._-]+$ ]]
+          echo "name=${TARGET_REPOSITORY#*/}" >> "$GITHUB_OUTPUT"
+
+      - name: Mint read-only Control asset token
+        id: reader
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: swift-institute
+          repositories: institute-continuous-integration-control
+          permission-contents: read
+
+      - name: Install immutable private Control binary
+        id: install
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.reader.outputs.token }}
+        run: |
+          set -euo pipefail
+          repository=swift-institute/institute-continuous-integration-control
+          work="$(mktemp -d)"
+          gh release download ci-binaries -R "$repository" \
+            --pattern CURRENT --output "$work/CURRENT"
+          digest="$(sed -n 's/^digest=//p' "$work/CURRENT")"
+          source="$(sed -n 's/^sources-revision=//p' "$work/CURRENT")"
+          [[ "$digest" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$source" =~ ^[0-9a-f]{40}$ ]]
+
+          binary="institute-ci-control-${digest}"
+          manifest="MANIFEST-${digest}.txt"
+          checksums="SHA256SUMS-${digest}"
+          for asset in "$binary" "$manifest" "$checksums"; do
+            gh release download ci-binaries -R "$repository" \
+              --pattern "$asset" --dir "$work"
+          done
+          (cd "$work" && sha256sum --check "$checksums")
+          test "$(sed -n 's/^digest=//p' "$work/$manifest")" = "$digest"
+          test "$(sed -n 's/^sources-revision=//p' "$work/$manifest")" = "$source"
+          install -m 0755 "$work/$binary" "$work/verified-institute-ci-control"
+          echo "binary=$work/verified-institute-ci-control" >> "$GITHUB_OUTPUT"
+          echo "source=$source" >> "$GITHUB_OUTPUT"
+
+      - name: Revoke private Control asset token
+        id: revoke
+        if: ${{ always() && steps.reader.outcome == 'success' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.reader.outputs.token }}
+        run: gh api --method DELETE installation/token
+
+      - name: Acquire and validate exact candidate through Control
+        id: validation
+        if: ${{ steps.install.outcome == 'success' && steps.revoke.outcome == 'success' }}
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CONTROL: ${{ steps.install.outputs.binary }}
+          TARGET_REPOSITORY: ${{ inputs.repository }}
+          TARGET_PULL: ${{ inputs.pull }}
+          TARGET_HEAD: ${{ inputs.head }}
+        run: |
+          set -euo pipefail
+          "$CONTROL" validate-live \
+            --repository "$TARGET_REPOSITORY" \
+            --pull "$TARGET_PULL" \
+            --head "$TARGET_HEAD" \
+            --candidate "$RUNNER_TEMP/control-candidate" \
+            --receipt "$RUNNER_TEMP/control-receipt.json"
+
+      - name: Mint narrowed swift-institute-bot publisher token
+        id: publisher
+        if: ${{ always() && steps.install.outcome == 'success' }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: swift-institute
+          repositories: ${{ steps.target.outputs.name }}
+          permission-checks: write
+          permission-metadata: read
+
+      - name: Consume receipt and publish exact-head verdict through Control
+        if: ${{ always() && steps.publisher.outcome == 'success' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.publisher.outputs.token }}
+          CONTROL: ${{ steps.install.outputs.binary }}
+          DETAILS: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          TARGET_REPOSITORY: ${{ inputs.repository }}
+          TARGET_PULL: ${{ inputs.pull }}
+          TARGET_HEAD: ${{ inputs.head }}
+        run: |
+          "$CONTROL" publish-validation \
+            --receipt "$RUNNER_TEMP/control-receipt.json" \
+            --repository "$TARGET_REPOSITORY" \
+            --pull "$TARGET_PULL" \
+            --head "$TARGET_HEAD" \
+            --details "$DETAILS"
