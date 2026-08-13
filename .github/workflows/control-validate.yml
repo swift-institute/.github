@@ -136,6 +136,7 @@ jobs:
           repositories: ${{ steps.target.outputs.name }}
           permission-checks: write
           permission-metadata: read
+          permission-pull-requests: read
 
       - name: Consume receipt and publish exact-head verdict through Control
         if: ${{ always() && steps.publisher.outcome == 'success' }}
