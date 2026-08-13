@@ -1,0 +1,167 @@
+name: publish-private-transaction-binary
+
+on:
+  workflow_dispatch:
+    inputs:
+      source:
+        description: Exact pull-request transaction main revision to publish.
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    container: swift:6.3@sha256:69bf1f0281e13d82c9e49d67c2dd1dcc8c00bad738c860f4323d7078787ec8ea # 6.3.3
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Provision publisher dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          apt-get update -qq
+          apt-get install -qq -y git gh jq
+
+      - name: Validate the expected source revision
+        id: expected
+        shell: bash
+        env:
+          SOURCE: ${{ inputs.source }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE" =~ ^[0-9a-f]{40}$ ]]
+          echo "source=$SOURCE" >> "$GITHUB_OUTPUT"
+
+      - name: Mint read-only private source token
+        id: reader
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: swift-institute
+          repositories: institute-pull-request-transaction
+          permission-contents: read
+
+      - name: Acquire exact transaction main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: swift-institute/institute-pull-request-transaction
+          ref: main
+          path: transaction
+          token: ${{ steps.reader.outputs.token }}
+          persist-credentials: false
+
+      - name: Revoke private source token
+        id: reader-revoke
+        if: ${{ always() && steps.reader.outcome == 'success' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.reader.outputs.token }}
+        run: gh api --method DELETE installation/token
+
+      - name: Bind the checkout to the expected main revision
+        id: source
+        if: ${{ steps.reader-revoke.outcome == 'success' }}
+        shell: bash
+        env:
+          EXPECTED: ${{ steps.expected.outputs.source }}
+        run: |
+          set -euo pipefail
+          git config --global --add safe.directory "$GITHUB_WORKSPACE/transaction"
+          observed="$(git -C transaction rev-parse HEAD)"
+          test "$observed" = "$EXPECTED"
+          echo "revision=$observed" >> "$GITHUB_OUTPUT"
+
+      - name: Build and prove the transaction executable
+        id: build
+        if: ${{ steps.source.outcome == 'success' }}
+        working-directory: transaction
+        shell: bash
+        env:
+          SOURCE: ${{ steps.source.outputs.revision }}
+        run: |
+          set -euo pipefail
+          digest="$(printf '%s\n' "$SOURCE" \
+            'swift:6.3@sha256:69bf1f0281e13d82c9e49d67c2dd1dcc8c00bad738c860f4323d7078787ec8ea' \
+            | sha256sum | cut -d' ' -f1)"
+          swift test
+          swift build -c release --product pr-transaction --static-swift-stdlib
+          install -m 0755 .build/release/pr-transaction /tmp/pr-transaction
+          /tmp/pr-transaction produce \
+            'Tests/PullRequest Transaction Tests/Fixtures/control-source.json' \
+            > /tmp/transaction.json
+          test "$(/tmp/pr-transaction review /tmp/transaction.json)" = \
+            'pr-transaction: ready-for-bot-review head=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+          {
+            echo "digest=$digest"
+            echo "sources-revision=$SOURCE"
+            echo 'toolchain=swift-6.3.3'
+            echo 'container=swift:6.3@sha256:69bf1f0281e13d82c9e49d67c2dd1dcc8c00bad738c860f4323d7078787ec8ea'
+            echo 'os=linux'
+            echo 'arch=x86_64'
+            echo 'provisioning=static-swift-stdlib'
+            echo "built-at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > /tmp/MANIFEST.txt
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+      - name: Mint narrowed transaction publisher token
+        id: publisher
+        if: ${{ steps.build.outcome == 'success' }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: swift-institute
+          repositories: institute-pull-request-transaction
+          permission-contents: write
+
+      - name: Publish immutable bundle and advance pointer last
+        if: ${{ steps.publisher.outcome == 'success' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.publisher.outputs.token }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+          SOURCE: ${{ steps.source.outputs.revision }}
+        run: |
+          set -euo pipefail
+          repository=swift-institute/institute-pull-request-transaction
+          release=transaction-binaries
+          stage="$(mktemp -d)"
+          binary="pr-transaction-${DIGEST}"
+          manifest="MANIFEST-${DIGEST}.txt"
+          checksums="SHA256SUMS-${DIGEST}"
+          install -m 0755 /tmp/pr-transaction "$stage/$binary"
+          cp /tmp/MANIFEST.txt "$stage/$manifest"
+          (cd "$stage" && sha256sum "$binary" "$manifest" > "$checksums")
+          {
+            echo "digest=$DIGEST"
+            echo "sources-revision=$SOURCE"
+          } > "$stage/CURRENT"
+
+          if ! gh release view "$release" -R "$repository" >/dev/null 2>&1; then
+            gh release create "$release" -R "$repository" \
+              --prerelease --latest=false \
+              --title 'Pull-request transaction binary (rolling)' \
+              --notes 'Private rolling transaction executable. CURRENT selects one immutable digest-named bundle.' \
+              --target "$SOURCE"
+          fi
+          gh release upload "$release" -R "$repository" \
+            "$stage/$binary" "$stage/$manifest" "$stage/$checksums"
+          gh release upload "$release" -R "$repository" "$stage/CURRENT" --clobber
+          gh release edit "$release" -R "$repository" \
+            --notes "Private rolling transaction executable. digest=${DIGEST}; source=${SOURCE}."
+
+      - name: Revoke transaction publisher token
+        if: ${{ always() && steps.publisher.outcome == 'success' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.publisher.outputs.token }}
+        run: gh api --method DELETE installation/token
