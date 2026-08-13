@@ -107,12 +107,15 @@ jobs:
 
   workspace:
     name: workspace
-    if: ${{ always() }}
+    if: ${{ always() && github.event.repository.private }}
     needs: [linux, windows, macos]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}
     steps:
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
       - name: Require every private verification platform
         env:
           LINUX_RESULT: ${{ needs.linux.result }}
