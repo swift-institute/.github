@@ -156,14 +156,24 @@ jobs:
       - id: institute-ci
         uses: swift-institute/.github/.github/actions/institute-ci@f27f486a72309b8fea84cf44c8516bc79a7085a5
 
-      - name: Validate package controls
+      - name: Materialize fleet policy at the workflow revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: swift-institute/.github
+          ref: ${{ github.workflow_sha }}
+          path: .ci-policy
+          sparse-checkout: .github/policy/fleet.json
+          persist-credentials: false
+
+      - name: Validate package
         shell: bash
         env:
           BINARY: ${{ steps.institute-ci.outputs.binary }}
         run: |
-          "$BINARY" control validate \
+          "$BINARY" package validate \
             --repository "${{ steps.subject.outputs.repository }}" \
-            --root "$GITHUB_WORKSPACE"
+            --root "$GITHUB_WORKSPACE" \
+            --policy "$GITHUB_WORKSPACE/.ci-policy/.github/policy/fleet.json"
 
       - name: Classify
         id: classify
@@ -175,7 +185,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          PLAN="$("$BINARY" plan \
+          PLAN="$("$BINARY" package plan \
             --tier "${{ inputs.tier }}" --ref "$GITHUB_REF" \
             --head-message "${{ github.event.head_commit.message }}" \
             --event "${{ github.event_name }}" --event-path "$GITHUB_EVENT_PATH" \
@@ -720,7 +730,7 @@ jobs:
           FLAGS=()
           [ "$REQUIRE_FULL_TIER" = "true" ] && FLAGS+=(--require-full-tier)
           RC=0
-          VERDICT="$("$BINARY" aggregate \
+          VERDICT="$("$BINARY" package aggregate \
             --needs-json "$NEEDS_JSON" \
             --gating "${{ needs.plan.outputs.gating }}" \
             --subject-repository "${{ needs.plan.outputs.subject-repository }}" \
