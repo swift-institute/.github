@@ -1,6 +1,0 @@
----
-name: alpha
-description: "   "
----
-
-# Alpha
