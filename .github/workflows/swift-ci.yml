@@ -366,14 +366,18 @@ jobs:
         run: |
           swift --version
           test_package() {
+            scratch="$1"
             if [ -n "$TEST_FILTER" ]; then
-              swift test -c debug --filter "$(echo "$TEST_FILTER" | tr '-' '_')"
+              swift test -c debug --scratch-path "$scratch" --filter "$(echo "$TEST_FILTER" | tr '-' '_')"
             else
-              swift test -c debug
+              swift test -c debug --scratch-path "$scratch"
             fi
           }
-          test_package
-          if [ -f Tests/Package.swift ]; then (cd Tests && test_package); fi
+          # Windows expands every linked module into response-file arguments.
+          # A short absolute build prefix keeps large dependency closures below
+          # the process command-length boundary without skipping any test.
+          test_package C:/b
+          if [ -f Tests/Package.swift ]; then (cd Tests && test_package C:/t); fi
   macos-release:
     name: Build · Apple · macOS
     needs: plan
