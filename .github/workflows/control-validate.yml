@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       repository:
-        description: Exact public Institute repository in owner/name form.
+        description: Exact Institute repository in owner/name form.
         required: true
         type: string
       pull:
@@ -95,13 +95,25 @@ jobs:
           GH_TOKEN: ${{ steps.reader.outputs.token }}
         run: gh api --method DELETE installation/token
 
+      - name: Mint read-only candidate token
+        id: candidate
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: swift-institute
+          repositories: ${{ steps.target.outputs.name }}
+          permission-contents: read
+          permission-metadata: read
+          permission-pull-requests: read
+
       - name: Acquire and validate exact candidate through Control
         id: validation
-        if: ${{ steps.install.outcome == 'success' && steps.revoke.outcome == 'success' }}
+        if: ${{ steps.install.outcome == 'success' && steps.revoke.outcome == 'success' && steps.candidate.outcome == 'success' }}
         continue-on-error: true
         shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.candidate.outputs.token }}
           CONTROL: ${{ steps.install.outputs.binary }}
           TARGET_REPOSITORY: ${{ inputs.repository }}
           TARGET_PULL: ${{ inputs.pull }}
@@ -115,6 +127,14 @@ jobs:
             --candidate "$RUNNER_TEMP/control-candidate" \
             --receipt "$RUNNER_TEMP/control-receipt.json"
 
+      - name: Revoke read-only candidate token
+        id: candidate-revoke
+        if: ${{ always() && steps.candidate.outcome == 'success' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.candidate.outputs.token }}
+        run: gh api --method DELETE installation/token
+
       - name: Enforce candidate destruction before publisher credentials
         id: destruction
         if: ${{ always() }}
@@ -127,7 +147,7 @@ jobs:
 
       - name: Mint narrowed swift-institute-bot publisher token
         id: publisher
-        if: ${{ always() && steps.install.outcome == 'success' && steps.destruction.outcome == 'success' }}
+        if: ${{ always() && steps.install.outcome == 'success' && steps.candidate-revoke.outcome == 'success' && steps.destruction.outcome == 'success' }}
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           client-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}

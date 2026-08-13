@@ -114,13 +114,10 @@ jobs:
         with:
           swift-version: '6.3'
 
-      - name: Resolve exact target scope
-        id: target
+      - name: Resolve exact target coordinate
+        id: coordinate
         shell: bash
         env:
-          # The workflow token, not the App token: this step only reads public
-          # repository metadata, and it runs before any App token is minted.
-          GH_TOKEN: ${{ github.token }}
           TARGET_REPOSITORY: ${{ inputs.repository }}
           TARGET_PULL: ${{ inputs.pull }}
         run: |
@@ -133,16 +130,12 @@ jobs:
             echo "::error::'pull' must be one positive decimal pull-request number."
             exit 1
           fi
-          target=$(gh api "repos/${TARGET_REPOSITORY}" | jq -ce \
-            --arg repository "$TARGET_REPOSITORY" '
-              select(.full_name == $repository and .visibility == "public")
-              | { repository: .full_name, visibility }
-            ')
-          echo "repository=${TARGET_REPOSITORY}" >> "$GITHUB_OUTPUT"
-          echo "owner=${TARGET_REPOSITORY%/*}" >> "$GITHUB_OUTPUT"
-          echo "name=${TARGET_REPOSITORY#*/}" >> "$GITHUB_OUTPUT"
-          echo "pull=${TARGET_PULL}" >> "$GITHUB_OUTPUT"
-          echo "target=${target}" >> "$GITHUB_OUTPUT"
+          {
+            echo "repository=${TARGET_REPOSITORY}"
+            echo "owner=${TARGET_REPOSITORY%/*}"
+            echo "name=${TARGET_REPOSITORY#*/}"
+            echo "pull=${TARGET_PULL}"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Mint narrowed reviewer token
         id: token
@@ -150,11 +143,36 @@ jobs:
         with:
           client-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
           private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
-          owner: ${{ steps.target.outputs.owner }}
-          repositories: ${{ steps.target.outputs.name }}
+          owner: ${{ steps.coordinate.outputs.owner }}
+          repositories: ${{ steps.coordinate.outputs.name }}
+          permission-checks: read
           permission-metadata: read
           permission-contents: read
+          permission-issues: read
           permission-pull-requests: write
+
+      - name: Resolve exact target scope
+        id: target
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          TARGET_REPOSITORY: ${{ steps.coordinate.outputs.repository }}
+          TARGET_PULL: ${{ steps.coordinate.outputs.pull }}
+        run: |
+          set -euo pipefail
+          target=$(gh api "repos/${TARGET_REPOSITORY}" | jq -ce \
+            --arg repository "$TARGET_REPOSITORY" '
+              select(
+                .full_name == $repository and
+                (.visibility == "public" or .visibility == "private")
+              )
+              | { repository: .full_name, visibility }
+            ')
+          {
+            echo "repository=${TARGET_REPOSITORY}"
+            echo "pull=${TARGET_PULL}"
+            echo "target=${target}"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Validate the guarded transaction
         id: guard
