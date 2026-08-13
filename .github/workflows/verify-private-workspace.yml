@@ -188,7 +188,10 @@ jobs:
           # tests are gating; forwarding the obsolete frontend flag would be
           # rejected by Swift 6.3.3 before any candidate Swift source builds.
           # The candidate has no credential when SwiftPM executes.
-          swift test -c debug
+          # Keep the absolute build prefix short: large private dependency
+          # closures otherwise exceed Windows' process command-length boundary
+          # when SwiftPM expands every linked module into llvm-lib arguments.
+          swift test -c debug --scratch-path C:/v
 
   macos:
     name: Apple · macOS
