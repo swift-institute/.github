@@ -124,6 +124,8 @@ excluded:
   # checkout under the parent's `Tests/`; the bare `.build` entry only matches
   # the top-level directory, so the recursive glob catches the nested ones too.
   - "**/.build"
+  # Validator corpora deliberately contain invalid and non-canonical source.
+  - "**/Fixtures"
   - Carthage
   - Pods
   - fastlane

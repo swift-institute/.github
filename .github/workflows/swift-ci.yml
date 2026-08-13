@@ -592,6 +592,7 @@ jobs:
             -not -path '*/*.docc/Resources/*' \
             -not -path 'Tests/Support/*' \
             -not -path 'Tests/Tutorial/*' \
+            -not -path '*/Fixtures/*' \
             -print0 2>/dev/null || true)
           if [ "${#files[@]}" -eq 0 ]; then echo "No Swift files to lint."; exit 0; fi
           swift-format lint --strict --ignore-unparsable-files "${files[@]}"
