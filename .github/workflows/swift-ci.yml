@@ -102,10 +102,11 @@ jobs:
     # The generated caller grants `actions: read` and `contents: read`, and a
     # called workflow cannot exceed that intersection — asking for anything
     # more fails the run at startup, before a single job is scheduled. The
-    # plan reads the event's changed files through `gh`, which needs no
-    # further grant here: the visibility gate means every repository that
-    # reaches this step is public.
+    # plan reads the event's changed files and the run's resolved reusable
+    # workflow identity through `gh`; the caller grants both `actions: read`
+    # and `contents: read` for those public-repository reads.
     permissions:
+      actions: read
       contents: read
     outputs:
       tier: ${{ steps.classify.outputs.tier }}
@@ -116,6 +117,7 @@ jobs:
       linux-image: ${{ steps.classify.outputs.linux-image }}
       subject-repository: ${{ steps.subject.outputs.repository }}
       subject-sha: ${{ steps.subject.outputs.sha }}
+      workflow-sha: ${{ steps.workflow.outputs.sha }}
     steps:
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
@@ -148,6 +150,31 @@ jobs:
           echo "repository=$REPOSITORY" >> "$GITHUB_OUTPUT"
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
 
+      - name: Resolve exact reusable workflow revision
+        id: workflow
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.run_id }}
+          TRIGGER_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          matches="$(gh api "repos/${TRIGGER_REPOSITORY}/actions/runs/${RUN_ID}" | jq -c '
+            [
+              .referenced_workflows[]?
+              | select(.path | startswith("swift-institute/.github/.github/workflows/swift-ci.yml@"))
+            ]
+          ')"
+          if [ "$(jq 'length' <<< "$matches")" -ne 1 ]; then
+            echo "::error::expected one resolved swift-ci.yml reference, found $(jq 'length' <<< "$matches")."
+            exit 1
+          fi
+          SHA="$(jq -er '.[0].sha | select(test("^[0-9a-f]{40}$"))' <<< "$matches")"
+          REQUESTED="$(jq -er '.[0].path' <<< "$matches")"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "requested=$REQUESTED" >> "$GITHUB_OUTPUT"
+          echo "Resolved reusable workflow: ${REQUESTED} -> ${SHA}"
+
       - uses: swift-institute/.github/.github/actions/ci-subject@e26894310338ae9143dd2f310c09113022ededcc
         with:
           repository: ${{ steps.subject.outputs.repository }}
@@ -160,7 +187,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: swift-institute/.github
-          ref: ${{ github.workflow_sha }}
+          ref: ${{ steps.workflow.outputs.sha }}
           path: .ci-policy
           sparse-checkout: .github/policy/fleet.json
           persist-credentials: false
@@ -541,7 +568,7 @@ jobs:
           sha: ${{ needs.plan.outputs.subject-sha }}
       - uses: swift-institute/.github/.github/actions/central-style@e26894310338ae9143dd2f310c09113022ededcc
         with:
-          ref: ${{ job.workflow_sha }}
+          ref: ${{ needs.plan.outputs.workflow-sha }}
       - name: Lint formatting
         shell: bash
         run: |
@@ -576,7 +603,7 @@ jobs:
           sha: ${{ needs.plan.outputs.subject-sha }}
       - uses: swift-institute/.github/.github/actions/central-style@e26894310338ae9143dd2f310c09113022ededcc
         with:
-          ref: ${{ job.workflow_sha }}
+          ref: ${{ needs.plan.outputs.workflow-sha }}
       - name: Cache SwiftLint binary
         id: cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -714,7 +741,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: swift-institute/.github
-          ref: ${{ job.workflow_sha }}
+          ref: ${{ needs.plan.outputs.workflow-sha }}
       - id: institute-ci
         uses: swift-institute/.github/.github/actions/institute-ci@e26894310338ae9143dd2f310c09113022ededcc
       # Runs on always(), so it must reach a verdict when plan itself
