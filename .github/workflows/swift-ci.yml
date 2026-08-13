@@ -156,6 +156,15 @@ jobs:
       - id: institute-ci
         uses: swift-institute/.github/.github/actions/institute-ci@f27f486a72309b8fea84cf44c8516bc79a7085a5
 
+      - name: Validate package controls
+        shell: bash
+        env:
+          BINARY: ${{ steps.institute-ci.outputs.binary }}
+        run: |
+          "$BINARY" control validate \
+            --repository "${{ steps.subject.outputs.repository }}" \
+            --root "$GITHUB_WORKSPACE"
+
       - name: Classify
         id: classify
         shell: bash
