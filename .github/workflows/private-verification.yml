@@ -1,0 +1,129 @@
+name: private-verification
+
+on:
+  workflow_call:
+
+env:
+  INSTITUTE_REVISION: e7b52d10d9b770c92dcd95a0b70119cecdadac97
+  SWIFT_VERSION: 6.3.3
+  XCODE_VERSION: "27.0"
+
+jobs:
+  linux:
+    name: Linux
+    if: ${{ github.event.repository.private }}
+    runs-on: ubuntu-latest
+    container: swiftlang/swift@sha256:8d614165059587ce9dcf6727a76aeff4cbf1cde41fde9a9281a43803be736224
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: swift-institute/institute-application
+          ref: ${{ env.INSTITUTE_REVISION }}
+          path: i
+          persist-credentials: false
+      - name: Verify through the Institute coordinator
+        shell: bash
+        run: |
+          set -euo pipefail
+          apt-get update -qq && apt-get install -qq -y uuid-dev
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          swift --version
+          swift run -c release --package-path i \
+            institute package test --fresh
+
+  windows:
+    name: Windows · assertions
+    if: ${{ github.event.repository.private }}
+    runs-on: windows-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: swift-institute/institute-application
+          ref: ${{ env.INSTITUTE_REVISION }}
+          path: i
+          persist-credentials: false
+      - uses: SwiftyLab/setup-swift@38f54a76b70d989321de9dc7c840618c08cf56e9 # v1.14.0
+        with:
+          swift-version: ${{ env.SWIFT_VERSION }}
+      - name: Verify through the assertions-enabled Institute coordinator
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          swift --version
+          swift run -c release --package-path i \
+            institute package test --fresh \
+            --argument=-Xswiftc --argument=-enable-assertions
+
+  macos:
+    name: Apple · macOS
+    if: ${{ github.event.repository.private }}
+    runs-on: xcode-27
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: swift-institute/institute-application
+          ref: ${{ env.INSTITUTE_REVISION }}
+          path: i
+          persist-credentials: false
+      - run: sudo xcode-select --switch "/Applications/Xcode_${XCODE_VERSION}.app"
+      - name: Verify through the Institute coordinator
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          swift --version
+          swift run -c release --package-path i \
+            institute package test --fresh
+
+  workspace:
+    name: workspace
+    if: ${{ always() && github.event.repository.private }}
+    needs: [linux, windows, macos]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+      - name: Require every private verification platform
+        env:
+          LINUX_RESULT: ${{ needs.linux.result }}
+          WINDOWS_RESULT: ${{ needs.windows.result }}
+          MACOS_RESULT: ${{ needs.macos.result }}
+        run: |
+          test "$LINUX_RESULT" = success
+          test "$WINDOWS_RESULT" = success
+          test "$MACOS_RESULT" = success
