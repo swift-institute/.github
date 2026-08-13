@@ -250,7 +250,7 @@ jobs:
   linux-release:
     name: Linux · release
     needs: plan
-    if: ${{ !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',linux-release,') }}
+    if: ${{ !github.event.repository.private && !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',linux-release,') }}
     runs-on: ubuntu-latest
     container: ${{ needs.plan.outputs.linux-image }}
     timeout-minutes: 45
@@ -285,7 +285,7 @@ jobs:
   linux-6-4:
     name: Linux · 6.4.x nightly
     needs: plan
-    if: ${{ !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',linux-6-4,') }}
+    if: ${{ !github.event.repository.private && !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',linux-6-4,') }}
     runs-on: ubuntu-latest
     container: ${{ needs.plan.outputs.linux-image }}
     continue-on-error: true
@@ -310,7 +310,7 @@ jobs:
   linux-nightly:
     name: Linux · main nightly
     needs: plan
-    if: ${{ !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',linux-nightly,') }}
+    if: ${{ !github.event.repository.private && !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',linux-nightly,') }}
     runs-on: ubuntu-latest
     container: swiftlang/swift@sha256:f577f95edfb85cf3bdc45eb0badaab09239de5c86c69b3b6d594cc62916c0a7d
     continue-on-error: true
@@ -335,7 +335,7 @@ jobs:
   embedded:
     name: Linux · Embedded (host triple)
     needs: plan
-    if: ${{ !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',embedded,') }}
+    if: ${{ !github.event.repository.private && !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',embedded,') }}
     runs-on: ubuntu-latest
     container: swiftlang/swift:nightly-main-jammy
     continue-on-error: true
@@ -370,7 +370,7 @@ jobs:
   embedded-wasm-sdk:
     name: Linux · Embedded Wasm SDK
     needs: plan
-    if: ${{ !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',embedded-wasm-sdk,') }}
+    if: ${{ !github.event.repository.private && !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',embedded-wasm-sdk,') }}
     runs-on: ubuntu-latest
     container: ${{ needs.plan.outputs.linux-image }}
     continue-on-error: true
@@ -397,7 +397,7 @@ jobs:
   android-build:
     name: Linux · Android SDK
     needs: plan
-    if: ${{ !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',android-build,') }}
+    if: ${{ !github.event.repository.private && !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',android-build,') }}
     runs-on: ubuntu-latest
     container: ${{ needs.plan.outputs.linux-image }}
     continue-on-error: true
@@ -424,7 +424,7 @@ jobs:
   static-linux-musl-build:
     name: Linux · static musl
     needs: plan
-    if: ${{ !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',static-linux-musl-build,') }}
+    if: ${{ !github.event.repository.private && !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',static-linux-musl-build,') }}
     runs-on: ubuntu-latest
     container: ${{ needs.plan.outputs.linux-image }}
     continue-on-error: true
@@ -451,7 +451,7 @@ jobs:
   macos-release:
     name: Apple · macOS
     needs: plan
-    if: ${{ !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',macos-release,') }}
+    if: ${{ !github.event.repository.private && !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',macos-release,') }}
     runs-on: xcode-27
     timeout-minutes: 45
     permissions:
@@ -489,7 +489,7 @@ jobs:
     # state is the one that is actually read.
     name: Apple · Simulator
     needs: plan
-    if: ${{ !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',apple-simulator-build,') }}
+    if: ${{ !github.event.repository.private && !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',apple-simulator-build,') }}
     runs-on: xcode-27
     continue-on-error: true
     timeout-minutes: 45
@@ -518,7 +518,7 @@ jobs:
   windows-release:
     name: Windows · release
     needs: plan
-    if: ${{ !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',windows-release,') }}
+    if: ${{ !github.event.repository.private && !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',windows-release,') }}
     runs-on: windows-latest
     timeout-minutes: 45
     permissions:
@@ -553,7 +553,7 @@ jobs:
   format:
     name: Quality · swift-format
     needs: plan
-    if: ${{ !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',format,') }}
+    if: ${{ !github.event.repository.private && !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',format,') }}
     runs-on: ubuntu-latest
     container: ${{ needs.plan.outputs.linux-image }}
     timeout-minutes: 15
@@ -588,7 +588,7 @@ jobs:
   lint:
     name: Quality · SwiftLint
     needs: plan
-    if: ${{ !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',lint,') }}
+    if: ${{ !github.event.repository.private && !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',lint,') }}
     runs-on: ubuntu-latest
     container: ${{ needs.plan.outputs.linux-image }}
     timeout-minutes: 15
@@ -630,7 +630,7 @@ jobs:
   swift-linter:
     name: Quality · swift-linter
     needs: plan
-    if: ${{ !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',swift-linter,') }}
+    if: ${{ !github.event.repository.private && !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',swift-linter,') }}
     runs-on: ubuntu-latest
     container: ${{ needs.plan.outputs.linux-image }}
     timeout-minutes: 20
@@ -687,13 +687,16 @@ jobs:
       - embedded-wasm-sdk
       - android-build
       - static-linux-musl-build
-    if: ${{ !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',advisory-summary,') }}
+    if: ${{ !github.event.repository.private && !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',advisory-summary,') }}
     continue-on-error: true
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read
     steps:
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
       - name: Render advisory results
         env:
           NEEDS_JSON: ${{ toJson(needs) }}
@@ -739,6 +742,9 @@ jobs:
     permissions:
       contents: read
     steps:
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: swift-institute/.github
