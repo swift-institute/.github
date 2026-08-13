@@ -64,7 +64,7 @@ runs:
 
     - name: Configure private dependency credentials
       if: ${{ inputs.app-private-key != '' }}
-      uses: swift-institute/.github/.github/actions/configure-private-repos@f27f486a72309b8fea84cf44c8516bc79a7085a5
+      uses: swift-institute/.github/.github/actions/configure-private-repos@e26894310338ae9143dd2f310c09113022ededcc
       with:
         app-id: ${{ inputs.app-id }}
         app-private-key: ${{ inputs.app-private-key }}
