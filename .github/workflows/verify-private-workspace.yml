@@ -1,0 +1,332 @@
+name: verify-private-workspace
+
+on:
+  workflow_dispatch:
+    inputs:
+      repository:
+        description: Exact private Institute repository in owner/name form.
+        required: true
+        type: string
+      pull:
+        description: Open pull request number.
+        required: true
+        type: string
+      head:
+        description: Exact 40-character candidate head SHA.
+        required: true
+        type: string
+
+permissions: {}
+
+env:
+  INSTITUTE_REVISION: e7b52d10d9b770c92dcd95a0b70119cecdadac97
+  SWIFT_VERSION: 6.3.3
+  XCODE_VERSION: "27.0"
+
+jobs:
+  scope:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      name: ${{ steps.coordinate.outputs.name }}
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Resolve the exact target coordinate
+        id: coordinate
+        shell: bash
+        env:
+          TARGET_REPOSITORY: ${{ inputs.repository }}
+          TARGET_PULL: ${{ inputs.pull }}
+          TARGET_HEAD: ${{ inputs.head }}
+        run: |
+          set -euo pipefail
+          [[ "$TARGET_REPOSITORY" =~ ^swift-institute/[A-Za-z0-9._-]+$ ]]
+          [[ "$TARGET_PULL" =~ ^[1-9][0-9]*$ ]]
+          [[ "$TARGET_HEAD" =~ ^[0-9a-f]{40}$ ]]
+          echo "name=${TARGET_REPOSITORY#*/}" >> "$GITHUB_OUTPUT"
+
+      - name: Mint narrowed target reader
+        id: token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: swift-institute
+          repositories: ${{ steps.coordinate.outputs.name }}
+          permission-contents: read
+          permission-metadata: read
+          permission-pull-requests: read
+
+      - name: Require one open exact private pull-request head
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          TARGET_REPOSITORY: ${{ inputs.repository }}
+          TARGET_PULL: ${{ inputs.pull }}
+          TARGET_HEAD: ${{ inputs.head }}
+        run: |
+          set -euo pipefail
+          test "$(gh api "repos/$TARGET_REPOSITORY" --jq .visibility)" = private
+          pull="$(gh api "repos/$TARGET_REPOSITORY/pulls/$TARGET_PULL")"
+          test "$(jq -r .state <<< "$pull")" = open
+          test "$(jq -r .head.sha <<< "$pull")" = "$TARGET_HEAD"
+
+      - name: Revoke target reader
+        if: ${{ always() && steps.token.outcome == 'success' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: gh api --method DELETE installation/token
+
+  linux:
+    name: Linux
+    needs: scope
+    runs-on: ubuntu-latest
+    container: swiftlang/swift@sha256:8d614165059587ce9dcf6727a76aeff4cbf1cde41fde9a9281a43803be736224
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+      - name: Provision host dependencies
+        run: |
+          apt-get update -qq
+          apt-get install -qq -y gh uuid-dev
+      - name: Mint exact target reader
+        id: token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: swift-institute
+          repositories: ${{ needs.scope.outputs.name }}
+          permission-contents: read
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ inputs.repository }}
+          ref: ${{ inputs.head }}
+          path: subject
+          token: ${{ steps.token.outputs.token }}
+          persist-credentials: false
+      - name: Revoke target reader before candidate execution
+        id: revoke
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: gh api --method DELETE installation/token
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: swift-institute/institute-application
+          ref: ${{ env.INSTITUTE_REVISION }}
+          path: i
+          persist-credentials: false
+      - name: Verify through the Institute coordinator
+        working-directory: subject
+        shell: bash
+        env:
+          TARGET_HEAD: ${{ inputs.head }}
+        run: |
+          set -euo pipefail
+          git config --global --add safe.directory "$GITHUB_WORKSPACE/subject"
+          test "$(git rev-parse HEAD)" = "$TARGET_HEAD"
+          swift --version
+          swift run -c release --package-path "$GITHUB_WORKSPACE/i" \
+            institute package test --fresh
+
+  windows:
+    name: Windows · assertions
+    needs: scope
+    runs-on: windows-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+      - name: Mint exact target reader
+        id: token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: swift-institute
+          repositories: ${{ needs.scope.outputs.name }}
+          permission-contents: read
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ inputs.repository }}
+          ref: ${{ inputs.head }}
+          path: subject
+          token: ${{ steps.token.outputs.token }}
+          persist-credentials: false
+      - name: Revoke target reader before candidate execution
+        id: revoke
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: gh api --method DELETE installation/token
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: swift-institute/institute-application
+          ref: ${{ env.INSTITUTE_REVISION }}
+          path: i
+          persist-credentials: false
+      - uses: SwiftyLab/setup-swift@38f54a76b70d989321de9dc7c840618c08cf56e9 # v1.14.0
+        with:
+          swift-version: ${{ env.SWIFT_VERSION }}
+      - name: Verify through the assertions-enabled Institute coordinator
+        working-directory: subject
+        shell: bash
+        env:
+          TARGET_HEAD: ${{ inputs.head }}
+        run: |
+          set -euo pipefail
+          git config --global --add safe.directory "$GITHUB_WORKSPACE/subject"
+          test "$(git rev-parse HEAD)" = "$TARGET_HEAD"
+          swift --version
+          swift run -c release --package-path "$GITHUB_WORKSPACE/i" \
+            institute package test --fresh \
+            --argument=-Xswiftc --argument=-enable-assertions
+
+  macos:
+    name: Apple · macOS
+    needs: scope
+    runs-on: xcode-27
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+      - name: Mint exact target reader
+        id: token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: swift-institute
+          repositories: ${{ needs.scope.outputs.name }}
+          permission-contents: read
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ inputs.repository }}
+          ref: ${{ inputs.head }}
+          path: subject
+          token: ${{ steps.token.outputs.token }}
+          persist-credentials: false
+      - name: Revoke target reader before candidate execution
+        id: revoke
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: gh api --method DELETE installation/token
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: swift-institute/institute-application
+          ref: ${{ env.INSTITUTE_REVISION }}
+          path: i
+          persist-credentials: false
+      - run: sudo xcode-select --switch "/Applications/Xcode_${XCODE_VERSION}.app"
+      - name: Verify through the Institute coordinator
+        working-directory: subject
+        shell: bash
+        env:
+          TARGET_HEAD: ${{ inputs.head }}
+        run: |
+          set -euo pipefail
+          git config --global --add safe.directory "$GITHUB_WORKSPACE/subject"
+          test "$(git rev-parse HEAD)" = "$TARGET_HEAD"
+          swift --version
+          swift run -c release --package-path "$GITHUB_WORKSPACE/i" \
+            institute package test --fresh
+
+  publish:
+    name: workspace
+    if: ${{ always() }}
+    needs: [scope, linux, windows, macos]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+      - name: Mint narrowed exact-head check publisher
+        id: token
+        if: ${{ needs.scope.result == 'success' }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: swift-institute
+          repositories: ${{ needs.scope.outputs.name }}
+          permission-checks: write
+          permission-metadata: read
+          permission-pull-requests: read
+      - name: Recheck and publish every exact-head platform verdict
+        id: verdict
+        if: ${{ steps.token.outcome == 'success' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          TARGET_REPOSITORY: ${{ inputs.repository }}
+          TARGET_PULL: ${{ inputs.pull }}
+          TARGET_HEAD: ${{ inputs.head }}
+          LINUX_RESULT: ${{ needs.linux.result }}
+          WINDOWS_RESULT: ${{ needs.windows.result }}
+          MACOS_RESULT: ${{ needs.macos.result }}
+          DETAILS: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          pull="$(gh api "repos/$TARGET_REPOSITORY/pulls/$TARGET_PULL")"
+          test "$(jq -r .state <<< "$pull")" = open
+          test "$(jq -r .head.sha <<< "$pull")" = "$TARGET_HEAD"
+
+          publish() {
+            local name="$1"
+            local result="$2"
+            local conclusion=failure
+            if [ "$result" = success ]; then conclusion=success; fi
+            jq -n \
+              --arg name "$name" \
+              --arg head "$TARGET_HEAD" \
+              --arg conclusion "$conclusion" \
+              --arg details "$DETAILS" \
+              --arg title "$name: $conclusion" \
+              --arg summary "Trusted public-host verification result: $result." \
+              '{name:$name,head_sha:$head,status:"completed",conclusion:$conclusion,
+                details_url:$details,output:{title:$title,summary:$summary}}' \
+              | gh api --method POST "repos/$TARGET_REPOSITORY/check-runs" --input - >/dev/null
+          }
+
+          publish 'verification / Linux' "$LINUX_RESULT"
+          publish 'verification / Windows · assertions' "$WINDOWS_RESULT"
+          publish 'verification / Apple · macOS' "$MACOS_RESULT"
+          workspace=failure
+          if [ "$LINUX_RESULT" = success ] \
+            && [ "$WINDOWS_RESULT" = success ] \
+            && [ "$MACOS_RESULT" = success ]; then
+            workspace=success
+          fi
+          publish 'verification / workspace' "$workspace"
+          echo "conclusion=$workspace" >> "$GITHUB_OUTPUT"
+      - name: Revoke exact-head check publisher
+        if: ${{ always() && steps.token.outcome == 'success' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: gh api --method DELETE installation/token
+      - name: Enforce complete workspace verification
+        if: ${{ always() && steps.verdict.outputs.conclusion != 'success' }}
+        run: exit 1
