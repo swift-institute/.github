@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "organizations": [
+    {"name": "swift-primitives", "layer": "L1", "status": "active"},
+    {"name": "swift-standards", "layer": "L2", "status": "active"},
+    {"name": "swift-ietf", "layer": "L2", "status": "active"},
+    {"name": "swift-iso", "layer": "L2", "status": "active"},
+    {"name": "swift-ieee", "layer": "L2", "status": "active"},
+    {"name": "swift-iec", "layer": "L2", "status": "active"},
+    {"name": "swift-w3c", "layer": "L2", "status": "active"},
+    {"name": "swift-whatwg", "layer": "L2", "status": "active"},
+    {"name": "swift-ecma", "layer": "L2", "status": "active"},
+    {"name": "swift-incits", "layer": "L2", "status": "active"},
+    {"name": "swift-arm-ltd", "layer": "L2", "status": "active"},
+    {"name": "swift-intel", "layer": "L2", "status": "active"},
+    {"name": "swift-riscv", "layer": "L2", "status": "active"},
+    {"name": "swift-linux-foundation", "layer": "L2", "status": "active"},
+    {"name": "swift-microsoft", "layer": "L2", "status": "active"},
+    {"name": "swift-foundations", "layer": "L3", "status": "active"},
+    {"name": "swift-institute", "layer": "control", "status": "active"}
+  ]
+}
