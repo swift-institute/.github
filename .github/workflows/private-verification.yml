@@ -29,7 +29,7 @@ jobs:
         with:
           repository: swift-institute/institute-application
           ref: ${{ env.INSTITUTE_REVISION }}
-          path: .institute-workspace
+          path: i
           persist-credentials: false
       - name: Verify through the Institute coordinator
         shell: bash
@@ -38,7 +38,7 @@ jobs:
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
           swift --version
-          swift run -c release --package-path .institute-workspace \
+          swift run -c release --package-path i \
             institute package test --fresh
 
   windows:
@@ -60,7 +60,7 @@ jobs:
         with:
           repository: swift-institute/institute-application
           ref: ${{ env.INSTITUTE_REVISION }}
-          path: .institute-workspace
+          path: i
           persist-credentials: false
       - uses: SwiftyLab/setup-swift@38f54a76b70d989321de9dc7c840618c08cf56e9 # v1.14.0
         with:
@@ -71,7 +71,7 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
           swift --version
-          swift run -c release --package-path .institute-workspace \
+          swift run -c release --package-path i \
             institute package test --fresh \
             --argument=-Xswiftc --argument=-enable-assertions
 
@@ -94,7 +94,7 @@ jobs:
         with:
           repository: swift-institute/institute-application
           ref: ${{ env.INSTITUTE_REVISION }}
-          path: .institute-workspace
+          path: i
           persist-credentials: false
       - run: sudo xcode-select --switch "/Applications/Xcode_${XCODE_VERSION}.app"
       - name: Verify through the Institute coordinator
@@ -103,7 +103,7 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
           swift --version
-          swift run -c release --package-path .institute-workspace \
+          swift run -c release --package-path i \
             institute package test --fresh
 
   workspace:
