@@ -70,6 +70,8 @@ jobs:
           source="$(sed -n 's/^sources-revision=//p' "$work/CURRENT")"
           [[ "$digest" =~ ^[0-9a-f]{64}$ ]]
           [[ "$source" =~ ^[0-9a-f]{40}$ ]]
+          main="$(gh api "repos/$repository/commits/main" --jq .sha)"
+          test "$source" = "$main"
 
           binary="institute-ci-control-${digest}"
           manifest="MANIFEST-${digest}.txt"
