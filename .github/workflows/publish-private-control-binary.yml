@@ -1,0 +1,209 @@
+name: publish-private-control-binary
+
+on:
+  workflow_dispatch:
+    inputs:
+      source:
+        description: Exact Control main revision to build and publish.
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    container: swift:6.3@sha256:69bf1f0281e13d82c9e49d67c2dd1dcc8c00bad738c860f4323d7078787ec8ea # 6.3.3
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Provision build and publisher dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          apt-get update -qq
+          apt-get install -qq -y curl ca-certificates gnupg git jq uuid-dev
+          mkdir -p /etc/apt/keyrings
+          chmod 755 /etc/apt/keyrings
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+            -o /tmp/gh-keyring.gpg
+          echo '6084d5d7bd8e288441e0e94fc6275570895da18e6751f70f057485dc2d1a811b  /tmp/gh-keyring.gpg' \
+            | sha256sum -c -
+          mv /tmp/gh-keyring.gpg /etc/apt/keyrings/githubcli-archive-keyring.gpg
+          chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/github-cli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+            > /etc/apt/sources.list.d/github-cli.list
+          apt-get update -qq
+          apt-get install -qq -y gh
+
+      - name: Validate the expected source revision
+        id: expected
+        shell: bash
+        env:
+          SOURCE: ${{ inputs.source }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE" =~ ^[0-9a-f]{40}$ ]]
+          echo "source=$SOURCE" >> "$GITHUB_OUTPUT"
+
+      - name: Mint read-only private source token
+        id: reader
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: swift-institute
+          repositories: institute-continuous-integration-control
+          permission-contents: read
+
+      - name: Acquire exact Control main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: swift-institute/institute-continuous-integration-control
+          ref: main
+          path: control
+          token: ${{ steps.reader.outputs.token }}
+          persist-credentials: false
+
+      - name: Revoke private source token
+        id: reader-revoke
+        if: ${{ always() && steps.reader.outcome == 'success' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.reader.outputs.token }}
+        run: gh api --method DELETE installation/token
+
+      - name: Bind the checkout to the expected main revision
+        id: source
+        if: ${{ steps.reader-revoke.outcome == 'success' }}
+        shell: bash
+        env:
+          EXPECTED: ${{ steps.expected.outputs.source }}
+        run: |
+          set -euo pipefail
+          git config --global --add safe.directory "$GITHUB_WORKSPACE/control"
+          observed="$(git -C control rev-parse HEAD)"
+          test "$observed" = "$EXPECTED"
+          echo "revision=$observed" >> "$GITHUB_OUTPUT"
+
+      - name: Build and prove the trusted Control executable
+        id: build
+        if: ${{ steps.source.outcome == 'success' }}
+        working-directory: control
+        shell: bash
+        env:
+          SOURCE: ${{ steps.source.outputs.revision }}
+        run: |
+          set -euo pipefail
+          : > /tmp/dependency-heads
+          for dependency in \
+            swift-foundations/swift-github-continuous-integration \
+            swift-foundations/swift-github \
+            swift-foundations/swift-github-http \
+            swift-institute/institute-continuous-integration \
+            swift-standards/swift-fips-180-4 \
+            swift-standards/swift-github-standard
+          do
+            head="$(git ls-remote "https://github.com/${dependency}.git" main | cut -f1)"
+            test -n "$head"
+            echo "${dependency}=${head}" >> /tmp/dependency-heads
+          done
+          digest="$( { echo "$SOURCE"; cut -d= -f2 /tmp/dependency-heads; } \
+            | sort | sha256sum | cut -d' ' -f1)"
+          swift test --filter 'Control Validation Receipt Tests'
+          swift test --filter 'Control Validation Tests'
+          swift build -c release --product institute-ci-control --static-swift-stdlib
+          install -m 0755 .build/release/institute-ci-control /tmp/institute-ci-control
+
+          head="$(printf 'a%.0s' {1..40})"
+          jq -n --arg head "$head" '{
+            schemaVersion: 1,
+            repository: "swift-institute/.github",
+            pull: 1,
+            claimedHead: $head,
+            observedHead: $head,
+            provider: "success",
+            scope: "success",
+            acquisition: "success",
+            validation: "success",
+            candidateDestroyed: true
+          }' > /tmp/receipt.json
+          verdict="$(/tmp/institute-ci-control validation-receipt \
+            --receipt /tmp/receipt.json --current-head "$head")"
+          test "$(jq -r '.accepted' <<< "$verdict")" = true
+          jq '.scope = "unmeasured"' /tmp/receipt.json > /tmp/unmeasured.json
+          verdict="$(/tmp/institute-ci-control validation-receipt \
+            --receipt /tmp/unmeasured.json --current-head "$head")"
+          test "$(jq -r '.accepted' <<< "$verdict")" = false
+
+          {
+            echo "digest=$digest"
+            echo "sources-revision=$SOURCE"
+            echo 'toolchain=swift-6.3.3'
+            echo 'container=swift:6.3@sha256:69bf1f0281e13d82c9e49d67c2dd1dcc8c00bad738c860f4323d7078787ec8ea'
+            echo 'os=linux'
+            echo 'arch=x86_64'
+            echo 'provisioning=static-swift-stdlib,uuid-dev'
+            echo "built-at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            cat /tmp/dependency-heads
+          } > /tmp/MANIFEST.txt
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+      - name: Mint narrowed Control publisher token
+        id: publisher
+        if: ${{ steps.build.outcome == 'success' }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: swift-institute
+          repositories: institute-continuous-integration-control
+          permission-contents: write
+
+      - name: Publish immutable bundle and advance pointer last
+        if: ${{ steps.publisher.outcome == 'success' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.publisher.outputs.token }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+          SOURCE: ${{ steps.source.outputs.revision }}
+        run: |
+          set -euo pipefail
+          repository=swift-institute/institute-continuous-integration-control
+          stage="$(mktemp -d)"
+          binary="institute-ci-control-${DIGEST}"
+          manifest="MANIFEST-${DIGEST}.txt"
+          checksums="SHA256SUMS-${DIGEST}"
+          install -m 0755 /tmp/institute-ci-control "$stage/$binary"
+          cp /tmp/MANIFEST.txt "$stage/$manifest"
+          (cd "$stage" && sha256sum "$binary" "$manifest" > "$checksums")
+          {
+            echo "digest=$DIGEST"
+            echo "sources-revision=$SOURCE"
+          } > "$stage/CURRENT"
+
+          if ! gh release view ci-binaries -R "$repository" >/dev/null 2>&1; then
+            gh release create ci-binaries -R "$repository" \
+              --prerelease --latest=false \
+              --title 'CI Control binary (rolling)' \
+              --notes 'Private rolling trusted Control executable. CURRENT selects one immutable digest-named bundle.' \
+              --target "$SOURCE"
+          fi
+          gh release upload ci-binaries -R "$repository" \
+            "$stage/$binary" "$stage/$manifest" "$stage/$checksums"
+          gh release upload ci-binaries -R "$repository" "$stage/CURRENT" --clobber
+          gh release edit ci-binaries -R "$repository" \
+            --notes "Private rolling trusted Control executable. digest=${DIGEST}; source=${SOURCE}."
+
+      - name: Revoke Control publisher token
+        if: ${{ always() && steps.publisher.outcome == 'success' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.publisher.outputs.token }}
+        run: gh api --method DELETE installation/token
