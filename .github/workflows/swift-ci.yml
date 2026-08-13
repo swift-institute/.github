@@ -185,7 +185,7 @@ jobs:
           sha: ${{ steps.subject.outputs.sha }}
 
       - id: institute-ci
-        uses: swift-institute/.github/.github/actions/institute-ci@5b12e6f530b535781c4a9afe472787865832253d
+        uses: swift-institute/.github/.github/actions/institute-ci@a6fc1bd8331a02ee08a4284dd5373fbe4c1b04a7
 
       - name: Materialize fleet policy at the workflow revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -754,7 +754,7 @@ jobs:
           repository: swift-institute/.github
           ref: ${{ needs.plan.outputs.workflow-sha }}
       - id: institute-ci
-        uses: swift-institute/.github/.github/actions/institute-ci@5b12e6f530b535781c4a9afe472787865832253d
+        uses: swift-institute/.github/.github/actions/institute-ci@a6fc1bd8331a02ee08a4284dd5373fbe4c1b04a7
       # Runs on always(), so it must reach a verdict when plan itself
       # failed — which is exactly when its outputs are empty.
       - name: Aggregate
