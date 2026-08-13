@@ -1,0 +1,32 @@
+name: control-validate
+
+on:
+  workflow_dispatch:
+    inputs:
+      repository:
+        description: Exact public Institute repository in owner/name form.
+        required: true
+        type: string
+      pull:
+        description: Open pull request number.
+        required: true
+        type: string
+      head:
+        description: Exact 40-character candidate head SHA.
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  control:
+    name: control
+    permissions:
+      contents: read
+    uses: swift-institute/institute-continuous-integration-control/.github/workflows/control-validate.yml@92759d8aa93fb3ef06b3076c2202a57d509dcb82
+    with:
+      repository: ${{ inputs.repository }}
+      pull: ${{ inputs.pull }}
+      head: ${{ inputs.head }}
+    secrets:
+      SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
