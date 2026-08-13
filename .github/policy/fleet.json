@@ -18,5 +18,15 @@
     {"name": "swift-microsoft", "layer": "L2", "status": "active"},
     {"name": "swift-foundations", "layer": "L3", "status": "active"},
     {"name": "swift-institute", "layer": "control", "status": "active"}
+  ],
+  "repositories": [
+    {"name": "swift-primitives/swift-coproduct-derivation", "embeddedTarget": "Coproduct Derivation Core"},
+    {"name": "swift-primitives/swift-pool-primitives", "embeddedTarget": "Pool Bounded Primitives"},
+    {"name": "swift-standards/swift-darwin-standard", "platforms": "apple,linux"},
+    {"name": "swift-foundations/swift-application-swiftui", "platforms": "apple"},
+    {"name": "swift-foundations/swift-darwin", "platforms": "apple"},
+    {"name": "swift-foundations/swift-linux", "platforms": "apple,linux"},
+    {"name": "swift-foundations/swift-posix", "platforms": "apple,linux"},
+    {"name": "swift-foundations/swift-windows", "platforms": "windows"}
   ]
 }
