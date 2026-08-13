@@ -183,9 +183,12 @@ jobs:
           git config --global --add safe.directory "$GITHUB_WORKSPACE/subject"
           test "$(git rev-parse HEAD)" = "$TARGET_HEAD"
           swift --version
-          # Assertions are mandatory on Windows and this step remains
-          # gating. The candidate has no credential when SwiftPM executes.
-          swift test -c debug -Xswiftc -enable-assertions
+          # setup-swift provisions the assertions-enabled Windows toolchain
+          # (`swift --version` reports `Build config: +assertions`). Debug
+          # tests are gating; forwarding the obsolete frontend flag would be
+          # rejected by Swift 6.3.3 before any candidate Swift source builds.
+          # The candidate has no credential when SwiftPM executes.
+          swift test -c debug
 
   macos:
     name: Apple · macOS
