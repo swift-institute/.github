@@ -1,0 +1,3 @@
+#!/bin/sh
+# Hostile probe data: trusted Control must never execute this candidate file.
+exit 97
