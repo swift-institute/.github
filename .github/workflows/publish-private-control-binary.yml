@@ -28,19 +28,7 @@ jobs:
         run: |
           set -euo pipefail
           apt-get update -qq
-          apt-get install -qq -y curl ca-certificates gnupg git jq uuid-dev
-          mkdir -p /etc/apt/keyrings
-          chmod 755 /etc/apt/keyrings
-          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
-            -o /tmp/gh-keyring.gpg
-          echo '6084d5d7bd8e288441e0e94fc6275570895da18e6751f70f057485dc2d1a811b  /tmp/gh-keyring.gpg' \
-            | sha256sum -c -
-          mv /tmp/gh-keyring.gpg /etc/apt/keyrings/githubcli-archive-keyring.gpg
-          chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
-          echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/github-cli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
-            > /etc/apt/sources.list.d/github-cli.list
-          apt-get update -qq
-          apt-get install -qq -y gh
+          apt-get install -qq -y git gh jq uuid-dev
 
       - name: Validate the expected source revision
         id: expected
