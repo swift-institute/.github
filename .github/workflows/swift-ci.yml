@@ -52,9 +52,8 @@ on:
         type: string
         default: ""
         description: >-
-          Narrows the Embedded build to one target for a package whose
-          default trait selects a non-Embedded surface. Empty builds the
-          whole package.
+          Narrows the Embedded build to one explicitly named target. Empty
+          builds the whole package.
     secrets:
       SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY:
         required: false
@@ -434,7 +433,7 @@ jobs:
         run: |
           swift --version
           if [ -n "$TARGET" ]; then
-            swift build --target "$TARGET" --disable-default-traits \
+            swift build --target "$TARGET" \
               -Xswiftc -enable-experimental-feature -Xswiftc Embedded
           else
             swift build -Xswiftc -enable-experimental-feature -Xswiftc Embedded
