@@ -135,13 +135,13 @@ jobs:
           echo "requested=$REQUESTED" >> "$GITHUB_OUTPUT"
           echo "Resolved reusable workflow: ${REQUESTED} -> ${SHA}"
 
-      - uses: swift-institute/.github/.github/actions/ci-subject@7ed567c99c86277c935ebc6829c232c241898043
+      - uses: swift-institute/.github/.github/actions/ci-subject@b803e9115c3873655fbf27795c4560832759517b
         with:
           repository: ${{ steps.subject.outputs.repository }}
           sha: ${{ steps.subject.outputs.sha }}
 
       - id: institute-ci
-        uses: swift-institute/.github/.github/actions/institute-ci@41f3f96f4394f7a6908a7c0228daca75fbe12e3d
+        uses: swift-institute/.github/.github/actions/institute-ci@b803e9115c3873655fbf27795c4560832759517b
 
       - name: Materialize fleet policy at the workflow revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -219,11 +219,11 @@ jobs:
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
-      - uses: swift-institute/.github/.github/actions/ci-subject@7ed567c99c86277c935ebc6829c232c241898043
+      - uses: swift-institute/.github/.github/actions/ci-subject@b803e9115c3873655fbf27795c4560832759517b
         with:
           repository: ${{ needs.plan.outputs.subject-repository }}
           sha: ${{ needs.plan.outputs.subject-sha }}
-      - uses: swift-institute/.github/.github/actions/install-system-deps@7ed567c99c86277c935ebc6829c232c241898043
+      - uses: swift-institute/.github/.github/actions/install-system-deps@b803e9115c3873655fbf27795c4560832759517b
       - name: Build or test
         env:
           CI_TIER: ${{ needs.plan.outputs.tier }}
@@ -249,11 +249,11 @@ jobs:
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
-      - uses: swift-institute/.github/.github/actions/ci-subject@7ed567c99c86277c935ebc6829c232c241898043
+      - uses: swift-institute/.github/.github/actions/ci-subject@b803e9115c3873655fbf27795c4560832759517b
         with:
           repository: ${{ needs.plan.outputs.subject-repository }}
           sha: ${{ needs.plan.outputs.subject-sha }}
-      - uses: swift-institute/.github/.github/actions/install-system-deps@7ed567c99c86277c935ebc6829c232c241898043
+      - uses: swift-institute/.github/.github/actions/install-system-deps@b803e9115c3873655fbf27795c4560832759517b
       - name: Build
         run: |
           swift --version
@@ -272,11 +272,11 @@ jobs:
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
-      - uses: swift-institute/.github/.github/actions/ci-subject@7ed567c99c86277c935ebc6829c232c241898043
+      - uses: swift-institute/.github/.github/actions/ci-subject@b803e9115c3873655fbf27795c4560832759517b
         with:
           repository: ${{ needs.plan.outputs.subject-repository }}
           sha: ${{ needs.plan.outputs.subject-sha }}
-      - uses: swift-institute/.github/.github/actions/install-system-deps@7ed567c99c86277c935ebc6829c232c241898043
+      - uses: swift-institute/.github/.github/actions/install-system-deps@b803e9115c3873655fbf27795c4560832759517b
       - name: Build
         run: |
           swift --version
@@ -293,7 +293,7 @@ jobs:
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
-      - uses: swift-institute/.github/.github/actions/ci-subject@7ed567c99c86277c935ebc6829c232c241898043
+      - uses: swift-institute/.github/.github/actions/ci-subject@b803e9115c3873655fbf27795c4560832759517b
         with:
           repository: ${{ needs.plan.outputs.subject-repository }}
           sha: ${{ needs.plan.outputs.subject-sha }}
@@ -337,7 +337,7 @@ jobs:
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
-      - uses: swift-institute/.github/.github/actions/ci-subject@7ed567c99c86277c935ebc6829c232c241898043
+      - uses: swift-institute/.github/.github/actions/ci-subject@b803e9115c3873655fbf27795c4560832759517b
         with:
           repository: ${{ needs.plan.outputs.subject-repository }}
           sha: ${{ needs.plan.outputs.subject-sha }}
@@ -367,7 +367,7 @@ jobs:
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
-      - uses: swift-institute/.github/.github/actions/ci-subject@7ed567c99c86277c935ebc6829c232c241898043
+      - uses: swift-institute/.github/.github/actions/ci-subject@b803e9115c3873655fbf27795c4560832759517b
         with:
           repository: ${{ needs.plan.outputs.subject-repository }}
           sha: ${{ needs.plan.outputs.subject-sha }}
@@ -400,11 +400,11 @@ jobs:
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
-      - uses: swift-institute/.github/.github/actions/ci-subject@7ed567c99c86277c935ebc6829c232c241898043
+      - uses: swift-institute/.github/.github/actions/ci-subject@b803e9115c3873655fbf27795c4560832759517b
         with:
           repository: ${{ needs.plan.outputs.subject-repository }}
           sha: ${{ needs.plan.outputs.subject-sha }}
-      - uses: swift-institute/.github/.github/actions/install-swift-sdk@7ed567c99c86277c935ebc6829c232c241898043
+      - uses: swift-institute/.github/.github/actions/install-swift-sdk@b803e9115c3873655fbf27795c4560832759517b
         with:
           platform: wasm-sdk
           bundle-suffix: wasm
@@ -425,11 +425,11 @@ jobs:
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
-      - uses: swift-institute/.github/.github/actions/ci-subject@7ed567c99c86277c935ebc6829c232c241898043
+      - uses: swift-institute/.github/.github/actions/ci-subject@b803e9115c3873655fbf27795c4560832759517b
         with:
           repository: ${{ needs.plan.outputs.subject-repository }}
           sha: ${{ needs.plan.outputs.subject-sha }}
-      - uses: swift-institute/.github/.github/actions/install-swift-sdk@7ed567c99c86277c935ebc6829c232c241898043
+      - uses: swift-institute/.github/.github/actions/install-swift-sdk@b803e9115c3873655fbf27795c4560832759517b
         with:
           platform: android-sdk
           bundle-suffix: android
@@ -450,11 +450,11 @@ jobs:
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
-      - uses: swift-institute/.github/.github/actions/ci-subject@7ed567c99c86277c935ebc6829c232c241898043
+      - uses: swift-institute/.github/.github/actions/ci-subject@b803e9115c3873655fbf27795c4560832759517b
         with:
           repository: ${{ needs.plan.outputs.subject-repository }}
           sha: ${{ needs.plan.outputs.subject-sha }}
-      - uses: swift-institute/.github/.github/actions/install-swift-sdk@7ed567c99c86277c935ebc6829c232c241898043
+      - uses: swift-institute/.github/.github/actions/install-swift-sdk@b803e9115c3873655fbf27795c4560832759517b
         with:
           platform: static-sdk
           bundle-suffix: static-linux
@@ -483,7 +483,7 @@ jobs:
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
-      - uses: swift-institute/.github/.github/actions/ci-subject@7ed567c99c86277c935ebc6829c232c241898043
+      - uses: swift-institute/.github/.github/actions/ci-subject@b803e9115c3873655fbf27795c4560832759517b
         with:
           repository: ${{ needs.plan.outputs.subject-repository }}
           sha: ${{ needs.plan.outputs.subject-sha }}
@@ -506,11 +506,11 @@ jobs:
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
-      - uses: swift-institute/.github/.github/actions/ci-subject@7ed567c99c86277c935ebc6829c232c241898043
+      - uses: swift-institute/.github/.github/actions/ci-subject@b803e9115c3873655fbf27795c4560832759517b
         with:
           repository: ${{ needs.plan.outputs.subject-repository }}
           sha: ${{ needs.plan.outputs.subject-sha }}
-      - uses: swift-institute/.github/.github/actions/central-style@7ed567c99c86277c935ebc6829c232c241898043
+      - uses: swift-institute/.github/.github/actions/central-style@b803e9115c3873655fbf27795c4560832759517b
         with:
           ref: ${{ needs.plan.outputs.workflow-sha }}
       - name: Lint formatting
@@ -542,11 +542,11 @@ jobs:
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
-      - uses: swift-institute/.github/.github/actions/ci-subject@7ed567c99c86277c935ebc6829c232c241898043
+      - uses: swift-institute/.github/.github/actions/ci-subject@b803e9115c3873655fbf27795c4560832759517b
         with:
           repository: ${{ needs.plan.outputs.subject-repository }}
           sha: ${{ needs.plan.outputs.subject-sha }}
-      - uses: swift-institute/.github/.github/actions/central-style@7ed567c99c86277c935ebc6829c232c241898043
+      - uses: swift-institute/.github/.github/actions/central-style@b803e9115c3873655fbf27795c4560832759517b
         with:
           ref: ${{ needs.plan.outputs.workflow-sha }}
       - name: Cache SwiftLint binary
@@ -589,7 +589,7 @@ jobs:
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
-      - uses: swift-institute/.github/.github/actions/ci-subject@7ed567c99c86277c935ebc6829c232c241898043
+      - uses: swift-institute/.github/.github/actions/ci-subject@b803e9115c3873655fbf27795c4560832759517b
         with:
           repository: ${{ needs.plan.outputs.subject-repository }}
           sha: ${{ needs.plan.outputs.subject-sha }}
@@ -697,7 +697,7 @@ jobs:
           repository: swift-institute/.github
           ref: ${{ needs.plan.outputs.workflow-sha }}
       - id: institute-ci
-        uses: swift-institute/.github/.github/actions/institute-ci@41f3f96f4394f7a6908a7c0228daca75fbe12e3d
+        uses: swift-institute/.github/.github/actions/institute-ci@b803e9115c3873655fbf27795c4560832759517b
       # Runs on always(), so it must reach a verdict when plan itself
       # failed — which is exactly when its outputs are empty.
       - name: Aggregate
