@@ -1,0 +1,245 @@
+name: Terminal caller wave
+
+permissions: {}
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: terminal-caller-wave
+  cancel-in-progress: false
+
+env:
+  POLICY_REPOSITORY: swift-institute/institute-continuous-integration
+  POLICY_RELEASE: repository-policy-binaries
+  SWIFT_INSTITUTE_BOT_INTEGRATION_ID: "3543256"
+
+jobs:
+  census:
+    name: Exact fleet census
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      organizations: ${{ steps.population.outputs.organizations }}
+    steps:
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/policy/fleet.json
+          persist-credentials: false
+
+      - name: Acquire and verify the immutable Swift owner
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          install -d transaction-input
+          digest="$(gh release download "$POLICY_RELEASE" \
+            --repo "$POLICY_REPOSITORY" --pattern CURRENT --output -)"
+          [[ "$digest" =~ ^[0-9a-f]{64}$ ]] || {
+            echo "::error::repository-policy CURRENT is not a SHA-256 digest."
+            exit 1
+          }
+          binary="repository-policy-${digest}"
+          manifest="repository-policy-${digest}.manifest"
+          checksums="repository-policy-${digest}.sha256"
+          gh release download "$POLICY_RELEASE" --repo "$POLICY_REPOSITORY" \
+            --pattern "$binary" --pattern "$manifest" --pattern "$checksums" \
+            --dir transaction-input
+          (cd transaction-input && sha256sum -c "$checksums")
+          grep -Fx "digest=${digest}" "transaction-input/${manifest}"
+          source_revision="$(sed -n 's/^source-revision=//p' "transaction-input/${manifest}")"
+          [[ "$source_revision" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "::error::repository-policy manifest has no exact source revision."
+            exit 1
+          }
+          gh api "repos/${POLICY_REPOSITORY}/git/commits/${source_revision}" \
+            --jq '.sha' | grep -Fx "$source_revision"
+          install -m 0755 "transaction-input/${binary}" transaction-input/repository-policy
+          cp .github/policy/fleet.json transaction-input/fleet.json
+          gh api "repos/${POLICY_REPOSITORY}/contents/Policy/protected-main-ruleset.json?ref=${source_revision}" \
+            --jq '.content' | tr -d '\n' | base64 --decode \
+            > transaction-input/protected-main-ruleset.json
+          transaction-input/repository-policy render-caller --form terminal \
+            > transaction-input/terminal-caller.yml
+          test -s transaction-input/terminal-caller.yml
+          test -s transaction-input/protected-main-ruleset.json
+          printf '%s\n' "$digest" > transaction-input/POLICY_DIGEST
+          printf '%s\n' "$source_revision" > transaction-input/POLICY_SOURCE
+
+      - name: Enumerate the complete active public fleet
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          transaction-input/repository-policy caller-wave census \
+            --fleet transaction-input/fleet.json \
+            --output transaction-input/census.json
+
+      - name: Export the exact organization matrix
+        id: population
+        shell: bash
+        run: |
+          set -euo pipefail
+          organizations="$(jq -c '.organizations' transaction-input/census.json)"
+          [ "$(jq 'length' <<< "$organizations")" -gt 0 ]
+          [ "$(jq '.subjects | length' transaction-input/census.json)" -gt 0 ]
+          echo "organizations=$organizations" >> "$GITHUB_OUTPUT"
+
+      - name: Preserve transaction input
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: terminal-caller-wave-input
+          path: transaction-input
+          if-no-files-found: error
+          retention-days: 7
+
+  apply:
+    name: Apply · ${{ matrix.organization }}
+    needs: census
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      actions: read
+      contents: read
+    strategy:
+      fail-fast: true
+      max-parallel: 4
+      matrix:
+        organization: ${{ fromJSON(needs.census.outputs.organizations) }}
+    steps:
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Restore exact transaction input
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: terminal-caller-wave-input
+          path: transaction-input
+
+      - name: Resolve the exact repository grant
+        id: grant
+        shell: bash
+        env:
+          ORGANIZATION: ${{ matrix.organization }}
+        run: |
+          set -euo pipefail
+          repositories="$(jq -r --arg owner "$ORGANIZATION" '
+            [.subjects[].repository
+              | select(startswith($owner + "/"))
+              | split("/")[1]]
+            | join(",")
+          ' transaction-input/census.json)"
+          [ -n "$repositories" ] || {
+            echo "::error::exact census contained no repositories for ${ORGANIZATION}."
+            exit 1
+          }
+          echo "repositories=$repositories" >> "$GITHUB_OUTPUT"
+
+      - name: Mint the bounded swift-institute-bot token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: ${{ matrix.organization }}
+          repositories: ${{ steps.grant.outputs.repositories }}
+          permission-administration: write
+          permission-contents: write
+
+      - name: Apply bounded recoverable transaction
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          ORGANIZATION: ${{ matrix.organization }}
+        run: |
+          set -euo pipefail
+          install -d "evidence/${ORGANIZATION}"
+          current_recovery=""
+          restore_on_exit() {
+            status=$?
+            if [ "$status" -ne 0 ] && [ -n "$current_recovery" ] && [ -s "$current_recovery" ]; then
+              transaction-input/repository-policy caller-wave restore \
+                --recovery "$current_recovery" || true
+            fi
+            exit "$status"
+          }
+          trap restore_on_exit EXIT
+          while IFS=$'\t' read -r repository expected_head expected_blob; do
+            name="${repository#*/}"
+            current_recovery="evidence/${ORGANIZATION}/${name}.recovery.json"
+            transaction-input/repository-policy caller-wave apply \
+              --repository "$repository" \
+              --expected-head "$expected_head" \
+              --expected-blob "$expected_blob" \
+              --caller transaction-input/terminal-caller.yml \
+              --policy transaction-input/protected-main-ruleset.json \
+              --integration-id "$SWIFT_INSTITUTE_BOT_INTEGRATION_ID" \
+              --events "evidence/${ORGANIZATION}/${name}.events.jsonl" \
+              --recovery "$current_recovery" \
+              --receipt "evidence/${ORGANIZATION}/${name}.receipt.json"
+            current_recovery=""
+          done < <(jq -r --arg owner "$ORGANIZATION" '
+            .subjects[]
+            | select(.repository | startswith($owner + "/"))
+            | [.repository, .head, .caller.blob]
+            | @tsv
+          ' transaction-input/census.json)
+
+      - name: Preserve organization evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: caller-wave-${{ matrix.organization }}
+          path: evidence/${{ matrix.organization }}
+          if-no-files-found: warn
+          retention-days: 30
+
+  recensus:
+    name: Terminal byte recensus
+    if: ${{ always() && needs.census.result == 'success' }}
+    needs: [census, apply]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Restore exact transaction input
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: terminal-caller-wave-input
+          path: transaction-input
+
+      - name: Re-enumerate and prove terminal caller bytes
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          transaction-input/repository-policy caller-wave recensus \
+            --fleet transaction-input/fleet.json \
+            --caller transaction-input/terminal-caller.yml \
+            --output terminal-recensus.json
+
+      - name: Preserve closure receipt
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: terminal-caller-wave-recensus
+          path: terminal-recensus.json
+          if-no-files-found: warn
+          retention-days: 30
