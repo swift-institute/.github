@@ -1,12 +1,12 @@
 name: Swift CI (reusable)
 
 # The universal reusable. Every package repository in the fleet calls it
-# directly, in one hop, with `lint-bundle` and nothing else.
+# directly, in one hop, with no caller-selected behavior.
 #
 # Toolchain versions, runner images and the matrix shape are fixed here
 # for the whole ecosystem. A package that needs a different shape forks
-# this file; it does not parameterise it. The five inputs below are the
-# sanctioned exceptions, and each is default-inert.
+# this file; it does not parameterise it. Repository identity exceptions are
+# authored in the central fleet policy and resolved by the Swift planner.
 #
 # Scheduling is decided by `institute-continuous-integration`, not here:
 # `plan` emits the leg list and every job binds it. There is exactly one
@@ -15,52 +15,6 @@ name: Swift CI (reusable)
 
 on:
   workflow_call:
-    inputs:
-      lint-bundle:
-        type: string
-        default: institute
-        description: >-
-          Rule bundle for a consumer with no root `Lint.swift`: primitives
-          | standards | institute. Set by the layer, never by the package —
-          the bundles are a lattice, so a package choosing its own would be
-          choosing a weaker one.
-      platform-support:
-        type: string
-        default: ""
-        description: >-
-          Comma-separated subset of `apple,linux,windows`. Declares which
-          platforms the package's specification admits; empty means all.
-          This is an identity declaration, not a cost knob — a leg is
-          dropped because the package excludes the platform, never because
-          the leg is expensive.
-      tier:
-        type: string
-        default: ""
-        description: >-
-          Forces `build` | `full` | `exhaustive`. Empty routes to the
-          planner's classifier: pull requests and branch pushes get build,
-          the integration ref and dispatch get full, and exhaustive is
-          reachable only by asking.
-      test-filter:
-        type: string
-        default: ""
-        description: >-
-          Appended as `--filter` to every `swift test`. Hyphens become
-          underscores, because SwiftPM underscores hyphenated target names
-          and the filter is matched against the module identifier.
-      embedded-target:
-        type: string
-        default: ""
-        description: >-
-          Narrows the Embedded build to one explicitly named target. Empty
-          builds the whole package.
-    secrets:
-      SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY:
-        required: false
-        description: >-
-          Counterpart of the org variable SWIFT_INSTITUTE_BOT_APP_ID.
-          Supplied only by consumers with a private dependency closure;
-          absent, no credential is configured and nothing fails.
 
 env:
   SWIFT_VERSION: "6.4"
@@ -118,6 +72,8 @@ jobs:
       descheduled: ${{ steps.classify.outputs.descheduled }}
       package-content-changed: ${{ steps.classify.outputs.package-content-changed }}
       linux-image: ${{ steps.classify.outputs.linux-image }}
+      lint-bundle: ${{ steps.classify.outputs.lint-bundle }}
+      embedded-target: ${{ steps.classify.outputs.embedded-target }}
       subject-repository: ${{ steps.subject.outputs.repository }}
       subject-sha: ${{ steps.subject.outputs.sha }}
       workflow-sha: ${{ steps.workflow.outputs.sha }}
@@ -184,7 +140,7 @@ jobs:
           sha: ${{ steps.subject.outputs.sha }}
 
       - id: institute-ci
-        uses: swift-institute/.github/.github/actions/institute-ci@a6fc1bd8331a02ee08a4284dd5373fbe4c1b04a7
+        uses: swift-institute/.github/.github/actions/institute-ci@41f3f96f4394f7a6908a7c0228daca75fbe12e3d
 
       - name: Materialize fleet policy at the workflow revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -217,12 +173,11 @@ jobs:
         run: |
           set -euo pipefail
           PLAN="$("$BINARY" package plan \
-            --tier "${{ inputs.tier }}" --ref "$GITHUB_REF" \
+            --ref "$GITHUB_REF" \
             --head-message "$HEAD_MESSAGE" \
             --event "${{ github.event_name }}" --event-path "$GITHUB_EVENT_PATH" \
             --workflow-repository "${{ github.repository }}" --workspace "$GITHUB_WORKSPACE" \
-            --platform-support "${{ inputs.platform-support }}" \
-            --lint-bundle "${{ inputs.lint-bundle }}" \
+            --policy "$GITHUB_WORKSPACE/.ci-policy/.github/policy/fleet.json" \
             --subject-repository "${{ steps.subject.outputs.repository }}" \
             --swift-version "$SWIFT_VERSION" \
             --nightly-main-image "$SWIFT_MAIN_NIGHTLY_IMAGE" \
@@ -232,7 +187,7 @@ jobs:
             --release-floor-upstream-release "$SWIFT_RELEASE_FLOOR_UPSTREAM_RELEASE" \
             --release-floor-recheck "$SWIFT_RELEASE_FLOOR_RECHECK" \
             --today "$(date -u +%F)")"
-          for key in tier legs gating linux-image descheduled package-content-changed; do
+          for key in tier legs gating linux-image lint-bundle embedded-target descheduled package-content-changed; do
             echo "$key=$(jq -r --arg k "$key" '.[$k]' <<< "$PLAN")" >> "$GITHUB_OUTPUT"
           done
           {
@@ -267,22 +222,15 @@ jobs:
         with:
           repository: ${{ needs.plan.outputs.subject-repository }}
           sha: ${{ needs.plan.outputs.subject-sha }}
-          app-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
-          app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
       - uses: swift-institute/.github/.github/actions/install-system-deps@7ed567c99c86277c935ebc6829c232c241898043
       - name: Build or test
         env:
           CI_TIER: ${{ needs.plan.outputs.tier }}
-          TEST_FILTER: ${{ inputs.test-filter }}
         run: |
           swift --version
           if [ "$CI_TIER" = "build" ]; then swift build -c release; exit 0; fi
           test_package() {
-            if [ -n "$TEST_FILTER" ]; then
-              swift test -c release --filter "$(echo "$TEST_FILTER" | tr '-' '_')"
-            else
-              swift test -c release
-            fi
+            swift test -c release
           }
           test_package
           if [ -f Tests/Package.swift ]; then (cd Tests && test_package); fi
@@ -304,8 +252,6 @@ jobs:
         with:
           repository: ${{ needs.plan.outputs.subject-repository }}
           sha: ${{ needs.plan.outputs.subject-sha }}
-          app-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
-          app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
       - uses: swift-institute/.github/.github/actions/install-system-deps@7ed567c99c86277c935ebc6829c232c241898043
       - name: Build
         run: |
@@ -329,8 +275,6 @@ jobs:
         with:
           repository: ${{ needs.plan.outputs.subject-repository }}
           sha: ${{ needs.plan.outputs.subject-sha }}
-          app-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
-          app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
       - uses: swift-institute/.github/.github/actions/install-system-deps@7ed567c99c86277c935ebc6829c232c241898043
       - name: Build
         run: |
@@ -352,8 +296,6 @@ jobs:
         with:
           repository: ${{ needs.plan.outputs.subject-repository }}
           sha: ${{ needs.plan.outputs.subject-sha }}
-          app-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
-          app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
       - uses: SwiftyLab/setup-swift@38f54a76b70d989321de9dc7c840618c08cf56e9 # v1.14.0
         with:
           swift-version: ${{ env.SWIFT_VERSION }}
@@ -368,17 +310,11 @@ jobs:
       # assertions-enabled compiler, and therefore its only SIL-validity gate.
       - name: Test
         shell: bash
-        env:
-          TEST_FILTER: ${{ inputs.test-filter }}
         run: |
           swift --version
           test_package() {
             scratch="$1"
-            if [ -n "$TEST_FILTER" ]; then
-              swift test -c debug --build-system native --scratch-path "$scratch" --filter "$(echo "$TEST_FILTER" | tr '-' '_')"
-            else
-              swift test -c debug --build-system native --scratch-path "$scratch"
-            fi
+            swift test -c debug --build-system native --scratch-path "$scratch"
           }
           # [swift-institute/.github#498] Swift Build expands every linked module
           # into a separate response-file argument and can exceed Windows'
@@ -404,23 +340,15 @@ jobs:
         with:
           repository: ${{ needs.plan.outputs.subject-repository }}
           sha: ${{ needs.plan.outputs.subject-sha }}
-          app-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
-          app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
       # This leg's Swift version comes from the Xcode pin, not from
       # SWIFT_VERSION — which reaches it only through the job name. Move
       # the two together or the name overstates the toolchain.
       - run: sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
       - name: Test
-        env:
-          TEST_FILTER: ${{ inputs.test-filter }}
         run: |
           swift --version
           test_package() {
-            if [ -n "$TEST_FILTER" ]; then
-              swift test -c debug --filter "$(echo "$TEST_FILTER" | tr '-' '_')"
-            else
-              swift test -c debug
-            fi
+            swift test -c debug
           }
           test_package
           if [ -f Tests/Package.swift ]; then (cd Tests && test_package); fi
@@ -442,15 +370,13 @@ jobs:
         with:
           repository: ${{ needs.plan.outputs.subject-repository }}
           sha: ${{ needs.plan.outputs.subject-sha }}
-          app-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
-          app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
       # No `.build` cache here, ever. The key can only hash manifests, so
       # it is blind to the nightly toolchain and to branch-pinned
       # dependency contents; a restored entry once turned this leg green
       # in ten seconds with zero compilation, fleet-wide.
       - name: Build (Embedded)
         env:
-          TARGET: ${{ inputs.embedded-target }}
+          TARGET: ${{ needs.plan.outputs.embedded-target }}
         run: |
           swift --version
           if [ -n "$TARGET" ]; then
@@ -477,8 +403,6 @@ jobs:
         with:
           repository: ${{ needs.plan.outputs.subject-repository }}
           sha: ${{ needs.plan.outputs.subject-sha }}
-          app-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
-          app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
       - uses: swift-institute/.github/.github/actions/install-swift-sdk@7ed567c99c86277c935ebc6829c232c241898043
         with:
           platform: wasm-sdk
@@ -504,8 +428,6 @@ jobs:
         with:
           repository: ${{ needs.plan.outputs.subject-repository }}
           sha: ${{ needs.plan.outputs.subject-sha }}
-          app-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
-          app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
       - uses: swift-institute/.github/.github/actions/install-swift-sdk@7ed567c99c86277c935ebc6829c232c241898043
         with:
           platform: android-sdk
@@ -531,8 +453,6 @@ jobs:
         with:
           repository: ${{ needs.plan.outputs.subject-repository }}
           sha: ${{ needs.plan.outputs.subject-sha }}
-          app-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
-          app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
       - uses: swift-institute/.github/.github/actions/install-swift-sdk@7ed567c99c86277c935ebc6829c232c241898043
         with:
           platform: static-sdk
@@ -566,8 +486,6 @@ jobs:
         with:
           repository: ${{ needs.plan.outputs.subject-repository }}
           sha: ${{ needs.plan.outputs.subject-sha }}
-          app-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
-          app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
       - run: sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
       - name: Build (${{ matrix.platform }} Simulator)
         run: |
@@ -669,8 +587,6 @@ jobs:
         with:
           repository: ${{ needs.plan.outputs.subject-repository }}
           sha: ${{ needs.plan.outputs.subject-sha }}
-          app-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
-          app-private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
       # Installed, never compiled. A from-source build let one break in
       # the tool's own dependency graph redden this leg across the fleet.
       - name: Install published linter binaries
@@ -694,7 +610,7 @@ jobs:
       # when it loads zero rules or matches zero files.
       - name: Run swift-linter
         env:
-          SWIFT_LINTER_BUNDLE: ${{ inputs.lint-bundle }}
+          SWIFT_LINTER_BUNDLE: ${{ needs.plan.outputs.lint-bundle }}
         run: |
           if [ -f Lint.swift ]; then
             swift-linter "$GITHUB_WORKSPACE" --exit-policy strict
@@ -775,7 +691,7 @@ jobs:
           repository: swift-institute/.github
           ref: ${{ needs.plan.outputs.workflow-sha }}
       - id: institute-ci
-        uses: swift-institute/.github/.github/actions/institute-ci@a6fc1bd8331a02ee08a4284dd5373fbe4c1b04a7
+        uses: swift-institute/.github/.github/actions/institute-ci@41f3f96f4394f7a6908a7c0228daca75fbe12e3d
       # Runs on always(), so it must reach a verdict when plan itself
       # failed — which is exactly when its outputs are empty.
       - name: Aggregate
