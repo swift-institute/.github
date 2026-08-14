@@ -20,6 +20,7 @@ env:
   SWIFT_VERSION: "6.4"
   SWIFTLINT_VERSION: "0.63.3"
   SWIFTLINT_SHA256: "26db741d43f2f2dc26c0cf16911100a3e186c3d1dbb59e55ad3ac87b0de4538f"
+  SWIFTLINT_BINARY_SHA256: "eb52b0b602f51dccc8be5e09a9bdd1d0b04147cfa782f5a3e1ee407b4b793d0b"
 
   # The sole main-nightly exception. Advisory class: past the recheck date
   # the planner deschedules the leg fleet-wide with a typed record rather
@@ -357,7 +358,7 @@ jobs:
     needs: plan
     if: ${{ !github.event.repository.private && !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',embedded,') }}
     runs-on: ubuntu-latest
-    container: swiftlang/swift:nightly-main-jammy
+    container: swiftlang/swift@sha256:f577f95edfb85cf3bdc45eb0badaab09239de5c86c69b3b6d594cc62916c0a7d
     continue-on-error: true
     timeout-minutes: 45
     permissions:
@@ -553,7 +554,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /usr/local/bin/swiftlint
-          key: ${{ runner.os }}-swiftlint-${{ env.SWIFTLINT_VERSION }}
+          key: ${{ runner.os }}-swiftlint-${{ env.SWIFTLINT_VERSION }}-${{ env.SWIFTLINT_BINARY_SHA256 }}
       - name: Install SwiftLint
         if: steps.cache.outputs.cache-hit != 'true'
         shell: bash
@@ -566,6 +567,11 @@ jobs:
           unzip -q /tmp/swiftlint.zip -d /tmp/swiftlint_extracted
           mv /tmp/swiftlint_extracted/swiftlint /usr/local/bin/
           chmod +x /usr/local/bin/swiftlint
+      - name: Verify installed SwiftLint binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "${SWIFTLINT_BINARY_SHA256}  /usr/local/bin/swiftlint" | sha256sum -c -
       - name: Lint
         run: |
           swiftlint --version

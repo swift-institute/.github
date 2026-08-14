@@ -75,14 +75,21 @@ jobs:
 
           binary="institute-ci-control-${digest}"
           manifest="MANIFEST-${digest}.txt"
+          resolution="RESOLUTION-${digest}.json"
           checksums="SHA256SUMS-${digest}"
-          for asset in "$binary" "$manifest" "$checksums"; do
+          for asset in "$binary" "$manifest" "$resolution" "$checksums"; do
             gh release download ci-binaries -R "$repository" \
               --pattern "$asset" --dir "$work"
           done
           (cd "$work" && sha256sum --check "$checksums")
-          test "$(sed -n 's/^digest=//p' "$work/$manifest")" = "$digest"
-          test "$(sed -n 's/^sources-revision=//p' "$work/$manifest")" = "$source"
+          [ "$(wc -l < "$work/$manifest")" -eq 9 ]
+          [ "$(sed -n '1s/^digest=//p' "$work/$manifest")" = "$digest" ]
+          [ "$(sed -n '2s/^sources-revision=//p' "$work/$manifest")" = "$source" ]
+          resolution_sha="$(sha256sum "$work/$resolution" | cut -d' ' -f1)"
+          [ "$(sed -n '3s/^resolution-sha256=//p' "$work/$manifest")" = "$resolution_sha" ]
+          [ "$(sed -n '9s/^resolution-asset=//p' "$work/$manifest")" = "$resolution" ]
+          identity="$(sed -n '2,8p' "$work/$manifest" | sha256sum | cut -d' ' -f1)"
+          [ "$identity" = "$digest" ]
           install -m 0755 "$work/$binary" "$work/verified-institute-ci-control"
           echo "binary=$work/verified-institute-ci-control" >> "$GITHUB_OUTPUT"
           echo "source=$source" >> "$GITHUB_OUTPUT"
