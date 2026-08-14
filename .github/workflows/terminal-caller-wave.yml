@@ -181,10 +181,23 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          organizations="$(jq -c '.organizations' transaction-input/census.json)"
+          # The matrix is the census owner's subject-bearing set. A
+          # zero-subject organization is a typed census exclusion
+          # (organization + reason), recorded below, never a matrix row
+          # that a preflight job would fail on (run 31817391995,
+          # Preflight · swift-riscv).
+          organizations="$(jq -c '.subjectOrganizations' transaction-input/census.json)"
           [ "$(jq 'length' <<< "$organizations")" -gt 0 ]
           [ "$(jq '.subjects | length' transaction-input/census.json)" -gt 0 ]
           echo "organizations=$organizations" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Census organization matrix"
+            echo "Matrix: \`$organizations\`"
+            exclusions="$(jq -c '.organizationExclusions' transaction-input/census.json)"
+            if [ "$(jq 'length' <<< "$exclusions")" -gt 0 ]; then
+              echo "Excluded (typed, no matrix row): \`$exclusions\`"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Preserve exact immutable input and original population
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -284,9 +297,13 @@ jobs:
           set -euo pipefail
           install -d preflight-evidence/recoveries preflight-evidence/receipts \
             preflight-evidence/capacity
-          required=$((SUBJECT_COUNT * 64 + 128))
+          # The requirement is the Swift owner's arithmetic, priced from
+          # measured per-subject consumption; the host passes only the
+          # subject count (run 31817391995, Preflight · swift-primitives:
+          # the former 64x+128 shell estimate exceeded the hard
+          # 12,500/h installation pool at 206 subjects).
           transaction-input/repository-policy caller-wave capacity \
-            --required "$required" \
+            --subjects "$SUBJECT_COUNT" \
             --output "preflight-evidence/capacity/${ORGANIZATION}.json"
           policy_digest="$(cat transaction-input/POLICY_DIGEST)"
           policy_source="$(cat transaction-input/POLICY_SOURCE)"
@@ -350,7 +367,15 @@ jobs:
         run: |
           set -euo pipefail
           subjects="$(jq '.subjects | length' transaction-input/census.json)"
-          organizations="$(jq '.organizations | length' transaction-input/census.json)"
+          # Preflight evidence exists per MATRIX organization — the
+          # subject-bearing set. Typed zero-subject exclusions carry no
+          # evidence files; the census records them, and the partition
+          # is asserted exactly.
+          organizations="$(jq '.subjectOrganizations | length' transaction-input/census.json)"
+          jq -e '
+            (.subjectOrganizations + (.organizationExclusions | map(.organization))
+              | sort) == .organizations
+          ' transaction-input/census.json >/dev/null
           [ "$(find preflight-evidence/recoveries -maxdepth 1 -type f -name '*.json' | wc -l)" -eq "$subjects" ]
           [ "$(find preflight-evidence/receipts -maxdepth 1 -type f -name '*.json' | wc -l)" -eq "$subjects" ]
           [ "$(find preflight-evidence/capacity -maxdepth 1 -type f -name '*.json' | wc -l)" -eq "$organizations" ]
@@ -359,7 +384,7 @@ jobs:
             capacity="preflight-evidence/capacity/${organization}.json"
             test -f "$capacity"
             jq -e '.accepted == true and .remaining >= .required and .required > 0' "$capacity" >/dev/null
-          done < <(jq -r '.organizations[]' transaction-input/census.json)
+          done < <(jq -r '.subjectOrganizations[]' transaction-input/census.json)
           policy_digest="$(cat transaction-input/POLICY_DIGEST)"
           policy_source="$(cat transaction-input/POLICY_SOURCE)"
           while IFS=$'\t' read -r repository repository_id head blob; do
