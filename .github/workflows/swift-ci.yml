@@ -94,12 +94,20 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           PR_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
           PR_SHA: ${{ github.event.pull_request.head.sha }}
+          MERGE_GROUP_SHA: ${{ github.event.merge_group.head_sha }}
           TRIGGER_REPOSITORY: ${{ github.repository }}
           TRIGGER_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           if [ "$EVENT_NAME" = "pull_request" ]; then
             REPOSITORY="$PR_REPOSITORY"; SHA="$PR_SHA"
+          elif [ "$EVENT_NAME" = "merge_group" ]; then
+            # The subject of a merge-group run is the candidate merge
+            # result the queue asks about — the event's own head_sha,
+            # named explicitly rather than inherited from the trigger
+            # context, for the same reason the pull_request branch names
+            # its head rather than trusting a fallback.
+            REPOSITORY="$TRIGGER_REPOSITORY"; SHA="$MERGE_GROUP_SHA"
           else
             REPOSITORY="$TRIGGER_REPOSITORY"; SHA="$TRIGGER_SHA"
           fi
@@ -705,7 +713,10 @@ jobs:
         env:
           BINARY: ${{ steps.institute-ci.outputs.binary }}
           NEEDS_JSON: ${{ toJson(needs) }}
-          REQUIRE_FULL_TIER: ${{ github.ref == 'refs/heads/main' }}
+          # The integration ref and the merge group are both merge
+          # verification: the aggregate refuses any plan that classified
+          # below the full tier there.
+          REQUIRE_FULL_TIER: ${{ github.ref == 'refs/heads/main' || github.event_name == 'merge_group' }}
         run: |
           set -euo pipefail
           FLAGS=()
