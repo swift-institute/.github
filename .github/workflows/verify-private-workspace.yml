@@ -173,6 +173,9 @@ jobs:
       - uses: SwiftyLab/setup-swift@38f54a76b70d989321de9dc7c840618c08cf56e9 # v1.14.0
         with:
           swift-version: ${{ env.SWIFT_VERSION }}
+          # Current Swift snapshot caching is unsupported on Windows. Use a
+          # freshly verified assertions toolchain, matching package CI.
+          cache-snapshot: false
       - name: Verify the exact candidate package with assertions
         working-directory: subject
         shell: bash
@@ -191,7 +194,7 @@ jobs:
           # Keep the absolute build prefix short: large private dependency
           # closures otherwise exceed Windows' process command-length boundary
           # when SwiftPM expands every linked module into llvm-lib arguments.
-          swift test -c debug --scratch-path C:/v
+          swift test -c debug --build-system native --scratch-path C:/v
 
   macos:
     name: Apple · macOS
