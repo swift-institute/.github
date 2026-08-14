@@ -42,10 +42,9 @@ jobs:
         with:
           egress-policy: audit
 
-      - name: Require the exact approved host and policy sources
+      - name: Require the exact approved sources before App credentials
         shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
           EXPECTED_HOST_SOURCE: ${{ inputs.expected_host_source }}
           POLICY_SOURCE: ${{ inputs.policy_source }}
           POLICY_DIGEST: ${{ inputs.policy_digest }}
@@ -56,8 +55,12 @@ jobs:
           [[ "$POLICY_DIGEST" =~ ^[0-9a-f]{64}$ ]]
           [ "$GITHUB_REF" = refs/heads/main ]
           [ "$GITHUB_SHA" = "$EXPECTED_HOST_SOURCE" ]
-          host_main="$(gh api repos/swift-institute/.github/git/ref/heads/main --jq .object.sha)"
-          policy_main="$(gh api "repos/${POLICY_REPOSITORY}/git/ref/heads/main" --jq .object.sha)"
+          host_main="$(git ls-remote https://github.com/swift-institute/.github.git \
+            refs/heads/main | cut -f1)"
+          policy_main="$(git ls-remote \
+            "https://github.com/${POLICY_REPOSITORY}.git" refs/heads/main | cut -f1)"
+          [ -n "$host_main" ]
+          [ -n "$policy_main" ]
           [ "$host_main" = "$EXPECTED_HOST_SOURCE" ]
           [ "$policy_main" = "$POLICY_SOURCE" ]
 
@@ -67,10 +70,20 @@ jobs:
           sparse-checkout: .github/policy/fleet.json
           persist-credentials: false
 
+      - name: Mint the bounded read-only census token
+        id: census-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: swift-institute
+          repositories: .github
+          permission-contents: read
+
       - name: Acquire and verify the explicitly authorized immutable Swift owner
         shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.census-token.outputs.token }}
           POLICY_SOURCE: ${{ inputs.policy_source }}
           POLICY_DIGEST: ${{ inputs.policy_digest }}
         run: |
@@ -106,16 +119,6 @@ jobs:
           test -s transaction-input/protected-main-ruleset.json
           printf '%s\n' "$POLICY_DIGEST" > transaction-input/POLICY_DIGEST
           printf '%s\n' "$POLICY_SOURCE" > transaction-input/POLICY_SOURCE
-
-      - name: Mint the bounded read-only census token
-        id: census-token
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
-        with:
-          client-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
-          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
-          owner: swift-institute
-          repositories: .github
-          permission-contents: read
 
       - name: Require capacity for both complete fleet enumerations
         shell: bash
