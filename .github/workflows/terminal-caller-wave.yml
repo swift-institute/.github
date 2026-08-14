@@ -160,6 +160,9 @@ jobs:
           name: terminal-caller-wave-input
           path: transaction-input
 
+      - name: Restore the verified owner executable mode
+        run: chmod 0755 transaction-input/repository-policy
+
       - name: Resolve the complete exact repository grant
         id: grant
         shell: bash
@@ -252,6 +255,9 @@ jobs:
           name: terminal-caller-wave-input
           path: transaction-input
 
+      - name: Restore the verified owner executable mode
+        run: chmod 0755 transaction-input/repository-policy
+
       - name: Restore every organization preflight
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -333,6 +339,9 @@ jobs:
         with:
           name: terminal-caller-wave-input
           path: transaction-input
+
+      - name: Restore the verified owner executable mode
+        run: chmod 0755 transaction-input/repository-policy
 
       - name: Restore the durable recovery journal
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -420,6 +429,9 @@ jobs:
         with:
           name: terminal-caller-wave-input
           path: transaction-input
+
+      - name: Restore the verified owner executable mode
+        run: chmod 0755 transaction-input/repository-policy
 
       - name: Restore the durable recovery journal
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -511,6 +523,9 @@ jobs:
         with:
           name: terminal-caller-wave-input
           path: transaction-input
+
+      - name: Restore the verified owner executable mode
+        run: chmod 0755 transaction-input/repository-policy
 
       - name: Restore every mutation receipt and event
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
