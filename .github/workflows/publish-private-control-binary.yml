@@ -122,7 +122,7 @@ jobs:
             echo 'container=swift:6.3@sha256:69bf1f0281e13d82c9e49d67c2dd1dcc8c00bad738c860f4323d7078787ec8ea'
             echo 'os=linux'
             echo 'arch=x86_64'
-            echo 'provisioning=static-swift-stdlib,uuid-dev'
+            echo 'provisioning=static-swift-stdlib,uuid-dev,build-id-none'
           } > /tmp/CONTROL_IDENTITY
           digest="$(sha256sum /tmp/CONTROL_IDENTITY | cut -d' ' -f1)"
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
@@ -150,8 +150,14 @@ jobs:
           swift test --disable-automatic-resolution --filter 'Control Validation Receipt Tests'
           swift test --disable-automatic-resolution --filter 'Control Validation Tests'
           swift build --disable-automatic-resolution -c release \
-            --product institute-ci-control --static-swift-stdlib
+            --product institute-ci-control --static-swift-stdlib \
+            -Xlinker --build-id=none
           install -m 0755 .build/release/institute-ci-control /tmp/institute-ci-control
+          command -v readelf
+          if readelf -n /tmp/institute-ci-control | grep -Fq 'Build ID'; then
+            echo '::error::Control executable contains a nondeterministic ELF build ID'
+            exit 1
+          fi
 
           head="$(printf 'a%.0s' {1..40})"
           jq -n --arg head "$head" '{
