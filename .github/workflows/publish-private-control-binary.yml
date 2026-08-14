@@ -1,27 +1,57 @@
 name: publish-private-control-binary
 
+permissions: {}
+
 on:
   workflow_dispatch:
     inputs:
       source:
-        description: Exact Control main revision to build and publish.
+        description: Exact Control protected-main revision to build and publish.
         required: true
         type: string
+      failure_control:
+        description: Pointer-safety negative control (protected host main only).
+        required: true
+        default: none
+        type: choice
+        options:
+          - none
+          - existing-mismatch
+          - failed-readback
 
-permissions: {}
+concurrency:
+  group: publish-private-control-binary
+  cancel-in-progress: false
 
 jobs:
   publish:
     runs-on: ubuntu-latest
+    environment: private-control-publisher
     container: swift:6.3@sha256:69bf1f0281e13d82c9e49d67c2dd1dcc8c00bad738c860f4323d7078787ec8ea # 6.3.3
     timeout-minutes: 45
     permissions:
       contents: read
     steps:
-      - name: Harden runner
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
+
+      - name: Acquire the exact dispatch host before App credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Require the exact protected host source before App credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          [ "$GITHUB_REF" = refs/heads/main ]
+          host_main="$(git ls-remote origin refs/heads/main | cut -f1)"
+          [ -n "$host_main" ]
+          [ "$GITHUB_SHA" = "$host_main" ]
+          [ "$(git rev-parse HEAD)" = "$host_main" ]
 
       - name: Provision build and publisher dependencies
         shell: bash
@@ -30,7 +60,7 @@ jobs:
           apt-get update -qq
           apt-get install -qq -y git gh jq uuid-dev
 
-      - name: Validate the expected source revision
+      - name: Validate the expected Control source
         id: expected
         shell: bash
         env:
@@ -50,16 +80,59 @@ jobs:
           repositories: institute-continuous-integration-control
           permission-contents: read
 
-      - name: Acquire exact Control main
+      - name: Require the expected exact Control protected main
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.reader.outputs.token }}
+          SOURCE: ${{ steps.expected.outputs.source }}
+        run: |
+          set -euo pipefail
+          control_main="$(gh api \
+            repos/swift-institute/institute-continuous-integration-control/git/ref/heads/main \
+            --jq .object.sha)"
+          [ "$SOURCE" = "$control_main" ]
+
+      - name: Acquire exact Control source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: swift-institute/institute-continuous-integration-control
-          ref: main
+          ref: ${{ steps.expected.outputs.source }}
           path: control
           token: ${{ steps.reader.outputs.token }}
           persist-credentials: false
 
-      - name: Revoke private source token
+      - name: Resolve the complete dependency graph once
+        id: identity
+        working-directory: control
+        shell: bash
+        env:
+          SOURCE: ${{ steps.expected.outputs.source }}
+        run: |
+          set -euo pipefail
+          git config --global --add safe.directory "$GITHUB_WORKSPACE/control"
+          [ "$(git rev-parse HEAD)" = "$SOURCE" ]
+          swift package resolve
+          test -s Package.resolved
+          cp Package.resolved /tmp/control.resolution.json
+          resolution_sha="$(sha256sum /tmp/control.resolution.json | cut -d' ' -f1)"
+          {
+            echo "sources-revision=$SOURCE"
+            echo "resolution-sha256=$resolution_sha"
+            echo 'toolchain=swift-6.3'
+            echo 'container=swift:6.3@sha256:69bf1f0281e13d82c9e49d67c2dd1dcc8c00bad738c860f4323d7078787ec8ea'
+            echo 'os=linux'
+            echo 'arch=x86_64'
+            echo 'provisioning=static-swift-stdlib,uuid-dev'
+          } > /tmp/CONTROL_IDENTITY
+          digest="$(sha256sum /tmp/CONTROL_IDENTITY | cut -d' ' -f1)"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          {
+            echo "digest=$digest"
+            cat /tmp/CONTROL_IDENTITY
+            echo "resolution-asset=RESOLUTION-${digest}.json"
+          } > /tmp/CONTROL_MANIFEST
+
+      - name: Revoke private source token before build and publisher credentials
         id: reader-revoke
         if: ${{ always() && steps.reader.outcome == 'success' }}
         shell: bash
@@ -67,46 +140,17 @@ jobs:
           GH_TOKEN: ${{ steps.reader.outputs.token }}
         run: gh api --method DELETE installation/token
 
-      - name: Bind the checkout to the expected main revision
-        id: source
-        if: ${{ steps.reader-revoke.outcome == 'success' }}
-        shell: bash
-        env:
-          EXPECTED: ${{ steps.expected.outputs.source }}
-        run: |
-          set -euo pipefail
-          git config --global --add safe.directory "$GITHUB_WORKSPACE/control"
-          observed="$(git -C control rev-parse HEAD)"
-          test "$observed" = "$EXPECTED"
-          echo "revision=$observed" >> "$GITHUB_OUTPUT"
-
       - name: Build and prove the trusted Control executable
         id: build
-        if: ${{ steps.source.outcome == 'success' }}
+        if: ${{ steps.identity.outcome == 'success' && steps.reader-revoke.outcome == 'success' }}
         working-directory: control
         shell: bash
-        env:
-          SOURCE: ${{ steps.source.outputs.revision }}
         run: |
           set -euo pipefail
-          : > /tmp/dependency-heads
-          for dependency in \
-            swift-foundations/swift-github-continuous-integration \
-            swift-foundations/swift-github \
-            swift-foundations/swift-github-http \
-            swift-institute/institute-continuous-integration \
-            swift-standards/swift-fips-180-4 \
-            swift-standards/swift-github-standard
-          do
-            head="$(git ls-remote "https://github.com/${dependency}.git" main | cut -f1)"
-            test -n "$head"
-            echo "${dependency}=${head}" >> /tmp/dependency-heads
-          done
-          digest="$( { echo "$SOURCE"; cut -d= -f2 /tmp/dependency-heads; } \
-            | sort | sha256sum | cut -d' ' -f1)"
-          swift test --filter 'Control Validation Receipt Tests'
-          swift test --filter 'Control Validation Tests'
-          swift build -c release --product institute-ci-control --static-swift-stdlib
+          swift test --disable-automatic-resolution --filter 'Control Validation Receipt Tests'
+          swift test --disable-automatic-resolution --filter 'Control Validation Tests'
+          swift build --disable-automatic-resolution -c release \
+            --product institute-ci-control --static-swift-stdlib
           install -m 0755 .build/release/institute-ci-control /tmp/institute-ci-control
 
           head="$(printf 'a%.0s' {1..40})"
@@ -124,24 +168,11 @@ jobs:
           }' > /tmp/receipt.json
           verdict="$(/tmp/institute-ci-control validation-receipt \
             --receipt /tmp/receipt.json --current-head "$head")"
-          test "$(jq -r '.accepted' <<< "$verdict")" = true
+          [ "$(jq -r .accepted <<< "$verdict")" = true ]
           jq '.scope = "unmeasured"' /tmp/receipt.json > /tmp/unmeasured.json
           verdict="$(/tmp/institute-ci-control validation-receipt \
             --receipt /tmp/unmeasured.json --current-head "$head")"
-          test "$(jq -r '.accepted' <<< "$verdict")" = false
-
-          {
-            echo "digest=$digest"
-            echo "sources-revision=$SOURCE"
-            echo 'toolchain=swift-6.3.3'
-            echo 'container=swift:6.3@sha256:69bf1f0281e13d82c9e49d67c2dd1dcc8c00bad738c860f4323d7078787ec8ea'
-            echo 'os=linux'
-            echo 'arch=x86_64'
-            echo 'provisioning=static-swift-stdlib,uuid-dev'
-            echo "built-at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-            cat /tmp/dependency-heads
-          } > /tmp/MANIFEST.txt
-          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          [ "$(jq -r .accepted <<< "$verdict")" = false ]
 
       - name: Mint narrowed Control publisher token
         id: publisher
@@ -154,40 +185,111 @@ jobs:
           repositories: institute-continuous-integration-control
           permission-contents: write
 
-      - name: Publish immutable bundle and advance pointer last
+      - name: Publish immutable bundle and advance CURRENT last
         if: ${{ steps.publisher.outcome == 'success' }}
         shell: bash
         env:
           GH_TOKEN: ${{ steps.publisher.outputs.token }}
-          DIGEST: ${{ steps.build.outputs.digest }}
-          SOURCE: ${{ steps.source.outputs.revision }}
+          DIGEST: ${{ steps.identity.outputs.digest }}
+          SOURCE: ${{ steps.expected.outputs.source }}
+          FAILURE_CONTROL: ${{ inputs.failure_control }}
         run: |
           set -euo pipefail
           repository=swift-institute/institute-continuous-integration-control
+          release=ci-binaries
           stage="$(mktemp -d)"
           binary="institute-ci-control-${DIGEST}"
           manifest="MANIFEST-${DIGEST}.txt"
+          resolution="RESOLUTION-${DIGEST}.json"
           checksums="SHA256SUMS-${DIGEST}"
           install -m 0755 /tmp/institute-ci-control "$stage/$binary"
-          cp /tmp/MANIFEST.txt "$stage/$manifest"
-          (cd "$stage" && sha256sum "$binary" "$manifest" > "$checksums")
+          cp /tmp/CONTROL_MANIFEST "$stage/$manifest"
+          cp /tmp/control.resolution.json "$stage/$resolution"
+          (cd "$stage" && sha256sum "$binary" "$manifest" "$resolution" > "$checksums")
+          (cd "$stage" && sha256sum -c "$checksums")
+          [ "$(wc -l < "$stage/$manifest")" -eq 9 ]
+          [ "$(sed -n '1s/^digest=//p' "$stage/$manifest")" = "$DIGEST" ]
+          [ "$(sed -n '2s/^sources-revision=//p' "$stage/$manifest")" = "$SOURCE" ]
+          resolution_sha="$(sha256sum "$stage/$resolution" | cut -d' ' -f1)"
+          [ "$(sed -n '3s/^resolution-sha256=//p' "$stage/$manifest")" = "$resolution_sha" ]
+          [ "$(sed -n '9s/^resolution-asset=//p' "$stage/$manifest")" = "$resolution" ]
+          identity="$(sed -n '2,8p' "$stage/$manifest" | sha256sum | cut -d' ' -f1)"
+          [ "$identity" = "$DIGEST" ]
+
+          prior_current="$(gh release download "$release" -R "$repository" \
+            --pattern CURRENT --output - 2>/dev/null || true)"
+          verify_control_pointer() {
+            status=$?
+            if [ "$FAILURE_CONTROL" != none ]; then
+              current="$(gh release download "$release" -R "$repository" \
+                --pattern CURRENT --output - 2>/dev/null || true)"
+              if [ "$current" != "$prior_current" ]; then
+                echo '::error::failure control changed CURRENT'
+                exit 97
+              fi
+            fi
+            exit "$status"
+          }
+          trap verify_control_pointer EXIT
+
+          if ! gh release view "$release" -R "$repository" >/dev/null 2>&1; then
+            gh release create "$release" -R "$repository" \
+              --prerelease --latest=false \
+              --title 'CI Control binary (rolling pointer)' \
+              --notes 'Immutable digest-named private Control bundles. CURRENT advances only after complete readback.' \
+              --target "$SOURCE"
+          fi
+          gh release view "$release" -R "$repository" \
+            --json assets --jq '.assets[].name' > "$stage/assets"
+
+          if [ "$FAILURE_CONTROL" != none ]; then
+            [ -n "$prior_current" ]
+            for asset in "$binary" "$manifest" "$resolution" "$checksums"; do
+              grep -Fxq "$asset" "$stage/assets"
+            done
+          fi
+          if [ "$FAILURE_CONTROL" = existing-mismatch ]; then
+            printf '\nINJECTED-MISMATCH\n' >> "$stage/$manifest"
+          fi
+
+          mkdir "$stage/existing"
+          for asset in "$binary" "$manifest" "$resolution" "$checksums"; do
+            if grep -Fxq "$asset" "$stage/assets"; then
+              gh release download "$release" -R "$repository" \
+                --pattern "$asset" --dir "$stage/existing"
+              cmp "$stage/$asset" "$stage/existing/$asset"
+            fi
+          done
+          for asset in "$binary" "$manifest" "$resolution" "$checksums"; do
+            if ! grep -Fxq "$asset" "$stage/assets"; then
+              gh release upload "$release" -R "$repository" "$stage/$asset"
+            fi
+          done
+
+          readback="$(mktemp -d)"
+          gh release download "$release" -R "$repository" \
+            --pattern "$binary" --pattern "$manifest" --pattern "$resolution" \
+            --pattern "$checksums" --dir "$readback"
+          if [ "$FAILURE_CONTROL" = failed-readback ]; then
+            printf '\nINJECTED-READBACK-FAILURE\n' >> "$readback/$manifest"
+          fi
+          (cd "$readback" && sha256sum -c "$checksums")
+          for asset in "$binary" "$manifest" "$resolution" "$checksums"; do
+            cmp "$stage/$asset" "$readback/$asset"
+          done
+
+          [ "$FAILURE_CONTROL" = none ] || {
+            echo '::error::requested pointer-safety control did not fail'
+            exit 96
+          }
           {
             echo "digest=$DIGEST"
             echo "sources-revision=$SOURCE"
           } > "$stage/CURRENT"
-
-          if ! gh release view ci-binaries -R "$repository" >/dev/null 2>&1; then
-            gh release create ci-binaries -R "$repository" \
-              --prerelease --latest=false \
-              --title 'CI Control binary (rolling)' \
-              --notes 'Private rolling trusted Control executable. CURRENT selects one immutable digest-named bundle.' \
-              --target "$SOURCE"
-          fi
-          gh release upload ci-binaries -R "$repository" \
-            "$stage/$binary" "$stage/$manifest" "$stage/$checksums"
-          gh release upload ci-binaries -R "$repository" "$stage/CURRENT" --clobber
-          gh release edit ci-binaries -R "$repository" \
-            --notes "Private rolling trusted Control executable. digest=${DIGEST}; source=${SOURCE}."
+          gh release upload "$release" -R "$repository" "$stage/CURRENT" --clobber
+          resolved="$(gh release download "$release" -R "$repository" \
+            --pattern CURRENT --output -)"
+          [ "$resolved" = "$(cat "$stage/CURRENT")" ]
 
       - name: Revoke Control publisher token
         if: ${{ always() && steps.publisher.outcome == 'success' }}
