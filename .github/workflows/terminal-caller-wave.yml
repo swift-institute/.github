@@ -266,6 +266,7 @@ jobs:
           repositories: ${{ steps.grant.outputs.repositories }}
           permission-administration: write
           permission-contents: write
+          permission-workflows: write
 
       - name: Attest the exact App token issuance
         shell: bash
@@ -283,7 +284,7 @@ jobs:
             --app-slug "$APP_SLUG" \
             --installation-id "$INSTALLATION_ID" \
             --repositories "$REPOSITORIES" \
-            --permissions administration=write,contents=write \
+            --permissions administration=write,contents=write,workflows=write \
             --run-id "$GITHUB_RUN_ID" \
             --output "preflight-evidence/attestations/${ORGANIZATION}.json"
 
@@ -486,6 +487,7 @@ jobs:
           repositories: ${{ steps.grant.outputs.repositories }}
           permission-administration: write
           permission-contents: write
+          permission-workflows: write
 
       - name: Apply bounded recoverable transactions
         shell: bash
@@ -576,6 +578,7 @@ jobs:
           repositories: ${{ steps.grant.outputs.repositories }}
           permission-administration: write
           permission-contents: write
+          permission-workflows: write
 
       - name: Close and verify every original privilege window
         shell: bash
