@@ -478,7 +478,13 @@ jobs:
                       total: .total_count,
                       values: [
                         .check_runs[]
-                        | { name: .name, head: .head_sha, conclusion: .conclusion }
+                        | {
+                            id,
+                            name: .name,
+                            head: .head_sha,
+                            conclusion: .conclusion,
+                            startedAt: .started_at
+                          }
                       ]
                     }
                 ],
@@ -488,7 +494,14 @@ jobs:
                       total: .total_count,
                       values: [
                         .workflow_runs[]
-                        | { name: .name, event: .event, head: .head_sha, conclusion: .conclusion }
+                        | {
+                            id,
+                            name: .name,
+                            event: .event,
+                            head: .head_sha,
+                            conclusion: .conclusion,
+                            startedAt: (.run_started_at // .created_at)
+                          }
                       ]
                     }
                 ],
