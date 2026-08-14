@@ -122,7 +122,7 @@ jobs:
             echo 'container=swift:6.3@sha256:69bf1f0281e13d82c9e49d67c2dd1dcc8c00bad738c860f4323d7078787ec8ea'
             echo 'os=linux'
             echo 'arch=x86_64'
-            echo 'provisioning=static-swift-stdlib,uuid-dev,build-id-none'
+            echo 'provisioning=static-swift-stdlib,uuid-dev,build-id-none,swift-modhash-removed,debug-stripped'
           } > /tmp/CONTROL_IDENTITY
           digest="$(sha256sum /tmp/CONTROL_IDENTITY | cut -d' ' -f1)"
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
@@ -152,10 +152,17 @@ jobs:
           swift build --disable-automatic-resolution -c release \
             --product institute-ci-control --static-swift-stdlib \
             -Xlinker --build-id=none
-          install -m 0755 .build/release/institute-ci-control /tmp/institute-ci-control
+          command -v objcopy
+          objcopy --remove-section=.swift_modhash --strip-debug \
+            .build/release/institute-ci-control /tmp/institute-ci-control.normalized
+          install -m 0755 /tmp/institute-ci-control.normalized /tmp/institute-ci-control
           command -v readelf
           if readelf -n /tmp/institute-ci-control | grep -Fq 'Build ID'; then
             echo '::error::Control executable contains a nondeterministic ELF build ID'
+            exit 1
+          fi
+          if readelf -S /tmp/institute-ci-control | grep -Fq '.swift_modhash'; then
+            echo '::error::Control executable contains nondeterministic Swift module hashes'
             exit 1
           fi
 
