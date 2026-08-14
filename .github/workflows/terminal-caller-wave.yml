@@ -254,7 +254,27 @@ jobs:
           permission-administration: write
           permission-contents: write
 
-      - name: Prove installation, grants, permissions, recovery, and capacity
+      - name: Attest the exact App token issuance
+        shell: bash
+        env:
+          ORGANIZATION: ${{ matrix.organization }}
+          APP_CLIENT_ID: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+          INSTALLATION_ID: ${{ steps.app-token.outputs.installation-id }}
+          REPOSITORIES: ${{ steps.grant.outputs.repositories }}
+        run: |
+          set -euo pipefail
+          transaction-input/repository-policy caller-wave attest \
+            --organization "$ORGANIZATION" \
+            --app-client-id "$APP_CLIENT_ID" \
+            --app-slug "$APP_SLUG" \
+            --installation-id "$INSTALLATION_ID" \
+            --repositories "$REPOSITORIES" \
+            --permissions administration=write,contents=write \
+            --run-id "$GITHUB_RUN_ID" \
+            --output "preflight-evidence/attestations/${ORGANIZATION}.json"
+
+      - name: Prove issuance, grants, recovery, and capacity
         shell: bash
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
@@ -280,6 +300,7 @@ jobs:
               --integration-id "$SWIFT_INSTITUTE_BOT_INTEGRATION_ID" \
               --policy-digest "$policy_digest" \
               --policy-source "$policy_source" \
+              --attestation "preflight-evidence/attestations/${ORGANIZATION}.json" \
               --recovery "preflight-evidence/recoveries/${safe}.json" \
               --receipt "preflight-evidence/receipts/${safe}.json"
           done < <(jq -r --arg owner "$ORGANIZATION" '
@@ -333,6 +354,7 @@ jobs:
           [ "$(find preflight-evidence/recoveries -maxdepth 1 -type f -name '*.json' | wc -l)" -eq "$subjects" ]
           [ "$(find preflight-evidence/receipts -maxdepth 1 -type f -name '*.json' | wc -l)" -eq "$subjects" ]
           [ "$(find preflight-evidence/capacity -maxdepth 1 -type f -name '*.json' | wc -l)" -eq "$organizations" ]
+          [ "$(find preflight-evidence/attestations -maxdepth 1 -type f -name '*.json' | wc -l)" -eq "$organizations" ]
           while IFS= read -r organization; do
             capacity="preflight-evidence/capacity/${organization}.json"
             test -f "$capacity"
@@ -347,12 +369,17 @@ jobs:
             test -f "$receipt"
             test -f "$recovery"
             recovery_digest="$(sha256sum "$recovery" | cut -d' ' -f1)"
+            attestation="preflight-evidence/attestations/${repository%%/*}.json"
+            test -f "$attestation"
+            attestation_digest="$(sha256sum "$attestation" | cut -d' ' -f1)"
             jq -e --arg repository "$repository" --arg digest "$recovery_digest" \
+              --arg attestation "$attestation_digest" \
               --slurpfile original transaction-input/census.json '
                 .repository == $repository
                 and .organization == ($repository | split("/")[0])
-                and .accepted == true and .canPush == true and .canAdminister == true
+                and .accepted == true
                 and .recoveryDigest == $digest
+                and .attestationDigest == $attestation
                 and .population == $original[0].commitment
               ' "$receipt" >/dev/null
             jq -e --arg repository "$repository" --argjson repositoryID "$repository_id" \
