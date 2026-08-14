@@ -120,17 +120,44 @@ jobs:
           printf '%s\n' "$POLICY_DIGEST" > transaction-input/POLICY_DIGEST
           printf '%s\n' "$POLICY_SOURCE" > transaction-input/POLICY_SOURCE
 
-      - name: Require capacity for both complete fleet enumerations
+      - name: Require capacity for the complete original census
         shell: bash
         env:
           GH_TOKEN: ${{ steps.census-token.outputs.token }}
         run: |
           set -euo pipefail
           # The current 504-repository fleet needs at most about 3,100 core
-          # requests per exact enumeration; reserve both passes before mutation.
+          # requests per exact enumeration.
           transaction-input/repository-policy caller-wave capacity \
-            --required 6500 \
+            --required 3200 \
             --output transaction-input/census-capacity.json
+
+      - name: Mint the independent terminal-recensus reserve token
+        id: recensus-reserve-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: swift-arm-ltd
+          repositories: swift-arm-standard
+          permission-contents: read
+
+      - name: Require independent capacity for terminal recensus
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.recensus-reserve-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          transaction-input/repository-policy caller-wave capacity \
+            --required 3200 \
+            --output transaction-input/recensus-reserve-capacity.json
+
+      - name: Revoke the terminal-recensus reserve token
+        if: ${{ always() && steps.recensus-reserve-token.outcome == 'success' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.recensus-reserve-token.outputs.token }}
+        run: gh api --method DELETE installation/token
 
       - name: Enumerate the complete active public fleet
         shell: bash
@@ -556,8 +583,8 @@ jobs:
         with:
           client-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
           private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
-          owner: swift-institute
-          repositories: .github
+          owner: swift-arm-ltd
+          repositories: swift-arm-standard
           permission-contents: read
 
       - name: Restore exact transaction input
