@@ -307,11 +307,14 @@ jobs:
           swift --version
           test_package() {
             scratch="$1"
-            swift test -c debug --scratch-path "$scratch"
+            swift test -c debug --build-system native --scratch-path "$scratch"
           }
-          # Windows expands every linked module into response-file arguments.
-          # A short absolute build prefix keeps large dependency closures below
-          # the process command-length boundary without skipping any test.
+          # [swift-institute/.github#498] Swift Build expands every linked module
+          # into a separate response-file argument and can exceed Windows'
+          # process command-length boundary.
+          # The native build system preserves the assertions compiler and complete
+          # test surface without that whole-closure Libtool invocation. The short
+          # absolute build prefix independently bounds intermediate paths.
           test_package C:/b
           if [ -f Tests/Package.swift ]; then (cd Tests && test_package C:/t); fi
   macos-release:
