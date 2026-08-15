@@ -55,23 +55,26 @@ jobs:
           repositories: institute-continuous-integration-control
           permission-contents: read
 
+      # The validator binary is selected by the digest pinned below, not by
+      # the private release's mutable CURRENT pointer or the private main
+      # head: the private control repository cannot carry rulesets on the
+      # current plan, so the authorization boundary for replacing this
+      # gate's own executable is THIS file on protected main. Advancing the
+      # pin is a public pull request validated by the previously pinned
+      # binary; the digest-named release assets are immutable, so the old
+      # binary remains acquirable throughout.
       - name: Install immutable private Control binary
         id: install
         shell: bash
         env:
           GH_TOKEN: ${{ steps.reader.outputs.token }}
+          CONTROL_BINARY_PIN: dd389256b86144e05d67b4cb215666a5de5c5908d7ebc1366f7db7d02559bf18
         run: |
           set -euo pipefail
           repository=swift-institute/institute-continuous-integration-control
           work="$(mktemp -d)"
-          gh release download ci-binaries -R "$repository" \
-            --pattern CURRENT --output "$work/CURRENT"
-          digest="$(sed -n 's/^digest=//p' "$work/CURRENT")"
-          source="$(sed -n 's/^sources-revision=//p' "$work/CURRENT")"
+          digest="$CONTROL_BINARY_PIN"
           [[ "$digest" =~ ^[0-9a-f]{64}$ ]]
-          [[ "$source" =~ ^[0-9a-f]{40}$ ]]
-          main="$(gh api "repos/$repository/commits/main" --jq .sha)"
-          test "$source" = "$main"
 
           binary="institute-ci-control-${digest}"
           manifest="MANIFEST-${digest}.txt"
@@ -84,7 +87,8 @@ jobs:
           (cd "$work" && sha256sum --check "$checksums")
           [ "$(wc -l < "$work/$manifest")" -eq 9 ]
           [ "$(sed -n '1s/^digest=//p' "$work/$manifest")" = "$digest" ]
-          [ "$(sed -n '2s/^sources-revision=//p' "$work/$manifest")" = "$source" ]
+          source="$(sed -n '2s/^sources-revision=//p' "$work/$manifest")"
+          [[ "$source" =~ ^[0-9a-f]{40}$ ]]
           resolution_sha="$(sha256sum "$work/$resolution" | cut -d' ' -f1)"
           [ "$(sed -n '3s/^resolution-sha256=//p' "$work/$manifest")" = "$resolution_sha" ]
           [ "$(sed -n '9s/^resolution-asset=//p' "$work/$manifest")" = "$resolution" ]
