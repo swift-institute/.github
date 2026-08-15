@@ -177,6 +177,10 @@ inclusive_language:
     - exporterMasterSecret
     - earlyExporterMasterSecret
     - earlyExporterMaster
+    # RSS 2.0 mirrors the spec's own `<webMaster>` channel element
+    # (swift-standards/swift-rss-standard); same spec-fidelity class as
+    # the RFC 8446 family above.
+    - webMaster
 
 
 # ── Custom rules ─────────────────────────────────────────────────────────────
