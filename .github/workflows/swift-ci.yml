@@ -15,14 +15,6 @@ name: Swift CI (reusable)
 
 on:
   workflow_call:
-    inputs:
-      lint-bundle:
-        type: string
-        default: ""
-        description: >-
-          Compatibility signal carried by the generated direct caller.
-          Execution ignores this value: the planner resolves the lint bundle
-          from the centrally owned fleet policy.
 
 env:
   SWIFT_VERSION: "6.4"
