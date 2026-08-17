@@ -241,7 +241,15 @@ jobs:
           test_package() {
             swift test -c release
           }
-          test_package
+          # A package may declare no root test targets (nested-layout or
+          # content-only repositories). Root `swift test` exits nonzero on
+          # "no tests found", which is an identity fact, not a failure — the
+          # build above already gates compilation.
+          if grep -q 'testTarget' Package.swift; then
+            test_package
+          else
+            echo "no root test targets declared; skipping root swift test"
+          fi
           if [ -f Tests/Package.swift ]; then (cd Tests && test_package); fi
   linux-6-4:
     name: Build · Linux · 6.4
@@ -331,7 +339,12 @@ jobs:
           # The native build system preserves the assertions compiler and complete
           # test surface without that whole-closure Libtool invocation. The short
           # absolute build prefix independently bounds intermediate paths.
-          test_package C:/b
+          # Same zero-root-test-targets guard as the POSIX legs.
+          if grep -q 'testTarget' Package.swift; then
+            test_package C:/b
+          else
+            echo "no root test targets declared; skipping root swift test"
+          fi
           if [ -f Tests/Package.swift ]; then (cd Tests && test_package C:/t); fi
   macos-release:
     name: Build · Apple · macOS
@@ -359,7 +372,12 @@ jobs:
           test_package() {
             swift test -c debug
           }
-          test_package
+          # Same zero-root-test-targets guard as the Linux legs.
+          if grep -q 'testTarget' Package.swift; then
+            test_package
+          else
+            echo "no root test targets declared; skipping root swift test"
+          fi
           if [ -f Tests/Package.swift ]; then (cd Tests && test_package); fi
   embedded:
     name: Extended · Embedded
