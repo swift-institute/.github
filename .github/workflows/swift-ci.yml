@@ -372,7 +372,12 @@ jobs:
           test_package() {
             swift test -c debug
           }
-          test_package
+          # Same zero-root-test-targets guard as the Linux legs.
+          if grep -q 'testTarget' Package.swift; then
+            test_package
+          else
+            echo "no root test targets declared; skipping root swift test"
+          fi
           if [ -f Tests/Package.swift ]; then (cd Tests && test_package); fi
   embedded:
     name: Extended · Embedded
