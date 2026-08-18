@@ -32,8 +32,9 @@ inputs:
     description: >-
       The exact commit of swift-institute/institute-continuous-integration
       the published binary must have been built from. Empty — the default —
-      reads the single authority, `.institute-ci-pin` at this repository's
-      root. A value that is not a full 40-hex SHA refuses here.
+      reads the single authority, `.institute-ci-pin` on the default
+      branch of swift-institute/.github, live at run time. A value that
+      is not a full 40-hex SHA refuses here.
     required: false
     default: ''
 
@@ -55,15 +56,19 @@ runs:
         SOURCES_REVISION: ${{ inputs.sources-revision }}
       run: |
         set -euo pipefail
-        # One authority. `.institute-ci-pin` sits three levels above this
-        # action file, at the repository root; reading it here rather than
-        # copying its value into each caller is what keeps a partial pin
-        # advance from splitting the fleet across two revisions.
+        # One authority. `.institute-ci-pin` on the default branch of the
+        # central repository, read live at run time. Reading it through
+        # GITHUB_ACTION_PATH was a frozen copy: callers self-pin this
+        # action's revision, so the vendored file lagged the branch and a
+        # pin advance split the fleet until every internal ref was also
+        # advanced (incident 2026-08-18, #626/#628). The branch file is
+        # the pin's entire job; ref lag must not shadow it.
+        command -v curl >/dev/null || { apt-get update -qq && apt-get install -qq -y curl; }
         if [ -z "$SOURCES_REVISION" ]; then
-          PIN_FILE="${GITHUB_ACTION_PATH}/../../../.institute-ci-pin"
-          [ -f "$PIN_FILE" ] \
-            || { echo "::error::no Institute CI pin at $PIN_FILE"; exit 1; }
-          SOURCES_REVISION="$(tr -d '[:space:]' < "$PIN_FILE")"
+          SOURCES_REVISION="$(curl --fail --silent --show-error --location --retry 3 \
+            https://raw.githubusercontent.com/swift-institute/.github/main/.institute-ci-pin \
+            | tr -d '[:space:]')" \
+            || { echo "::error::could not read .institute-ci-pin from swift-institute/.github@main"; exit 1; }
         fi
         [[ "$SOURCES_REVISION" =~ ^[0-9a-f]{40}$ ]] \
           || { echo "::error::refusing malformed Institute CI source revision: '$SOURCES_REVISION'"; exit 1; }
