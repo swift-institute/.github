@@ -167,7 +167,7 @@ jobs:
         env:
           BINARY: ${{ steps.institute-ci.outputs.binary }}
         run: |
-          "$BINARY" ci package validate \
+          "$BINARY" ci -- package validate \
             --repository "${{ steps.subject.outputs.repository }}" \
             --root "$GITHUB_WORKSPACE" \
             --policy "$GITHUB_WORKSPACE/.ci-policy/.github/policy/fleet.json"
@@ -183,7 +183,7 @@ jobs:
           HEAD_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
           set -euo pipefail
-          PLAN="$("$BINARY" ci package plan \
+          PLAN="$("$BINARY" ci -- package plan \
             --ref "$GITHUB_REF" \
             --head-message "$HEAD_MESSAGE" \
             --event "${{ github.event_name }}" --event-path "$GITHUB_EVENT_PATH" \
@@ -742,7 +742,7 @@ jobs:
           FLAGS=()
           [ "$REQUIRE_FULL_TIER" = "true" ] && FLAGS+=(--require-full-tier)
           RC=0
-          VERDICT="$("$BINARY" ci package aggregate \
+          VERDICT="$("$BINARY" ci -- package aggregate \
             --needs-json "$NEEDS_JSON" \
             --gating "${{ needs.plan.outputs.gating }}" \
             --subject-repository "${{ needs.plan.outputs.subject-repository }}" \
