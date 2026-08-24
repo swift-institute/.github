@@ -8,7 +8,7 @@ name: Swift CI (reusable)
 # this file; it does not parameterise it. Repository identity exceptions are
 # authored in the central fleet policy and resolved by the Swift planner.
 #
-# Scheduling is decided by `institute-continuous-integration`, not here:
+# Scheduling is decided by the typed `institute ci` verbs, not here:
 # `plan` emits the leg list and every job binds it. There is exactly one
 # list of what is expected to run, which is what lets `ci-ok` fail a
 # gating leg that skipped without the plan having excluded it.
@@ -55,8 +55,10 @@ jobs:
     name: Plan
     if: ${{ !github.event.repository.private }}
     runs-on: ubuntu-latest
-    # No longer builds anything: the binary is downloaded and verified.
-    timeout-minutes: 10
+    # Builds the planner from source at the pinned revision (#632); the
+    # cold path compiles the full closure, the exact-key cache makes the
+    # warm path cheap.
+    timeout-minutes: 45
     # The generated caller grants `actions: read` and `contents: read`, and a
     # called workflow cannot exceed that intersection — asking for anything
     # more fails the run at startup, before a single job is scheduled. The
@@ -149,7 +151,7 @@ jobs:
           sha: ${{ steps.subject.outputs.sha }}
 
       - id: institute-ci
-        uses: swift-institute/.github/.github/actions/institute-ci@ffe641da803a23bdfb4e3bb889edff9c43c41198
+        uses: swift-institute/.github/.github/actions/institute-ci@bd4c502292dacc12f145757ec2f7a6bcd664e6b6
 
       - name: Materialize fleet policy at the workflow revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -165,7 +167,7 @@ jobs:
         env:
           BINARY: ${{ steps.institute-ci.outputs.binary }}
         run: |
-          "$BINARY" package validate \
+          "$BINARY" ci package validate \
             --repository "${{ steps.subject.outputs.repository }}" \
             --root "$GITHUB_WORKSPACE" \
             --policy "$GITHUB_WORKSPACE/.ci-policy/.github/policy/fleet.json"
@@ -181,7 +183,7 @@ jobs:
           HEAD_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
           set -euo pipefail
-          PLAN="$("$BINARY" package plan \
+          PLAN="$("$BINARY" ci package plan \
             --ref "$GITHUB_REF" \
             --head-message "$HEAD_MESSAGE" \
             --event "${{ github.event_name }}" --event-path "$GITHUB_EVENT_PATH" \
@@ -723,7 +725,7 @@ jobs:
           repository: swift-institute/.github
           ref: ${{ needs.plan.outputs.workflow-sha }}
       - id: institute-ci
-        uses: swift-institute/.github/.github/actions/institute-ci@ffe641da803a23bdfb4e3bb889edff9c43c41198
+        uses: swift-institute/.github/.github/actions/institute-ci@bd4c502292dacc12f145757ec2f7a6bcd664e6b6
       # Runs on always(), so it must reach a verdict when plan itself
       # failed — which is exactly when its outputs are empty.
       - name: Aggregate
@@ -740,7 +742,7 @@ jobs:
           FLAGS=()
           [ "$REQUIRE_FULL_TIER" = "true" ] && FLAGS+=(--require-full-tier)
           RC=0
-          VERDICT="$("$BINARY" package aggregate \
+          VERDICT="$("$BINARY" ci package aggregate \
             --needs-json "$NEEDS_JSON" \
             --gating "${{ needs.plan.outputs.gating }}" \
             --subject-repository "${{ needs.plan.outputs.subject-repository }}" \
