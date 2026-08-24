@@ -140,6 +140,55 @@ runs:
       run: |
         set -euo pipefail
         START="$(date +%s)"
+
+        # Same class of problem install-system-deps solves for the matrix
+        # legs: C-shim targets `#include` system headers whose `-dev`
+        # packages the environment does not ship (canary evidence: the
+        # planner graph pulls swift-linux-standard, whose Linux Kernel
+        # Shims need uuid-dev). Derive the packages from the resolved
+        # graph's `.linkedLibrary` declarations. The mapping mirrors
+        # .github/actions/install-system-deps — that action targets root
+        # container jobs and the current workspace, this build runs
+        # unprivileged on the runner host against RUNNER_TEMP; keep the
+        # two maps in step until they are unified.
+        if command -v apt-get >/dev/null 2>&1; then
+          SUDO=""; [ "$(id -u)" -eq 0 ] || SUDO="sudo"
+          swift package --package-path "$DIR" resolve
+          shopt -s nullglob
+          manifests=("$DIR"/Package.swift "$DIR"/Package@swift-*.swift \
+            "$DIR"/.build/checkouts/*/Package.swift "$DIR"/.build/checkouts/*/Package@swift-*.swift)
+          libs=$(grep -hroE '\.linkedLibrary\("[^"]+"' "${manifests[@]}" 2>/dev/null \
+                 | sed -E 's/.*"([^"]+)".*/\1/' | sort -u || true)
+          map_lib() {
+            case "$1" in
+              uuid)     echo uuid-dev ;;
+              uring)    echo liburing-dev ;;
+              z)        echo zlib1g-dev ;;
+              ssl|crypto) echo libssl-dev ;;
+              curl)     echo libcurl4-openssl-dev ;;
+              sqlite3)  echo libsqlite3-dev ;;
+              xml2)     echo libxml2-dev ;;
+              c|dl|m|pthread|rt|util|resolv) echo "" ;;
+              *)        echo __UNMAPPED__ ;;
+            esac
+          }
+          pkgs=""
+          for lib in $libs; do
+            p=$(map_lib "$lib")
+            if [ "$p" = "__UNMAPPED__" ]; then
+              echo "::warning::No apt mapping for linked library '$lib' in the planner graph."
+            elif [ -n "$p" ]; then
+              pkgs="$pkgs $p"
+            fi
+          done
+          pkgs=$(printf '%s\n' $pkgs | sort -u | tr '\n' ' ')
+          if [ -n "${pkgs// }" ]; then
+            echo "Installing system dev-packages for the planner build: $pkgs"
+            $SUDO apt-get update -qq
+            $SUDO apt-get install -qq -y $pkgs
+          fi
+        fi
+
         swift build --package-path "$DIR" -c release --product institute
         WALL="$(( $(date +%s) - START ))"
         BINARY="$DIR/.build/release/institute"
