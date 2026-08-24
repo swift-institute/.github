@@ -1,1 +1,8 @@
-86bccfae44c6a023c89aacff6bc76260e4840e47
+# The fleet's single planner-revision authority, read live from this file
+# on the default branch by .github/actions/institute-ci. Since the #632
+# cutover this names an exact swift-institute/institute-application commit
+# — the repository the `institute` executable (and its typed `institute ci`
+# verbs) is built from — and no longer a revision of the retired
+# swift-institute/institute-continuous-integration binary transport.
+# Exactly one 40-hex line; `#` lines are comments.
+1cc5647ad0b478b4f4eef7668d64a8facf25c67e

@@ -1,49 +1,60 @@
-name: 'Institute CI binary'
+name: 'Institute CI planner'
 description: >-
-  Provision the `institute-continuous-integration` executable from its
-  published rolling release, verify its checksum and its recorded source
-  revision, and refuse before any caller trusts it.
+  Build the `institute` executable from swift-institute/institute-application
+  at the pinned revision and hand its path to the caller. The planner now
+  ships as source: the typed `institute ci` verbs replaced the retired
+  `institute-continuous-integration` binary.
 
-# Installed, never compiled.
+# Built from source, at an exact pinned revision.
 #
-# The retired mechanism built this package from source, on the consumer,
-# through the Workspace coordinate: a Swift toolchain install, two
-# checkouts, a SwiftPM build, and an apt provisioning set, all on the
-# critical path of the `plan` job — the first job of every run of every
-# package in the fleet. It was fast only while an actions/cache entry
-# happened to survive. The entry's key is exact by policy, so the first
-# change to the sources or the provisioning set forced the cold path, and
-# the cold path had gone unexecuted long enough to have broken (run
-# 31598019355: `--static-swift-stdlib` links Foundation statically, which
-# needs libcurl symbols the runner did not provide).
+# The previous mechanism installed a prebuilt binary from the rolling
+# `ci-binaries` release on swift-institute/institute-continuous-integration
+# and verified its checksum and recorded source revision. That repository
+# was archived on 2026-08-23 with the release asset missing, which took the
+# whole fleet's Plan step down (swift-institute/.github#632): an archived
+# repository's releases are read-only, so the transport could not be
+# repaired in place. The planner logic itself had already been reabsorbed
+# into the institute package family as the typed `institute ci` verbs, so
+# this action now builds that executable directly from source.
 #
-# The producer is publish-ci-binaries.yml in
-# swift-institute/institute-continuous-integration. Its MANIFEST.txt
-# records the source revision and every branch-resolved dependency HEAD
-# the published bytes were built from.
+# Identity: `.institute-ci-pin` on the default branch of
+# swift-institute/.github names the exact swift-institute/institute-application
+# commit to build — it is no longer an institute-continuous-integration
+# revision. The checkout is fetched over HTTPS at that exact SHA and the
+# resulting HEAD is read back before anything is compiled, so the binary's
+# source identity is proven, not assumed. What the pin does NOT freeze is
+# the dependency graph: institute-application declares branch dependencies
+# and commits no Package.resolved, so SwiftPM resolves dependency heads at
+# build time. The step summary records the pinned revision; the resolved
+# graph is a per-run fact, not a pinned identity.
 #
-# Evidence class: tracked, verified, recorded. The release tag is not a
-# pin and is never treated as one — every run checks SHA256SUMS and
-# compares the manifest's recorded revision against the fleet pin before
-# executing anything, and reports the revision it resolved.
+# Cost: the SwiftPM build directory is cached under an exact key
+# (OS + Swift version + pinned revision, no restore-keys per fleet cache
+# policy). A cache hit rebuilds nothing; a miss compiles the full closure
+# from source. This is deliberately transport-free — publishing a new
+# binary release would be a new release surface, which needs principal
+# approval this cutover does not have.
 
 inputs:
   sources-revision:
     description: >-
-      The exact commit of swift-institute/institute-continuous-integration
-      the published binary must have been built from. Empty — the default —
-      reads the single authority, `.institute-ci-pin` on the default
-      branch of swift-institute/.github, live at run time. A value that
-      is not a full 40-hex SHA refuses here.
+      The exact commit of swift-institute/institute-application to build the
+      planner from. Empty — the default — reads the single authority,
+      `.institute-ci-pin` on the default branch of swift-institute/.github,
+      live at run time. A value that is not a full 40-hex SHA refuses here.
     required: false
     default: ''
+  swift-version:
+    description: 'Swift toolchain used to build the planner.'
+    required: false
+    default: '6.4'
 
 outputs:
   binary:
-    description: 'Absolute path to the verified executable.'
-    value: ${{ steps.install.outputs.binary }}
+    description: 'Absolute path to the built `institute` executable.'
+    value: ${{ steps.build.outputs.binary }}
   sources-revision:
-    description: 'Commit the published binary was built from, as verified.'
+    description: 'Commit the planner was built from, as verified.'
     value: ${{ steps.identity.outputs.sources-revision }}
 
 runs:
@@ -63,51 +74,81 @@ runs:
         # pin advance split the fleet until every internal ref was also
         # advanced (incident 2026-08-18, #626/#628). The branch file is
         # the pin's entire job; ref lag must not shadow it.
+        #
+        # The file may carry `#` comment lines; the pin is the single
+        # 40-hex line that remains after dropping them.
         command -v curl >/dev/null || { apt-get update -qq && apt-get install -qq -y curl; }
         if [ -z "$SOURCES_REVISION" ]; then
           SOURCES_REVISION="$(curl --fail --silent --show-error --location --retry 3 \
             https://raw.githubusercontent.com/swift-institute/.github/main/.institute-ci-pin \
-            | tr -d '[:space:]')" \
+            | grep -v '^[[:space:]]*#' | tr -d '[:space:]')" \
             || { echo "::error::could not read .institute-ci-pin from swift-institute/.github@main"; exit 1; }
         fi
         [[ "$SOURCES_REVISION" =~ ^[0-9a-f]{40}$ ]] \
           || { echo "::error::refusing malformed Institute CI source revision: '$SOURCES_REVISION'"; exit 1; }
         echo "sources-revision=$SOURCES_REVISION" >> "$GITHUB_OUTPUT"
 
-    - name: Install the published Institute CI binary
-      id: install
+    # A plain fetch into RUNNER_TEMP, not actions/checkout: the sources
+    # must live OUTSIDE the subject workspace. `institute ci package
+    # validate` walks the subject root recursively (broken-symlink scan),
+    # and a SwiftPM checkout tree parked inside the workspace would feed
+    # the planner's own dependency fixtures into every repository's
+    # verdict.
+    - name: Fetch planner sources at the pinned revision
+      id: sources
       shell: bash
       env:
-        RELEASE: https://github.com/swift-institute/institute-continuous-integration/releases/download/ci-binaries
         SOURCES_REVISION: ${{ steps.identity.outputs.sources-revision }}
       run: |
         set -euo pipefail
-        command -v curl >/dev/null || { apt-get update -qq && apt-get install -qq -y curl; }
-        work="$(mktemp -d)"
-        for asset in SHA256SUMS institute-continuous-integration MANIFEST.txt; do
-          curl --fail --silent --show-error --location --retry 2 \
-            --output "$work/$asset" "$RELEASE/$asset"
-        done
-        (cd "$work" && sha256sum --check SHA256SUMS)
-
-        # The checksum proves the bytes are the ones published; it says
-        # nothing about which sources they came from. The manifest does,
-        # and disagreeing with the fleet pin is fail-closed: a pin advance
-        # whose publish has not landed must stop here rather than run an
-        # older binary under a newer pin's name.
-        PUBLISHED="$(sed -n 's/^sources-revision=//p' "$work/MANIFEST.txt")"
-        if [ "$PUBLISHED" != "$SOURCES_REVISION" ]; then
-          echo "::error::published Institute CI binary was built from '$PUBLISHED', but the fleet pin is '$SOURCES_REVISION'. Run publish-ci-binaries.yml on institute-continuous-integration at the pinned revision, or correct .institute-ci-pin."
+        DIR="$RUNNER_TEMP/institute-ci-sources"
+        rm -rf "$DIR"
+        git init --quiet "$DIR"
+        git -C "$DIR" remote add origin https://github.com/swift-institute/institute-application.git
+        git -C "$DIR" fetch --quiet --depth 1 origin "$SOURCES_REVISION"
+        git -C "$DIR" checkout --quiet --detach FETCH_HEAD
+        HEAD="$(git -C "$DIR" rev-parse HEAD)"
+        if [ "$HEAD" != "$SOURCES_REVISION" ]; then
+          echo "::error::planner checkout is at '$HEAD', not the pinned '$SOURCES_REVISION'."
           exit 1
         fi
-        install -m 0755 "$work/institute-continuous-integration" "$work/bin-institute-continuous-integration"
-        echo "binary=$work/bin-institute-continuous-integration" >> "$GITHUB_OUTPUT"
+        echo "directory=$DIR" >> "$GITHUB_OUTPUT"
+
+    - name: Install Swift
+      uses: SwiftyLab/setup-swift@38f54a76b70d989321de9dc7c840618c08cf56e9 # v1.14.0
+      with:
+        swift-version: ${{ inputs.swift-version }}
+
+    # Exact key only, per fleet cache policy: OS, Swift version, and the
+    # pinned planner revision. The entry accelerates rebuilds at one pin;
+    # branch-dependency drift underneath it is re-resolved by SwiftPM on
+    # every run, so a hit is a performance fact, never an identity claim.
+    - name: Cache planner build directory
+      id: cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.temp }}/institute-ci-sources/.build
+        key: institute-ci-${{ runner.os }}-swift-${{ inputs.swift-version }}-${{ steps.identity.outputs.sources-revision }}
+
+    - name: Build the planner
+      id: build
+      shell: bash
+      env:
+        DIR: ${{ steps.sources.outputs.directory }}
+        SOURCES_REVISION: ${{ steps.identity.outputs.sources-revision }}
+        CACHE_HIT: ${{ steps.cache.outputs.cache-hit }}
+      run: |
+        set -euo pipefail
+        START="$(date +%s)"
+        swift build --package-path "$DIR" -c release --product institute
+        WALL="$(( $(date +%s) - START ))"
+        BINARY="$DIR/.build/release/institute"
+        [ -x "$BINARY" ] || { echo "::error::planner build produced no executable at $BINARY"; exit 1; }
+        echo "binary=$BINARY" >> "$GITHUB_OUTPUT"
         {
-          echo "### Institute CI binary"
+          echo "### Institute CI planner"
           echo
-          echo "Verified against \`SHA256SUMS\`, built from \`${PUBLISHED}\`."
+          echo "Built \`institute\` from swift-institute/institute-application@\`${SOURCES_REVISION}\`."
           echo
-          echo '```'
-          cat "$work/MANIFEST.txt"
-          echo '```'
+          echo "Build wall clock: ${WALL}s (cache hit: ${CACHE_HIT:-false})."
         } >> "$GITHUB_STEP_SUMMARY"
