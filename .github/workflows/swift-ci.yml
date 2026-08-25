@@ -52,9 +52,9 @@ jobs:
     name: Plan
     if: ${{ !github.event.repository.private }}
     runs-on: ubuntu-latest
-    # Builds the planner from source at the pinned revision (#632); the
-    # cold path compiles the full closure, the exact-key cache makes the
-    # warm path cheap.
+    # Builds the planner from source at the pinned revision (#632). The
+    # ordinary SwiftPM build directory is deliberately uncached because
+    # branch dependencies make its resolved graph a per-run fact.
     timeout-minutes: 45
     # The generated caller grants `actions: read` and `contents: read`, and a
     # called workflow cannot exceed that intersection — asking for anything
@@ -148,7 +148,7 @@ jobs:
           sha: ${{ steps.subject.outputs.sha }}
 
       - id: institute-ci
-        uses: swift-institute/.github/.github/actions/institute-ci@ec6226f6dbbee96fb871e57fa42eb340c9da19cc
+        uses: swift-institute/.github/.github/actions/institute-ci@e1bea5f3754ba84887d582c9936bb554c886ff30
 
       - name: Materialize fleet policy at the workflow revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -535,7 +535,7 @@ jobs:
           repository: ${{ needs.plan.outputs.subject-repository }}
           sha: ${{ needs.plan.outputs.subject-sha }}
       - id: institute-ci
-        uses: swift-institute/.github/.github/actions/institute-ci@ec6226f6dbbee96fb871e57fa42eb340c9da19cc
+        uses: swift-institute/.github/.github/actions/institute-ci@e1bea5f3754ba84887d582c9936bb554c886ff30
       - name: Measure source
         shell: bash
         env:
@@ -621,7 +621,7 @@ jobs:
           repository: swift-institute/.github
           ref: ${{ needs.plan.outputs.workflow-sha }}
       - id: institute-ci
-        uses: swift-institute/.github/.github/actions/institute-ci@ec6226f6dbbee96fb871e57fa42eb340c9da19cc
+        uses: swift-institute/.github/.github/actions/institute-ci@e1bea5f3754ba84887d582c9936bb554c886ff30
       # Runs on always(), so it must reach a verdict when plan itself
       # failed — which is exactly when its outputs are empty.
       - name: Aggregate
