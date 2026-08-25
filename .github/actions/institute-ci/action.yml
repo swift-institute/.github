@@ -22,18 +22,15 @@ description: >-
 # commit to build — it is no longer an institute-continuous-integration
 # revision. The checkout is fetched over HTTPS at that exact SHA and the
 # resulting HEAD is read back before anything is compiled, so the binary's
-# source identity is proven, not assumed. What the pin does NOT freeze is
-# the dependency graph: institute-application declares branch dependencies
-# and commits no Package.resolved, so SwiftPM resolves dependency heads at
-# build time. The step summary records the pinned revision; the resolved
-# graph is a per-run fact, not a pinned identity.
+# source identity is proven, not assumed. The pin does not freeze the
+# dependency graph: institute-application declares branch dependencies and
+# commits no Package.resolved, so SwiftPM resolves dependency heads afresh
+# for each build. Package.resolved and .build remain ephemeral generated
+# state and are never cached or committed.
 #
-# Cost: the SwiftPM build directory is cached under an exact key
-# (OS + Swift version + pinned revision, no restore-keys per fleet cache
-# policy). A cache hit rebuilds nothing; a miss compiles the full closure
-# from source. This is deliberately transport-free — publishing a new
-# binary release would be a new release surface, which needs principal
-# approval this cutover does not have.
+# Cost: every invocation compiles the full closure from source. Publishing a
+# binary would create a new release surface, which needs principal approval
+# this cutover does not have.
 
 inputs:
   sources-revision:
@@ -124,24 +121,12 @@ runs:
       with:
         swift-version: ${{ inputs.swift-version }}
 
-    # Exact key only, per fleet cache policy: OS, Swift version, and the
-    # pinned planner revision. The entry accelerates rebuilds at one pin;
-    # branch-dependency drift underneath it is re-resolved by SwiftPM on
-    # every run, so a hit is a performance fact, never an identity claim.
-    - name: Restore planner build directory
-      id: restore
-      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-      with:
-        path: ${{ runner.temp }}/institute-ci-sources/.build
-        key: institute-ci-${{ runner.os }}-swift-${{ inputs.swift-version }}-${{ steps.identity.outputs.sources-revision }}
-
     - name: Build the planner
       id: build
       shell: bash
       env:
         DIR: ${{ steps.sources.outputs.directory }}
         SOURCES_REVISION: ${{ steps.identity.outputs.sources-revision }}
-        CACHE_HIT: ${{ steps.restore.outputs.cache-hit }}
       run: |
         set -euo pipefail
         START="$(date +%s)"
@@ -201,15 +186,8 @@ runs:
           echo
           echo "Built \`institute\` from swift-institute/institute-application@\`${SOURCES_REVISION}\`."
           echo
-          echo "Build wall clock: ${WALL}s (cache hit: ${CACHE_HIT:-false})."
+          echo "Build wall clock: ${WALL}s."
         } >> "$GITHUB_STEP_SUMMARY"
-
-    - name: Save planner build directory
-      if: steps.restore.outputs.cache-hit != 'true'
-      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-      with:
-        path: ${{ runner.temp }}/institute-ci-sources/.build
-        key: institute-ci-${{ runner.os }}-swift-${{ inputs.swift-version }}-${{ steps.identity.outputs.sources-revision }}
 
     # A successful link is not sufficient transport evidence on Darwin.
     # The xcode-27 image currently runs macOS 26 while Institute requires
