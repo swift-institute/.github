@@ -224,32 +224,34 @@ runs:
 
         RUNTIME_LIBRARY_PATH=""
         if [ "$(uname -s)" = Darwin ]; then
-          [ -n "${TOOLCHAINS:-}" ] \
-            || { echo "::error::Darwin planner transport has no selected Swift toolchain identity."; exit 1; }
-          SWIFT_EXECUTABLE="$(xcrun --toolchain "$TOOLCHAINS" --find swift)"
-          SWIFT_USR="$(cd "$(dirname "$SWIFT_EXECUTABLE")/.." && pwd -P)"
-          DEVELOPER="$(xcode-select -p)"
-          candidates=(
-            "$SWIFT_USR/lib/swift-5.0/macosx"
-            "$SWIFT_USR/lib/swift/macosx"
-            "$DEVELOPER/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/macosx"
-          )
           diagnostics="$RUNNER_TEMP/institute-ci-smoke.stderr"
           : > "$diagnostics"
-          for candidate in "${candidates[@]}"; do
-            [ -f "$candidate/libswiftCore.dylib" ] || continue
-            if DYLD_LIBRARY_PATH="$candidate" "$BINARY" --help \
-              >/dev/null 2>"$diagnostics"
-            then
-              RUNTIME_LIBRARY_PATH="$candidate"
-              break
+          if ! "$BINARY" --help >/dev/null 2>"$diagnostics"; then
+            [ -n "${TOOLCHAINS:-}" ] \
+              || { echo "::error::Darwin planner transport has no selected Swift toolchain identity."; exit 1; }
+            SWIFT_EXECUTABLE="$(xcrun --toolchain "$TOOLCHAINS" --find swift)"
+            SWIFT_USR="$(cd "$(dirname "$SWIFT_EXECUTABLE")/.." && pwd -P)"
+            DEVELOPER="$(xcode-select -p)"
+            candidates=(
+              "$SWIFT_USR/lib/swift-5.0/macosx"
+              "$SWIFT_USR/lib/swift/macosx"
+              "$DEVELOPER/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/macosx"
+            )
+            for candidate in "${candidates[@]}"; do
+              [ -f "$candidate/libswiftCore.dylib" ] || continue
+              if DYLD_LIBRARY_PATH="$candidate" "$BINARY" --help \
+                >/dev/null 2>"$diagnostics"
+              then
+                RUNTIME_LIBRARY_PATH="$candidate"
+                break
+              fi
+            done
+            if [ -z "$RUNTIME_LIBRARY_PATH" ]; then
+              echo "::error::neither the native runtime nor a selected Swift/Xcode deployment runtime could launch $BINARY on $(sw_vers -productVersion)."
+              printf 'Tried runtime: %s\n' "${candidates[@]}" >&2
+              [ ! -s "$diagnostics" ] || cat "$diagnostics" >&2
+              exit 1
             fi
-          done
-          if [ -z "$RUNTIME_LIBRARY_PATH" ]; then
-            echo "::error::no selected Swift/Xcode deployment runtime could launch $BINARY on $(sw_vers -productVersion)."
-            printf 'Tried runtime: %s\n' "${candidates[@]}" >&2
-            [ ! -s "$diagnostics" ] || cat "$diagnostics" >&2
-            exit 1
           fi
         else
           "$BINARY" --help >/dev/null
