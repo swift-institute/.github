@@ -128,13 +128,12 @@ runs:
     # pinned planner revision. The entry accelerates rebuilds at one pin;
     # branch-dependency drift underneath it is re-resolved by SwiftPM on
     # every run, so a hit is a performance fact, never an identity claim.
-    - name: Cache planner build directory
-      id: cache
-      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+    - name: Restore planner build directory
+      id: restore
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ${{ runner.temp }}/institute-ci-sources/.build
         key: institute-ci-${{ runner.os }}-swift-${{ inputs.swift-version }}-${{ steps.identity.outputs.sources-revision }}
-        save-always: true
 
     - name: Build the planner
       id: build
@@ -142,7 +141,7 @@ runs:
       env:
         DIR: ${{ steps.sources.outputs.directory }}
         SOURCES_REVISION: ${{ steps.identity.outputs.sources-revision }}
-        CACHE_HIT: ${{ steps.cache.outputs.cache-hit }}
+        CACHE_HIT: ${{ steps.restore.outputs.cache-hit }}
       run: |
         set -euo pipefail
         START="$(date +%s)"
@@ -204,6 +203,13 @@ runs:
           echo
           echo "Build wall clock: ${WALL}s (cache hit: ${CACHE_HIT:-false})."
         } >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Save planner build directory
+      if: steps.restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.temp }}/institute-ci-sources/.build
+        key: institute-ci-${{ runner.os }}-swift-${{ inputs.swift-version }}-${{ steps.identity.outputs.sources-revision }}
 
     # A successful link is not sufficient transport evidence on Darwin.
     # The xcode-27 image currently runs macOS 26 while Institute requires
