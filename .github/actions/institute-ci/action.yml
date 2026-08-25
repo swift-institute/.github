@@ -51,8 +51,13 @@ inputs:
 
 outputs:
   binary:
-    description: 'Absolute path to the built `institute` executable.'
-    value: ${{ steps.build.outputs.binary }}
+    description: 'Absolute path to the smoke-launched `institute` executable.'
+    value: ${{ steps.transport.outputs.binary }}
+  runtime-library-path:
+    description: >-
+      Darwin deployment-runtime directory required to launch the executable;
+      empty on platforms whose native runtime launches it directly.
+    value: ${{ steps.transport.outputs.runtime-library-path }}
   sources-revision:
     description: 'Commit the planner was built from, as verified.'
     value: ${{ steps.identity.outputs.sources-revision }}
@@ -129,6 +134,7 @@ runs:
       with:
         path: ${{ runner.temp }}/institute-ci-sources/.build
         key: institute-ci-${{ runner.os }}-swift-${{ inputs.swift-version }}-${{ steps.identity.outputs.sources-revision }}
+        save-always: true
 
     - name: Build the planner
       id: build
@@ -191,9 +197,6 @@ runs:
 
         swift build --package-path "$DIR" -c release --product institute
         WALL="$(( $(date +%s) - START ))"
-        BINARY="$DIR/.build/release/institute"
-        [ -x "$BINARY" ] || { echo "::error::planner build produced no executable at $BINARY"; exit 1; }
-        echo "binary=$BINARY" >> "$GITHUB_OUTPUT"
         {
           echo "### Institute CI planner"
           echo
@@ -201,3 +204,56 @@ runs:
           echo
           echo "Build wall clock: ${WALL}s (cache hit: ${CACHE_HIT:-false})."
         } >> "$GITHUB_STEP_SUMMARY"
+
+    # A successful link is not sufficient transport evidence on Darwin.
+    # The xcode-27 image currently runs macOS 26 while Institute requires
+    # macOS 27; directly launching a package-built executable therefore
+    # resolves against an older system Swift runtime and aborts before main.
+    # Locate only deployment runtimes owned by the selected Swift/Xcode
+    # toolchains, smoke-launch the exact bytes, and expose outputs afterwards.
+    - name: Verify planner transport
+      id: transport
+      shell: bash
+      env:
+        DIR: ${{ steps.sources.outputs.directory }}
+      run: |
+        set -euo pipefail
+        BINARY="$DIR/.build/release/institute"
+        [ -x "$BINARY" ] \
+          || { echo "::error::planner build produced no executable at $BINARY"; exit 1; }
+
+        RUNTIME_LIBRARY_PATH=""
+        if [ "$(uname -s)" = Darwin ]; then
+          [ -n "${TOOLCHAINS:-}" ] \
+            || { echo "::error::Darwin planner transport has no selected Swift toolchain identity."; exit 1; }
+          SWIFT_EXECUTABLE="$(xcrun --toolchain "$TOOLCHAINS" --find swift)"
+          SWIFT_USR="$(cd "$(dirname "$SWIFT_EXECUTABLE")/.." && pwd -P)"
+          DEVELOPER="$(xcode-select -p)"
+          candidates=(
+            "$SWIFT_USR/lib/swift-5.0/macosx"
+            "$SWIFT_USR/lib/swift/macosx"
+            "$DEVELOPER/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/macosx"
+          )
+          diagnostics="$RUNNER_TEMP/institute-ci-smoke.stderr"
+          : > "$diagnostics"
+          for candidate in "${candidates[@]}"; do
+            [ -f "$candidate/libswiftCore.dylib" ] || continue
+            if DYLD_LIBRARY_PATH="$candidate" "$BINARY" --help \
+              >/dev/null 2>"$diagnostics"
+            then
+              RUNTIME_LIBRARY_PATH="$candidate"
+              break
+            fi
+          done
+          if [ -z "$RUNTIME_LIBRARY_PATH" ]; then
+            echo "::error::no selected Swift/Xcode deployment runtime could launch $BINARY on $(sw_vers -productVersion)."
+            printf 'Tried runtime: %s\n' "${candidates[@]}" >&2
+            [ ! -s "$diagnostics" ] || cat "$diagnostics" >&2
+            exit 1
+          fi
+        else
+          "$BINARY" --help >/dev/null
+        fi
+
+        echo "binary=$BINARY" >> "$GITHUB_OUTPUT"
+        echo "runtime-library-path=$RUNTIME_LIBRARY_PATH" >> "$GITHUB_OUTPUT"
