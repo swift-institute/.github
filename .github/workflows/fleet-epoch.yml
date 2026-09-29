@@ -68,7 +68,7 @@ jobs:
               layer: $g[0].layer,
               index: (. / $size | floor),
               repositories: ($g[. : . + $size] | map(.repository) | join(" "))
-            })) | flatten')"
+            })) | flatten' repositories.jsonl)"
           echo "shards=$shards" >> "$GITHUB_OUTPUT"
           echo "$(wc -l < repositories.jsonl) repositories in $(jq length <<< "$shards") shards" >> "$GITHUB_STEP_SUMMARY"
 
