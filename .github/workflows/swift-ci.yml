@@ -25,19 +25,7 @@ env:
   # fails closed. Malformed fields fail closed everywhere.
   SWIFT_MAIN_NIGHTLY_IMAGE: "swiftlang/swift@sha256:f577f95edfb85cf3bdc45eb0badaab09239de5c86c69b3b6d594cc62916c0a7d"
   SWIFT_MAIN_NIGHTLY_UPSTREAM_ISSUE: "https://github.com/swiftlang/swift/issues/90275"
-  SWIFT_MAIN_NIGHTLY_RECHECK: "2026-09-14"
-
-  # The sole release-floor exception. `swift:6.4` does not exist on Docker
-  # Hub, so the containerised Linux legs would die at container init before
-  # checkout. Until upstream publishes it they run the 6.4.x nightly by
-  # exact digest — noble, not jammy, to preserve the verified release-floor
-  # container identity.
-  #
-  # Retiring this is a deletion, not a rewrite: remove these three values
-  # and the planner resolves `swift:6.4` with no other edit anywhere.
-  SWIFT_RELEASE_FLOOR_IMAGE: "swiftlang/swift@sha256:8d614165059587ce9dcf6727a76aeff4cbf1cde41fde9a9281a43803be736224"
-  SWIFT_RELEASE_FLOOR_UPSTREAM_RELEASE: "https://github.com/swiftlang/swift/releases/tag/swift-6.4-RELEASE"
-  SWIFT_RELEASE_FLOOR_RECHECK: "2026-09-09"
+  SWIFT_MAIN_NIGHTLY_RECHECK: "2026-10-13"
 
   # The fleet's only Xcode pin. A caller's workflow-level `env:` does not
   # cross into a called reusable, so a layer-side pin would be inert.
@@ -191,9 +179,6 @@ jobs:
             --nightly-main-image "$SWIFT_MAIN_NIGHTLY_IMAGE" \
             --nightly-main-upstream-issue "$SWIFT_MAIN_NIGHTLY_UPSTREAM_ISSUE" \
             --nightly-main-recheck "$SWIFT_MAIN_NIGHTLY_RECHECK" \
-            --release-floor-image "$SWIFT_RELEASE_FLOOR_IMAGE" \
-            --release-floor-upstream-release "$SWIFT_RELEASE_FLOOR_UPSTREAM_RELEASE" \
-            --release-floor-recheck "$SWIFT_RELEASE_FLOOR_RECHECK" \
             --today "$(date -u +%F)")"
           for key in tier legs gating linux-image lint-bundle embedded-target descheduled package-content-changed; do
             echo "$key=$(jq -r --arg k "$key" '.[$k]' <<< "$PLAN")" >> "$GITHUB_OUTPUT"
