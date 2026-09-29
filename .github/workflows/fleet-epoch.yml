@@ -14,6 +14,10 @@ on:
         required: false
         type: string
         default: '0'
+      repositories:
+        description: Space-separated owner/name repositories to certify instead of the organizations.
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -44,6 +48,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           ORGANIZATIONS: ${{ inputs.organizations }}
           LIMIT: ${{ inputs.limit || '0' }}
+          REPOSITORIES: ${{ inputs.repositories }}
         run: |
           set -euo pipefail
           layers='[
@@ -53,6 +58,12 @@ jobs:
             {"layer":"L4","organizations":["swift-compositions"]}
           ]'
           : > repositories.jsonl
+          if [ -n "$REPOSITORIES" ]; then
+            tr ' ' '\n' <<< "$REPOSITORIES" | grep . > selected.txt
+            if grep -qvE '^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$' selected.txt; then echo "::error::repositories must be owner/name"; exit 1; fi
+            jq -Rc '{layer: "selected", repository: .}' selected.txt >> repositories.jsonl
+            layers='[]'
+          fi
           for row in $(jq -c '.[] | .layer as $l | .organizations[] | {layer: $l, organization: .}' <<< "$layers"); do
             layer="$(jq -r .layer <<< "$row")"
             organization="$(jq -r .organization <<< "$row")"
@@ -156,7 +167,7 @@ jobs:
         id: assemble
         shell: bash
         env:
-          PARTIAL: ${{ inputs.organizations != '' || (inputs.limit != '' && inputs.limit != '0') }}
+          PARTIAL: ${{ inputs.organizations != '' || inputs.repositories != '' || (inputs.limit != '' && inputs.limit != '0') }}
         run: |
           set -euo pipefail
           date="$(date -u +%F)"
