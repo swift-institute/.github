@@ -57,9 +57,10 @@ jobs:
             layer="$(jq -r .layer <<< "$row")"
             organization="$(jq -r .organization <<< "$row")"
             if [ -n "$ORGANIZATIONS" ] && ! grep -qw -- "$organization" <<< "$ORGANIZATIONS"; then continue; fi
-            gh repo list "$organization" --no-archived --visibility public --source --limit 1000 --json nameWithOwner \
-              | jq -c --arg layer "$layer" --argjson limit "$LIMIT" \
-                'sort_by(.nameWithOwner) | (if $limit > 0 then .[:$limit] else . end) | .[] | {layer: $layer, repository: .nameWithOwner}' \
+            gh api --paginate "orgs/$organization/repos?type=public&per_page=100" \
+              --jq '.[] | select((.archived or .fork) | not) | .full_name' \
+              | jq -Rsc --arg layer "$layer" --argjson limit "$LIMIT" \
+                'split("\n") | map(select(length > 0)) | sort | (if $limit > 0 then .[:$limit] else . end) | .[] | {layer: $layer, repository: .}' \
               >> repositories.jsonl
           done
           shards="$(jq -sc --argjson size "$SHARD_SIZE" '
