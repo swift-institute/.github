@@ -161,7 +161,7 @@ jobs:
           set -euo pipefail
           date="$(date -u +%F)"
           parked="$(jq -Rsc 'split("\n") | map(select(length > 0))' .github/fleet-epoch/parked.txt)"
-          cat artifacts/results/*.jsonl 2>/dev/null | jq -sc \
+          { cat artifacts/results/*.jsonl 2>/dev/null || true; } | jq -sc \
             --arg date "$date" --arg run "${{ github.run_id }}" --argjson parked "$parked" --argjson partial "$PARTIAL" '
             map(. + {parked: (.repository as $r | $parked | index($r) != null)}) as $results
             | ($results | map(select(.parked | not) | select(
