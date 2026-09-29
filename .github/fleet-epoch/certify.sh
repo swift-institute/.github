@@ -59,7 +59,7 @@ for repository in "$@"; do
     cause="$(grep -m1 -oE 'Failed to clone repository https://github.com/[^ :]*' "$log" | sed 's#.*github.com/##; s#\.git$##')"
   fi
   if [ -z "$cause" ] && { [ "$resolve" = fail ] || [ "$build" = fail ] || [ "$test" = fail ]; }; then
-    cause="$(grep -m1 -E 'error:|recorded an issue' "$log" | sed -E 's#/[^ :]*/##g' | cut -c1-200)"
+    cause="$({ grep -E '^error:|: error:|recorded an issue' "$log"; grep -E 'error:' "$log"; } | head -1 | sed -E 's#/[^ :]*/##g' | cut -c1-200)"
   fi
   cause="$(printf '%s' "$cause" | tr -d '\000-\037' | sed 's/\\/\\\\/g; s/"/\\"/g')"
   printf '{"repository":"%s","platform":"%s","sha":"%s","resolve":"%s","build":"%s","test":"%s","cause":"%s"}\n' \
