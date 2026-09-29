@@ -1,0 +1,197 @@
+name: fleet-epoch
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    inputs:
+      organizations:
+        description: Space-separated organizations to certify; empty means every layer organization.
+        required: false
+        type: string
+      limit:
+        description: Maximum repositories per organization; 0 means all.
+        required: false
+        type: string
+        default: '0'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fleet-epoch
+  cancel-in-progress: false
+
+env:
+  SWIFT_IMAGE: swift:6.4-noble
+  XCODE_VERSION: "27.0"
+  SHARD_SIZE: "12"
+
+jobs:
+  enumerate:
+    name: Enumerate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      shards: ${{ steps.list.outputs.shards }}
+    steps:
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+      - id: list
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ORGANIZATIONS: ${{ inputs.organizations }}
+          LIMIT: ${{ inputs.limit || '0' }}
+        run: |
+          set -euo pipefail
+          layers='[
+            {"layer":"L1","organizations":["swift-atoms"]},
+            {"layer":"L2","organizations":["swift-molecules"]},
+            {"layer":"L3","organizations":["swift-standards","swift-ietf","swift-iso","swift-ieee","swift-iec","swift-w3c","swift-whatwg","swift-ecma","swift-incits","swift-arm-ltd","swift-intel","swift-riscv","swift-linux-foundation","swift-microsoft"]},
+            {"layer":"L4","organizations":["swift-compositions"]}
+          ]'
+          : > repositories.jsonl
+          for row in $(jq -c '.[] | .layer as $l | .organizations[] | {layer: $l, organization: .}' <<< "$layers"); do
+            layer="$(jq -r .layer <<< "$row")"
+            organization="$(jq -r .organization <<< "$row")"
+            if [ -n "$ORGANIZATIONS" ] && ! grep -qw -- "$organization" <<< "$ORGANIZATIONS"; then continue; fi
+            gh repo list "$organization" --no-archived --visibility public --source --limit 1000 --json nameWithOwner \
+              | jq -c --arg layer "$layer" --argjson limit "$LIMIT" \
+                'sort_by(.nameWithOwner) | (if $limit > 0 then .[:$limit] else . end) | .[] | {layer: $layer, repository: .nameWithOwner}' \
+              >> repositories.jsonl
+          done
+          shards="$(jq -sc --argjson size "$SHARD_SIZE" '
+            group_by(.layer) | map(. as $g | [range(0; $g | length; $size)] | map({
+              layer: $g[0].layer,
+              index: (. / $size | floor),
+              repositories: ($g[. : . + $size] | map(.repository) | join(" "))
+            })) | flatten')"
+          echo "shards=$shards" >> "$GITHUB_OUTPUT"
+          echo "$(wc -l < repositories.jsonl) repositories in $(jq length <<< "$shards") shards" >> "$GITHUB_STEP_SUMMARY"
+
+  linux:
+    name: Certify · Linux
+    needs: enumerate
+    if: ${{ needs.enumerate.outputs.shards != '[]' }}
+    runs-on: ubuntu-latest
+    container: swift:6.4-noble
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix:
+        shard: ${{ fromJson(needs.enumerate.outputs.shards) }}
+    steps:
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Certify
+        shell: bash
+        run: bash .github/fleet-epoch/certify.sh linux "results/linux-${{ matrix.shard.layer }}-${{ matrix.shard.index }}.jsonl" ${{ matrix.shard.repositories }}
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ always() }}
+        with:
+          name: fleet-epoch-linux-${{ matrix.shard.layer }}-${{ matrix.shard.index }}
+          path: |
+            results
+            logs
+          retention-days: 14
+
+  macos:
+    name: Certify · macOS
+    needs: enumerate
+    if: ${{ needs.enumerate.outputs.shards != '[]' }}
+    runs-on: xcode-27
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      max-parallel: 10
+      matrix:
+        shard: ${{ fromJson(needs.enumerate.outputs.shards) }}
+    steps:
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
+      - name: Certify
+        shell: bash
+        run: bash .github/fleet-epoch/certify.sh macos "results/macos-${{ matrix.shard.layer }}-${{ matrix.shard.index }}.jsonl" ${{ matrix.shard.repositories }}
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ always() }}
+        with:
+          name: fleet-epoch-macos-${{ matrix.shard.layer }}-${{ matrix.shard.index }}
+          path: |
+            results
+            logs
+          retention-days: 14
+
+  publish:
+    name: Publish certificate
+    needs: [enumerate, linux, macos]
+    if: ${{ always() && needs.enumerate.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: fleet-epoch-*
+          path: artifacts
+          merge-multiple: true
+      - name: Assemble
+        id: assemble
+        shell: bash
+        env:
+          PARTIAL: ${{ inputs.organizations != '' || (inputs.limit != '' && inputs.limit != '0') }}
+        run: |
+          set -euo pipefail
+          date="$(date -u +%F)"
+          parked="$(jq -Rsc 'split("\n") | map(select(length > 0))' .github/fleet-epoch/parked.txt)"
+          cat artifacts/results/*.jsonl 2>/dev/null | jq -sc \
+            --arg date "$date" --arg run "${{ github.run_id }}" --argjson parked "$parked" --argjson partial "$PARTIAL" '
+            map(. + {parked: (.repository as $r | $parked | index($r) != null)}) as $results
+            | ($results | map(select(.parked | not) | select(
+                .resolve == "not-a-package" | not) | select(
+                .resolve != "pass" or .build != "pass" or (.test != "pass" and .test != "skip")))) as $failing
+            | {date: $date, run: $run, partial: $partial,
+               green: (($results | length) > 0 and ($failing | length) == 0),
+               counts: {results: ($results | length), failing: ($failing | length),
+                        parked: ($results | map(select(.parked)) | length)},
+               failing: ($failing | map("\(.repository) \(.platform)")),
+               results: $results}' > certificate.json
+          echo "date=$date" >> "$GITHUB_OUTPUT"
+          jq -r '"Green: \(.green) · results \(.counts.results) · failing \(.counts.failing) · parked \(.counts.parked) · partial \(.partial)"' certificate.json >> "$GITHUB_STEP_SUMMARY"
+      - name: Commit to certificates
+        shell: bash
+        run: |
+          set -euo pipefail
+          date="${{ steps.assemble.outputs.date }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git fetch --depth 1 origin certificates 2>/dev/null; then
+            git switch -c certificates FETCH_HEAD
+          else
+            git switch --orphan certificates
+          fi
+          name="$date"
+          if jq -e .partial certificate.json >/dev/null; then name="$date-partial-${{ github.run_id }}"; fi
+          mkdir -p fleet-epoch
+          mv certificate.json "fleet-epoch/$name.json"
+          jq -c 'del(.results)' "fleet-epoch/$name.json" > fleet-epoch/latest-summary.json
+          if ! jq -e .partial "fleet-epoch/$name.json" >/dev/null; then cp "fleet-epoch/$name.json" fleet-epoch/latest.json; fi
+          git add fleet-epoch
+          git commit -qm "Fleet epoch $name"
+          git push -q origin certificates
