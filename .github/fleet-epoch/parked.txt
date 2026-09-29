@@ -1,8 +1,4 @@
 swift-compositions/swift-questionnaires
-swift-molecules/swift-interface
-swift-molecules/swift-client
-swift-compositions/swift-http-router
-swift-compositions/swift-http-client
 swift-compositions/swift-interface-composable-architecture
 swift-compositions/swift-authentication
 swift-compositions/swift-favicon
