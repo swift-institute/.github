@@ -54,7 +54,15 @@ for repository in "$@"; do
     resolve=clone-failed
   fi
   rm -rf "$directory"
-  printf '{"repository":"%s","platform":"%s","sha":"%s","resolve":"%s","build":"%s","test":"%s"}\n' \
-    "$repository" "$platform" "$sha" "$resolve" "$build" "$test" >>"$output"
+  cause=""
+  if [ "$resolve" = fail ]; then
+    cause="$(grep -m1 -oE 'Failed to clone repository https://github.com/[^ :]*' "$log" | sed 's#.*github.com/##; s#\.git$##')"
+  fi
+  if [ -z "$cause" ] && { [ "$resolve" = fail ] || [ "$build" = fail ] || [ "$test" = fail ]; }; then
+    cause="$(grep -m1 -E 'error:|recorded an issue' "$log" | sed -E 's#/[^ :]*/##g' | cut -c1-200)"
+  fi
+  cause="$(printf '%s' "$cause" | tr -d '\000-\037' | sed 's/\\/\\\\/g; s/"/\\"/g')"
+  printf '{"repository":"%s","platform":"%s","sha":"%s","resolve":"%s","build":"%s","test":"%s","cause":"%s"}\n' \
+    "$repository" "$platform" "$sha" "$resolve" "$build" "$test" "$cause" >>"$output"
   echo "$repository $platform resolve=$resolve build=$build test=$test"
 done

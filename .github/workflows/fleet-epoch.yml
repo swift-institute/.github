@@ -172,6 +172,7 @@ jobs:
                counts: {results: ($results | length), failing: ($failing | length),
                         parked: ($results | map(select(.parked)) | length)},
                failing: ($failing | map("\(.repository) \(.platform)")),
+               causes: ($failing | group_by(.cause // "") | map({cause: (.[0].cause // ""), count: length}) | sort_by(-.count)),
                results: $results}' > certificate.json
           echo "date=$date" >> "$GITHUB_OUTPUT"
           jq -r '"Green: \(.green) · results \(.counts.results) · failing \(.counts.failing) · parked \(.counts.parked) · partial \(.partial)"' certificate.json >> "$GITHUB_STEP_SUMMARY"
