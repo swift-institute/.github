@@ -28,7 +28,7 @@ mkdir -p "$(dirname "$output")" "$logs"
 : >"$output"
 
 for repository in "$@"; do
-  directory="$work/${repository//\//__}"
+  directory="$work/$repository"
   log="$logs/${platform}__${repository//\//__}.log"
   : >"$log"
   sha=""
