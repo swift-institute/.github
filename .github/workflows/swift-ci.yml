@@ -215,7 +215,7 @@ jobs:
         with:
           repository: ${{ needs.plan.outputs.subject-repository }}
           sha: ${{ needs.plan.outputs.subject-sha }}
-      - uses: swift-institute/.github/.github/actions/install-system-deps@ffe641da803a23bdfb4e3bb889edff9c43c41198
+      - uses: swift-institute/.github/.github/actions/install-system-deps@607b7e2183f0f60218b399b9297bf56d1bb0cac7
       - name: Build or test
         env:
           CI_TIER: ${{ needs.plan.outputs.tier }}
@@ -253,7 +253,7 @@ jobs:
         with:
           repository: ${{ needs.plan.outputs.subject-repository }}
           sha: ${{ needs.plan.outputs.subject-sha }}
-      - uses: swift-institute/.github/.github/actions/install-system-deps@ffe641da803a23bdfb4e3bb889edff9c43c41198
+      - uses: swift-institute/.github/.github/actions/install-system-deps@607b7e2183f0f60218b399b9297bf56d1bb0cac7
       - name: Build
         run: |
           swift --version
@@ -276,7 +276,7 @@ jobs:
         with:
           repository: ${{ needs.plan.outputs.subject-repository }}
           sha: ${{ needs.plan.outputs.subject-sha }}
-      - uses: swift-institute/.github/.github/actions/install-system-deps@ffe641da803a23bdfb4e3bb889edff9c43c41198
+      - uses: swift-institute/.github/.github/actions/install-system-deps@607b7e2183f0f60218b399b9297bf56d1bb0cac7
       - name: Build
         run: |
           swift --version
