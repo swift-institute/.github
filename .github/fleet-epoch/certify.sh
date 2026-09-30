@@ -35,7 +35,8 @@ for repository in "$@"; do
   resolve=skip
   build=skip
   test=skip
-  if git clone --quiet --depth 1 "https://github.com/$repository.git" "$directory" >>"$log" 2>&1; then
+  if git clone --quiet --depth 1 "https://github.com/$repository.git" "$directory" >>"$log" 2>&1 \
+    || { sleep 30; git clone --quiet --depth 1 "https://github.com/$repository.git" "$directory" >>"$log" 2>&1; }; then
     sha="$(git -C "$directory" rev-parse HEAD)"
     if [ -f "$directory/Package.swift" ]; then
       scratch="$work/build"
@@ -55,11 +56,14 @@ for repository in "$@"; do
   fi
   rm -rf "$directory"
   cause=""
+  if [ "$resolve" = clone-failed ]; then
+    cause="$(grep -m1 'fatal:' "$log")"
+  fi
   if [ "$resolve" = fail ]; then
     cause="$(grep -m1 -oE 'Failed to clone repository https://github.com/[^ :]*' "$log" | sed 's#.*github.com/##; s#\.git$##')"
   fi
   if [ -z "$cause" ] && { [ "$resolve" = fail ] || [ "$build" = fail ] || [ "$test" = fail ]; }; then
-    cause="$({ grep -E '^error:|: error:|recorded an issue' "$log"; grep -E 'error:' "$log"; } | head -1 | sed -E 's#/[^ :]*/##g' | cut -c1-200)"
+    cause="$({ grep -E '[^ ]: error:|recorded an issue' "$log"; grep -E '^error:' "$log"; grep -E 'error:' "$log"; } | head -1 | sed -E 's#/[^ :]*/##g' | cut -c1-200)"
   fi
   cause="$(printf '%s' "$cause" | tr -d '\000-\037' | sed 's/\\/\\\\/g; s/"/\\"/g')"
   printf '{"repository":"%s","platform":"%s","sha":"%s","resolve":"%s","build":"%s","test":"%s","cause":"%s"}\n' \
