@@ -174,7 +174,8 @@ jobs:
           date="$(date -u +%F)"
           parked="$(jq -Rsc 'split("\n") | map(select(length > 0))' .github/fleet-epoch/parked.txt)"
           { cat artifacts/results/*.jsonl 2>/dev/null || true; } | jq -sc \
-            --arg date "$date" --arg run "${{ github.run_id }}" --argjson parked "$parked" --argjson partial "$PARTIAL" --argjson shards "$SHARDS" '
+            --arg date "$date" --arg run "${{ github.run_id }}" --argjson parked "$parked" --argjson partial "$PARTIAL" --argjson shards "$SHARDS" \
+            --arg image "$SWIFT_IMAGE" --arg xcode "$XCODE_VERSION" '
             map(. + {parked: (.repository as $r | $parked | index($r) != null)}) as $results
             | ($results | map(select(.parked | not) | select(
                 .resolve == "not-a-package" | not) | select(
@@ -182,6 +183,9 @@ jobs:
             | ([$shards[] | .repositories | split(" ")[] | select(length > 0) | "\(.) linux", "\(.) macos"]
                 - ($results | map("\(.repository) \(.platform)"))) as $missing
             | {date: $date, run: $run, partial: $partial,
+               provenance: {linux: {image: $image, provisioning: "apt -dev packages derived from the .linkedLibrary declarations in each graph (.github/actions/install-system-deps/install.sh); listed per row in provisioned; a bare stock image is not certified"},
+                            macos: {xcode: $xcode, provisioning: "none"},
+                            provisioned: ($results | map(select(.provisioned // "" | length > 0) | .provisioned | split(" ")[]) | unique)},
                green: (($results | length) > 0 and ($failing | length) == 0 and ($missing | length) == 0),
                counts: {results: ($results | length), failing: ($failing | length),
                         parked: ($results | map(select(.parked)) | length), missing: ($missing | length)},

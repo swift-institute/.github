@@ -30,6 +30,7 @@ verdict() {
 }
 
 export GIT_TERMINAL_PROMPT=0
+here="$(cd "$(dirname "$0")" && pwd)"
 work="$(mktemp -d)"
 logs="$PWD/logs"
 mkdir -p "$(dirname "$output")" "$logs"
@@ -43,6 +44,7 @@ for repository in "$@"; do
   resolve=skip
   build=skip
   test=skip
+  provisioned=""
   if git clone --quiet --depth 1 "https://github.com/$repository.git" "$directory" >>"$log" 2>&1 \
     || { sleep 30; git clone --quiet --depth 1 "https://github.com/$repository.git" "$directory" >>"$log" 2>&1; }; then
     sha="$(git -C "$directory" rev-parse HEAD)"
@@ -50,6 +52,9 @@ for repository in "$@"; do
       scratch="$work/build"
       resolve="$(cd "$directory" && verdict bounded 900 swift package resolve --scratch-path "$scratch")"
       if [ "$resolve" = pass ]; then
+        provisioned="$(shopt -s nullglob; bash "$here/../actions/install-system-deps/install.sh" \
+          "$directory"/Package.swift "$directory"/Package@swift-*.swift \
+          "$scratch"/checkouts/*/Package.swift "$scratch"/checkouts/*/Package@swift-*.swift 2>>"$log" || true)"
         build="$(cd "$directory" && verdict bounded 2400 swift build --scratch-path "$scratch")"
         if [ "$build" = pass ] && grep -q 'testTarget' "$directory/Package.swift"; then
           test="$(cd "$directory" && verdict bounded 900 swift test --scratch-path "$scratch")"
@@ -76,7 +81,7 @@ for repository in "$@"; do
     rm -f "$log.plain"
   fi
   cause="$(printf '%s' "$cause" | tr -d '\000-\037' | sed 's/\\/\\\\/g; s/"/\\"/g')"
-  printf '{"repository":"%s","platform":"%s","sha":"%s","resolve":"%s","build":"%s","test":"%s","cause":"%s"}\n' \
-    "$repository" "$platform" "$sha" "$resolve" "$build" "$test" "$cause" >>"$output"
+  printf '{"repository":"%s","platform":"%s","sha":"%s","resolve":"%s","build":"%s","test":"%s","cause":"%s","provisioned":"%s"}\n' \
+    "$repository" "$platform" "$sha" "$resolve" "$build" "$test" "$cause" "$provisioned" >>"$output"
   echo "$repository $platform resolve=$resolve build=$build test=$test"
 done
