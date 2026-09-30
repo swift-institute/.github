@@ -9,11 +9,19 @@ bounded() {
   local seconds="$1"
   shift
   if command -v timeout >/dev/null; then
-    timeout "$seconds" "$@"
+    timeout -k 60 "$seconds" "$@"
   elif command -v gtimeout >/dev/null; then
-    gtimeout "$seconds" "$@"
+    gtimeout -k 60 "$seconds" "$@"
   else
-    perl -e 'alarm shift; exec @ARGV' "$seconds" "$@"
+    perl -e '
+      my $seconds = shift;
+      my $child = fork // die "fork: $!";
+      if ($child == 0) { setpgrp(0, 0); exec @ARGV or exit 127; }
+      local $SIG{ALRM} = sub { kill "TERM", -$child; sleep 60; kill "KILL", -$child; waitpid($child, 0); exit 124; };
+      alarm $seconds;
+      waitpid($child, 0);
+      exit($? & 127 ? 128 + ($? & 127) : $? >> 8);
+    ' "$seconds" "$@"
   fi
 }
 
