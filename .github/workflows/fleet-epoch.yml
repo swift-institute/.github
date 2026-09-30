@@ -168,25 +168,29 @@ jobs:
         shell: bash
         env:
           PARTIAL: ${{ inputs.organizations != '' || inputs.repositories != '' || (inputs.limit != '' && inputs.limit != '0') }}
+          SHARDS: ${{ needs.enumerate.outputs.shards }}
         run: |
           set -euo pipefail
           date="$(date -u +%F)"
           parked="$(jq -Rsc 'split("\n") | map(select(length > 0))' .github/fleet-epoch/parked.txt)"
           { cat artifacts/results/*.jsonl 2>/dev/null || true; } | jq -sc \
-            --arg date "$date" --arg run "${{ github.run_id }}" --argjson parked "$parked" --argjson partial "$PARTIAL" '
+            --arg date "$date" --arg run "${{ github.run_id }}" --argjson parked "$parked" --argjson partial "$PARTIAL" --argjson shards "$SHARDS" '
             map(. + {parked: (.repository as $r | $parked | index($r) != null)}) as $results
             | ($results | map(select(.parked | not) | select(
                 .resolve == "not-a-package" | not) | select(
                 .resolve != "pass" or .build != "pass" or (.test != "pass" and .test != "skip")))) as $failing
+            | ([$shards[] | .repositories | split(" ")[] | select(length > 0) | "\(.) linux", "\(.) macos"]
+                - ($results | map("\(.repository) \(.platform)"))) as $missing
             | {date: $date, run: $run, partial: $partial,
-               green: (($results | length) > 0 and ($failing | length) == 0),
+               green: (($results | length) > 0 and ($failing | length) == 0 and ($missing | length) == 0),
                counts: {results: ($results | length), failing: ($failing | length),
-                        parked: ($results | map(select(.parked)) | length)},
+                        parked: ($results | map(select(.parked)) | length), missing: ($missing | length)},
+               missing: $missing,
                failing: ($failing | map("\(.repository) \(.platform)")),
                causes: ($failing | group_by(.cause // "") | map({cause: (.[0].cause // ""), count: length}) | sort_by(-.count)),
                results: $results}' > certificate.json
           echo "date=$date" >> "$GITHUB_OUTPUT"
-          jq -r '"Green: \(.green) · results \(.counts.results) · failing \(.counts.failing) · parked \(.counts.parked) · partial \(.partial)"' certificate.json >> "$GITHUB_STEP_SUMMARY"
+          jq -r '"Green: \(.green) · results \(.counts.results) · failing \(.counts.failing) · parked \(.counts.parked) · missing \(.counts.missing) · partial \(.partial)"' certificate.json >> "$GITHUB_STEP_SUMMARY"
       - name: Commit to certificates
         shell: bash
         run: |
