@@ -1,0 +1,92 @@
+name: planner-build-smoke
+
+# Builds the `institute` planner from an explicit, already-public
+# swift-institute/institute-application commit through the same
+# institute-ci action revision the fleet Plan job uses, and smoke-launches
+# only the root `--help` (inside the action). It never reads or changes
+# `.institute-ci-pin`, publishes nothing, and needs no secret.
+
+on:
+  workflow_dispatch:
+    inputs:
+      sources-revision:
+        description: 'Exact 40-character lowercase hex swift-institute/institute-application commit to build.'
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: planner-build-smoke-${{ github.ref }}-${{ inputs.sources-revision }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Validate requested revision
+        id: request
+        shell: bash
+        env:
+          REQUESTED: ${{ inputs.sources-revision }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$REQUESTED" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::sources-revision must be exactly 40 lowercase hex characters."
+            exit 1
+          fi
+          echo "revision=$REQUESTED" >> "$GITHUB_OUTPUT"
+
+      - name: Build planner at the requested revision
+        id: institute-ci
+        uses: swift-institute/.github/.github/actions/institute-ci@e1bea5f3754ba84887d582c9936bb554c886ff30
+        with:
+          sources-revision: ${{ steps.request.outputs.revision }}
+
+      - name: Record planner provenance and outcome
+        if: ${{ always() && steps.request.outcome == 'success' }}
+        shell: bash
+        env:
+          REQUESTED: ${{ steps.request.outputs.revision }}
+          VERIFIED: ${{ steps.institute-ci.outputs.sources-revision }}
+          BINARY: ${{ steps.institute-ci.outputs.binary }}
+          BUILD_OUTCOME: ${{ steps.institute-ci.outcome }}
+        run: |
+          set -uo pipefail
+          OUT="$RUNNER_TEMP/planner-build-smoke"
+          mkdir -p "$OUT"
+          REPORT="$OUT/provenance.txt"
+          {
+            printf 'requested=%s\n' "$REQUESTED"
+            printf 'verified=%s\n' "$VERIFIED"
+            printf 'build-step-outcome=%s\n' "$BUILD_OUTCOME"
+            if command -v swift >/dev/null 2>&1; then
+              printf 'swift=%s\n' "$(swift --version 2>&1 | head -n 1)"
+            else
+              printf 'swift=unavailable\n'
+            fi
+            if [ -n "$BINARY" ] && [ -f "$BINARY" ]; then
+              printf 'binary=%s\n' "$BINARY"
+              printf 'binary-sha256=%s\n' "$(sha256sum "$BINARY" | cut -d ' ' -f 1)"
+            else
+              printf 'binary=absent\n'
+            fi
+            RESOLVED="$RUNNER_TEMP/institute-ci-sources/Package.resolved"
+            if [ -f "$RESOLVED" ]; then
+              cp "$RESOLVED" "$OUT/Package.resolved"
+              printf 'package-resolved-sha256=%s\n' "$(sha256sum "$RESOLVED" | cut -d ' ' -f 1)"
+            else
+              printf 'package-resolved=absent\n'
+            fi
+          } > "$REPORT"
+          cat "$REPORT" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload provenance
+        if: ${{ always() && steps.request.outcome == 'success' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: planner-build-smoke-${{ steps.request.outputs.revision }}
+          path: ${{ runner.temp }}/planner-build-smoke/
+          retention-days: 7
+          if-no-files-found: warn
