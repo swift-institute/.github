@@ -46,6 +46,24 @@ inputs:
     required: false
     default: '6.4'
 
+  subject-mode:
+    description: >-
+      Paired-source mode only: `subject` when the workspace is the ci-subject
+      checkout, `aggregate` when it is the .github policy checkout of ci-ok.
+    required: false
+    default: ''
+  subject-repository:
+    description: 'Paired-source mode only: trusted subject repository from the plan.'
+    required: false
+    default: ''
+  subject-sha:
+    description: 'Paired-source mode only: trusted 40-hex subject SHA from the plan.'
+    required: false
+    default: ''
+  plan-result:
+    description: 'Paired-source aggregate mode only: needs.plan.result.'
+    required: false
+    default: ''
 outputs:
   binary:
     description: 'Absolute path to the smoke-launched `institute` executable.'
@@ -58,6 +76,12 @@ outputs:
   sources-revision:
     description: 'Commit the planner was built from, as verified.'
     value: ${{ steps.identity.outputs.sources-revision }}
+  planner-mode:
+    description: >-
+      `pair` only while the reviewed migration pair is active for one of the
+      two migration subjects; `pin` otherwise. Callers may couple
+      migration-only verification (the full tier) to this value.
+    value: ${{ steps.identity.outputs.mode }}
 
 runs:
   using: composite
@@ -67,8 +91,15 @@ runs:
       shell: bash
       env:
         SOURCES_REVISION: ${{ inputs.sources-revision }}
+        REQUESTED_REVISION: ${{ inputs.sources-revision }}
+        PAIR: ${{ github.action_path }}/pair.sh
+        SUBJECT_MODE: ${{ inputs.subject-mode }}
+        SUBJECT_REPOSITORY: ${{ inputs.subject-repository }}
+        SUBJECT_SHA: ${{ inputs.subject-sha }}
+        PLAN_RESULT: ${{ inputs.plan-result }}
       run: |
         set -euo pipefail
+        "$PAIR" stage identity started
         # One authority. `.institute-ci-pin` on the default branch of the
         # central repository, read live at run time. Reading it through
         # GITHUB_ACTION_PATH was a frozen copy: callers self-pin this
@@ -88,6 +119,64 @@ runs:
         fi
         [[ "$SOURCES_REVISION" =~ ^[0-9a-f]{40}$ ]] \
           || { echo "::error::refusing malformed Institute CI source revision: '$SOURCES_REVISION'"; exit 1; }
+        # Transitional paired sources, only when no explicit revision was
+        # requested: .institute-ci-pair and its approved Package.resolved,
+        # both read live from the default branch. 404 means no pair.
+        MODE=pin
+        ROUTE=pin
+        if [ -z "$REQUESTED_REVISION" ]; then
+          # Two-subject routing from trusted identity, decided before any pair
+          # authority is fetched. Missing or malformed identity refuses.
+          "$PAIR" stage routing started
+          ROUTE="$("$PAIR" route "$SUBJECT_MODE" "$SUBJECT_REPOSITORY" "$SUBJECT_SHA" "$PLAN_RESULT")"
+          "$PAIR" note route "$ROUTE"
+          "$PAIR" stage routing ok
+          [ "$ROUTE" = pair ] || "$PAIR" note mode pin
+        fi
+        if [ -z "$REQUESTED_REVISION" ] && [ "$ROUTE" = pair ]; then
+          "$PAIR" stage pair-authority started
+          "$PAIR" note pair-authority requested
+          PAIR_FILE="$RUNNER_TEMP/institute-ci-pair"
+          code="$(curl --silent --show-error --location --retry 3 -o "$PAIR_FILE" -w '%{http_code}' \
+            https://raw.githubusercontent.com/swift-institute/.github/main/.institute-ci-pair)" \
+            || { echo "::error::could not read .institute-ci-pair from swift-institute/.github@main"; exit 1; }
+          case "$code" in
+            404) "$PAIR" note mode pin; "$PAIR" stage pair-authority ok ;;
+            200)
+              ENTRIES="$("$PAIR" read-pair "$PAIR_FILE")"
+              if [ -n "$ENTRIES" ]; then
+                get() { printf '%s\n' "$ENTRIES" | sed -n "s/^$1=//p"; }
+                RESOLVED_FILE="$RUNNER_TEMP/institute-ci-pair.resolved"
+                curl --fail --silent --show-error --location --retry 3 -o "$RESOLVED_FILE" \
+                  https://raw.githubusercontent.com/swift-institute/.github/main/.institute-ci-pair.resolved \
+                  || { echo "::error::could not read .institute-ci-pair.resolved"; exit 1; }
+                [ "$("$PAIR" sha256 "$RESOLVED_FILE")" = "$(get resolved-sha256)" ] \
+                  || { echo "::error::.institute-ci-pair.resolved does not match its approved sha256."; exit 1; }
+                MODE=pair
+                SOURCES_REVISION="$(get application)"
+                "$PAIR" note pair-file-sha256 "$("$PAIR" sha256 "$PAIR_FILE")"
+                "$PAIR" note approved-resolved-sha256 "$(get resolved-sha256)"
+                "$PAIR" note application-revision "$SOURCES_REVISION"
+                "$PAIR" note application-tree "$(get application-tree)"
+                "$PAIR" note expires "$(get expires)"
+                {
+                  echo "application-tree=$(get application-tree)"
+                  echo "institute-revision=$(get institute)"
+                  echo "institute-tree=$(get institute-tree)"
+                  echo "resolved-file=$RESOLVED_FILE"
+                  echo "resolved-sha256=$(get resolved-sha256)"
+                  echo "pins=$(get pins)"
+                } >> "$GITHUB_OUTPUT"
+                "$PAIR" note mode pair
+                "$PAIR" stage pair-authority ok
+              fi
+              ;;
+            *) echo "::error::reading .institute-ci-pair returned HTTP $code"; exit 1 ;;
+          esac
+        fi
+        if [ -n "$REQUESTED_REVISION" ]; then "$PAIR" note mode pin; fi
+        echo "mode=$MODE" >> "$GITHUB_OUTPUT"
+        "$PAIR" stage identity ok
         echo "sources-revision=$SOURCES_REVISION" >> "$GITHUB_OUTPUT"
 
     # A plain fetch into RUNNER_TEMP, not actions/checkout: the sources
@@ -101,8 +190,18 @@ runs:
       shell: bash
       env:
         SOURCES_REVISION: ${{ steps.identity.outputs.sources-revision }}
+        MODE: ${{ steps.identity.outputs.mode }}
+        PAIR: ${{ github.action_path }}/pair.sh
+        APPLICATION_TREE: ${{ steps.identity.outputs.application-tree }}
+        INSTITUTE_REVISION: ${{ steps.identity.outputs.institute-revision }}
+        INSTITUTE_TREE: ${{ steps.identity.outputs.institute-tree }}
+        SUBJECT_MODE: ${{ inputs.subject-mode }}
+        SUBJECT_REPOSITORY: ${{ inputs.subject-repository }}
+        SUBJECT_SHA: ${{ inputs.subject-sha }}
+        PLAN_RESULT: ${{ inputs.plan-result }}
       run: |
         set -euo pipefail
+        "$PAIR" stage app-fetch started
         DIR="$RUNNER_TEMP/institute-ci-sources"
         rm -rf "$DIR"
         git init --quiet "$DIR"
@@ -113,6 +212,30 @@ runs:
         if [ "$HEAD" != "$SOURCES_REVISION" ]; then
           echo "::error::planner checkout is at '$HEAD', not the pinned '$SOURCES_REVISION'."
           exit 1
+        fi
+        "$PAIR" stage app-fetch ok
+        if [ "$MODE" = pair ]; then
+          "$PAIR" stage sources started
+          [ "$(git -C "$DIR" rev-parse 'HEAD^{tree}')" = "$APPLICATION_TREE" ] \
+            || { echo "::error::paired application tree is not the approved '$APPLICATION_TREE'."; exit 1; }
+          INST="$RUNNER_TEMP/institute-ci-institute"
+          rm -rf "$INST"
+          git init --quiet "$INST"
+          git -C "$INST" remote add origin https://github.com/swift-institute/institute.git
+          git -C "$INST" fetch --quiet --depth 1 origin "$INSTITUTE_REVISION"
+          git -C "$INST" checkout --quiet -B main FETCH_HEAD
+          [ "$(git -C "$INST" rev-parse HEAD)" = "$INSTITUTE_REVISION" ] \
+            || { echo "::error::paired institute checkout is not at '$INSTITUTE_REVISION'."; exit 1; }
+          [ "$(git -C "$INST" rev-parse 'HEAD^{tree}')" = "$INSTITUTE_TREE" ] \
+            || { echo "::error::paired institute tree is not the approved '$INSTITUTE_TREE'."; exit 1; }
+          "$PAIR" note institute-revision "$INSTITUTE_REVISION"
+          "$PAIR" note institute-tree "$INSTITUTE_TREE"
+          echo "institute-directory=$INST" >> "$GITHUB_OUTPUT"
+          "$PAIR" stage sources ok
+          "$PAIR" stage subject started
+          "$PAIR" verify-subject "$SUBJECT_MODE" "$SUBJECT_REPOSITORY" "$SUBJECT_SHA" "$PLAN_RESULT" \
+            "$GITHUB_WORKSPACE" "$APPLICATION_TREE" "$INSTITUTE_TREE"
+          "$PAIR" stage subject ok
         fi
         echo "directory=$DIR" >> "$GITHUB_OUTPUT"
 
@@ -127,6 +250,14 @@ runs:
       env:
         DIR: ${{ steps.sources.outputs.directory }}
         SOURCES_REVISION: ${{ steps.identity.outputs.sources-revision }}
+        MODE: ${{ steps.identity.outputs.mode }}
+        PAIR: ${{ github.action_path }}/pair.sh
+        INSTITUTE_DIR: ${{ steps.sources.outputs.institute-directory }}
+        INSTITUTE_REVISION: ${{ steps.identity.outputs.institute-revision }}
+        INSTITUTE_TREE: ${{ steps.identity.outputs.institute-tree }}
+        RESOLVED_FILE: ${{ steps.identity.outputs.resolved-file }}
+        RESOLVED_SHA256: ${{ steps.identity.outputs.resolved-sha256 }}
+        PINS: ${{ steps.identity.outputs.pins }}
       run: |
         set -euo pipefail
         START="$(date +%s)"
@@ -141,9 +272,27 @@ runs:
         # container jobs and the current workspace, this build runs
         # unprivileged on the runner host against RUNNER_TEMP; keep the
         # two maps in step until they are unified.
+        RESOLVE_FLAGS=""
+        if [ "$MODE" = pair ]; then
+          RESOLVE_FLAGS="--force-resolved-versions"
+          "$PAIR" stage resolve started
+          # CI-only resolution override, confined to this RUNNER_TEMP checkout.
+          swift package --package-path "$DIR" config set-mirror \
+            --original https://github.com/swift-institute/institute.git \
+            --mirror "$INSTITUTE_DIR"
+          # The approved graph: the reviewed Package.resolved, byte for byte.
+          cp "$RESOLVED_FILE" "$DIR/Package.resolved"
+          swift package --package-path "$DIR" --force-resolved-versions resolve
+          "$PAIR" stage resolve ok
+          "$PAIR" stage graph-after-resolve started
+          "$PAIR" verify-graph "$DIR" "$RESOLVED_SHA256" "$INSTITUTE_REVISION" "$INSTITUTE_TREE" "$PINS"
+          "$PAIR" stage graph-after-resolve ok
+        fi
         if command -v apt-get >/dev/null 2>&1; then
           SUDO=""; [ "$(id -u)" -eq 0 ] || SUDO="sudo"
-          swift package --package-path "$DIR" resolve
+          "$PAIR" stage apt-resolve started
+          swift package --package-path "$DIR" $RESOLVE_FLAGS resolve
+          "$PAIR" stage apt-resolve ok
           shopt -s nullglob
           manifests=("$DIR"/Package.swift "$DIR"/Package@swift-*.swift \
             "$DIR"/.build/checkouts/*/Package.swift "$DIR"/.build/checkouts/*/Package@swift-*.swift)
@@ -179,7 +328,16 @@ runs:
           fi
         fi
 
-        swift build --package-path "$DIR" -c release --product institute
+        if [ "$MODE" = pair ]; then
+          "$PAIR" stage graph-before-build started
+          "$PAIR" verify-graph "$DIR" "$RESOLVED_SHA256" "$INSTITUTE_REVISION" "$INSTITUTE_TREE" "$PINS"
+          "$PAIR" stage graph-before-build ok
+          "$PAIR" stage build started
+          swift build --package-path "$DIR" --force-resolved-versions -c release --product institute
+          "$PAIR" stage build ok
+        else
+          swift build --package-path "$DIR" -c release --product institute
+        fi
         WALL="$(( $(date +%s) - START ))"
         {
           echo "### Institute CI planner"
@@ -200,8 +358,10 @@ runs:
       shell: bash
       env:
         DIR: ${{ steps.sources.outputs.directory }}
+        PAIR: ${{ github.action_path }}/pair.sh
       run: |
         set -euo pipefail
+        "$PAIR" stage transport started
         BINARY="$DIR/.build/release/institute"
         [ -x "$BINARY" ] \
           || { echo "::error::planner build produced no executable at $BINARY"; exit 1; }
@@ -242,4 +402,14 @@ runs:
         fi
 
         echo "binary=$BINARY" >> "$GITHUB_OUTPUT"
+        "$PAIR" stage transport ok
         echo "runtime-library-path=$RUNTIME_LIBRARY_PATH" >> "$GITHUB_OUTPUT"
+
+
+    - name: Institute CI planner provenance
+      if: ${{ always() }}
+      shell: bash
+      env:
+        PAIR: ${{ github.action_path }}/pair.sh
+      run: |
+        "$PAIR" provenance >> "$GITHUB_STEP_SUMMARY"
