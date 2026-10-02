@@ -136,7 +136,7 @@ jobs:
           sha: ${{ steps.subject.outputs.sha }}
 
       - id: institute-ci
-        uses: swift-institute/.github/.github/actions/institute-ci@e1bea5f3754ba84887d582c9936bb554c886ff30
+        uses: swift-institute/.github/.github/actions/institute-ci@52daed781c9f8dbb8d0ee632e20163b5ab8ca332
 
       - name: Materialize fleet policy at the workflow revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -520,7 +520,7 @@ jobs:
           repository: ${{ needs.plan.outputs.subject-repository }}
           sha: ${{ needs.plan.outputs.subject-sha }}
       - id: institute-ci
-        uses: swift-institute/.github/.github/actions/institute-ci@e1bea5f3754ba84887d582c9936bb554c886ff30
+        uses: swift-institute/.github/.github/actions/institute-ci@52daed781c9f8dbb8d0ee632e20163b5ab8ca332
       - name: Measure source
         shell: bash
         env:
@@ -606,7 +606,7 @@ jobs:
           repository: swift-institute/.github
           ref: ${{ needs.plan.outputs.workflow-sha }}
       - id: institute-ci
-        uses: swift-institute/.github/.github/actions/institute-ci@e1bea5f3754ba84887d582c9936bb554c886ff30
+        uses: swift-institute/.github/.github/actions/institute-ci@52daed781c9f8dbb8d0ee632e20163b5ab8ca332
       # Runs on always(), so it must reach a verdict when plan itself
       # failed — which is exactly when its outputs are empty.
       - name: Aggregate
