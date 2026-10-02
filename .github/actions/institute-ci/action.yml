@@ -179,7 +179,17 @@ runs:
           fi
         fi
 
-        swift build --package-path "$DIR" -c release --product institute
+        if command -v timeout >/dev/null; then
+          attempt=1
+          until timeout --kill-after=30 1200 swift build --package-path "$DIR" -c release --product institute; do
+            status=$?
+            if [ "$status" -ne 124 ] || [ "$attempt" -ge 2 ]; then exit "$status"; fi
+            echo "::warning::planner build made no progress for 20 minutes (attempt $attempt); retrying once."
+            attempt=$((attempt + 1))
+          done
+        else
+          swift build --package-path "$DIR" -c release --product institute
+        fi
         WALL="$(( $(date +%s) - START ))"
         {
           echo "### Institute CI planner"
