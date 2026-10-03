@@ -29,7 +29,7 @@ env:
 
   # The fleet's only Xcode pin. A caller's workflow-level `env:` does not
   # cross into a called reusable, so a layer-side pin would be inert.
-  XCODE_VERSION: "27.0"
+  XCODE_VERSION: "27.1"
 
 jobs:
 # Top-level job names are intentionally static. GitHub may render
