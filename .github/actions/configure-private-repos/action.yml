@@ -7,7 +7,7 @@
 #      caller passes an App ID secret + `app-private-key` (the org-level
 #      SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY secret), the composite mints one
 #      short-lived installation token per dependency-hosting org — the three
-#      layer orgs (swift-primitives, swift-standards, swift-foundations) plus
+#      layer orgs (swift-molecules, swift-standards, swift-compositions) plus
 #      the per-authority sub-orgs that host private deps of public consumers
 #      (swift-iso, swift-microsoft, swift-arm-ltd, swift-intel,
 #      swift-linux-foundation, swift-ietf) — via
@@ -147,14 +147,14 @@ inputs:
 runs:
   using: 'composite'
   steps:
-    - id: mint-primitives
+    - id: mint-molecules
       if: ${{ inputs.enabled == 'true' && (inputs.app-client-id != '' || inputs.app-id != '') && inputs.app-private-key != '' }}
-      name: Mint App token (swift-primitives, contents:read)
+      name: Mint App token (swift-molecules, contents:read)
       uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
       with:
         client-id: ${{ inputs.app-client-id || inputs.app-id }}
         private-key: ${{ inputs.app-private-key }}
-        owner: swift-primitives
+        owner: swift-molecules
         permission-contents: read
 
     - id: mint-standards
@@ -167,14 +167,14 @@ runs:
         owner: swift-standards
         permission-contents: read
 
-    - id: mint-foundations
+    - id: mint-compositions
       if: ${{ inputs.enabled == 'true' && (inputs.app-client-id != '' || inputs.app-id != '') && inputs.app-private-key != '' }}
-      name: Mint App token (swift-foundations, contents:read)
+      name: Mint App token (swift-compositions, contents:read)
       uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
       with:
         client-id: ${{ inputs.app-client-id || inputs.app-id }}
         private-key: ${{ inputs.app-private-key }}
-        owner: swift-foundations
+        owner: swift-compositions
         permission-contents: read
 
     # Per-authority sub-orgs that host private deps of public consumers
@@ -245,9 +245,9 @@ runs:
       shell: bash
       env:
         LEGACY_TOKEN: ${{ inputs.token }}
-        TOKEN_PRIMITIVES: ${{ steps.mint-primitives.outputs.token }}
+        TOKEN_MOLECULES: ${{ steps.mint-molecules.outputs.token }}
         TOKEN_STANDARDS: ${{ steps.mint-standards.outputs.token }}
-        TOKEN_FOUNDATIONS: ${{ steps.mint-foundations.outputs.token }}
+        TOKEN_COMPOSITIONS: ${{ steps.mint-compositions.outputs.token }}
         TOKEN_ISO: ${{ steps.mint-iso.outputs.token }}
         TOKEN_MICROSOFT: ${{ steps.mint-microsoft.outputs.token }}
         TOKEN_ARM_LTD: ${{ steps.mint-arm-ltd.outputs.token }}
@@ -262,9 +262,9 @@ runs:
           echo "GIT_CONFIG_VALUE_${i}=https://github.com/${1}/" >> "$GITHUB_ENV"
           i=$((i + 1))
         }
-        if [ -n "${TOKEN_PRIMITIVES}" ]; then emit swift-primitives "${TOKEN_PRIMITIVES}"; fi
+        if [ -n "${TOKEN_MOLECULES}" ]; then emit swift-molecules "${TOKEN_MOLECULES}"; fi
         if [ -n "${TOKEN_STANDARDS}" ]; then emit swift-standards "${TOKEN_STANDARDS}"; fi
-        if [ -n "${TOKEN_FOUNDATIONS}" ]; then emit swift-foundations "${TOKEN_FOUNDATIONS}"; fi
+        if [ -n "${TOKEN_COMPOSITIONS}" ]; then emit swift-compositions "${TOKEN_COMPOSITIONS}"; fi
         if [ -n "${TOKEN_ISO}" ]; then emit swift-iso "${TOKEN_ISO}"; fi
         if [ -n "${TOKEN_MICROSOFT}" ]; then emit swift-microsoft "${TOKEN_MICROSOFT}"; fi
         if [ -n "${TOKEN_ARM_LTD}" ]; then emit swift-arm-ltd "${TOKEN_ARM_LTD}"; fi
