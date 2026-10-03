@@ -117,6 +117,7 @@ runs:
         echo "directory=$DIR" >> "$GITHUB_OUTPUT"
 
     - name: Install Swift
+      if: runner.os != 'macOS'
       uses: SwiftyLab/setup-swift@38f54a76b70d989321de9dc7c840618c08cf56e9 # v1.14.0
       with:
         swift-version: ${{ inputs.swift-version }}
@@ -221,9 +222,7 @@ runs:
           diagnostics="$RUNNER_TEMP/institute-ci-smoke.stderr"
           : > "$diagnostics"
           if ! "$BINARY" --help >/dev/null 2>"$diagnostics"; then
-            [ -n "${TOOLCHAINS:-}" ] \
-              || { echo "::error::Darwin planner transport has no selected Swift toolchain identity."; exit 1; }
-            SWIFT_EXECUTABLE="$(xcrun --toolchain "$TOOLCHAINS" --find swift)"
+            SWIFT_EXECUTABLE="$(xcrun ${TOOLCHAINS:+--toolchain "$TOOLCHAINS"} --find swift)"
             SWIFT_USR="$(cd "$(dirname "$SWIFT_EXECUTABLE")/.." && pwd -P)"
             DEVELOPER="$(xcode-select -p)"
             candidates=(
