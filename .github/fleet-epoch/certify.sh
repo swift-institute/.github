@@ -26,7 +26,13 @@ bounded() {
 }
 
 verdict() {
-  if "$@" >>"$log" 2>&1; then echo pass; else echo fail; fi
+  local status=0
+  "$@" >>"$log" 2>&1 || status=$?
+  if [ "$status" -eq 0 ]; then echo pass; return; fi
+  if [ "$1" = bounded ] && { [ "$status" -eq 124 ] || [ "$status" -eq 137 ]; }; then
+    echo "certify: timeout after $2 s: $3 $4" >>"$log"
+  fi
+  echo fail
 }
 
 export GIT_TERMINAL_PROMPT=0
@@ -74,6 +80,9 @@ for repository in "$@"; do
   fi
   if [ "$resolve" = fail ]; then
     cause="$(grep -m1 -oE 'Failed to clone repository https://github.com/[^ :]*' "$log" | sed 's#.*github.com/##; s#\.git$##')"
+  fi
+  if [ -z "$cause" ]; then
+    cause="$(grep -m1 '^certify: timeout after' "$log")"
   fi
   if [ -z "$cause" ] && { [ "$resolve" = fail ] || [ "$build" = fail ] || [ "$test" = fail ]; }; then
     sed -E "s/$(printf '\033')\[[0-9;]*m//g" "$log" >"$log.plain"
