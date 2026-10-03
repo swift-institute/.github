@@ -1,0 +1,71 @@
+name: windows-resolve-probe
+
+# Temporary, one dispatch only (WINDOWS-RESOLVE-3): resolves the fixed
+# swift-compositions/swift-kernel revision on the Windows release leg's
+# exact setup, with SWIFT_BACKTRACE, and uploads the raw evidence. No
+# build or test. Removed after its single run.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-resolve-probe
+  cancel-in-progress: false
+
+env:
+  PROBE_REPOSITORY: swift-compositions/swift-kernel
+  PROBE_SHA: 35d185c6cb3ad675a407521c8b8cd9c0157cd019
+
+jobs:
+  resolve:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+      - uses: swift-institute/.github/.github/actions/ci-subject@ffe641da803a23bdfb4e3bb889edff9c43c41198
+        with:
+          repository: swift-compositions/swift-kernel
+          sha: 35d185c6cb3ad675a407521c8b8cd9c0157cd019
+      - uses: SwiftyLab/setup-swift@38f54a76b70d989321de9dc7c840618c08cf56e9 # v1.14.0
+        with:
+          swift-version: '6.4'
+          cache-snapshot: false
+      - name: Resolve only
+        shell: bash
+        env:
+          SWIFT_BACKTRACE: enable=yes,interactive=no
+        run: |
+          set +e -u
+          mkdir -p probe
+          {
+            echo "repository=$PROBE_REPOSITORY"
+            echo "requested-sha=$PROBE_SHA"
+            echo "head-sha=$(git rev-parse HEAD)"
+            echo "runner-name=${RUNNER_NAME:-}"
+            echo "image-os=${ImageOS:-}"
+            echo "image-version=${ImageVersion:-}"
+            echo "start=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > probe/identity.txt
+          swift --version > probe/versions.txt 2>&1
+          cmd //c ver >> probe/versions.txt 2>&1
+          timeout -k 15 600 swift package resolve -v --scratch-path C:/b > probe/resolve.log 2>&1
+          status=$?
+          echo "end=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> probe/identity.txt
+          echo "exit=$status" > probe/status.txt
+          cp Package.resolved probe/ 2>/dev/null || echo "no Package.resolved" >> probe/status.txt
+          cp C:/b/workspace-state.json probe/ 2>/dev/null || echo "no workspace-state.json" >> probe/status.txt
+          tail -n 60 probe/resolve.log
+          cat probe/status.txt
+          exit "$status"
+      - if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: windows-resolve-probe
+          path: probe/
+          if-no-files-found: warn
+          retention-days: 30
