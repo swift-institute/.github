@@ -26,6 +26,7 @@
     {"name": "swift-atoms/swift-geometry", "embeddedTarget": "Geometry"},
     {"name": "swift-standards/swift-darwin-standard", "platforms": "apple,linux"},
     {"name": "swift-iso/swift-iso-9945", "platforms": "apple,linux"},
+    {"name": "swift-institute/swift-example-cli", "platforms": "apple,linux"},
     {"name": "swift-linux-foundation/swift-linux-standard", "platforms": "apple,linux"},
     {"name": "swift-compositions/swift-darwin", "platforms": "apple"},
     {"name": "swift-compositions/swift-linux", "platforms": "apple,linux"},
