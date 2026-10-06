@@ -534,6 +534,15 @@ jobs:
             --root "$GITHUB_WORKSPACE" \
             --bundle "${{ needs.plan.outputs.lint-bundle }}" \
             --xcode-application "/Applications/Xcode_${XCODE_VERSION}.app"
+      - name: Keep the source preparation receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: source-preparation-receipt
+          path: .source/receipt.json
+          if-no-files-found: warn
+          retention-days: 14
+          include-hidden-files: true
   advisory-summary:
     name: Advisory results
     needs:
