@@ -28,7 +28,7 @@ concurrency:
 
 env:
   SWIFT_IMAGE: swift:6.4-noble
-  XCODE_VERSION: "27.0"
+  XCODE_VERSION: "27.1"
   SHARD_SIZE: "12"
 
 jobs:
