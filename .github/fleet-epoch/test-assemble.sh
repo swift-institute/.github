@@ -4,7 +4,7 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 failures=0
 run() {
-  jq -sc --arg date d --arg run r --argjson parked '["o/parked"]' --argjson partial false \
+  jq -sc --arg date d --arg run r --argjson parked '["o/parked"]' --argjson partial "${2:-false}" \
     --argjson shards "$1" --arg image i --arg xcode x -f "$here/assemble.jq"
 }
 check() {
@@ -38,6 +38,16 @@ check "missing: missing" 2 "$(jq .counts.missing <<<"$out")"
 
 out="$( (row o/parked linux clone-failed skip skip "fatal") | run '[{"repositories":"o/parked"}]')"
 check "parked clone failure: unmeasured" 0 "$(jq .counts.unmeasured <<<"$out")"
+
+out="$(: | run '[]')"
+check "empty input: green" false "$(jq .green <<<"$out")"
+check "empty input: complete" false "$(jq .complete <<<"$out")"
+check "empty input: results" 0 "$(jq .counts.results <<<"$out")"
+
+out="$( (row o/a linux pass pass pass ""; row o/a macos pass pass pass "") | run '[{"repositories":"o/a"}]' true)"
+check "partial scope all pass: green" false "$(jq .green <<<"$out")"
+check "partial scope all pass: complete" false "$(jq .complete <<<"$out")"
+check "partial scope all pass: partial" true "$(jq .partial <<<"$out")"
 
 [ "$failures" -eq 0 ] || { echo "$failures control(s) failed"; exit 1; }
 echo "all assemble controls passed"
