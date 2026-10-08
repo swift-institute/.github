@@ -19,8 +19,8 @@ on:
 permissions: {}
 
 env:
-  SWIFT_VERSION: 6.3.3
-  XCODE_VERSION: "27.0"
+  SWIFT_VERSION: "6.4"
+  XCODE_VERSION: "27.1"
 
 jobs:
   scope:
@@ -135,7 +135,20 @@ jobs:
           # has been revoked. Building institute-application here made the
           # verifier test that macOS-only application's dependency graph
           # instead of the candidate and could not be correct on Windows.
-          swift test -c release
+          # A candidate that records its tested dependency graph is verified
+          # against exactly that graph: it becomes Package.resolved and
+          # resolution is forced, so a moved or missing pin fails closed.
+          # Only the graph's digest and pin count are logged.
+          resolution=""
+          if [ -f accepted-graph.json ]; then
+            cp accepted-graph.json Package.resolved
+            digest="$( (sha256sum accepted-graph.json 2>/dev/null || shasum -a 256 accepted-graph.json) | cut -d' ' -f1)"
+            echo "exact graph: accepted-graph.json sha256 $digest, $(grep -c '"identity"' accepted-graph.json) pins"
+            resolution=--force-resolved-versions
+          else
+            echo "exact graph: none recorded by the candidate; resolving afresh"
+          fi
+          swift test -c release $resolution
 
   windows:
     name: Windows · assertions
@@ -194,7 +207,20 @@ jobs:
           # Keep the absolute build prefix short: large private dependency
           # closures otherwise exceed Windows' process command-length boundary
           # when SwiftPM expands every linked module into llvm-lib arguments.
-          swift test -c debug --build-system native --scratch-path C:/v
+          # A candidate that records its tested dependency graph is verified
+          # against exactly that graph: it becomes Package.resolved and
+          # resolution is forced, so a moved or missing pin fails closed.
+          # Only the graph's digest and pin count are logged.
+          resolution=""
+          if [ -f accepted-graph.json ]; then
+            cp accepted-graph.json Package.resolved
+            digest="$( (sha256sum accepted-graph.json 2>/dev/null || shasum -a 256 accepted-graph.json) | cut -d' ' -f1)"
+            echo "exact graph: accepted-graph.json sha256 $digest, $(grep -c '"identity"' accepted-graph.json) pins"
+            resolution=--force-resolved-versions
+          else
+            echo "exact graph: none recorded by the candidate; resolving afresh"
+          fi
+          swift test -c debug --build-system native --scratch-path C:/v $resolution
 
   macos:
     name: Apple · macOS
@@ -240,7 +266,20 @@ jobs:
           git config --global --add safe.directory "$GITHUB_WORKSPACE/subject"
           test "$(git rev-parse HEAD)" = "$TARGET_HEAD"
           swift --version
-          swift test -c release
+          # A candidate that records its tested dependency graph is verified
+          # against exactly that graph: it becomes Package.resolved and
+          # resolution is forced, so a moved or missing pin fails closed.
+          # Only the graph's digest and pin count are logged.
+          resolution=""
+          if [ -f accepted-graph.json ]; then
+            cp accepted-graph.json Package.resolved
+            digest="$( (sha256sum accepted-graph.json 2>/dev/null || shasum -a 256 accepted-graph.json) | cut -d' ' -f1)"
+            echo "exact graph: accepted-graph.json sha256 $digest, $(grep -c '"identity"' accepted-graph.json) pins"
+            resolution=--force-resolved-versions
+          else
+            echo "exact graph: none recorded by the candidate; resolving afresh"
+          fi
+          swift test -c release $resolution
 
   publish:
     name: workspace
