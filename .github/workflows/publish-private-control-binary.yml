@@ -27,7 +27,7 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     environment: private-control-publisher
-    container: swift:6.3@sha256:69bf1f0281e13d82c9e49d67c2dd1dcc8c00bad738c860f4323d7078787ec8ea # 6.3.3
+    container: swiftlang/swift@sha256:8d614165059587ce9dcf6727a76aeff4cbf1cde41fde9a9281a43803be736224 # 6.4
     timeout-minutes: 45
     permissions:
       contents: read
@@ -111,15 +111,22 @@ jobs:
           set -euo pipefail
           git config --global --add safe.directory "$GITHUB_WORKSPACE/control"
           [ "$(git rev-parse HEAD)" = "$SOURCE" ]
-          swift package resolve
-          test -s Package.resolved
+          # Build exactly the dependency graph the candidate was tested
+          # with: its committed accepted-graph.json becomes Package.resolved
+          # and resolution is forced, so a moved, missing or extra pin
+          # fails here instead of producing an untested binary.
+          test -s accepted-graph.json
+          cp accepted-graph.json Package.resolved
+          swift package resolve --force-resolved-versions
+          cmp -s <(jq -S . accepted-graph.json) <(jq -S . Package.resolved) \
+            || { echo "::error::the resolved graph differs from accepted-graph.json"; exit 1; }
           cp Package.resolved /tmp/control.resolution.json
           resolution_sha="$(sha256sum /tmp/control.resolution.json | cut -d' ' -f1)"
           {
             echo "sources-revision=$SOURCE"
             echo "resolution-sha256=$resolution_sha"
-            echo 'toolchain=swift-6.3'
-            echo 'container=swift:6.3@sha256:69bf1f0281e13d82c9e49d67c2dd1dcc8c00bad738c860f4323d7078787ec8ea'
+            echo 'toolchain=swift-6.4'
+            echo 'container=swiftlang/swift@sha256:8d614165059587ce9dcf6727a76aeff4cbf1cde41fde9a9281a43803be736224'
             echo 'os=linux'
             echo 'arch=x86_64'
             echo 'provisioning=static-swift-stdlib,uuid-dev,build-id-none,swift-modhash-removed,debug-stripped'
