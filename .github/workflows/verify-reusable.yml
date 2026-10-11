@@ -24,6 +24,9 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Planner reuse controls
+        shell: bash
+        run: bash .github/actions/institute-ci/verify-planner-tests.sh
       - name: Compare the reusable's head with the reviewed revision
         shell: bash
         run: |

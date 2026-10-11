@@ -65,6 +65,9 @@ jobs:
       subject-repository: ${{ steps.subject.outputs.repository }}
       subject-sha: ${{ steps.subject.outputs.sha }}
       workflow-sha: ${{ steps.workflow.outputs.sha }}
+      planner-digest: ${{ steps.seal.outputs.digest }}
+      planner-manifest-digest: ${{ steps.seal.outputs.manifest-digest }}
+      planner-sources: ${{ steps.institute-ci.outputs.sources-revision }}
     steps:
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
@@ -144,8 +147,38 @@ jobs:
           repository: swift-institute/.github
           ref: ${{ steps.workflow.outputs.sha }}
           path: .ci-policy
-          sparse-checkout: .github/policy/fleet.json
+          sparse-checkout: |
+            .github/policy/fleet.json
+            .github/actions/institute-ci
           persist-credentials: false
+
+      # ci-ok reuses this planner instead of building it a second time. The
+      # seal binds the binary and its resolved graph to this run, attempt,
+      # platform, full toolchain and Swift runtime identity, planner sources,
+      # workflow revision and subject. Plan publishes the binary and manifest
+      # digests as outputs; ci-ok verifies both before executing anything.
+      - name: Seal the planner for ci-ok
+        id: seal
+        shell: bash
+        env:
+          BINARY: ${{ steps.institute-ci.outputs.binary }}
+          SOURCES: ${{ steps.institute-ci.outputs.sources-revision }}
+          WORKFLOW_SHA: ${{ steps.workflow.outputs.sha }}
+          SUBJECT_SHA: ${{ steps.subject.outputs.sha }}
+        run: |
+          set -euo pipefail
+          bash .ci-policy/.github/actions/institute-ci/seal-planner.sh \
+            "$BINARY" "$RUNNER_TEMP/institute-planner" "$SOURCES" "$WORKFLOW_SHA" "$SUBJECT_SHA" \
+            | tee -a "$GITHUB_OUTPUT"
+          cat "$RUNNER_TEMP/institute-planner/manifest.json"
+
+      - name: Keep the sealed planner for ci-ok
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: institute-planner-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/institute-planner
+          if-no-files-found: error
+          retention-days: 1
 
       - name: Validate package
         shell: bash
@@ -614,8 +647,33 @@ jobs:
         with:
           repository: swift-institute/.github
           ref: ${{ needs.plan.outputs.workflow-sha }}
-      - id: institute-ci
-        uses: swift-institute/.github/.github/actions/institute-ci@5c8d18acca2f25e41997fd477c454bfb52c1bb02
+      # Reuse the planner Plan built and sealed in this run instead of
+      # building it again. A missing or mismatched seal (a Plan or artifact
+      # failure, another run, attempt, platform or toolchain, a replaced
+      # binary or graph) fails here, so ci-ok stays non-success.
+      - name: Install Swift for the restored planner
+        uses: SwiftyLab/setup-swift@38f54a76b70d989321de9dc7c840618c08cf56e9 # v1.14.0
+        with:
+          swift-version: ${{ env.SWIFT_VERSION }}
+      - name: Restore the planner Plan sealed
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: institute-planner-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/institute-planner
+      - name: Verify the restored planner
+        id: institute-ci
+        shell: bash
+        env:
+          DIGEST: ${{ needs.plan.outputs.planner-digest }}
+          MANIFEST_DIGEST: ${{ needs.plan.outputs.planner-manifest-digest }}
+          WORKFLOW_SHA: ${{ needs.plan.outputs.workflow-sha }}
+          SOURCES: ${{ needs.plan.outputs.planner-sources }}
+          SUBJECT_SHA: ${{ needs.plan.outputs.subject-sha }}
+        run: |
+          set -euo pipefail
+          bash .github/actions/institute-ci/verify-planner.sh \
+            "$RUNNER_TEMP/institute-planner" "$DIGEST" "$MANIFEST_DIGEST" "$WORKFLOW_SHA" "$SOURCES" "$SUBJECT_SHA"
+          echo "binary=$RUNNER_TEMP/institute-planner/institute" >> "$GITHUB_OUTPUT"
       # Runs on always(), so it must reach a verdict when plan itself
       # failed — which is exactly when its outputs are empty.
       - name: Aggregate
