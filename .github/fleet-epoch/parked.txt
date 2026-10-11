@@ -2,12 +2,10 @@ swift-compositions/swift-questionnaires
 swift-compositions/swift-interface-composable-architecture
 swift-compositions/swift-authentication
 swift-compositions/swift-favicon
-swift-compositions/swift-github-http
 swift-compositions/swift-html-form-coder
 swift-compositions/swift-http-host
 swift-compositions/swift-http-redirect
 swift-compositions/swift-identities-types
-swift-compositions/swift-mailgun-http
 swift-compositions/swift-stripe-http
 swift-compositions/swift-stripe-standard
 swift-compositions/swift-sql
