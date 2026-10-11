@@ -22,30 +22,14 @@ considerations during review.
 - No Foundation imports in Primitives or Standards packages — Foundation is a
   Foundations-layer concern
 - Run `swift build` and `swift test` before submitting
-- Run `swift-format format --in-place .` before submitting (see *Development
-  environment* below for the pinned wrapper that ensures local output matches CI)
+- Run `xcrun swift-format format --in-place --recursive .` before submitting
+  (see *Development environment* below)
 
 ## Development environment
 
-CI runs `swift-format` from the `swift:6.3` Docker image. Local invocations
-must use the same toolchain version, or `format --in-place` output will drift
-from CI's strict-lint check and produce avoidable PR friction.
-
-This repository ships a pinned wrapper at
-`swift-institute/Scripts/swift-format` that exec's the matching standalone
-toolchain. To use it, install a Swift 6.3.x toolchain from
-[swift.org/install/macos](https://www.swift.org/install/macos/) and prepend the
-Scripts directory to your `$PATH`:
-
-```sh
-# In ~/.zshrc, ~/.bashrc, or your shell's profile:
-export PATH="$HOME/Developer/swift-institute/Scripts:$PATH"
-```
-
-After that, `swift-format` on the command line resolves to the pinned wrapper
-and produces byte-identical output to CI. The pinned wrapper is the only
-supported invocation precisely so that local formatting and CI formatting
-cannot diverge.
+CI formats and lints with the `swift-format` that ships with Xcode 27.1
+(27A9269). Select that Xcode (`xcode-select -s /Applications/Xcode.app`) and
+run `xcrun swift-format`, so local output matches CI byte for byte.
 
 ## Running a single CI job on demand
 
