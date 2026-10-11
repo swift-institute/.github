@@ -69,7 +69,7 @@ jobs:
             organization="$(jq -r .organization <<< "$row")"
             if [ -n "$ORGANIZATIONS" ] && ! grep -qw -- "$organization" <<< "$ORGANIZATIONS"; then continue; fi
             gh api --paginate "orgs/$organization/repos?type=public&per_page=100" \
-              --jq '.[] | select((.archived or .fork) | not) | .full_name' \
+              --jq '.[] | select(.archived | not) | .full_name' \
               | jq -Rsc --arg layer "$layer" --argjson limit "$LIMIT" \
                 'split("\n") | map(select(length > 0)) | sort | (if $limit > 0 then .[:$limit] else . end) | .[] | {layer: $layer, repository: .}' \
               >> repositories.jsonl
