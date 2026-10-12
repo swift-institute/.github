@@ -57,7 +57,7 @@ for repository in "$@"; do
     if [ -f "$directory/Package.swift" ]; then
       scratch="$work/build"
       resolve="$(cd "$directory" && verdict bounded 900 swift package resolve --scratch-path "$scratch")"
-      if [ "$resolve" = fail ] && grep -q 'no connectivity to https://github.com' "$log"; then
+      if [ "$resolve" = fail ] && grep -qE 'no connectivity to https://github.com|Failed to connect to github.com|Could not resolve host: github.com' "$log"; then
         sleep 30
         echo "certify: retrying resolve after lost connectivity" >>"$log"
         resolve="$(cd "$directory" && verdict bounded 900 swift package resolve --scratch-path "$scratch")"
