@@ -1,3 +1,2 @@
 swift-compositions/swift-questionnaires
 swift-compositions/swift-interface-composable-architecture
-swift-compositions/swift-sql
