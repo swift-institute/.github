@@ -347,9 +347,22 @@ jobs:
         shell: bash
         run: |
           swift --version
+          # SwiftPM itself intermittently dies on the Windows runner right
+          # after resolution (exit 139 segmentation fault, 132 illegal
+          # instruction) before compiling anything; a rerun passes. A crash
+          # of the compiler or of a test is reported by SwiftPM as an
+          # ordinary failure (exit 1), so retrying only these two codes once
+          # keeps the assertions gate intact.
           test_package() {
             scratch="$1"
-            swift test -c debug --build-system native --scratch-path "$scratch"
+            status=0
+            swift test -c debug --build-system native --scratch-path "$scratch" || status=$?
+            if [ "$status" -eq 139 ] || [ "$status" -eq 132 ]; then
+              echo "::warning::swift test itself crashed (exit $status); retrying once."
+              status=0
+              swift test -c debug --build-system native --scratch-path "$scratch" || status=$?
+            fi
+            return "$status"
           }
           # [swift-institute/.github#498] Swift Build expands every linked module
           # into a separate response-file argument and can exceed Windows'
