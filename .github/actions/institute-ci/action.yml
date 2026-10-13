@@ -28,9 +28,12 @@ description: >-
 # for each build. Package.resolved and .build remain ephemeral generated
 # state and are never cached or committed.
 #
-# Cost: every invocation compiles the full closure from source. Publishing a
-# binary would create a new release surface, which needs principal approval
-# this cutover does not have.
+# Published binaries (Coen, 13 Oct 2026): swift-institute/institute-application's
+# publish-planner workflow uploads revision-named planner binaries to its
+# `ci-binaries` release, never replaced. `.institute-ci-planner` on the default
+# branch of swift-institute/.github pins them by digest per revision and
+# platform; a pinned binary is downloaded and verified instead of compiled.
+# A revision or platform without an entry still builds from source.
 
 inputs:
   sources-revision:
@@ -90,6 +93,60 @@ runs:
           || { echo "::error::refusing malformed Institute CI source revision: '$SOURCES_REVISION'"; exit 1; }
         echo "sources-revision=$SOURCES_REVISION" >> "$GITHUB_OUTPUT"
 
+        # `.institute-ci-planner`, read live like the pin, names published
+        # planner binaries: `<revision> <platform> <binary-sha256>
+        # <graph-sha256>` per line. When it names this revision and
+        # platform, the binary is downloaded and verified instead of built.
+        case "$RUNNER_OS/$RUNNER_ARCH" in
+          Linux/X64) PLATFORM=linux-x86_64 ;;
+          macOS/ARM64) PLATFORM=macos-arm64 ;;
+          *) PLATFORM="" ;;
+        esac
+        PUBLISHED=""
+        if [ -n "$PLATFORM" ]; then
+          PUBLISHED="$(curl --fail --silent --show-error --location --retry 3 \
+            https://raw.githubusercontent.com/swift-institute/.github/main/.institute-ci-planner \
+            | { grep -v '^[[:space:]]*#' || true; } \
+            | awk -v r="$SOURCES_REVISION" -v p="$PLATFORM" '$1 == r && $2 == p {print $3, $4}')" \
+            || { echo "::error::could not read .institute-ci-planner from swift-institute/.github@main"; exit 1; }
+        fi
+        read -r BINARY_DIGEST GRAPH_DIGEST <<< "${PUBLISHED:-} " || true
+        if [ -n "${BINARY_DIGEST:-}" ]; then
+          [[ "$BINARY_DIGEST" =~ ^[0-9a-f]{64}$ && "${GRAPH_DIGEST:-}" =~ ^[0-9a-f]{64}$ ]] \
+            || { echo "::error::malformed .institute-ci-planner entry for $SOURCES_REVISION $PLATFORM"; exit 1; }
+          echo "platform=$PLATFORM" >> "$GITHUB_OUTPUT"
+          echo "binary-digest=$BINARY_DIGEST" >> "$GITHUB_OUTPUT"
+          echo "graph-digest=$GRAPH_DIGEST" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Fetch the published planner
+      id: published
+      if: steps.identity.outputs.binary-digest != ''
+      shell: bash
+      env:
+        SOURCES_REVISION: ${{ steps.identity.outputs.sources-revision }}
+        PLATFORM: ${{ steps.identity.outputs.platform }}
+        BINARY_DIGEST: ${{ steps.identity.outputs.binary-digest }}
+        GRAPH_DIGEST: ${{ steps.identity.outputs.graph-digest }}
+      run: |
+        set -euo pipefail
+        DIR="$RUNNER_TEMP/institute-ci-sources"
+        rm -rf "$DIR"
+        mkdir -p "$DIR/.build/release"
+        BASE=https://github.com/swift-institute/institute-application/releases/download/ci-binaries
+        curl --fail --silent --show-error --location --retry 3 \
+          -o "$DIR/.build/release/institute" "$BASE/institute-$PLATFORM-$SOURCES_REVISION"
+        curl --fail --silent --show-error --location --retry 3 \
+          -o "$DIR/Package.resolved" "$BASE/Package.resolved-$PLATFORM-$SOURCES_REVISION"
+        sha() { (sha256sum "$1" 2>/dev/null || shasum -a 256 "$1") | cut -d' ' -f1; }
+        [ "$(sha "$DIR/.build/release/institute")" = "$BINARY_DIGEST" ] \
+          || { echo "::error::published planner for $SOURCES_REVISION $PLATFORM does not match its pinned digest"; exit 1; }
+        [ "$(sha "$DIR/Package.resolved")" = "$GRAPH_DIGEST" ] \
+          || { echo "::error::published planner graph for $SOURCES_REVISION $PLATFORM does not match its pinned digest"; exit 1; }
+        chmod +x "$DIR/.build/release/institute"
+        echo "directory=$DIR" >> "$GITHUB_OUTPUT"
+        echo "Downloaded the published planner \`institute-$PLATFORM-$SOURCES_REVISION\` ($BINARY_DIGEST)." >> "$GITHUB_STEP_SUMMARY"
+
     # A plain fetch into RUNNER_TEMP, not actions/checkout: the sources
     # must live OUTSIDE the subject workspace. `institute ci package
     # validate` walks the subject root recursively (broken-symlink scan),
@@ -98,6 +155,7 @@ runs:
     # verdict.
     - name: Fetch planner sources at the pinned revision
       id: sources
+      if: steps.identity.outputs.binary-digest == ''
       shell: bash
       env:
         SOURCES_REVISION: ${{ steps.identity.outputs.sources-revision }}
@@ -124,6 +182,7 @@ runs:
 
     - name: Build the planner
       id: build
+      if: steps.identity.outputs.binary-digest == ''
       shell: bash
       env:
         DIR: ${{ steps.sources.outputs.directory }}
@@ -210,7 +269,7 @@ runs:
       id: transport
       shell: bash
       env:
-        DIR: ${{ steps.sources.outputs.directory }}
+        DIR: ${{ steps.sources.outputs.directory || steps.published.outputs.directory }}
       run: |
         set -euo pipefail
         BINARY="$DIR/.build/release/institute"

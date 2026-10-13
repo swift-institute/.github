@@ -1,0 +1,5 @@
+# Published planner binaries for the institute-ci action, read live from the
+# default branch. One line per revision and platform:
+#   <institute-application revision> <platform> <binary sha256> <Package.resolved sha256>
+# The assets are institute-<platform>-<revision> and Package.resolved-<platform>-<revision>
+# on swift-institute/institute-application's ci-binaries release (publish-planner workflow).
