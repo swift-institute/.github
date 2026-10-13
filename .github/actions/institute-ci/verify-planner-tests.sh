@@ -37,25 +37,28 @@ expect() {
   fi
 }
 verify() { bash "$here/verify-planner.sh" "$@"; }
-seal ok; expect pass "matching seal" verify "$DIR" "$DIGEST" "$MDIGEST" "$WORKFLOW" "$SOURCES" "$SUBJECT"
-seal nodigest; expect fail "Plan published no binary digest" verify "$DIR" "" "$MDIGEST" "$WORKFLOW" "$SOURCES" "$SUBJECT"
-seal nomdigest; expect fail "Plan published no manifest digest" verify "$DIR" "$DIGEST" "" "$WORKFLOW" "$SOURCES" "$SUBJECT"
-seal nomanifest; rm "$DIR/manifest.json"; expect fail "missing manifest" verify "$DIR" "$DIGEST" "$MDIGEST" "$WORKFLOW" "$SOURCES" "$SUBJECT"
-seal badmanifest; echo '[' > "$DIR/manifest.json"; expect fail "malformed manifest" verify "$DIR" "$DIGEST" "$(planner_sha "$DIR/manifest.json")" "$WORKFLOW" "$SOURCES" "$SUBJECT"
-seal nobinary; rm "$DIR/institute"; expect fail "missing binary" verify "$DIR" "$DIGEST" "$MDIGEST" "$WORKFLOW" "$SOURCES" "$SUBJECT"
-seal norun; expect fail "wrong run" env GITHUB_RUN_ID=999 bash "$here/verify-planner.sh" "$DIR" "$DIGEST" "$MDIGEST" "$WORKFLOW" "$SOURCES" "$SUBJECT"
-seal noattempt; expect fail "wrong attempt" env GITHUB_RUN_ATTEMPT=2 bash "$here/verify-planner.sh" "$DIR" "$DIGEST" "$MDIGEST" "$WORKFLOW" "$SOURCES" "$SUBJECT"
-seal noos; expect fail "wrong platform os" env RUNNER_OS=macOS bash "$here/verify-planner.sh" "$DIR" "$DIGEST" "$MDIGEST" "$WORKFLOW" "$SOURCES" "$SUBJECT"
-seal noarch; expect fail "wrong platform arch" env RUNNER_ARCH=ARM64 bash "$here/verify-planner.sh" "$DIR" "$DIGEST" "$MDIGEST" "$WORKFLOW" "$SOURCES" "$SUBJECT"
-seal nowf; expect fail "wrong workflow revision" verify "$DIR" "$DIGEST" "$MDIGEST" dddddddddddddddddddddddddddddddddddddddd "$SOURCES" "$SUBJECT"
-seal nosrc; expect fail "wrong planner sources" verify "$DIR" "$DIGEST" "$MDIGEST" "$WORKFLOW" eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee "$SUBJECT"
-seal nosubject; expect fail "wrong subject" verify "$DIR" "$DIGEST" "$MDIGEST" "$WORKFLOW" "$SOURCES" ffffffffffffffffffffffffffffffffffffffff
-seal notc; expect fail "different toolchain in this job" env PATH="$work/other:$PATH" bash "$here/verify-planner.sh" "$DIR" "$DIGEST" "$MDIGEST" "$WORKFLOW" "$SOURCES" "$SUBJECT"
-seal mdiff; expect fail "manifest digest differs from Plan's" verify "$DIR" "$DIGEST" "$(printf 'f%.0s' {1..64})" "$WORKFLOW" "$SOURCES" "$SUBJECT"
-seal pair; echo '{"pins":[1]}' > "$DIR/Package.resolved"; rewrite "$DIR" ".graph = \"$(planner_sha "$DIR/Package.resolved")\""; expect fail "rewritten manifest and graph pair" verify "$DIR" "$DIGEST" "$MDIGEST" "$WORKFLOW" "$SOURCES" "$SUBJECT"
-seal runtime; rewrite "$DIR" '.runtime = "libswiftCore.so 0000"'; expect fail "different runtime identity" verify "$DIR" "$DIGEST" "$(planner_sha "$DIR/manifest.json")" "$WORKFLOW" "$SOURCES" "$SUBJECT"
-seal tamper; echo '# replaced' >> "$DIR/institute"; expect fail "replaced binary" verify "$DIR" "$DIGEST" "$MDIGEST" "$WORKFLOW" "$SOURCES" "$SUBJECT"
-seal graph; echo '{"pins":[1]}' > "$DIR/Package.resolved"; expect fail "replaced graph" verify "$DIR" "$DIGEST" "$MDIGEST" "$WORKFLOW" "$SOURCES" "$SUBJECT"
-seal nolaunch; printf '#!/usr/bin/env bash\nexit 3\n' > "$DIR/institute"; D2=$(planner_sha "$DIR/institute"); rewrite "$DIR" ".digest = \"$D2\""; expect fail "planner does not launch" verify "$DIR" "$D2" "$(planner_sha "$DIR/manifest.json")" "$WORKFLOW" "$SOURCES" "$SUBJECT"
+seal ok; expect pass "matching seal" verify "$DIR" "$DIGEST" "$MDIGEST" "$WORKFLOW" "$SOURCES" "$SUBJECT" 1
+seal nodigest; expect fail "Plan published no binary digest" verify "$DIR" "" "$MDIGEST" "$WORKFLOW" "$SOURCES" "$SUBJECT" 1
+seal nomdigest; expect fail "Plan published no manifest digest" verify "$DIR" "$DIGEST" "" "$WORKFLOW" "$SOURCES" "$SUBJECT" 1
+seal nomanifest; rm "$DIR/manifest.json"; expect fail "missing manifest" verify "$DIR" "$DIGEST" "$MDIGEST" "$WORKFLOW" "$SOURCES" "$SUBJECT" 1
+seal badmanifest; echo '[' > "$DIR/manifest.json"; expect fail "malformed manifest" verify "$DIR" "$DIGEST" "$(planner_sha "$DIR/manifest.json")" "$WORKFLOW" "$SOURCES" "$SUBJECT" 1
+seal nobinary; rm "$DIR/institute"; expect fail "missing binary" verify "$DIR" "$DIGEST" "$MDIGEST" "$WORKFLOW" "$SOURCES" "$SUBJECT" 1
+seal norun; expect fail "wrong run" env GITHUB_RUN_ID=999 bash "$here/verify-planner.sh" "$DIR" "$DIGEST" "$MDIGEST" "$WORKFLOW" "$SOURCES" "$SUBJECT" 1
+seal noattempt; expect fail "sealed in another attempt than Plan's" env GITHUB_RUN_ATTEMPT=2 bash "$here/verify-planner.sh" "$DIR" "$DIGEST" "$MDIGEST" "$WORKFLOW" "$SOURCES" "$SUBJECT" 2
+seal rerun; expect pass "re-run of failed jobs reuses Plan's earlier attempt" env GITHUB_RUN_ATTEMPT=2 bash "$here/verify-planner.sh" "$DIR" "$DIGEST" "$MDIGEST" "$WORKFLOW" "$SOURCES" "$SUBJECT" 1
+seal noplanattempt; expect fail "Plan published no attempt" verify "$DIR" "$DIGEST" "$MDIGEST" "$WORKFLOW" "$SOURCES" "$SUBJECT" ""
+seal future; rewrite "$DIR" '.attempt = "3"'; expect fail "Plan's attempt later than this attempt" verify "$DIR" "$DIGEST" "$(planner_sha "$DIR/manifest.json")" "$WORKFLOW" "$SOURCES" "$SUBJECT" 3
+seal noos; expect fail "wrong platform os" env RUNNER_OS=macOS bash "$here/verify-planner.sh" "$DIR" "$DIGEST" "$MDIGEST" "$WORKFLOW" "$SOURCES" "$SUBJECT" 1
+seal noarch; expect fail "wrong platform arch" env RUNNER_ARCH=ARM64 bash "$here/verify-planner.sh" "$DIR" "$DIGEST" "$MDIGEST" "$WORKFLOW" "$SOURCES" "$SUBJECT" 1
+seal nowf; expect fail "wrong workflow revision" verify "$DIR" "$DIGEST" "$MDIGEST" dddddddddddddddddddddddddddddddddddddddd "$SOURCES" "$SUBJECT" 1
+seal nosrc; expect fail "wrong planner sources" verify "$DIR" "$DIGEST" "$MDIGEST" "$WORKFLOW" eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee "$SUBJECT" 1
+seal nosubject; expect fail "wrong subject" verify "$DIR" "$DIGEST" "$MDIGEST" "$WORKFLOW" "$SOURCES" ffffffffffffffffffffffffffffffffffffffff 1
+seal notc; expect fail "different toolchain in this job" env PATH="$work/other:$PATH" bash "$here/verify-planner.sh" "$DIR" "$DIGEST" "$MDIGEST" "$WORKFLOW" "$SOURCES" "$SUBJECT" 1
+seal mdiff; expect fail "manifest digest differs from Plan's" verify "$DIR" "$DIGEST" "$(printf 'f%.0s' {1..64})" "$WORKFLOW" "$SOURCES" "$SUBJECT" 1
+seal pair; echo '{"pins":[1]}' > "$DIR/Package.resolved"; rewrite "$DIR" ".graph = \"$(planner_sha "$DIR/Package.resolved")\""; expect fail "rewritten manifest and graph pair" verify "$DIR" "$DIGEST" "$MDIGEST" "$WORKFLOW" "$SOURCES" "$SUBJECT" 1
+seal runtime; rewrite "$DIR" '.runtime = "libswiftCore.so 0000"'; expect fail "different runtime identity" verify "$DIR" "$DIGEST" "$(planner_sha "$DIR/manifest.json")" "$WORKFLOW" "$SOURCES" "$SUBJECT" 1
+seal tamper; echo '# replaced' >> "$DIR/institute"; expect fail "replaced binary" verify "$DIR" "$DIGEST" "$MDIGEST" "$WORKFLOW" "$SOURCES" "$SUBJECT" 1
+seal graph; echo '{"pins":[1]}' > "$DIR/Package.resolved"; expect fail "replaced graph" verify "$DIR" "$DIGEST" "$MDIGEST" "$WORKFLOW" "$SOURCES" "$SUBJECT" 1
+seal nolaunch; printf '#!/usr/bin/env bash\nexit 3\n' > "$DIR/institute"; D2=$(planner_sha "$DIR/institute"); rewrite "$DIR" ".digest = \"$D2\""; expect fail "planner does not launch" verify "$DIR" "$D2" "$(planner_sha "$DIR/manifest.json")" "$WORKFLOW" "$SOURCES" "$SUBJECT" 1
 [ "$failures" -eq 0 ] || { echo "$failures control(s) broken"; exit 1; }
 echo "all planner reuse controls behave"
