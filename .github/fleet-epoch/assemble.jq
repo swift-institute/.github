@@ -1,4 +1,10 @@
-map(. + {parked: (.repository as $r | $parked | index($r) != null)}) as $results
+def unmeasured_of: map(select(.parked | not) | select(.resolve == "clone-failed"));
+def failing_of: map(select(.parked | not) | select(
+    .resolve == "not-a-package" or .resolve == "clone-failed" | not) | select(
+    .resolve != "pass" or .build != "pass" or (.test != "pass" and .test != "skip")));
+def keys_of: map("\(.repository) \(.platform)");
+map(. + {parked: (.repository as $r | $parked | index($r) != null)}) as $all
+| ($all | map(select(.platform as $p | $advisory | index($p) == null))) as $results
 | ($results | map(select(.parked | not) | select(.resolve == "clone-failed"))) as $unmeasured
 | ($results | map(select(.parked | not) | select(
     .resolve == "not-a-package" or .resolve == "clone-failed" | not) | select(
@@ -19,4 +25,8 @@ map(. + {parked: (.repository as $r | $parked | index($r) != null)}) as $results
    failing: ($failing | map("\(.repository) \(.platform)")),
    causes: ($failing | group_by(.cause // "") | map({cause: (.[0].cause // ""), count: length}) | sort_by(-.count)),
    unmeasuredCauses: ($unmeasured | group_by(.cause // "") | map({cause: (.[0].cause // ""), count: length}) | sort_by(-.count)),
-   results: $results}
+   advisory: ($advisory | map(. as $p | {key: $p, value: ($all | map(select(.platform == $p))) | {
+       counts: {results: length, failing: (failing_of | length), unmeasured: (unmeasured_of | length),
+                parked: (map(select(.parked)) | length)},
+       failing: (failing_of | keys_of), unmeasured: (unmeasured_of | keys_of)}}) | from_entries),
+   results: $all}

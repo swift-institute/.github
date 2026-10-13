@@ -5,7 +5,7 @@ here="$(cd "$(dirname "$0")" && pwd)"
 failures=0
 run() {
   jq -sc --arg date d --arg run r --argjson parked '["o/parked"]' --argjson partial "${2:-false}" \
-    --argjson shards "$1" --arg image i --arg xcode x -f "$here/assemble.jq"
+    --argjson shards "$1" --arg image i --arg xcode x --argjson advisory "${3:-[]}" -f "$here/assemble.jq"
 }
 check() {
   if [ "$2" = "$3" ]; then echo "ok   $1: $3"; else echo "FAIL $1: expected $2, got $3"; failures=$((failures + 1)); fi
@@ -48,6 +48,13 @@ out="$( (row o/a linux pass pass pass ""; row o/a macos pass pass pass "") | run
 check "partial scope all pass: green" false "$(jq .green <<<"$out")"
 check "partial scope all pass: complete" false "$(jq .complete <<<"$out")"
 check "partial scope all pass: partial" true "$(jq .partial <<<"$out")"
+
+out="$( (row o/a linux pass pass pass ""; row o/a macos pass pass pass ""; row o/a windows pass fail skip "x"; row o/b windows clone-failed skip skip "fatal") | run '[{"repositories":"o/a"}]' false '["windows"]')"
+check "advisory windows failure: still green" 'true' "$(jq -c '.green' <<<"$out")"
+check "advisory windows failure: gating counts exclude it" '2' "$(jq -c '.counts.results' <<<"$out")"
+check "advisory windows failure: listed under advisory" '["o/a windows"]' "$(jq -c '.advisory.windows.failing' <<<"$out")"
+check "advisory windows clone failure: unmeasured under advisory" '["o/b windows"]' "$(jq -c '.advisory.windows.unmeasured' <<<"$out")"
+check "advisory windows rows: kept in results" '4' "$(jq -c '.results | length' <<<"$out")"
 
 [ "$failures" -eq 0 ] || { echo "$failures control(s) failed"; exit 1; }
 echo "all assemble controls passed"

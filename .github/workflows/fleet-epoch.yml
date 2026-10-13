@@ -145,9 +145,47 @@ jobs:
             logs
           retention-days: 14
 
+  windows:
+    name: Certify · Windows
+    needs: enumerate
+    if: ${{ needs.enumerate.outputs.shards != '[]' }}
+    runs-on: windows-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      max-parallel: 10
+      matrix:
+        shard: ${{ fromJson(needs.enumerate.outputs.shards) }}
+    steps:
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: SwiftyLab/setup-swift@38f54a76b70d989321de9dc7c840618c08cf56e9 # v1.14.0
+        with:
+          swift-version: "6.4"
+      - name: Certify
+        shell: bash
+        env:
+          CERTIFY_WORK: C:/c
+          CERTIFY_BUILD_FLAGS: --build-system native
+        run: |
+          git config --global core.longpaths true
+          bash .github/fleet-epoch/certify.sh windows "results/windows-${{ matrix.shard.layer }}-${{ matrix.shard.index }}.jsonl" ${{ matrix.shard.repositories }}
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ always() }}
+        with:
+          name: fleet-epoch-windows-${{ matrix.shard.layer }}-${{ matrix.shard.index }}
+          path: |
+            results
+            logs
+          retention-days: 14
+
   publish:
     name: Publish certificate
-    needs: [enumerate, linux, macos]
+    needs: [enumerate, linux, macos, windows]
     if: ${{ always() && needs.enumerate.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -175,10 +213,11 @@ jobs:
           parked="$(jq -Rsc 'split("\n") | map(select(length > 0))' .github/fleet-epoch/parked.txt)"
           { cat artifacts/results/*.jsonl 2>/dev/null || true; } | jq -sc \
             --arg date "$date" --arg run "${{ github.run_id }}" --argjson parked "$parked" --argjson partial "$PARTIAL" --argjson shards "$SHARDS" \
-            --arg image "$SWIFT_IMAGE" --arg xcode "$XCODE_VERSION" \
+            --arg image "$SWIFT_IMAGE" --arg xcode "$XCODE_VERSION" --argjson advisory '["windows"]' \
             -f .github/fleet-epoch/assemble.jq > certificate.json
           echo "date=$date" >> "$GITHUB_OUTPUT"
           jq -r '"Green: \(.green) · results \(.counts.results) · failing \(.counts.failing) · unmeasured \(.counts.unmeasured) · parked \(.counts.parked) · missing \(.counts.missing) · partial \(.partial)"' certificate.json >> "$GITHUB_STEP_SUMMARY"
+          jq -r '.advisory.windows.counts | "Windows (advisory): results \(.results) · failing \(.failing) · unmeasured \(.unmeasured)"' certificate.json >> "$GITHUB_STEP_SUMMARY"
       - name: Commit to certificates
         shell: bash
         run: |

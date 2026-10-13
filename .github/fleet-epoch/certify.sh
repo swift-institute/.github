@@ -37,7 +37,8 @@ verdict() {
 
 export GIT_TERMINAL_PROMPT=0
 here="$(cd "$(dirname "$0")" && pwd)"
-work="$(mktemp -d)"
+work="${CERTIFY_WORK:-$(mktemp -d)}"
+mkdir -p "$work"
 logs="$PWD/logs"
 mkdir -p "$(dirname "$output")" "$logs"
 : >"$output"
@@ -68,13 +69,13 @@ for repository in "$@"; do
         provisioned="$(shopt -s nullglob; bash "$here/../actions/install-system-deps/install.sh" \
           "$directory"/Package.swift "$directory"/Package@swift-*.swift \
           "$scratch"/checkouts/*/Package.swift "$scratch"/checkouts/*/Package@swift-*.swift 2>>"$log" || true)"
-        build="$(cd "$directory" && verdict bounded 2400 swift build --scratch-path "$scratch")"
+        build="$(cd "$directory" && verdict bounded 2400 swift build ${CERTIFY_BUILD_FLAGS:-} --scratch-path "$scratch")"
         if [ "$build" = fail ] && grep -q 'Thread 0 "swift-build"' "$log"; then
           echo "certify: retrying build after swift-build itself crashed" >>"$log"
-          build="$(cd "$directory" && verdict bounded 2400 swift build --scratch-path "$scratch")"
+          build="$(cd "$directory" && verdict bounded 2400 swift build ${CERTIFY_BUILD_FLAGS:-} --scratch-path "$scratch")"
         fi
         if [ "$build" = pass ] && grep -q 'testTarget' "$directory/Package.swift"; then
-          test="$(cd "$directory" && verdict bounded 900 swift test --scratch-path "$scratch")"
+          test="$(cd "$directory" && verdict bounded 900 swift test ${CERTIFY_BUILD_FLAGS:-} --scratch-path "$scratch")"
         fi
       fi
       rm -rf "$scratch"
