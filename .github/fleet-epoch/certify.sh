@@ -52,21 +52,27 @@ for repository in "$@"; do
   test=skip
   provisioned=""
   if git clone --quiet --depth 1 "https://github.com/$repository.git" "$directory" >>"$log" 2>&1 \
-    || { sleep 30; git clone --quiet --depth 1 "https://github.com/$repository.git" "$directory" >>"$log" 2>&1; }; then
+    || { sleep 30; rm -rf "$directory"; git clone --quiet --depth 1 "https://github.com/$repository.git" "$directory" >>"$log" 2>&1; } \
+    || { sleep 90; rm -rf "$directory"; git clone --quiet --depth 1 "https://github.com/$repository.git" "$directory" >>"$log" 2>&1; }; then
     sha="$(git -C "$directory" rev-parse HEAD)"
     if [ -f "$directory/Package.swift" ]; then
       scratch="$work/build"
       resolve="$(cd "$directory" && verdict bounded 900 swift package resolve --scratch-path "$scratch")"
-      if [ "$resolve" = fail ] && grep -qE 'no connectivity to https://github.com|Failed to connect to github.com|Could not resolve host: github.com' "$log"; then
+      if [ "$resolve" = fail ] && grep -qE 'no connectivity to https://github.com|Failed to connect to github.com|Could not resolve host: github.com|fatal: cannot change to' "$log"; then
         sleep 30
-        echo "certify: retrying resolve after lost connectivity" >>"$log"
-        resolve="$(cd "$directory" && verdict bounded 900 swift package resolve --scratch-path "$scratch")"
+        echo "certify: retrying resolve without the shared dependency cache" >>"$log"
+        rm -rf "$scratch"
+        resolve="$(cd "$directory" && verdict bounded 900 swift package resolve --disable-dependency-cache --scratch-path "$scratch")"
       fi
       if [ "$resolve" = pass ]; then
         provisioned="$(shopt -s nullglob; bash "$here/../actions/install-system-deps/install.sh" \
           "$directory"/Package.swift "$directory"/Package@swift-*.swift \
           "$scratch"/checkouts/*/Package.swift "$scratch"/checkouts/*/Package@swift-*.swift 2>>"$log" || true)"
         build="$(cd "$directory" && verdict bounded 2400 swift build --scratch-path "$scratch")"
+        if [ "$build" = fail ] && grep -q 'Thread 0 "swift-build"' "$log"; then
+          echo "certify: retrying build after swift-build itself crashed" >>"$log"
+          build="$(cd "$directory" && verdict bounded 2400 swift build --scratch-path "$scratch")"
+        fi
         if [ "$build" = pass ] && grep -q 'testTarget' "$directory/Package.swift"; then
           test="$(cd "$directory" && verdict bounded 900 swift test --scratch-path "$scratch")"
         fi
