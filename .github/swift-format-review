@@ -1,0 +1,19 @@
+Institute swift-format acquisition reviewed on 14 October 2026 at cabe68bf5274301955609d87271c186eb43508e4. No remaining actionable finding was found in the corrected digest implementation.
+
+The corrected acquisition validates the selected Xcode version and current source digest before accepting an Xcode-origin tool, including an existing cache. A version or digest mismatch fails closed. A build-number change alone is accepted for byte-identical acquisition and its observed build is recorded in schema 7 receipts. Release-origin cache behavior is retained and has no observed Xcode build.
+
+The retained pre-push macOS and Linux checks passed both default and all-traits fresh build/test modes, with 882 tests in each mode. Each supplemental actual-state audit passed for 202 dependencies and 198 mirrors, with matching recorded revisions and checkout HEADs, clean tracked cache sources and no mirror drift.
+
+The cached-version regression runs on both platforms. The selected installed-byte mismatch and successful byte-identical acquisition/receipt fixtures run on macOS and are skipped on Linux. Both observed build inputs, 27A9269 and 27A9275, passed on macOS.
+
+The reviewed GitHub blob identities are:
+
+- Sources/Institute Source/Institute.Source.Acquisition+acquire.swift: a7b1454d8fe5e68538b17ad8f5100356d412b050
+- Sources/Institute Source/Institute.Source.Application+prepare.swift: 2a25f81d2014036567b51e03055b9932ee97425d
+- Sources/Institute Source/Institute.Source.Preparation.swift: 26f8d25e7c704c57317959b340c15a80699572af
+- Sources/Institute Instruments/Institute.Coherence.Run.swift: ff39a9c10e55c7d083a8c3c87b610cc89da0d5fd
+- Tests/Institute Tests/Institute.Source.Preparation Tests.swift: a36fa363a2c1187ef922673544550d3d4f205218
+
+The published planner was exercised by swift-institute/swift-example-cli at ba05ee0488342e3c79abf434c653f17192e40949 in [CI run 38634992241](https://github.com/swift-institute/swift-example-cli/actions/runs/38634992241), which completed successfully. Its downloaded source-preparation receipt has schema 7, swift-format digest 1b4fc083a7b8e21b23b2478dadb996f736a901fa9ff0a14145d981d45989b6ec and observed Xcode build 27A9275. The receipt archive matches GitHub's SHA-256 digest 694ce94bdf3d15936d5e87427b31c5ce535af4e2c61ae6aadcce4720eb244018.
+
+Ordinary Institute Windows CI remains failing at this source revision. In [run 38624309879](https://github.com/swift-institute/institute/actions/runs/38624309879), Windows compiled successfully and ran 874 tests with two assertion issues: removing a retired generated skill projection, and reporting a bounded manifest timeout as timedOut rather than toolchain. Fleet tests owns those fixes. They are separate from the digest-acquisition review verdict and the four passing local macOS/Linux modes above.

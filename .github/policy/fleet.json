@@ -36,6 +36,9 @@
     {"name": "swift-compositions/swift-tls", "platforms": "apple,linux"},
     {"name": "swift-compositions/swift-domain-name-system-kernel", "platforms": "apple,linux"},
     {"name": "swift-compositions/swift-windows", "platforms": "windows"},
-    {"name": "swift-compositions/swift-sqlite", "platforms": "apple"}
+    {"name": "swift-compositions/swift-sqlite", "platforms": "apple"},
+    {"name": "swift-ietf/swift-rfc-3501", "platforms": "apple,linux,windows"},
+    {"name": "swift-ietf/swift-rfc-3501-coder", "platforms": "apple,linux,windows"},
+    {"name": "swift-compositions/swift-imap", "platforms": "apple,linux,windows"}
   ]
 }
