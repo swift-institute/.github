@@ -42,11 +42,23 @@ mkdir -p "$work"
 logs="$PWD/logs"
 mkdir -p "$(dirname "$output")" "$logs"
 : >"$output"
+policy="$here/../policy/fleet.json"
+case "$platform" in
+  macos) family=apple ;;
+  *) family="$platform" ;;
+esac
 
 for repository in "$@"; do
   directory="$work/$repository"
   log="$logs/${platform}__${repository//\//__}.log"
   : >"$log"
+  declared="$(jq -r --arg r "$repository" '.repositories[]? | select(.name == $r) | .platforms // empty' "$policy" 2>/dev/null)"
+  if [ -n "$declared" ] && ! tr ',' '\n' <<<"$declared" | grep -qx "$family"; then
+    printf '{"repository":"%s","platform":"%s","sha":"","resolve":"excluded","build":"skip","test":"skip","cause":"platforms: %s","provisioned":""}\n' \
+      "$repository" "$platform" "$declared" >>"$output"
+    echo "$repository $platform excluded (platforms: $declared)"
+    continue
+  fi
   sha=""
   resolve=skip
   build=skip

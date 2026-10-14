@@ -35,6 +35,14 @@ out="$( (row o/a linux pass pass pass ""; row o/a macos pass pass pass "") | run
 check "missing: green" false "$(jq .green <<<"$out")"
 check "missing: complete" false "$(jq .complete <<<"$out")"
 check "missing: missing" 2 "$(jq .counts.missing <<<"$out")"
+check "missing: counted as unmeasured" 2 "$(jq .counts.unmeasured <<<"$out")"
+check "missing: listed as unmeasured" '["o/b linux","o/b macos"]' "$(jq -c '.unmeasured' <<<"$out")"
+check "missing: cause named" '"no result: the shard produced no row for this repository"' "$(jq -c '.unmeasuredCauses[0].cause' <<<"$out")"
+
+out="$( (row o/a linux pass pass pass ""; row o/a macos pass pass pass ""; row o/b linux pass pass pass "") | run '[{"repositories":"o/a"},{"repositories":"o/b"}]')"
+check "lost macOS shard: green" false "$(jq .green <<<"$out")"
+check "lost macOS shard: unmeasured" '["o/b macos"]' "$(jq -c '.unmeasured' <<<"$out")"
+check "lost macOS shard: failing" 0 "$(jq .counts.failing <<<"$out")"
 
 out="$( (row o/parked linux clone-failed skip skip "fatal") | run '[{"repositories":"o/parked"}]')"
 check "parked clone failure: unmeasured" 0 "$(jq .counts.unmeasured <<<"$out")"
@@ -55,6 +63,15 @@ check "advisory windows failure: gating counts exclude it" '2' "$(jq -c '.counts
 check "advisory windows failure: listed under advisory" '["o/a windows"]' "$(jq -c '.advisory.windows.failing' <<<"$out")"
 check "advisory windows clone failure: unmeasured under advisory" '["o/b windows"]' "$(jq -c '.advisory.windows.unmeasured' <<<"$out")"
 check "advisory windows rows: kept in results" '4' "$(jq -c '.results | length' <<<"$out")"
+
+out="$( (row o/a linux pass pass pass ""; row o/a macos pass pass pass ""; row o/b linux pass pass pass ""; row o/b macos pass pass pass ""; row o/a windows pass pass pass "") | run "$shards" false '["windows"]')"
+check "advisory windows missing row: unmeasured under advisory" '["o/b windows"]' "$(jq -c '.advisory.windows.unmeasured' <<<"$out")"
+check "advisory windows missing row: gating still green" 'true' "$(jq -c '.green' <<<"$out")"
+
+out="$( (row o/a linux pass pass pass ""; row o/a macos pass pass pass ""; row o/b linux pass pass pass ""; row o/b macos pass pass pass ""; row o/a windows pass pass pass ""; row o/b windows excluded skip skip "platforms: apple,linux") | run "$shards" false '["windows"]')"
+check "excluded windows row: not failing" '[]' "$(jq -c '.advisory.windows.failing' <<<"$out")"
+check "excluded windows row: not unmeasured" '[]' "$(jq -c '.advisory.windows.unmeasured' <<<"$out")"
+check "excluded windows row: counted" '1' "$(jq -c '.advisory.windows.counts.excluded' <<<"$out")"
 
 [ "$failures" -eq 0 ] || { echo "$failures control(s) failed"; exit 1; }
 echo "all assemble controls passed"
