@@ -31,6 +31,10 @@
     {"name": "swift-compositions/swift-darwin", "platforms": "apple"},
     {"name": "swift-compositions/swift-linux", "platforms": "apple,linux"},
     {"name": "swift-compositions/swift-posix", "platforms": "apple,linux"},
+    {"name": "swift-compositions/swift-sockets", "platforms": "apple,linux"},
+    {"name": "swift-compositions/swift-sockets-ip-address", "platforms": "apple,linux"},
+    {"name": "swift-compositions/swift-tls", "platforms": "apple,linux"},
+    {"name": "swift-compositions/swift-domain-name-system-kernel", "platforms": "apple,linux"},
     {"name": "swift-compositions/swift-windows", "platforms": "windows"},
     {"name": "swift-compositions/swift-sqlite", "platforms": "apple"}
   ]
