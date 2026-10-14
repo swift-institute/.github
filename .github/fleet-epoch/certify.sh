@@ -31,6 +31,10 @@ verdict() {
   if [ "$status" -eq 0 ]; then echo pass; return; fi
   if [ "$1" = bounded ] && { [ "$status" -eq 124 ] || [ "$status" -eq 137 ]; }; then
     echo "certify: timeout after $2 s: $3 $4" >>"$log"
+  elif [ "$1" = bounded ]; then
+    echo "certify: $3 $4 exited with status $status" >>"$log"
+  else
+    echo "certify: $1 $2 exited with status $status" >>"$log"
   fi
   echo fail
 }
@@ -71,7 +75,7 @@ for repository in "$@"; do
     if [ -f "$directory/Package.swift" ]; then
       scratch="$work/build"
       resolve="$(cd "$directory" && verdict bounded 900 swift package resolve --scratch-path "$scratch")"
-      if [ "$resolve" = fail ] && grep -qE 'no connectivity to https://github.com|Failed to connect to github.com|Could not resolve host: github.com|fatal: cannot change to' "$log"; then
+      if [ "$resolve" = fail ] && grep -qE 'no connectivity to https://github.com|Failed to connect to github.com|Could not resolve host: github.com|fatal: cannot change to|^certify: swift package exited with status (139|132)$' "$log"; then
         sleep 30
         echo "certify: retrying resolve without the shared dependency cache" >>"$log"
         rm -rf "$scratch"
@@ -112,6 +116,12 @@ for repository in "$@"; do
     sed -E "s/$(printf '\033')\[[0-9;]*m//g" "$log" >"$log.plain"
     cause="$({ grep -E '[^ ]: error:|recorded an issue' "$log.plain"; grep -E '^error:' "$log.plain"; grep -E 'error:' "$log.plain"; } | head -1 | sed -E 's#/[^ :]*/##g' | cut -c1-200)"
     rm -f "$log.plain"
+  fi
+  if [ -z "$cause" ] && { [ "$resolve" = fail ] || [ "$build" = fail ] || [ "$test" = fail ]; }; then
+    cause="$(grep -E '^certify: .* exited with status [0-9]+$' "$log" | tail -1)"
+    case "$cause" in
+      *" status 139" | *" status 132") cause="$cause (the tool itself crashed, no error text)" ;;
+    esac
   fi
   cause="$(printf '%s' "$cause" | tr -d '\000-\037' | sed 's/\\/\\\\/g; s/"/\\"/g')"
   printf '{"repository":"%s","platform":"%s","sha":"%s","resolve":"%s","build":"%s","test":"%s","cause":"%s","provisioned":"%s"}\n' \
