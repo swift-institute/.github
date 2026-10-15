@@ -576,6 +576,7 @@ jobs:
         run: |
           set -euo pipefail
           "$BINARY" ci -- source \
+            --exit-policy strict \
             --repository "${{ needs.plan.outputs.subject-repository }}" \
             --revision "${{ needs.plan.outputs.subject-sha }}" \
             --root "$GITHUB_WORKSPACE" \
