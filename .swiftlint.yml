@@ -405,6 +405,7 @@ custom_rules:
   no_try_optional:
     name: "No try? — Silent Error Swallowing ([IMPL-108])"
     regex: '\btry\?\s'
+    excluded_match_kinds: [string]
     message: "try? silently discards typed errors. Use 'do throws(E) { try ... } catch { }' for explicit handling, or 'try!' if the precondition is provably guaranteed ([IMPL-108])."
     severity: warning
     excluded:
@@ -412,6 +413,7 @@ custom_rules:
   no_existential_throws:
     name: "No Existential Throws ([API-ERR-006])"
     regex: '\bthrows\(\s*any\s+Error\s*\)'
+    excluded_match_kinds: [string]
     message: "Existential 'throws(any Error)' is forbidden. [API-ERR-001] requires typed throws and is non-negotiable. Make the containing type generic over the error type ([API-ERR-006])."
     severity: error
   no_any_protocol_existential:
@@ -476,11 +478,13 @@ custom_rules:
     # exception per [API-NAME-003]: types whose `Flags` is the spec's
     # literal term may opt out via // swiftlint:disable:next options_not_flags.
     regex: '\b(struct|enum)\s+\w+Flags\b'
+    excluded_match_kinds: [string]
     message: "OptionSet types use .Options suffix, not .Flags (C-flag idiom). The Swift API layer models the concept, not the C naming ([API-NAME-011])."
     severity: warning
   no_impl_obj_inst_bindings:
     name: "No impl/obj/inst Local Binding Abbreviations ([API-NAME-012])"
     regex: '\b(let|var)\s+(impl|obj|inst|instance)\s*='
+    excluded_match_kinds: [string]
     message: "Local bindings use the type's own name or a domain-qualified word, not impl/obj/inst/instance ([API-NAME-012])."
     severity: warning
   no_unsafe_block_form:
