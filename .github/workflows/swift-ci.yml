@@ -758,8 +758,9 @@ jobs:
           bash .github/actions/institute-ci/verify-planner.sh \
             "$RUNNER_TEMP/institute-planner" "$DIGEST" "$MANIFEST_DIGEST" "$WORKFLOW_SHA" "$SOURCES" "$SUBJECT_SHA" "$PLAN_ATTEMPT"
           echo "binary=$RUNNER_TEMP/institute-planner/institute" >> "$GITHUB_OUTPUT"
-      # The iOS simulator tests run for a listed repository only; a skipped
-      # job is fine, a failed or cancelled one is not.
+      # The planner refuses a job it did not select, so the iOS leg is checked here
+      # and kept out of what the planner aggregates. It runs for a listed repository
+      # only; a skipped job is fine, a failed or cancelled one is not.
       - name: iOS simulator tests
         shell: bash
         env:
@@ -786,7 +787,7 @@ jobs:
           [ "$REQUIRE_FULL_TIER" = "true" ] && FLAGS+=(--require-full-tier)
           RC=0
           VERDICT="$("$BINARY" ci -- package aggregate \
-            --needs-json "$NEEDS_JSON" \
+            --needs-json "$(jq -c 'del(.["ios-simulator-tests"])' <<< "$NEEDS_JSON")" \
             --gating "${{ needs.plan.outputs.gating }}" \
             --subject-repository "${{ needs.plan.outputs.subject-repository }}" \
             --subject-sha "${{ needs.plan.outputs.subject-sha }}" \
