@@ -418,14 +418,13 @@ jobs:
   # Pilot (Coen, 20 Oct 2026): run the CloudKit tests on the iOS simulator
   # too. swift test cannot target a simulator, and xcodebuild has no trait
   # option, so this leg adds a default trait set to the throwaway checkout's
-  # manifest (every declared trait) before xcodebuild reads it. Advisory,
-  # outside ci-ok, and limited to the listed repositories.
+  # manifest (every declared trait) before xcodebuild reads it. Gating:
+  # inside ci-ok, and limited to the listed repositories.
   ios-simulator-tests:
     name: Extended · iOS Simulator · tests
     needs: plan
     if: ${{ !github.event.repository.private && !cancelled() && contains(fromJSON('["swift-compositions/swift-sqlite"]'), needs.plan.outputs.subject-repository) }}
     runs-on: xcode-27
-    continue-on-error: true
     timeout-minutes: 60
     permissions:
       contents: read
@@ -715,6 +714,7 @@ jobs:
       - macos-release
       - windows-release
       - source
+      - ios-simulator-tests
     if: ${{ always() && !github.event.repository.private }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -758,6 +758,17 @@ jobs:
           bash .github/actions/institute-ci/verify-planner.sh \
             "$RUNNER_TEMP/institute-planner" "$DIGEST" "$MANIFEST_DIGEST" "$WORKFLOW_SHA" "$SOURCES" "$SUBJECT_SHA" "$PLAN_ATTEMPT"
           echo "binary=$RUNNER_TEMP/institute-planner/institute" >> "$GITHUB_OUTPUT"
+      # The iOS simulator tests run for a listed repository only; a skipped
+      # job is fine, a failed or cancelled one is not.
+      - name: iOS simulator tests
+        shell: bash
+        env:
+          RESULT: ${{ needs.ios-simulator-tests.result }}
+        run: |
+          case "$RESULT" in
+            success|skipped) ;;
+            *) echo "::error::iOS simulator tests: $RESULT"; exit 1 ;;
+          esac
       # Runs on always(), so it must reach a verdict when plan itself
       # failed — which is exactly when its outputs are empty.
       - name: Aggregate
