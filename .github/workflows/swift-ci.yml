@@ -415,6 +415,52 @@ jobs:
             echo "no root test targets declared; skipping root swift test"
           fi
           if [ -f Tests/Package.swift ]; then (cd Tests && test_package); fi
+  # Pilot (Coen, 20 Oct 2026): run the CloudKit tests on the iOS simulator
+  # too. swift test cannot target a simulator, and xcodebuild has no trait
+  # option, so this leg adds a default trait set to the throwaway checkout's
+  # manifest (every declared trait) before xcodebuild reads it. Advisory,
+  # outside ci-ok, and limited to the listed repositories.
+  ios-simulator-tests:
+    name: Extended · iOS Simulator · tests
+    needs: plan
+    if: ${{ !github.event.repository.private && !cancelled() && contains(fromJSON('["swift-compositions/swift-sqlite"]'), needs.plan.outputs.subject-repository) }}
+    runs-on: xcode-27
+    continue-on-error: true
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+      - uses: swift-institute/.github/.github/actions/ci-subject@ffe641da803a23bdfb4e3bb889edff9c43c41198
+        with:
+          repository: ${{ needs.plan.outputs.subject-repository }}
+          sha: ${{ needs.plan.outputs.subject-sha }}
+      - run: sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
+      - name: Enable every declared trait in this checkout's manifest
+        run: |
+          python3 - <<'PY'
+          import re
+          text = open("Package.swift").read()
+          names = re.findall(r'\.trait\(name: "([^"]+)"', text)
+          assert names, "no traits declared"
+          default = ", ".join('"%s"' % name for name in names)
+          marker = "traits: ["
+          assert marker in text, "no traits array"
+          text = text.replace(marker, marker + "\n        .default(enabledTraits: [%s])," % default, 1)
+          open("Package.swift", "w").write(text)
+          PY
+      - name: Test (iOS Simulator)
+        run: |
+          swift --version
+          UDID="$(xcrun simctl list devices available -j | jq -r '[.devices | to_entries[] | select(.key | test("iOS")) | .value[] | select(.name | test("iPhone"))][0].udid')"
+          echo "Simulator: $UDID"
+          xcodebuild test \
+            -scheme "$(xcodebuild -list -json | jq -r '.workspace.schemes[0] // .project.targets[0]')" \
+            -destination "id=$UDID" \
+            -only-testing:"SQLite CloudKit Tests" \
+            -skipMacroValidation -skipPackagePluginValidation
   embedded:
     name: Extended · Embedded
     needs: plan
