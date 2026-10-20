@@ -31,6 +31,11 @@ env:
   # cross into a called reusable, so a layer-side pin would be inert.
   XCODE_VERSION: "27.1"
 
+# Every build and test command passes --enable-all-traits (Coen, 20 Oct
+# 2026). Packages declare no default traits, so without the flag code behind
+# `#if <Trait>` and trait-conditional dependencies is never compiled here,
+# while consumers that enable the trait compile it. The flag is a no-op for
+# a package without traits.
 jobs:
 # Top-level job names are intentionally static. GitHub may render
 # unresolved input or matrix expressions literally when a job is skipped
@@ -255,9 +260,9 @@ jobs:
           CI_TIER: ${{ needs.plan.outputs.tier }}
         run: |
           swift --version
-          if [ "$CI_TIER" = "build" ]; then swift build -c release; exit 0; fi
+          if [ "$CI_TIER" = "build" ]; then swift build -c release --enable-all-traits; exit 0; fi
           test_package() {
-            swift test -c release
+            swift test -c release --enable-all-traits
           }
           # A package may declare no root test targets (nested-layout or
           # content-only repositories). Root `swift test` exits nonzero on
@@ -291,7 +296,7 @@ jobs:
       - name: Build
         run: |
           swift --version
-          swift build -c release
+          swift build -c release --enable-all-traits
   linux-nightly:
     name: Build · Linux · nightly
     needs: plan
@@ -314,7 +319,7 @@ jobs:
       - name: Build
         run: |
           swift --version
-          swift build -c release
+          swift build -c release --enable-all-traits
   windows-release:
     name: Build · Windows · release
     needs: plan
@@ -356,11 +361,11 @@ jobs:
           test_package() {
             scratch="$1"
             status=0
-            swift test -c debug --build-system native --scratch-path "$scratch" || status=$?
+            swift test -c debug --enable-all-traits --build-system native --scratch-path "$scratch" || status=$?
             if [ "$status" -eq 139 ] || [ "$status" -eq 132 ]; then
               echo "::warning::swift test itself crashed (exit $status); retrying once."
               status=0
-              swift test -c debug --build-system native --scratch-path "$scratch" || status=$?
+              swift test -c debug --enable-all-traits --build-system native --scratch-path "$scratch" || status=$?
             fi
             return "$status"
           }
@@ -401,7 +406,7 @@ jobs:
         run: |
           swift --version
           test_package() {
-            swift test -c debug
+            swift test -c debug --enable-all-traits
           }
           # Same zero-root-test-targets guard as the Linux legs.
           if grep -q 'testTarget' Package.swift; then
@@ -410,34 +415,6 @@ jobs:
             echo "no root test targets declared; skipping root swift test"
           fi
           if [ -f Tests/Package.swift ]; then (cd Tests && test_package); fi
-  # Pilot (Coen, 20 Oct 2026): build and test with every declared package
-  # trait enabled. The other legs build default traits only, so code behind
-  # a non-default trait (swift-sqlite's GRDB, Observation and CloudKit) is
-  # never compiled off-machine while consumers enable it. Advisory and
-  # limited to the listed repositories until the pilot's findings are
-  # reported; widening it is a separate decision.
-  macos-all-traits:
-    name: Extended · Apple · all traits
-    needs: plan
-    if: ${{ !github.event.repository.private && !cancelled() && contains(fromJSON('["swift-compositions/swift-sqlite"]'), needs.plan.outputs.subject-repository) }}
-    runs-on: xcode-27
-    continue-on-error: true
-    timeout-minutes: 60
-    permissions:
-      contents: read
-    steps:
-      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
-        with:
-          egress-policy: audit
-      - uses: swift-institute/.github/.github/actions/ci-subject@ffe641da803a23bdfb4e3bb889edff9c43c41198
-        with:
-          repository: ${{ needs.plan.outputs.subject-repository }}
-          sha: ${{ needs.plan.outputs.subject-sha }}
-      - run: sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
-      - name: Test with all traits
-        run: |
-          swift --version
-          swift test -c debug --enable-all-traits
   embedded:
     name: Extended · Embedded
     needs: plan
