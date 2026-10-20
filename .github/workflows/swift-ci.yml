@@ -573,15 +573,28 @@ jobs:
         env:
           BINARY: ${{ steps.institute-ci.outputs.binary }}
           DYLD_LIBRARY_PATH: ${{ steps.institute-ci.outputs.runtime-library-path }}
+        # The JSON report on stdout is also kept as the `quality-report`
+        # artifact: the log copy is subject to GitHub's secret masking, which
+        # rewrites substrings to `***` and leaves the JSON unparsable.
         run: |
           set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/quality"
           "$BINARY" ci -- source \
             --exit-policy strict \
             --repository "${{ needs.plan.outputs.subject-repository }}" \
             --revision "${{ needs.plan.outputs.subject-sha }}" \
             --root "$GITHUB_WORKSPACE" \
             --bundle "${{ needs.plan.outputs.lint-bundle }}" \
-            --xcode-application "/Applications/Xcode_${XCODE_VERSION}.app"
+            --xcode-application "/Applications/Xcode_${XCODE_VERSION}.app" \
+            | tee "$RUNNER_TEMP/quality/report.json"
+      - name: Keep the Quality report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: quality-report
+          path: ${{ runner.temp }}/quality/report.json
+          if-no-files-found: warn
+          retention-days: 90
       - name: Keep the source preparation receipt
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
