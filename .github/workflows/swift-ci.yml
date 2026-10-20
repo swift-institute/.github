@@ -410,6 +410,34 @@ jobs:
             echo "no root test targets declared; skipping root swift test"
           fi
           if [ -f Tests/Package.swift ]; then (cd Tests && test_package); fi
+  # Pilot (Coen, 20 Oct 2026): build and test with every declared package
+  # trait enabled. The other legs build default traits only, so code behind
+  # a non-default trait (swift-sqlite's GRDB, Observation and CloudKit) is
+  # never compiled off-machine while consumers enable it. Advisory and
+  # limited to the listed repositories until the pilot's findings are
+  # reported; widening it is a separate decision.
+  macos-all-traits:
+    name: Extended · Apple · all traits
+    needs: plan
+    if: ${{ !github.event.repository.private && !cancelled() && contains(fromJSON('["swift-compositions/swift-sqlite"]'), needs.plan.outputs.subject-repository) }}
+    runs-on: xcode-27
+    continue-on-error: true
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+      - uses: swift-institute/.github/.github/actions/ci-subject@ffe641da803a23bdfb4e3bb889edff9c43c41198
+        with:
+          repository: ${{ needs.plan.outputs.subject-repository }}
+          sha: ${{ needs.plan.outputs.subject-sha }}
+      - run: sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
+      - name: Test with all traits
+        run: |
+          swift --version
+          swift test -c debug --enable-all-traits
   embedded:
     name: Extended · Embedded
     needs: plan
