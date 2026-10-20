@@ -19,7 +19,9 @@
 # Instead of hard-coding a per-package apt list (which drifts), this derives
 # the needed packages from the resolved graph:
 #
-#   1. `swift package resolve` to populate every compiled package graph's
+#   1. `swift package resolve --enable-all-traits` (the traits the build
+#      enables, so trait-gated dependencies and their shims are in the graph)
+#      to populate every compiled package graph's
 #      `.build/checkouts/` (must run AFTER configure-private-repos so private
 #      deps can be cloned). The sanctioned nested-test layout declares a
 #      second graph at `Tests/Package.swift`, which `swift test` later
@@ -67,7 +69,7 @@ runs:
         for package_root in "${package_roots[@]}"; do
           (
             cd "$package_root"
-            swift package resolve
+            swift package resolve --enable-all-traits
           ) || echo "::warning::swift package resolve failed during system-dep derivation for $package_root; continuing best-effort"
         done
 
