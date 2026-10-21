@@ -145,7 +145,7 @@ jobs:
           sha: ${{ steps.subject.outputs.sha }}
 
       - id: institute-ci
-        uses: swift-institute/.github/.github/actions/institute-ci@0c39a6d1f41951b839ad98d9bea59ee911e65cb9
+        uses: swift-institute/.github/.github/actions/institute-ci@0350d63820ee0b32d2c008ceea0208e0ce70b5c9
 
       - name: Materialize fleet policy at the workflow revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -619,7 +619,7 @@ jobs:
           repository: ${{ needs.plan.outputs.subject-repository }}
           sha: ${{ needs.plan.outputs.subject-sha }}
       - id: institute-ci
-        uses: swift-institute/.github/.github/actions/institute-ci@0c39a6d1f41951b839ad98d9bea59ee911e65cb9
+        uses: swift-institute/.github/.github/actions/institute-ci@0350d63820ee0b32d2c008ceea0208e0ce70b5c9
       - name: Measure source
         shell: bash
         env:
