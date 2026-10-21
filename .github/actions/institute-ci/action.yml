@@ -307,6 +307,16 @@ runs:
             fi
           fi
         else
+          # The planner links the Swift runtime dynamically. Runner images
+          # differ in whether they provide one (ubuntu-24.04 does, ubuntu-26.04
+          # does not), so the selected toolchain's runtime goes on the loader
+          # path for the rest of the job: the seal, ci-ok's reuse check and
+          # every later planner launch resolve the same libraries.
+          if [ "$(uname -s)" = Linux ]; then
+            RUNTIME_DIR="$("$GITHUB_ACTION_PATH/linux-runtime.sh")"
+            echo "LD_LIBRARY_PATH=$RUNTIME_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+            export LD_LIBRARY_PATH="$RUNTIME_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          fi
           "$BINARY" --help >/dev/null
         fi
 
