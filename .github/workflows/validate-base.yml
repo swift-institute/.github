@@ -1,0 +1,448 @@
+# validate-base.yml — reusable workflow extracting the 7-step skeleton
+# shared by all per-rule validate-*.yml workflows.
+#
+# Phase B-1 of CI-REVIEW-PHASE-B-DESIGN-2026-05-14. Per-rule callers become
+# thin wrappers (~25 lines) declaring only the validator-script, the
+# rule-id-regex for finding aggregation, the discovery-mode, and optional
+# overrides. The base owns the boilerplate (harden-runner, App-token mint,
+# checkout, target resolution, validator invocation, aggregation, summary).
+#
+# Three discovery modes per design doc §1:
+#
+#   single-target            — clone one repo; run validator once.
+#   wrapper-host-multi-file  — clone one repo; validator iterates files
+#                              internally (e.g., every .github/workflows/*.yml).
+#                              Workflow body identical to single-target.
+#   per-package-org-sweep    — enumerate every repo in target-org through
+#                              paginated authenticated REST (inside this one
+#                              job, not one leaf job per repo), then run the
+#                              validator once per enumerated repo. Landed
+#                              Task 0B-01 (swift-institute/.github#280),
+#                              closing the Phase B-2 deferral: six single-
+#                              target callers (validate-docc-structure.yml,
+#                              validate-package-shape.yml,
+#                              validate-platform-architecture.yml,
+#                              validate-readme.yml,
+#                              validate-diagnostic-format.yml,
+#                              validate-layer-deps.yml) previously depended
+#                              on the orchestrator's repository-wide 2D
+#                              (organization, repository) `resolve-targets`
+#                              matrix, which is capped by GitHub's 256-job
+#                              strategy-matrix limit and produced an empty
+#                              matrix (silently `skipped`, not `success`) at
+#                              least once. This mode replaces that with an
+#                              organization matrix — at most
+#                              `active-organization-count` jobs per caller
+#                              validator — and moves repository enumeration
+#                              inside each org cell.
+#
+# Chain-depth accounting per [CI-004b] (4-level workflow_call limit):
+# Phase B-1 callers (e.g., validate-cache-policy.yml) sit at L1 when
+# triggered by their own paths-trigger or workflow_dispatch, so nesting
+# validate-base.yml puts the chain at L2 — well within budget. The two
+# universal-nested validators (validate-thin-callers.yml at swift-ci.yml:496
+# and validate-file-naming.yml at :504) sit at L4 already; they MUST NOT
+# migrate to validate-base.yml — manifest entries flag them with
+# `migrate-to-base: no (chain-C)` per CI-REVIEW-PHASE-B-DESIGN §5.
+#
+# Per [CI-090] this is a workflow_call reusable so NO top-level
+# `permissions:` block — per-job permissions provide the floor, the
+# caller's permissions cap the intersection.
+
+name: validate-base
+
+on:
+  workflow_call:
+    inputs:
+      validator-script:
+        description: 'Path within swift-institute/.github to the per-rule validator (e.g., .github/scripts/validate-cache-policy.py).'
+        type: string
+        required: true
+      rule-id-regex:
+        description: 'awk-compatible regex matching column 2 of /tmp/findings.tsv (e.g., "^CI-04[02]"). Used for both the violations-count and the step-summary table filter.'
+        type: string
+        required: true
+      discovery-mode:
+        description: 'single-target | wrapper-host-multi-file | per-package-org-sweep.'
+        type: string
+        required: true
+      target-repo:
+        description: 'Optional override of github.repository. Empty = default to caller repo. Used by single-target/wrapper-host-multi-file.'
+        type: string
+        required: false
+        default: ''
+      target-org:
+        description: 'Required for per-package-org-sweep. Empty otherwise.'
+        type: string
+        required: false
+        default: ''
+      visibility:
+        description: 'Repo visibility filter for per-package-org-sweep (public | private | internal | all). Ignored by single-target/wrapper-host-multi-file.'
+        type: string
+        required: false
+        default: 'public'
+      crash-exit-min:
+        # Two incompatible per-script exit conventions already coexist among
+        # this file's callers: (a) called bare (no sys.exit) so the process
+        # always exits 0 unless an uncaught exception propagates — for THAT
+        # family, any nonzero rc unambiguously means a crash (default: 1,
+        # i.e. rc>=1); (b) called via `sys.exit(main(argv))` where main()
+        # returns 1 to mean "findings present" and 2 for a usage error — for
+        # THAT family, rc==1 is a normal finding, not a crash, and treating
+        # it as one (the validate-base.yml default before Task 0B-01)
+        # silently mislabeled every finding as an instrumentation failure.
+        # Set to 2 for a (b)-convention caller.
+        description: 'Minimum exit code from validator-script that counts as validator-crashed rather than findings-present. Default 1 (any nonzero rc is a crash) matches every pre-existing caller. Set 2 for a script whose main() returns 1 to mean "findings present" and reserves 2+ for a genuine crash/usage error.'
+        type: number
+        required: false
+        default: 1
+      trigger-repository:
+        description: 'Repository whose event triggered the calling workflow.'
+        type: string
+        required: true
+      trigger-ref:
+        description: 'Exact fully qualified ref of the triggering run.'
+        type: string
+        required: true
+      trigger-sha:
+        description: 'Exact 40-character commit SHA of the triggering run.'
+        type: string
+        required: true
+      validator-ref:
+        # Pinning the caller pins the workflow but NOT the script it runs, so
+        # without this a green result cannot be attributed to a version of the
+        # checker. Default main = the behaviour every caller had before.
+        description: 'Git ref of swift-institute/.github to load the validator script from. Defaults to main. Pass a commit SHA to make a run reproducible from its caller.'
+        type: string
+        required: false
+        default: 'main'
+      dry-run:
+        description: 'Run checks but do not fail the job on findings.'
+        type: boolean
+        required: false
+        default: false
+    outputs:
+      total-violations:
+        description: 'Count of findings matching rule-id-regex.'
+        value: ${{ jobs.scan.outputs.total-violations }}
+
+jobs:
+  scan:
+    if: ${{ !github.event.repository.private }}  # [CI-032]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      total-violations: ${{ steps.aggregate.outputs.total-violations }}
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Validate discovery-mode value
+        if: ${{ inputs.discovery-mode != 'single-target' && inputs.discovery-mode != 'wrapper-host-multi-file' && inputs.discovery-mode != 'per-package-org-sweep' }}
+        shell: bash
+        env:
+          MODE: ${{ inputs.discovery-mode }}
+        run: |
+          echo "::error::Unknown discovery-mode: '${MODE}'. Valid values: single-target | wrapper-host-multi-file | per-package-org-sweep."
+          exit 1
+
+      - name: Mint installation token (swift-institute-bot)
+        id: mint-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          # per-package-org-sweep scopes the token to the org actually being
+          # swept (matches validate-thin-callers.yml / validate-file-naming.yml
+          # precedent: `inputs.org || github.repository_owner`), so a
+          # visibility=private/internal/all sweep of a DIFFERENT org's
+          # installation can actually read it. target-org is empty for
+          # single-target/wrapper-host-multi-file, so this is a no-op for
+          # every other caller of this file (falls back to the prior
+          # unconditional github.repository_owner).
+          owner: ${{ inputs.target-org || github.repository_owner }}
+
+      # Report which credential the scan will use. This is deliberately NOT
+      # written to $GITHUB_STEP_SUMMARY here: the Aggregate step writes that
+      # file with `>` (truncate), so anything logged there earlier is erased.
+      # The path is emitted as an annotation and as an output, and the Aggregate
+      # step renders it into the summary it owns -- a skip nobody can read is
+      # indistinguishable from a pass.
+      - name: Resolve scan credentials
+        id: creds
+        env:
+          APP_TOKEN: ${{ steps.mint-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          if [ -n "${APP_TOKEN}" ]; then
+            echo "path=swift-institute-bot App token" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Scan credentials::swift-institute-bot App token (full scan scope)"
+          else
+            echo "path=GITHUB_TOKEN fallback (App secrets unavailable on this event)" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Scan credentials::App secrets are unavailable on this event (Dependabot or fork PR), falling back to the automatic GITHUB_TOKEN. Public targets are scanned normally; a PRIVATE target cannot be cloned and will surface as clone-failed rather than passing quietly."
+          fi
+
+      # Defaults to main, which is what every caller got before validator-ref
+      # existed. A caller that pins this workflow to a SHA should pin the same
+      # SHA here: otherwise it pins the workflow but not the script the workflow
+      # runs, and a green result still cannot be attributed to a version.
+      - name: Checkout swift-institute/.github (validator host)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: swift-institute/.github
+          path: institute-github
+          ref: ${{ inputs.validator-ref }}
+
+      # The ref is echoed because a pinned-but-ignored parameter looks exactly
+      # like a pinned-and-honoured one in a green run. This line is what makes
+      # the difference observable after the fact.
+      - name: Report validator source
+        shell: bash
+        env:
+          VALIDATOR_REF: ${{ inputs.validator-ref }}
+        run: |
+          set -euo pipefail
+          resolved="$(git -C institute-github rev-parse HEAD)"
+          echo "::notice title=Validator source::swift-institute/.github@${VALIDATOR_REF} resolved to ${resolved}"
+          echo "validator-ref=${VALIDATOR_REF} resolved=${resolved}"
+
+      - name: Resolve target repo
+        id: targets
+        if: ${{ inputs.discovery-mode != 'per-package-org-sweep' }}
+        env:
+          GH_TOKEN: ${{ steps.mint-token.outputs.token }}
+          INPUT_REPO: ${{ inputs.target-repo }}
+        run: |
+          set -euo pipefail
+          if [ -n "$INPUT_REPO" ]; then
+            echo "$INPUT_REPO" > /tmp/targets.txt
+          else
+            echo "${GITHUB_REPOSITORY:-swift-institute/.github}" > /tmp/targets.txt
+          fi
+          # Uniform accounting surface with the org-sweep branch below (Task
+          # 0B-01 change item 7): single-target/wrapper-host-multi-file always
+          # enumerate exactly the one named/defaulted repo and exclude none.
+          echo "enumerated=1" >> "$GITHUB_OUTPUT"
+          echo "excluded-archived=0" >> "$GITHUB_OUTPUT"
+
+      # per-package-org-sweep (Task 0B-01, swift-institute/.github#280).
+      # Enumerates every repo in target-org through paginated authenticated
+      # REST — NOT `gh repo list`, which is a known-broken instrument
+      # (owner-filtered repository listings have returned zero for
+      # swift-foundations; see the programme's §3 known-broken-instruments
+      # list). Mirrors the fixed pagination shape the orchestrator's retired
+      # `resolve-targets` job used: `--jq` runs once PER PAGE under
+      # `--paginate`, so the filter must emit one row per repo — never build
+      # an array — or a multi-page org silently loses every page but the
+      # last (the exact defect that left this discovery mode's six callers
+      # dispatching against an empty matrix).
+      - name: Resolve org-sweep targets
+        id: org-sweep-targets
+        if: ${{ inputs.discovery-mode == 'per-package-org-sweep' }}
+        env:
+          GH_TOKEN: ${{ steps.mint-token.outputs.token || github.token }}
+          TARGET_ORG: ${{ inputs.target-org }}
+          VISIBILITY: ${{ inputs.visibility || 'public' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${TARGET_ORG:?target-org is required when discovery-mode=per-package-org-sweep}"
+
+          if ! gh api "/orgs/${TARGET_ORG}/repos?type=${VISIBILITY}&per_page=100" \
+                 --paginate --jq '.[] | [.full_name, (.archived | tostring)] | @tsv' \
+                 > /tmp/org-repos.tsv 2>/tmp/org-enum.err; then
+            echo "::error::Enumerating ${TARGET_ORG} (visibility=${VISIBILITY}) failed: $(head -c 200 /tmp/org-enum.err). Refusing to continue on a partial population — this is an instrumentation failure, not an empty org."
+            exit 1
+          fi
+
+          enumerated=$(wc -l < /tmp/org-repos.tsv | tr -d ' ')
+          # Zero is not a small number here, it is a broken instrument (or a
+          # mis-scoped active org that belongs in orgs.yaml as `status:
+          # archived`, not silently swept as if it had nothing to say).
+          # Positive control: a synthetic organization with no accessible
+          # repos must land here, not fall through as a clean 0-finding pass.
+          if [ "$enumerated" -eq 0 ]; then
+            echo "::error::Enumerated 0 repos in ${TARGET_ORG} (visibility=${VISIBILITY}). That is an enumeration failure or a mis-scoped active org, not a clean empty sweep. Failing closed."
+            exit 1
+          fi
+
+          excluded_archived=$(awk -F'\t' '$2 == "true"' /tmp/org-repos.tsv | wc -l | tr -d ' ')
+          awk -F'\t' '$2 != "true" { print $1 }' /tmp/org-repos.tsv > /tmp/targets.txt
+          included=$(wc -l < /tmp/targets.txt | tr -d ' ')
+
+          echo "${TARGET_ORG}: enumerated=${enumerated} excluded-archived=${excluded_archived} included=${included}"
+          echo "enumerated=${enumerated}" >> "$GITHUB_OUTPUT"
+          echo "excluded-archived=${excluded_archived}" >> "$GITHUB_OUTPUT"
+
+      - name: Run validator
+        id: check
+        env:
+          GH_TOKEN: ${{ steps.mint-token.outputs.token || github.token }}
+          VALIDATOR: ${{ github.workspace }}/institute-github/${{ inputs.validator-script }}
+          TRIGGER_REPOSITORY: ${{ inputs.trigger-repository }}
+          TRIGGER_REF: ${{ inputs.trigger-ref }}
+          TRIGGER_SHA: ${{ inputs.trigger-sha }}
+          CRASH_EXIT_MIN: ${{ inputs.crash-exit-min }}
+        run: |
+          set -euo pipefail
+          : > /tmp/findings.tsv
+          : > /tmp/attempted.txt
+          while IFS= read -r repo; do
+          [ -z "$repo" ] && continue
+          echo "$repo" >> /tmp/attempted.txt
+          workdir=$(mktemp -d)
+          (
+            cd "$workdir"
+            if ! gh repo clone "$repo" . -- --depth 1 --quiet 2>/dev/null; then
+              echo "$repo	clone-failed	-" >> /tmp/findings.tsv
+              exit 0
+            fi
+            # The called workflow inherits the caller's event context. When
+            # that caller is also the scan target, fetch its exact event ref and
+            # accept it only when it resolves to the event's exact SHA. This
+            # covers pushes, pull-request merge refs, and manual dispatches.
+            # Cross-repository sweeps keep their default-branch behavior.
+            if [ "$repo" = "${TRIGGER_REPOSITORY}" ]; then
+              resolved=''
+              if git fetch --depth 1 origin "${TRIGGER_REF}" >/dev/null 2>&1; then
+                resolved="$(git rev-parse FETCH_HEAD)"
+              fi
+              if [ "$resolved" != "${TRIGGER_SHA}" ] \
+                 || ! git checkout --quiet --detach "${TRIGGER_SHA}" \
+                 || [ "$(git rev-parse HEAD)" != "${TRIGGER_SHA}" ]; then
+                echo "$repo	target-checkout-failed	-" >> /tmp/findings.tsv
+                exit 0
+              fi
+              echo "::notice title=Scan target::${repo} ref=${TRIGGER_REF} sha=${TRIGGER_SHA}"
+              echo "scan-target repository=${repo} ref=${TRIGGER_REF} sha=${TRIGGER_SHA}"
+            else
+              resolved="$(git rev-parse HEAD)"
+              echo "::notice title=Scan target::${repo} ref=default sha=${resolved}"
+              echo "scan-target repository=${repo} ref=default sha=${resolved}"
+            fi
+            # Capture the validator's exit code without tripping `set -e`. The
+            # validators are signal-via-TSV: `__main__` returns 0 even WITH
+            # findings (e.g. validate-harden-runner.py calls main() without
+            # sys.exit), so a nonzero rc genuinely means the validator crashed or
+            # aborted (uncaught exception, or require_yaml()'s sys.exit(2) on
+            # missing PyYAML) — NOT that it found violations. The old `|| true`
+            # swallowed such a crash and left findings.tsv empty → "Total
+            # violations: 0" → false-green, exactly the gap clone-failed closes.
+            rc=0
+            python3 "$VALIDATOR" "$repo" "$workdir" >> /tmp/findings.tsv || rc=$?
+            if [ "$rc" -ge "${CRASH_EXIT_MIN:-1}" ]; then
+              echo "$repo	validator-crashed	-" >> /tmp/findings.tsv
+            fi
+          )
+          rm -rf "$workdir"
+          done < /tmp/targets.txt
+
+      - name: Aggregate findings
+        id: aggregate
+        env:
+          RULE_ID_REGEX: ${{ inputs.rule-id-regex }}
+          DRY_RUN: ${{ inputs.dry-run }}
+          VALIDATOR_SCRIPT: ${{ inputs.validator-script }}
+          CREDS_PATH: ${{ steps.creds.outputs.path }}
+          DISCOVERY_MODE: ${{ inputs.discovery-mode }}
+          ENUMERATED: ${{ steps.targets.outputs.enumerated || steps.org-sweep-targets.outputs.enumerated }}
+          EXCLUDED_ARCHIVED: ${{ steps.targets.outputs.excluded-archived || steps.org-sweep-targets.outputs.excluded-archived }}
+        run: |
+          set -euo pipefail
+          # Count findings with the SAME field-match predicate the summary
+          # table uses below (awk `$2 ~ re`), so the count and the rendered
+          # table share one predicate and can never disagree. The prior
+          # `grep -cE "<TAB>${RULE_ID_REGEX}"` was structurally inert: every
+          # caller's rule-id-regex is `^`-anchored, so the effective pattern
+          # `<TAB>^CI-NNN` placed a line-start anchor mid-pattern and matched
+          # ZERO lines — violations pinned to 0, all validate-base consumers
+          # false-green ([CI-110] tooling-trap cluster). awk|wc|tr each exit 0
+          # (awk emits 0 records on empty input) so the pipeline is
+          # pipefail-safe and yields 0 on an empty findings.tsv.
+          violations=$(awk -F'\t' -v re="${RULE_ID_REGEX}" '$2 ~ re' /tmp/findings.tsv | wc -l | tr -d ' ')
+          # Sentinel gates: the Run-validator step writes a
+          # `<repo><TAB>clone-failed<TAB>-` row (clone failed) or a
+          # `<repo><TAB>validator-crashed<TAB>-` row (cloned fine but the
+          # validator exited nonzero), then continues, so a validator that
+          # NEVER PRODUCED USABLE OUTPUT would otherwise pass silently (field 2
+          # of either sentinel matches no rule regex, exactly like clone-failed).
+          # Detect both row kinds explicitly and fail closed.
+          clone_failures=$(awk -F'\t' '$2 == "clone-failed"' /tmp/findings.tsv | wc -l | tr -d ' ')
+          validator_crashes=$(awk -F'\t' '$2 == "validator-crashed" || $2 == "target-checkout-failed"' /tmp/findings.tsv | wc -l | tr -d ' ')
+          echo "total-violations=$violations" >> "$GITHUB_OUTPUT"
+
+          # Per-cell accounting (Task 0B-01 / swift-institute/.github#280,
+          # change item 7): enumerated/excluded-archived come from whichever
+          # target-resolution step actually ran; included is counted
+          # directly off targets.txt (not trusted from an upstream output)
+          # so a step-output plumbing bug cannot silently disagree with what
+          # was actually attempted. `errors`/`unmeasured` map onto the
+          # existing validator_crashes/clone_failures sentinels so this adds
+          # a reporting surface, not a second bookkeeping system.
+          included=$(wc -l < /tmp/targets.txt | tr -d ' ')
+          attempted=0
+          if [ -f /tmp/attempted.txt ]; then
+            attempted=$(wc -l < /tmp/attempted.txt | tr -d ' ')
+          fi
+          measured=$((attempted - clone_failures - validator_crashes))
+          unmeasured=$clone_failures
+          errors=$validator_crashes
+
+          # Instrumentation integrity: every included target must have been
+          # attempted exactly once. A mismatch means the scan loop exited
+          # early or targets.txt/attempted.txt disagree — an instrument
+          # defect, not a finding, and it fails even under dry-run (unlike
+          # the clone-failure/validator-crash gates below, which exist to
+          # report on the TARGETS, not on the harness that reached them).
+          if [ "$attempted" -ne "$included" ]; then
+            echo "::error::Cell unaccounted for ${VALIDATOR_SCRIPT} (${DISCOVERY_MODE}): included=${included} but attempted=${attempted}. The scan loop did not reach every enumerated target."
+            {
+              echo "## ${VALIDATOR_SCRIPT} findings"
+              echo
+              echo "> [!CAUTION]"
+              echo "> INSTRUMENTATION FAILURE: included=${included} attempted=${attempted}. Cell unaccounted for; treat this run as failed regardless of dry-run."
+            } > "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          {
+            echo "## ${VALIDATOR_SCRIPT} findings"
+            echo "Total violations: $violations"
+            # Which credential the scan used. Rendered here because this block
+            # writes $GITHUB_STEP_SUMMARY with `>` and would erase anything an
+            # earlier step wrote. Without it, a GITHUB_TOKEN-scoped run and a
+            # full App-token run produce identical-looking summaries.
+            echo "Scan credentials: ${CREDS_PATH:-unknown}"
+            echo "Discovery mode: ${DISCOVERY_MODE}"
+            echo "Population: enumerated=${ENUMERATED:-?} excluded-archived=${EXCLUDED_ARCHIVED:-?} included=${included} measured=${measured} findings=${violations} errors=${errors} unmeasured=${unmeasured}"
+            echo
+            if [ "$clone_failures" -gt 0 ]; then
+              echo "> [!CAUTION]"
+              echo "> ${clone_failures} target(s) FAILED TO CLONE — the validator did not run. The violation count above is unreliable (false-green risk); treat this run as FAILED and re-run to clear a transient clone error."
+              echo
+              awk -F'\t' '$2 == "clone-failed" { printf("- clone-failed: `%s`\n", $1) }' /tmp/findings.tsv
+              echo
+            fi
+            if [ "$validator_crashes" -gt 0 ]; then
+              echo "> [!CAUTION]"
+              echo "> ${validator_crashes} target(s) PRODUCED NO USABLE FINDINGS — the validator exited nonzero, or the triggering ref did not resolve to the triggering SHA. The violation count above is unreliable (false-green risk); treat this run as FAILED and fix the validator or its environment."
+              echo
+              awk -F'\t' '$2 == "validator-crashed" || $2 == "target-checkout-failed" { printf("- %s: `%s`\n", $2, $1) }' /tmp/findings.tsv
+              echo
+            fi
+            if [ "$violations" -gt 0 ]; then
+              echo "| Repo | Rule | Message |"
+              echo "|---|---|---|"
+              awk -F'\t' -v re="${RULE_ID_REGEX}" '$2 ~ re {
+                gsub(/\|/, "\\|", $3);
+                printf("| `%s` | `%s` | %s |\n", $1, $2, $3)
+              }' /tmp/findings.tsv
+            fi
+          } > "$GITHUB_STEP_SUMMARY"
+          if [ "$violations" -gt 0 ] && [ "$DRY_RUN" != "true" ]; then
+            exit 1
+          fi
