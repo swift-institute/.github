@@ -32,7 +32,7 @@ env:
   # the planner deschedules the leg fleet-wide with a typed record rather
   # than failing every consumer's required check, and only this repository
   # fails closed. Malformed fields fail closed everywhere.
-  SWIFT_MAIN_NIGHTLY_IMAGE: "swiftlang/swift@sha256:3ae5234721c87bda6ab232a2346fc143ac5688159626c8800e66a5eef2a31a16"
+  SWIFT_MAIN_NIGHTLY_IMAGE: "swiftlang/swift@sha256:3f2ab3ce827824c997aed9e6b387641be37a0c7352d1527c01984b99448d9c29"
   SWIFT_MAIN_NIGHTLY_UPSTREAM_ISSUE: "https://github.com/swiftlang/swift/issues/90275"
   SWIFT_MAIN_NIGHTLY_RECHECK: "2026-10-13"
 
@@ -319,7 +319,7 @@ jobs:
     needs: plan
     if: ${{ !github.event.repository.private && !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',linux-nightly,') }}
     runs-on: ubuntu-latest
-    container: swiftlang/swift@sha256:3ae5234721c87bda6ab232a2346fc143ac5688159626c8800e66a5eef2a31a16
+    container: swiftlang/swift@sha256:3f2ab3ce827824c997aed9e6b387641be37a0c7352d1527c01984b99448d9c29
     continue-on-error: true
     timeout-minutes: 45
     permissions:
@@ -484,7 +484,7 @@ jobs:
     needs: plan
     if: ${{ !github.event.repository.private && !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',embedded,') }}
     runs-on: ubuntu-latest
-    container: swiftlang/swift@sha256:3ae5234721c87bda6ab232a2346fc143ac5688159626c8800e66a5eef2a31a16
+    container: swiftlang/swift@sha256:3f2ab3ce827824c997aed9e6b387641be37a0c7352d1527c01984b99448d9c29
     continue-on-error: true
     timeout-minutes: 45
     permissions:

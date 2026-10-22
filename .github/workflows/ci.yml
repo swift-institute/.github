@@ -20,7 +20,7 @@ jobs:
   pal:
     name: Embedded PAL · Linux x86-64
     runs-on: ubuntu-latest
-    container: swiftlang/swift@sha256:3ae5234721c87bda6ab232a2346fc143ac5688159626c8800e66a5eef2a31a16
+    container: swiftlang/swift@sha256:3f2ab3ce827824c997aed9e6b387641be37a0c7352d1527c01984b99448d9c29
     timeout-minutes: 10
     steps:
       - name: Compile, link and run through PAL
