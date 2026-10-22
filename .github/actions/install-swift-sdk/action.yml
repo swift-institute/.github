@@ -40,7 +40,7 @@
 # confirming the endpoint and path shape work; the corresponding 6.4 URL
 # has no release/tag to construct because no 6.4 record exists at all.
 # So when the release floor is ahead of upstream (ReleaseFloorException's
-# containerized-Linux case, ci-cd skill), there is no nightly SDK
+# containerized-Linux case), there is no nightly SDK
 # substitution to resolve to; the SDK legs are structurally not-applicable
 # until the floor's stable release ships. `skip-on-missing-release: 'true'`
 # turns the "no matching release, but the release SET itself resolved
