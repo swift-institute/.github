@@ -1,0 +1,90 @@
+name: Windows retry canary
+
+on:
+  workflow_dispatch:
+    inputs:
+      failing-test:
+        description: Run only the deliberately failing Windows test canary.
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  swift-rfc-2183:
+    name: swift-ietf/swift-rfc-2183
+    if: ${{ !inputs.failing-test }}
+    uses: ./.github/workflows/swift-ci.yml
+    with:
+      subject-repository: swift-ietf/swift-rfc-2183
+      subject-sha: c622171c873657a34f9eb83c0ef807025469c701
+
+  swift-async:
+    name: swift-atoms/swift-async
+    if: ${{ !inputs.failing-test }}
+    uses: ./.github/workflows/swift-ci.yml
+    with:
+      subject-repository: swift-atoms/swift-async
+      subject-sha: 5fc20b1d2b1d1ba854c4070e67ef94b34898e9f9
+
+  failing-test:
+    name: Deliberately failing test · Windows
+    if: ${{ inputs.failing-test }}
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+      - uses: SwiftyLab/setup-swift@38f54a76b70d989321de9dc7c840618c08cf56e9 # v1.14.0
+        with:
+          swift-version: '6.4'
+          cache-snapshot: false
+      - name: Create a package with one failing test
+        shell: pwsh
+        run: |
+          $package = Join-Path $env:RUNNER_TEMP failure-canary
+          New-Item -ItemType Directory -Force (Join-Path $package Sources/FailureCanary) | Out-Null
+          New-Item -ItemType Directory -Force (Join-Path $package Tests/FailureCanaryTests) | Out-Null
+          @'
+          // swift-tools-version: 6.2
+          import PackageDescription
+
+          let package = Package(
+            name: "FailureCanary",
+            products: [.library(name: "FailureCanary", targets: ["FailureCanary"])],
+            targets: [
+              .target(name: "FailureCanary"),
+              .testTarget(name: "FailureCanaryTests", dependencies: ["FailureCanary"]),
+            ]
+          )
+          '@ | Set-Content (Join-Path $package Package.swift)
+          'public let value = 1' | Set-Content (Join-Path $package Sources/FailureCanary/FailureCanary.swift)
+          @'
+          import Testing
+          @testable import FailureCanary
+
+          @Test func deliberateFailure() {
+            #expect(value == 2)
+          }
+          '@ | Set-Content (Join-Path $package Tests/FailureCanaryTests/FailureCanaryTests.swift)
+          "CANARY_PACKAGE=$package" >> $env:GITHUB_ENV
+      - name: Test
+        shell: pwsh
+        working-directory: ${{ env.CANARY_PACKAGE }}
+        run: |
+          swift --version
+          function Test-Package([string] $Scratch) {
+            for ($attempt = 1; $attempt -le 2; $attempt++) {
+              Write-Output "Swift test attempt $attempt"
+              & bash.exe --noprofile --norc -c 'swift test -c debug --enable-all-traits --build-system native --scratch-path "$1"' -- $Scratch
+              $status = $LASTEXITCODE
+              if ($status -eq 0) { return }
+              if (($status -notin 132, 139) -or ($attempt -eq 2)) { exit $status }
+              Write-Warning "swift test child shell crashed (exit $status); retrying once."
+            }
+          }
+          Test-Package C:/failure-canary

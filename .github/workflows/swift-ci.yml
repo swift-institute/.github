@@ -15,6 +15,15 @@ name: Swift CI (reusable)
 
 on:
   workflow_call:
+    inputs:
+      subject-repository:
+        description: Exact public package repository for a central canary.
+        required: false
+        type: string
+      subject-sha:
+        description: Exact package commit for a central canary.
+        required: false
+        type: string
 
 env:
   SWIFT_VERSION: "6.4"
@@ -93,9 +102,17 @@ jobs:
           MERGE_GROUP_SHA: ${{ github.event.merge_group.head_sha }}
           TRIGGER_REPOSITORY: ${{ github.repository }}
           TRIGGER_SHA: ${{ github.sha }}
+          CANARY_REPOSITORY: ${{ inputs.subject-repository }}
+          CANARY_SHA: ${{ inputs.subject-sha }}
         run: |
           set -euo pipefail
-          if [ "$EVENT_NAME" = "pull_request" ]; then
+          if [ -n "$CANARY_REPOSITORY" ] || [ -n "$CANARY_SHA" ]; then
+            [ -n "$CANARY_REPOSITORY" ] && [ -n "$CANARY_SHA" ] || {
+              echo "::error::central canaries require both subject-repository and subject-sha."
+              exit 1
+            }
+            REPOSITORY="$CANARY_REPOSITORY"; SHA="$CANARY_SHA"
+          elif [ "$EVENT_NAME" = "pull_request" ]; then
             REPOSITORY="$PR_REPOSITORY"; SHA="$PR_SHA"
           elif [ "$EVENT_NAME" = "merge_group" ]; then
             # The subject of a merge-group run is the candidate merge
@@ -349,25 +366,25 @@ jobs:
       # Never relaxed and never continue-on-error: this is the fleet's only
       # assertions-enabled compiler, and therefore its only SIL-validity gate.
       - name: Test
-        shell: bash
+        shell: pwsh
         run: |
           swift --version
           # SwiftPM itself intermittently dies on the Windows runner right
           # after resolution (exit 139 segmentation fault, 132 illegal
-          # instruction) before compiling anything; a rerun passes. A crash
-          # of the compiler or of a test is reported by SwiftPM as an
-          # ordinary failure (exit 1), so retrying only these two codes once
-          # keeps the assertions gate intact.
-          test_package() {
-            scratch="$1"
-            status=0
-            swift test -c debug --enable-all-traits --build-system native --scratch-path "$scratch" || status=$?
-            if [ "$status" -eq 139 ] || [ "$status" -eq 132 ]; then
-              echo "::warning::swift test itself crashed (exit $status); retrying once."
-              status=0
-              swift test -c debug --enable-all-traits --build-system native --scratch-path "$scratch" || status=$?
-            fi
-            return "$status"
+          # instruction) before compiling anything. Run each attempt in a
+          # child MSYS shell: PowerShell survives if that shell dies with
+          # SwiftPM and can apply the one permitted retry. A compiler crash
+          # or test failure is reported by SwiftPM as exit 1 and is never
+          # retried.
+          function Test-Package([string] $Scratch) {
+            for ($attempt = 1; $attempt -le 2; $attempt++) {
+              Write-Output "Swift test attempt $attempt"
+              & bash.exe --noprofile --norc -c 'swift test -c debug --enable-all-traits --build-system native --scratch-path "$1"' -- $Scratch
+              $status = $LASTEXITCODE
+              if ($status -eq 0) { return }
+              if (($status -notin 132, 139) -or ($attempt -eq 2)) { exit $status }
+              Write-Warning "swift test child shell crashed (exit $status); retrying once."
+            }
           }
           # [swift-institute/.github#498] Swift Build expands every linked module
           # into a separate response-file argument and can exceed Windows'
@@ -376,12 +393,16 @@ jobs:
           # test surface without that whole-closure Libtool invocation. The short
           # absolute build prefix independently bounds intermediate paths.
           # Same zero-root-test-targets guard as the POSIX legs.
-          if grep -q 'testTarget' Package.swift; then
-            test_package C:/b
-          else
-            echo "no root test targets declared; skipping root swift test"
+          if (Select-String -Quiet -SimpleMatch 'testTarget' Package.swift) {
+            Test-Package C:/b
+          } else {
+            Write-Output "no root test targets declared; skipping root swift test"
+          }
+          if (Test-Path Tests/Package.swift) {
+            Push-Location Tests
+            Test-Package C:/t
+            Pop-Location
           fi
-          if [ -f Tests/Package.swift ]; then (cd Tests && test_package C:/t); fi
   macos-release:
     name: Build · Apple · macOS
     needs: plan
