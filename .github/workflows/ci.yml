@@ -2,6 +2,15 @@ name: Planner adoption canaries
 
 on:
   workflow_dispatch:
+    inputs:
+      repository:
+        description: Immutable package subject to canary.
+        required: true
+        type: choice
+        options:
+          - swift-atoms/swift-cursor
+          - swift-atoms/swift-either
+          - swift-ietf/swift-rfc-1123
 
 permissions:
   actions: read
@@ -10,6 +19,7 @@ permissions:
 jobs:
   swift-cursor:
     name: swift-atoms/swift-cursor
+    if: ${{ inputs.repository == 'swift-atoms/swift-cursor' }}
     uses: ./.github/workflows/swift-ci.yml
     with:
       subject-repository: swift-atoms/swift-cursor
@@ -17,6 +27,7 @@ jobs:
 
   swift-either:
     name: swift-atoms/swift-either
+    if: ${{ inputs.repository == 'swift-atoms/swift-either' }}
     uses: ./.github/workflows/swift-ci.yml
     with:
       subject-repository: swift-atoms/swift-either
@@ -24,6 +35,7 @@ jobs:
 
   swift-rfc-1123:
     name: swift-ietf/swift-rfc-1123
+    if: ${{ inputs.repository == 'swift-ietf/swift-rfc-1123' }}
     uses: ./.github/workflows/swift-ci.yml
     with:
       subject-repository: swift-ietf/swift-rfc-1123
