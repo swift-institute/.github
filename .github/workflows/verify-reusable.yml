@@ -33,6 +33,7 @@ jobs:
           }
           SWIFT
           swiftc "$RUNNER_TEMP/pal.swift" \
+            -parse-as-library \
             -wmo \
             -warnings-as-errors \
             -enable-experimental-feature Embedded \
