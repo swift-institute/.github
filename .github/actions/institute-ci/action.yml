@@ -19,21 +19,17 @@ description: >-
 #
 # Identity: `.institute-ci-pin` on the default branch of
 # swift-institute/.github names the exact swift-institute/institute-application
-# commit to build — it is no longer an institute-continuous-integration
-# revision. The checkout is fetched over HTTPS at that exact SHA and the
-# resulting HEAD is read back before anything is compiled, so the binary's
-# source identity is proven, not assumed. The pin does not freeze the
-# dependency graph: institute-application declares branch dependencies and
-# commits no Package.resolved, so SwiftPM resolves dependency heads afresh
-# for each build. Package.resolved and .build remain ephemeral generated
-# state and are never cached or committed.
+# commit. The pin and `.institute-ci-planner` are read from one resolved
+# swift-institute/.github commit so an edge-cache race cannot pair a new pin
+# with an older planner manifest.
 #
 # Published binaries (Coen, 13 Oct 2026): swift-institute/institute-application's
 # publish-planner workflow uploads planner binaries named by their own digests
 # to its `ci-binaries` release, never replaced. `.institute-ci-planner` on the default
 # branch of swift-institute/.github pins them by digest per revision and
 # platform; a pinned binary is downloaded and verified instead of compiled.
-# A revision or platform without an entry still builds from source.
+# A supported platform without a published entry refuses to continue: a local
+# build is intentionally unpublished and the freshness guard must reject it.
 
 inputs:
   sources-revision:
@@ -83,9 +79,15 @@ runs:
         # The file may carry `#` comment lines; the pin is the single
         # 40-hex line that remains after dropping them.
         command -v curl >/dev/null || { apt-get update -qq && apt-get install -qq -y curl; }
+        AUTHORITY_REVISION="$(git ls-remote \
+          https://github.com/swift-institute/.github.git refs/heads/main \
+          | awk 'NR == 1 {print $1}')"
+        [[ "$AUTHORITY_REVISION" =~ ^[0-9a-f]{40}$ ]] \
+          || { echo "::error::could not resolve swift-institute/.github@main"; exit 1; }
+        AUTHORITY_BASE="https://raw.githubusercontent.com/swift-institute/.github/$AUTHORITY_REVISION"
         if [ -z "$SOURCES_REVISION" ]; then
           SOURCES_REVISION="$(curl --fail --silent --show-error --location --retry 3 \
-            https://raw.githubusercontent.com/swift-institute/.github/main/.institute-ci-pin \
+            "$AUTHORITY_BASE/.institute-ci-pin" \
             | grep -v '^[[:space:]]*#' | tr -d '[:space:]')" \
             || { echo "::error::could not read .institute-ci-pin from swift-institute/.github@main"; exit 1; }
         fi
@@ -106,7 +108,7 @@ runs:
         PUBLISHED=""
         if [ -n "$PLATFORM" ]; then
           PUBLISHED="$(curl --fail --silent --show-error --location --retry 3 \
-            https://raw.githubusercontent.com/swift-institute/.github/main/.institute-ci-planner \
+            "$AUTHORITY_BASE/.institute-ci-planner" \
             | { grep -v '^[[:space:]]*#' || true; } \
             | awk -v r="$SOURCES_REVISION" -v p="$PLATFORM" '$1 == r && $2 == p {v = $3 " " $4} END {print v}')" \
             || { echo "::error::could not read .institute-ci-planner from swift-institute/.github@main"; exit 1; }
@@ -118,6 +120,9 @@ runs:
           echo "platform=$PLATFORM" >> "$GITHUB_OUTPUT"
           echo "binary-digest=$BINARY_DIGEST" >> "$GITHUB_OUTPUT"
           echo "graph-digest=$GRAPH_DIGEST" >> "$GITHUB_OUTPUT"
+        elif [ -n "$PLATFORM" ]; then
+          echo "::error::no published planner for $SOURCES_REVISION $PLATFORM in swift-institute/.github@$AUTHORITY_REVISION"
+          exit 1
         fi
 
     - name: Fetch the published planner
