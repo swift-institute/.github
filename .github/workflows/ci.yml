@@ -1,0 +1,88 @@
+name: Skill hygiene ref canary
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    name: Resolve Skills refs
+    runs-on: ubuntu-latest
+    outputs:
+      branch-sha: ${{ steps.refs.outputs.branch-sha }}
+      main-sha: ${{ steps.refs.outputs.main-sha }}
+    steps:
+      - name: Resolve exact heads
+        id: refs
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          branch_sha="$(gh api repos/swift-institute/Skills/git/ref/heads/lane/skills-hygiene-scan-red --jq .object.sha)"
+          main_sha="$(gh api repos/swift-institute/Skills/git/ref/heads/main --jq .object.sha)"
+          [[ "$branch_sha" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$main_sha" =~ ^[0-9a-f]{40}$ ]]
+          echo "branch-sha=$branch_sha" >> "$GITHUB_OUTPUT"
+          echo "main-sha=$main_sha" >> "$GITHUB_OUTPUT"
+          echo "Skills branch head: $branch_sha"
+          echo "Skills main head: $main_sha"
+
+  branch:
+    name: Skills branch
+    needs: resolve
+    uses: ./.github/workflows/validate-base.yml
+    with:
+      validator-script: .github/scripts/validate-skill-hygiene.py
+      rule-id-regex: '^skill-'
+      discovery-mode: single-target
+      target-repo: swift-institute/Skills
+      trigger-repository: swift-institute/Skills
+      trigger-ref: refs/heads/lane/skills-hygiene-scan-red
+      trigger-sha: ${{ needs.resolve.outputs.branch-sha }}
+      validator-ref: ${{ github.sha }}
+    secrets: inherit
+
+  main:
+    name: Skills main
+    needs: resolve
+    uses: ./.github/workflows/validate-base.yml
+    with:
+      validator-script: .github/scripts/validate-skill-hygiene.py
+      rule-id-regex: '^skill-'
+      discovery-mode: single-target
+      target-repo: swift-institute/Skills
+      trigger-repository: swift-institute/Skills
+      trigger-ref: refs/heads/main
+      trigger-sha: ${{ needs.resolve.outputs.main-sha }}
+      validator-ref: ${{ github.sha }}
+      dry-run: true
+    secrets: inherit
+
+  ci-ok:
+    name: ci-ok
+    if: ${{ always() }}
+    needs: [resolve, branch, main]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require both scans and the branch repair
+        shell: bash
+        env:
+          RESOLVE_RESULT: ${{ needs.resolve.result }}
+          BRANCH_RESULT: ${{ needs.branch.result }}
+          MAIN_RESULT: ${{ needs.main.result }}
+          BRANCH_VIOLATIONS: ${{ needs.branch.outputs.total-violations }}
+          MAIN_VIOLATIONS: ${{ needs.main.outputs.total-violations }}
+          BRANCH_SHA: ${{ needs.resolve.outputs.branch-sha }}
+          MAIN_SHA: ${{ needs.resolve.outputs.main-sha }}
+        run: |
+          set -euo pipefail
+          [ "$RESOLVE_RESULT" = success ]
+          [ "$BRANCH_RESULT" = success ]
+          [ "$MAIN_RESULT" = success ]
+          [ "$BRANCH_VIOLATIONS" = 0 ]
+          [ "$MAIN_VIOLATIONS" -gt 0 ]
+          echo "Skills branch $BRANCH_SHA: $BRANCH_VIOLATIONS violations"
+          echo "Skills main $MAIN_SHA: $MAIN_VIOLATIONS violations (dry run)"
