@@ -408,7 +408,7 @@ jobs:
             Push-Location Tests
             Test-Package C:/t
             Pop-Location
-          fi
+          }
   macos-release:
     name: Build · Apple · macOS
     needs: plan
