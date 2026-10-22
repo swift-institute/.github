@@ -1,9 +1,10 @@
-name: Skill hygiene ref canary
+name: Lane integration canaries
 
 on:
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
 
 jobs:
@@ -61,18 +62,34 @@ jobs:
       dry-run: true
     secrets: inherit
 
+  swift-sqlite:
+    name: swift-compositions/swift-sqlite
+    uses: ./.github/workflows/swift-ci.yml
+    with:
+      subject-repository: swift-compositions/swift-sqlite
+      subject-sha: bf372f8cd146d4c27d6688222a762bc8456b896c
+
+  swift-logic:
+    name: swift-atoms/swift-logic
+    uses: ./.github/workflows/swift-ci.yml
+    with:
+      subject-repository: swift-atoms/swift-logic
+      subject-sha: f0a52667b5e929de7adf9429d95abf83299dbb8b
+
   ci-ok:
     name: ci-ok
     if: ${{ always() }}
-    needs: [resolve, branch, main]
+    needs: [resolve, branch, main, swift-sqlite, swift-logic]
     runs-on: ubuntu-latest
     steps:
-      - name: Require both scans and the branch repair
+      - name: Require all canaries and the Skills branch repair
         shell: bash
         env:
           RESOLVE_RESULT: ${{ needs.resolve.result }}
           BRANCH_RESULT: ${{ needs.branch.result }}
           MAIN_RESULT: ${{ needs.main.result }}
+          SWIFT_SQLITE_RESULT: ${{ needs.swift-sqlite.result }}
+          SWIFT_LOGIC_RESULT: ${{ needs.swift-logic.result }}
           BRANCH_VIOLATIONS: ${{ needs.branch.outputs.total-violations }}
           MAIN_VIOLATIONS: ${{ needs.main.outputs.total-violations }}
           BRANCH_SHA: ${{ needs.resolve.outputs.branch-sha }}
@@ -82,6 +99,8 @@ jobs:
           [ "$RESOLVE_RESULT" = success ]
           [ "$BRANCH_RESULT" = success ]
           [ "$MAIN_RESULT" = success ]
+          [ "$SWIFT_SQLITE_RESULT" = success ]
+          [ "$SWIFT_LOGIC_RESULT" = success ]
           [ "$BRANCH_VIOLATIONS" = 0 ]
           [ "$MAIN_VIOLATIONS" -gt 0 ]
           echo "Skills branch $BRANCH_SHA: $BRANCH_VIOLATIONS violations"

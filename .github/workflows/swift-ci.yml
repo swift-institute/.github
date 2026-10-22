@@ -15,6 +15,15 @@ name: Swift CI (reusable)
 
 on:
   workflow_call:
+    inputs:
+      subject-repository:
+        description: Exact public package repository for a central canary.
+        required: false
+        type: string
+      subject-sha:
+        description: Exact package commit for a central canary.
+        required: false
+        type: string
 
 env:
   SWIFT_VERSION: "6.4"
@@ -74,6 +83,7 @@ jobs:
       planner-manifest-digest: ${{ steps.seal.outputs.manifest-digest }}
       planner-attempt: ${{ github.run_attempt }}
       planner-sources: ${{ steps.institute-ci.outputs.sources-revision }}
+      ios-simulator-tests: ${{ steps.ios-simulator-tests.outputs.enabled }}
     steps:
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
@@ -93,9 +103,17 @@ jobs:
           MERGE_GROUP_SHA: ${{ github.event.merge_group.head_sha }}
           TRIGGER_REPOSITORY: ${{ github.repository }}
           TRIGGER_SHA: ${{ github.sha }}
+          CANARY_REPOSITORY: ${{ inputs.subject-repository }}
+          CANARY_SHA: ${{ inputs.subject-sha }}
         run: |
           set -euo pipefail
-          if [ "$EVENT_NAME" = "pull_request" ]; then
+          if [ -n "$CANARY_REPOSITORY" ] || [ -n "$CANARY_SHA" ]; then
+            [ -n "$CANARY_REPOSITORY" ] && [ -n "$CANARY_SHA" ] || {
+              echo "::error::central canaries require both subject-repository and subject-sha."
+              exit 1
+            }
+            REPOSITORY="$CANARY_REPOSITORY"; SHA="$CANARY_SHA"
+          elif [ "$EVENT_NAME" = "pull_request" ]; then
             REPOSITORY="$PR_REPOSITORY"; SHA="$PR_SHA"
           elif [ "$EVENT_NAME" = "merge_group" ]; then
             # The subject of a merge-group run is the candidate merge
@@ -146,6 +164,24 @@ jobs:
 
       - id: institute-ci
         uses: swift-institute/.github/.github/actions/institute-ci@50595dd24c7540cfd2de57cf38cafa7da79f7236
+
+      # The package manifest is the source of truth for whether its root test
+      # targets support iOS. A target that cannot run there must not be hidden
+      # by a workflow filter; the package or planner must model that boundary.
+      - name: Detect iOS simulator test support
+        id: ios-simulator-tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          MANIFEST="$(swift package dump-package)"
+          if jq -e '
+            any(.platforms[]?; (.platformName | ascii_downcase) == "ios")
+            and any(.targets[]?; .type == "test")
+          ' <<< "$MANIFEST" >/dev/null; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Materialize fleet policy at the workflow revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -205,10 +241,15 @@ jobs:
           # through `gh`, which authenticates from the environment only.
           GH_TOKEN: ${{ github.token }}
           HEAD_MESSAGE: ${{ github.event.head_commit.message }}
+          CANARY_REPOSITORY: ${{ inputs.subject-repository }}
         run: |
           set -euo pipefail
+          PLAN_REF="$GITHUB_REF"
+          # A central canary validates the reusable as it will gate a package's
+          # integration branch; the lane hosting it must not reduce the tier.
+          if [ -n "$CANARY_REPOSITORY" ]; then PLAN_REF=refs/heads/main; fi
           PLAN="$("$BINARY" ci -- package plan \
-            --ref "$GITHUB_REF" \
+            --ref "$PLAN_REF" \
             --head-message "$HEAD_MESSAGE" \
             --event "${{ github.event_name }}" --event-path "$GITHUB_EVENT_PATH" \
             --workflow-repository "${{ github.repository }}" --workspace "$GITHUB_WORKSPACE" \
@@ -415,15 +456,14 @@ jobs:
             echo "no root test targets declared; skipping root swift test"
           fi
           if [ -f Tests/Package.swift ]; then (cd Tests && test_package); fi
-  # Pilot (Coen, 20 Oct 2026): run the CloudKit tests on the iOS simulator
-  # too. swift test cannot target a simulator, and xcodebuild has no trait
-  # option, so this leg adds a default trait set to the throwaway checkout's
-  # manifest (every declared trait) before xcodebuild reads it. Gating:
-  # inside ci-ok, and limited to the listed repositories.
+  # swift test cannot target a simulator, and xcodebuild has no trait option,
+  # so this leg adds a default trait set to the throwaway checkout's manifest
+  # before xcodebuild reads it. The package manifest decides whether the leg
+  # exists; the generated package scheme decides which test targets run.
   ios-simulator-tests:
     name: Extended · iOS Simulator · tests
     needs: plan
-    if: ${{ !github.event.repository.private && !cancelled() && contains(fromJSON('["swift-compositions/swift-sqlite"]'), needs.plan.outputs.subject-repository) }}
+    if: ${{ !github.event.repository.private && !cancelled() && needs.plan.outputs.ios-simulator-tests == 'true' }}
     runs-on: xcode-27
     timeout-minutes: 60
     permissions:
@@ -443,12 +483,12 @@ jobs:
           import re
           text = open("Package.swift").read()
           names = re.findall(r'\.trait\(name: "([^"]+)"', text)
-          assert names, "no traits declared"
-          default = ", ".join('"%s"' % name for name in names)
-          marker = "traits: ["
-          assert marker in text, "no traits array"
-          text = text.replace(marker, marker + "\n        .default(enabledTraits: [%s])," % default, 1)
-          open("Package.swift", "w").write(text)
+          if names:
+              default = ", ".join('"%s"' % name for name in names)
+              marker = "traits: ["
+              assert marker in text, "declared traits but no traits array"
+              text = text.replace(marker, marker + "\n        .default(enabledTraits: [%s])," % default, 1)
+              open("Package.swift", "w").write(text)
           PY
       - name: Test (iOS Simulator)
         run: |
@@ -460,8 +500,18 @@ jobs:
           xcodebuild test \
             -scheme "$SCHEME" \
             -destination "id=$UDID" \
-            -only-testing:"SQLite CloudKit Tests" \
+            -resultBundlePath "$RUNNER_TEMP/ios-test-results.xcresult" \
             -skipMacroValidation -skipPackagePluginValidation
+          xcrun xcresulttool get test-results tests \
+            --path "$RUNNER_TEMP/ios-test-results.xcresult" \
+            > "$RUNNER_TEMP/ios-test-results.json"
+      - name: Keep iOS test evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ios-test-results-${{ needs.plan.outputs.subject-sha }}
+          path: ${{ runner.temp }}/ios-test-results.json
+          if-no-files-found: error
+          retention-days: 7
   embedded:
     name: Extended · Embedded
     needs: plan
@@ -764,17 +814,17 @@ jobs:
           bash .github/actions/institute-ci/verify-planner.sh \
             "$RUNNER_TEMP/institute-planner" "$DIGEST" "$MANIFEST_DIGEST" "$WORKFLOW_SHA" "$SOURCES" "$SUBJECT_SHA" "$PLAN_ATTEMPT"
           echo "binary=$RUNNER_TEMP/institute-planner/institute" >> "$GITHUB_OUTPUT"
-      # The planner refuses a job it did not select, so the iOS leg is checked here
-      # and kept out of what the planner aggregates. It runs for a listed repository
-      # only; a skipped job is fine, a failed or cancelled one is not.
+      # The planner refuses a job it did not select, so the manifest-selected iOS
+      # leg is checked here and kept out of what the planner aggregates.
       - name: iOS simulator tests
         shell: bash
         env:
+          EXPECTED: ${{ needs.plan.outputs.ios-simulator-tests }}
           RESULT: ${{ needs.ios-simulator-tests.result }}
         run: |
-          case "$RESULT" in
-            success|skipped) ;;
-            *) echo "::error::iOS simulator tests: $RESULT"; exit 1 ;;
+          case "$EXPECTED:$RESULT" in
+            true:success|false:skipped) ;;
+            *) echo "::error::iOS simulator tests: expected=$EXPECTED, result=$RESULT"; exit 1 ;;
           esac
       # Runs on always(), so it must reach a verdict when plan itself
       # failed — which is exactly when its outputs are empty.
@@ -786,7 +836,7 @@ jobs:
           # The integration ref and the merge group are both merge
           # verification: the aggregate refuses any plan that classified
           # below the full tier there.
-          REQUIRE_FULL_TIER: ${{ github.ref == 'refs/heads/main' || github.event_name == 'merge_group' }}
+          REQUIRE_FULL_TIER: ${{ github.ref == 'refs/heads/main' || github.event_name == 'merge_group' || inputs.subject-repository != '' }}
         run: |
           set -euo pipefail
           FLAGS=()
