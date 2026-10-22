@@ -1,0 +1,30 @@
+name: Planner adoption canaries
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  swift-cursor:
+    name: swift-atoms/swift-cursor
+    uses: ./.github/workflows/swift-ci.yml
+    with:
+      subject-repository: swift-atoms/swift-cursor
+      subject-sha: 6bec11bc897abaff33bb4bfc5042c49e08f5eead
+
+  swift-either:
+    name: swift-atoms/swift-either
+    uses: ./.github/workflows/swift-ci.yml
+    with:
+      subject-repository: swift-atoms/swift-either
+      subject-sha: a384d782b76cefd677efa98347609e003caed2e6
+
+  swift-rfc-1123:
+    name: swift-ietf/swift-rfc-1123
+    uses: ./.github/workflows/swift-ci.yml
+    with:
+      subject-repository: swift-ietf/swift-rfc-1123
+      subject-sha: d1882afef626d8bfb331821b4b9c5c88175dbee3
