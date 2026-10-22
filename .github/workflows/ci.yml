@@ -1,6 +1,9 @@
 name: Windows retry canary
 
 on:
+  push:
+    branches:
+      - lane/windows-retry-containment
   workflow_dispatch:
     inputs:
       failing-test:
