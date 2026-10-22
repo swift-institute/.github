@@ -24,7 +24,19 @@ jobs:
         run: |
           set -euo pipefail
           swift --version
-          cat > "$RUNNER_TEMP/pal.swift" <<'SWIFT'
+          PACKAGE="$RUNNER_TEMP/PAL"
+          mkdir -p "$PACKAGE/Sources/PAL"
+          cat > "$PACKAGE/Package.swift" <<'SWIFT'
+          // swift-tools-version: 6.4
+          import PackageDescription
+
+          let package = Package(
+            name: "PAL",
+            products: [.executable(name: "PAL", targets: ["PAL"])],
+            targets: [.executableTarget(name: "PAL")]
+          )
+          SWIFT
+          cat > "$PACKAGE/Sources/PAL/PAL.swift" <<'SWIFT'
           @main
           struct Main {
             static func main() {
@@ -32,13 +44,9 @@ jobs:
             }
           }
           SWIFT
-          swiftc "$RUNNER_TEMP/pal.swift" \
-            -parse-as-library \
-            -wmo \
-            -warnings-as-errors \
-            -enable-experimental-feature Embedded \
-            -o "$RUNNER_TEMP/pal"
-          "$RUNNER_TEMP/pal"
+          swift build --package-path "$PACKAGE" -c release \
+            -Xswiftc -enable-experimental-feature -Xswiftc Embedded
+          "$PACKAGE/.build/release/PAL"
 
   swift-async:
     name: swift-atoms/swift-async
