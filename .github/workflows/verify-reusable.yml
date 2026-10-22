@@ -45,7 +45,9 @@ jobs:
           }
           SWIFT
           swift build --package-path "$PACKAGE" -c release \
-            -Xswiftc -enable-experimental-feature -Xswiftc Embedded
+            -Xswiftc -enable-experimental-feature -Xswiftc Embedded \
+            -Xlinker -lswiftEmbeddedPlatformPOSIX \
+            -Xlinker -lswiftEmbeddedPlatformSingleThreaded
           "$PACKAGE/.build/release/PAL"
 
   swift-async:
