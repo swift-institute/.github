@@ -12,6 +12,53 @@ permissions:
   contents: read
 
 jobs:
+  embedded-pal:
+    name: Embedded PAL · Linux x86-64
+    runs-on: ubuntu-latest
+    container: swiftlang/swift@sha256:3ae5234721c87bda6ab232a2346fc143ac5688159626c8800e66a5eef2a31a16
+    timeout-minutes: 10
+    steps:
+      - name: Compile, link and run through PAL
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift --version
+          cat > "$RUNNER_TEMP/pal.swift" <<'SWIFT'
+          @main
+          struct Main {
+            static func main() {
+              print("Embedded PAL linked and ran")
+            }
+          }
+          SWIFT
+          swiftc "$RUNNER_TEMP/pal.swift" \
+            -wmo \
+            -warnings-as-errors \
+            -enable-experimental-feature Embedded \
+            -o "$RUNNER_TEMP/pal"
+          "$RUNNER_TEMP/pal"
+
+  swift-async:
+    name: swift-atoms/swift-async
+    uses: ./.github/workflows/swift-ci.yml
+    with:
+      subject-repository: swift-atoms/swift-async
+      subject-sha: 5fc20b1d2b1d1ba854c4070e67ef94b34898e9f9
+
+  swift-algebra:
+    name: swift-atoms/swift-algebra
+    uses: ./.github/workflows/swift-ci.yml
+    with:
+      subject-repository: swift-atoms/swift-algebra
+      subject-sha: 2f2e999b8126630c941098d232bf924c12e1270a
+
+  swift-calendar:
+    name: swift-atoms/swift-calendar
+    uses: ./.github/workflows/swift-ci.yml
+    with:
+      subject-repository: swift-atoms/swift-calendar
+      subject-sha: 430a20b16e7185236ca35b482a4dc0e9ab49b5d3
+
   verify-reusable:
     name: Verify reusable
     runs-on: ubuntu-latest
