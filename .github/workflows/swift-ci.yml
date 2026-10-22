@@ -222,10 +222,16 @@ jobs:
           # through `gh`, which authenticates from the environment only.
           GH_TOKEN: ${{ github.token }}
           HEAD_MESSAGE: ${{ github.event.head_commit.message }}
+          CANARY_REPOSITORY: ${{ inputs.subject-repository }}
         run: |
           set -euo pipefail
+          PLAN_REF="$GITHUB_REF"
+          # A central canary validates the reusable as it will gate a package's
+          # integration branch; the lane that hosts the workflow must not
+          # downgrade the subject to the reduced branch tier.
+          if [ -n "$CANARY_REPOSITORY" ]; then PLAN_REF=refs/heads/main; fi
           PLAN="$("$BINARY" ci -- package plan \
-            --ref "$GITHUB_REF" \
+            --ref "$PLAN_REF" \
             --head-message "$HEAD_MESSAGE" \
             --event "${{ github.event_name }}" --event-path "$GITHUB_EVENT_PATH" \
             --workflow-repository "${{ github.repository }}" --workspace "$GITHUB_WORKSPACE" \
@@ -807,7 +813,7 @@ jobs:
           # The integration ref and the merge group are both merge
           # verification: the aggregate refuses any plan that classified
           # below the full tier there.
-          REQUIRE_FULL_TIER: ${{ github.ref == 'refs/heads/main' || github.event_name == 'merge_group' }}
+          REQUIRE_FULL_TIER: ${{ github.ref == 'refs/heads/main' || github.event_name == 'merge_group' || inputs.subject-repository != '' }}
         run: |
           set -euo pipefail
           FLAGS=()
