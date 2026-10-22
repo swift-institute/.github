@@ -40,7 +40,7 @@ jobs:
 
       - name: Build planner at the requested revision
         id: institute-ci
-        uses: swift-institute/.github/.github/actions/institute-ci@0350d63820ee0b32d2c008ceea0208e0ce70b5c9
+        uses: swift-institute/.github/.github/actions/institute-ci@50595dd24c7540cfd2de57cf38cafa7da79f7236
         with:
           sources-revision: ${{ steps.request.outputs.revision }}
 
