@@ -15,6 +15,15 @@ name: Swift CI (reusable)
 
 on:
   workflow_call:
+    inputs:
+      subject-repository:
+        description: Exact public package repository for a central canary.
+        required: false
+        type: string
+      subject-sha:
+        description: Exact package commit for a central canary.
+        required: false
+        type: string
 
 env:
   SWIFT_VERSION: "6.4"
@@ -23,7 +32,7 @@ env:
   # the planner deschedules the leg fleet-wide with a typed record rather
   # than failing every consumer's required check, and only this repository
   # fails closed. Malformed fields fail closed everywhere.
-  SWIFT_MAIN_NIGHTLY_IMAGE: "swiftlang/swift@sha256:f577f95edfb85cf3bdc45eb0badaab09239de5c86c69b3b6d594cc62916c0a7d"
+  SWIFT_MAIN_NIGHTLY_IMAGE: "swiftlang/swift@sha256:3ae5234721c87bda6ab232a2346fc143ac5688159626c8800e66a5eef2a31a16"
   SWIFT_MAIN_NIGHTLY_UPSTREAM_ISSUE: "https://github.com/swiftlang/swift/issues/90275"
   SWIFT_MAIN_NIGHTLY_RECHECK: "2026-10-13"
 
@@ -93,9 +102,17 @@ jobs:
           MERGE_GROUP_SHA: ${{ github.event.merge_group.head_sha }}
           TRIGGER_REPOSITORY: ${{ github.repository }}
           TRIGGER_SHA: ${{ github.sha }}
+          CANARY_REPOSITORY: ${{ inputs.subject-repository }}
+          CANARY_SHA: ${{ inputs.subject-sha }}
         run: |
           set -euo pipefail
-          if [ "$EVENT_NAME" = "pull_request" ]; then
+          if [ -n "$CANARY_REPOSITORY" ] || [ -n "$CANARY_SHA" ]; then
+            [ -n "$CANARY_REPOSITORY" ] && [ -n "$CANARY_SHA" ] || {
+              echo "::error::central canaries require both subject-repository and subject-sha."
+              exit 1
+            }
+            REPOSITORY="$CANARY_REPOSITORY"; SHA="$CANARY_SHA"
+          elif [ "$EVENT_NAME" = "pull_request" ]; then
             REPOSITORY="$PR_REPOSITORY"; SHA="$PR_SHA"
           elif [ "$EVENT_NAME" = "merge_group" ]; then
             # The subject of a merge-group run is the candidate merge
@@ -302,7 +319,7 @@ jobs:
     needs: plan
     if: ${{ !github.event.repository.private && !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',linux-nightly,') }}
     runs-on: ubuntu-latest
-    container: swiftlang/swift@sha256:f577f95edfb85cf3bdc45eb0badaab09239de5c86c69b3b6d594cc62916c0a7d
+    container: swiftlang/swift@sha256:3ae5234721c87bda6ab232a2346fc143ac5688159626c8800e66a5eef2a31a16
     continue-on-error: true
     timeout-minutes: 45
     permissions:
@@ -467,7 +484,7 @@ jobs:
     needs: plan
     if: ${{ !github.event.repository.private && !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',embedded,') }}
     runs-on: ubuntu-latest
-    container: swiftlang/swift@sha256:f577f95edfb85cf3bdc45eb0badaab09239de5c86c69b3b6d594cc62916c0a7d
+    container: swiftlang/swift@sha256:3ae5234721c87bda6ab232a2346fc143ac5688159626c8800e66a5eef2a31a16
     continue-on-error: true
     timeout-minutes: 45
     permissions:
