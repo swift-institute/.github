@@ -32,6 +32,12 @@ description: >-
 # build is intentionally unpublished and the freshness guard must reject it.
 
 inputs:
+  authority-revision:
+    description: >-
+      Exact swift-institute/.github commit from which a central canary reads
+      the pin and planner ledger. Empty keeps the fleet authority on main.
+    required: false
+    default: ''
   sources-revision:
     description: >-
       The exact commit of swift-institute/institute-application to build the
@@ -65,6 +71,7 @@ runs:
       id: identity
       shell: bash
       env:
+        AUTHORITY_REVISION: ${{ inputs.authority-revision }}
         SOURCES_REVISION: ${{ inputs.sources-revision }}
       run: |
         set -euo pipefail
@@ -79,11 +86,13 @@ runs:
         # The file may carry `#` comment lines; the pin is the single
         # 40-hex line that remains after dropping them.
         command -v curl >/dev/null || { apt-get update -qq && apt-get install -qq -y curl; }
-        AUTHORITY_REVISION="$(git ls-remote \
-          https://github.com/swift-institute/.github.git refs/heads/main \
-          | awk 'NR == 1 {print $1}')"
+        if [ -z "$AUTHORITY_REVISION" ]; then
+          AUTHORITY_REVISION="$(git ls-remote \
+            https://github.com/swift-institute/.github.git refs/heads/main \
+            | awk 'NR == 1 {print $1}')"
+        fi
         [[ "$AUTHORITY_REVISION" =~ ^[0-9a-f]{40}$ ]] \
-          || { echo "::error::could not resolve swift-institute/.github@main"; exit 1; }
+          || { echo "::error::could not resolve an exact swift-institute/.github authority"; exit 1; }
         AUTHORITY_BASE="https://raw.githubusercontent.com/swift-institute/.github/$AUTHORITY_REVISION"
         if [ -z "$SOURCES_REVISION" ]; then
           SOURCES_REVISION="$(curl --fail --silent --show-error --location --retry 3 \
