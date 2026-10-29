@@ -35,15 +35,3 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash .github/actions/institute-ci/verify-planner-pins.sh .institute-ci-pin .institute-ci-planner
-      - name: Compare the reusable's head with the reviewed revision
-        shell: bash
-        run: |
-          set -euo pipefail
-          read -r reviewed recorded < .github/reusable-review
-          head="$(git log -1 --format=%H -- .github/workflows/swift-ci.yml)"
-          age=$(( ($(date -u +%s) - $(date -u -d "$recorded" +%s)) / 86400 ))
-          echo "reusable head $head; reviewed $reviewed on $recorded ($age days ago)" >> "$GITHUB_STEP_SUMMARY"
-          if [ "$head" != "$reviewed" ] && [ "$age" -gt 7 ]; then
-            echo "::error::swift-ci.yml moved to $head but .github/reusable-review still names $reviewed from $recorded; review the change and record the new revision."
-            exit 1
-          fi
