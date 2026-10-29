@@ -35,7 +35,9 @@ env:
 # 2026). Packages declare no default traits, so without the flag code behind
 # `#if <Trait>` and trait-conditional dependencies is never compiled here,
 # while consumers that enable the trait compile it. The flag is a no-op for
-# a package without traits.
+# a package without traits. The one exception is the advisory
+# `linux-traits-off` job, which builds what a consumer asking for no traits
+# gets.
 jobs:
 # Top-level job names are intentionally static. GitHub may render
 # unresolved input or matrix expressions literally when a job is skipped
@@ -297,6 +299,38 @@ jobs:
         run: |
           swift --version
           swift build -c release --enable-all-traits
+  # The one build without --enable-all-traits: the configuration a consumer
+  # that asks for no traits gets. A trait gate that leaks into ungated code
+  # fails here instead of in a consumer. Advisory, Linux only, and only for a
+  # package that declares traits; for any other package it would repeat the
+  # release build.
+  linux-traits-off:
+    name: Build · Linux · traits off
+    needs: plan
+    if: ${{ !github.event.repository.private && !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',linux-release,') }}
+    runs-on: ubuntu-latest
+    container: ${{ needs.plan.outputs.linux-image }}
+    continue-on-error: true
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+      - uses: swift-institute/.github/.github/actions/ci-subject@ffe641da803a23bdfb4e3bb889edff9c43c41198
+        with:
+          repository: ${{ needs.plan.outputs.subject-repository }}
+          sha: ${{ needs.plan.outputs.subject-sha }}
+      - uses: swift-institute/.github/.github/actions/install-system-deps@c62e5a772bf5bff45dde8a8c071f666a0d279512
+      - name: Build
+        run: |
+          swift --version
+          if ! grep -q '\.trait(' Package.swift; then
+            echo "no traits declared; the release build already covers this configuration"
+            exit 0
+          fi
+          swift build -c release
   linux-nightly:
     name: Build · Linux · nightly
     needs: plan
@@ -661,6 +695,7 @@ jobs:
     needs:
       - plan
       - linux-6-4
+      - linux-traits-off
       - linux-nightly
       - apple-simulator-build
       - embedded
