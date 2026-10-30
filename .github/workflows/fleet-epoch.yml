@@ -35,28 +35,30 @@ jobs:
   enumerate:
     name: Enumerate
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     outputs:
       shards: ${{ steps.list.outputs.shards }}
     steps:
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
+      - id: institute-ci
+        uses: swift-institute/.github/.github/actions/institute-ci@50595dd24c7540cfd2de57cf38cafa7da79f7236
       - id: list
         shell: bash
         env:
+          BINARY: ${{ steps.institute-ci.outputs.binary }}
           GH_TOKEN: ${{ github.token }}
           ORGANIZATIONS: ${{ inputs.organizations }}
           LIMIT: ${{ inputs.limit || '0' }}
           REPOSITORIES: ${{ inputs.repositories }}
         run: |
           set -euo pipefail
-          layers='[
-            {"layer":"L1","organizations":["swift-atoms"]},
-            {"layer":"L2","organizations":["swift-molecules"]},
-            {"layer":"L3","organizations":["swift-standards","swift-ietf","swift-iso","swift-ieee","swift-iec","swift-w3c","swift-whatwg","swift-ecma","swift-incits","swift-arm-ltd","swift-intel","swift-riscv","swift-linux-foundation","swift-microsoft"]},
-            {"layer":"L4","organizations":["swift-compositions"]}
-          ]'
+          # The layers' organizations are Institute.Organization, read from the
+          # pinned planner; this file keeps no list of its own.
+          layers="$(for pair in L1:atoms L2:molecules L3:standards L4:compositions; do
+            "$BINARY" organizations --layer "${pair#*:}" | jq -c --arg layer "${pair%%:*}" '{layer: $layer, organizations: .}'
+          done | jq -sc .)"
           : > repositories.jsonl
           if [ -n "$REPOSITORIES" ]; then
             tr ' ' '\n' <<< "$REPOSITORIES" | grep . > selected.txt
