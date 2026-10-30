@@ -5,8 +5,9 @@ name: Swift CI (reusable)
 #
 # Toolchain versions, runner images and the matrix shape are fixed here
 # for the whole ecosystem. A package that needs a different shape forks
-# this file; it does not parameterise it. Repository identity exceptions are
-# authored in the central fleet policy and resolved by the Swift planner.
+# this file; it does not parameterise it. The lint bundle follows the
+# repository's organization, and a repository's platform or Embedded-target
+# deviation is declared in its own .github/metadata.yaml, read by the planner.
 #
 # Scheduling is decided by the typed `institute ci` verbs, not here:
 # `plan` emits the leg list and every job binds it. There is exactly one
@@ -149,14 +150,13 @@ jobs:
       - id: institute-ci
         uses: swift-institute/.github/.github/actions/institute-ci@50595dd24c7540cfd2de57cf38cafa7da79f7236
 
-      - name: Materialize fleet policy at the workflow revision
+      - name: Materialize the institute-ci action at the workflow revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: swift-institute/.github
           ref: ${{ steps.workflow.outputs.sha }}
           path: .ci-policy
           sparse-checkout: |
-            .github/policy/fleet.json
             .github/actions/institute-ci
           persist-credentials: false
 
@@ -195,8 +195,7 @@ jobs:
         run: |
           "$BINARY" ci -- package validate \
             --repository "${{ steps.subject.outputs.repository }}" \
-            --root "$GITHUB_WORKSPACE" \
-            --policy "$GITHUB_WORKSPACE/.ci-policy/.github/policy/fleet.json"
+            --root "$GITHUB_WORKSPACE"
 
       - name: Classify
         id: classify
@@ -214,7 +213,6 @@ jobs:
             --head-message "$HEAD_MESSAGE" \
             --event "${{ github.event_name }}" --event-path "$GITHUB_EVENT_PATH" \
             --workflow-repository "${{ github.repository }}" --workspace "$GITHUB_WORKSPACE" \
-            --policy "$GITHUB_WORKSPACE/.ci-policy/.github/policy/fleet.json" \
             --subject-repository "${{ steps.subject.outputs.repository }}" \
             --swift-version "$SWIFT_VERSION" \
             --nightly-main-image "$SWIFT_MAIN_NIGHTLY_IMAGE" \
@@ -670,7 +668,6 @@ jobs:
             --repository "${{ needs.plan.outputs.subject-repository }}" \
             --revision "${{ needs.plan.outputs.subject-sha }}" \
             --root "$GITHUB_WORKSPACE" \
-            --bundle "${{ needs.plan.outputs.lint-bundle }}" \
             --xcode-application "/Applications/Xcode_${XCODE_VERSION}.app" \
             | tee "$RUNNER_TEMP/quality/report.json"
       - name: Keep the Quality report

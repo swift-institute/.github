@@ -46,7 +46,6 @@ mkdir -p "$work"
 logs="$PWD/logs"
 mkdir -p "$(dirname "$output")" "$logs"
 : >"$output"
-policy="$here/../policy/fleet.json"
 case "$platform" in
   macos) family=apple ;;
   *) family="$platform" ;;
@@ -56,7 +55,7 @@ for repository in "$@"; do
   directory="$work/$repository"
   log="$logs/${platform}__${repository//\//__}.log"
   : >"$log"
-  declared="$(jq -r --arg r "$repository" '.repositories[]? | select(.name == $r) | .platforms // empty' "$policy" 2>/dev/null)"
+  declared="$(curl -fsSL "https://raw.githubusercontent.com/$repository/HEAD/.github/metadata.yaml" 2>/dev/null | sed -n 's/^platforms:[[:space:]]*//p' | sed 's/[[:space:]]*#.*//; s/^["'"'"']//; s/["'"'"']$//' | head -1)"
   if [ -n "$declared" ] && ! tr ',' '\n' <<<"$declared" | grep -qx "$family"; then
     printf '{"repository":"%s","platform":"%s","sha":"","resolve":"excluded","build":"skip","test":"skip","cause":"platforms: %s","provisioned":""}\n' \
       "$repository" "$platform" "$declared" >>"$output"
