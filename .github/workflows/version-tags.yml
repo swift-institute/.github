@@ -1,0 +1,126 @@
+name: version-tags
+
+# Gives every Institute package an automatic development version: the head
+# of `main` is tagged with the repository's next `0.0.N` (from 0.0.100) once
+# that exact commit's `ci / matrix / ci-ok` passed on a `main` run of its
+# generated CI. The rule and every check live in `institute version tag`
+# (swift-institute/institute, target Institute Version); this file only
+# schedules it and mints one installation token per organization.
+#
+# Why here and not in swift-ci.yml: the generated caller grants the reusable
+# only `actions: read` and `contents: read` and passes no secrets, so no job
+# of swift-ci.yml can create a ref, and widening every package's ceiling to
+# `contents: write` would hand the write to every job of every run. Here the
+# one writer is the swift-institute-bot, serialized by one concurrency group.
+#
+# Rollout and rollback: a scheduled run writes only while the repository
+# variable VERSION_TAGS is `enabled`; unset it to stop tagging without a
+# commit. A dispatch defaults to a dry run. Tags are never moved or deleted
+# by this workflow.
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: continuous tags every passing head; backfill tags only repositories not yet on the line.
+        required: true
+        type: choice
+        options:
+          - continuous
+          - backfill
+        default: continuous
+      dry-run:
+        description: Write nothing; list the tag each repository would get.
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: version-tags
+  cancel-in-progress: false
+
+jobs:
+  organizations:
+    name: Organizations
+    if: ${{ github.event_name == 'workflow_dispatch' || vars.VERSION_TAGS == 'enabled' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      matrix: ${{ steps.roster.outputs.matrix }}
+    steps:
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - id: institute-ci
+        uses: swift-institute/.github/.github/actions/institute-ci@50595dd24c7540cfd2de57cf38cafa7da79f7236
+
+      # The roster is Institute.Organization, read from the pinned planner;
+      # this file keeps no list of its own.
+      - name: Read the organizations
+        id: roster
+        shell: bash
+        env:
+          BINARY: ${{ steps.institute-ci.outputs.binary }}
+        run: |
+          set -euo pipefail
+          MATRIX="$("$BINARY" organizations)"
+          jq -e 'type == "array" and length > 0' <<< "$MATRIX" > /dev/null
+          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+
+  tag:
+    name: Tag
+    needs: organizations
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        organization: ${{ fromJson(needs.organizations.outputs.matrix) }}
+    steps:
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - id: institute-ci
+        uses: swift-institute/.github/.github/actions/institute-ci@50595dd24c7540cfd2de57cf38cafa7da79f7236
+
+      - name: Mint installation token (swift-institute-bot)
+        id: token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.SWIFT_INSTITUTE_BOT_APP_ID }}
+          private-key: ${{ secrets.SWIFT_INSTITUTE_BOT_APP_PRIVATE_KEY }}
+          owner: ${{ matrix.organization }}
+          permission-contents: write
+          permission-actions: read
+          permission-checks: read
+
+      - name: Tag
+        shell: bash
+        env:
+          BINARY: ${{ steps.institute-ci.outputs.binary }}
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          ORGANIZATION: ${{ matrix.organization }}
+          MODE: ${{ inputs.mode || 'continuous' }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run }}
+        run: |
+          set -euo pipefail
+          FLAGS=()
+          [ "$MODE" = backfill ] && FLAGS+=(--backfill)
+          [ "$DRY_RUN" = true ] && FLAGS+=(--dry-run)
+          RC=0
+          "$BINARY" version tag --org "$ORGANIZATION" "${FLAGS[@]}" > report.txt || RC=$?
+          cat report.txt
+          {
+            echo "## $ORGANIZATION"
+            echo '```'
+            grep -vE ' (current|skipped|versioned) ' report.txt || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$RC"
