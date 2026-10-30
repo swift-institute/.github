@@ -1,8 +1,8 @@
 # Published planner binaries for the institute-ci action, read live from the
 # default branch. One line per revision and platform:
-#   <institute-application revision> <platform> <binary sha256> <Package.resolved sha256>
+#   <institute revision> <platform> <binary sha256> <Package.resolved sha256>
 # The assets are institute-<platform>-<binary sha256> and Package.resolved-<platform>-<graph sha256>
-# on swift-institute/institute-application's ci-binaries release; each publish-planner run
+# on swift-institute/institute's ci-binaries release; each publish-planner run
 # uploads its lines as PIN-<revision>-<run id>. The last line for a revision and platform wins.
 7f6b8d99a4626d61f423b602535907e816a356ed linux-x86_64 ea3ee104c15cc42f8b2f595dc6ff3b6ea8c5eeae0233893eee2c435687e445ef 8daad589def919b20cd6e92b29cb6e8f9bf893e8255793a8bbf53a6580d51577
 7f6b8d99a4626d61f423b602535907e816a356ed macos-arm64 c2f3dac569a05e4def3268392df12bc9802e22d9800b6d7ae7191356b109dd6c c1f379037c7c5c950c6af049854c7ca3021e95d2ffe2a3ad4e583481da1f0fc0

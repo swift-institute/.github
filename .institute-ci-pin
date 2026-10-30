@@ -1,6 +1,6 @@
 # The fleet's single planner-revision authority, read live from this file
 # on the default branch by .github/actions/institute-ci. Since the #632
-# cutover this names an exact swift-institute/institute-application commit
+# cutover this names an exact swift-institute/institute commit
 # — the repository the `institute` executable (and its typed `institute ci`
 # verbs) is built from — and no longer a revision of the retired
 # swift-institute/institute-continuous-integration binary transport.

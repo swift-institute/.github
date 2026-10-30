@@ -1,7 +1,7 @@
 name: planner-build-smoke
 
 # Builds the `institute` planner from an explicit, already-public
-# swift-institute/institute-application commit through the same
+# swift-institute/institute commit through the same
 # institute-ci action revision the fleet Plan job uses, and smoke-launches
 # only the root `--help` (inside the action). It never reads or changes
 # `.institute-ci-pin`, publishes nothing, and needs no secret.
@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       sources-revision:
-        description: 'Exact 40-character lowercase hex swift-institute/institute-application commit to build.'
+        description: 'Exact 40-character lowercase hex swift-institute/institute commit to build.'
         required: true
 
 permissions:

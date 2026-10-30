@@ -1,6 +1,6 @@
 name: 'Institute CI planner'
 description: >-
-  Build the `institute` executable from swift-institute/institute-application
+  Build the `institute` executable from swift-institute/institute
   at the pinned revision and hand its path to the caller. The planner now
   ships as source: the typed `institute ci` verbs replaced the retired
   `institute-continuous-integration` binary.
@@ -18,12 +18,12 @@ description: >-
 # this action now builds that executable directly from source.
 #
 # Identity: `.institute-ci-pin` on the default branch of
-# swift-institute/.github names the exact swift-institute/institute-application
+# swift-institute/.github names the exact swift-institute/institute
 # commit. The pin and `.institute-ci-planner` are read from one resolved
 # swift-institute/.github commit so an edge-cache race cannot pair a new pin
 # with an older planner manifest.
 #
-# Published binaries (Coen, 13 Oct 2026): swift-institute/institute-application's
+# Published binaries (Coen, 13 Oct 2026): swift-institute/institute's
 # publish-planner workflow uploads planner binaries named by their own digests
 # to its `ci-binaries` release, never replaced. `.institute-ci-planner` on the default
 # branch of swift-institute/.github pins them by digest per revision and
@@ -34,7 +34,7 @@ description: >-
 inputs:
   sources-revision:
     description: >-
-      The exact commit of swift-institute/institute-application to build the
+      The exact commit of swift-institute/institute to build the
       planner from. Empty — the default — reads the single authority,
       `.institute-ci-pin` on the default branch of swift-institute/.github,
       live at run time. A value that is not a full 40-hex SHA refuses here.
@@ -139,7 +139,7 @@ runs:
         DIR="$RUNNER_TEMP/institute-ci-sources"
         rm -rf "$DIR"
         mkdir -p "$DIR/.build/release"
-        BASE=https://github.com/swift-institute/institute-application/releases/download/ci-binaries
+        BASE=https://github.com/swift-institute/institute/releases/download/ci-binaries
         curl --fail --silent --show-error --location --retry 3 \
           -o "$DIR/.build/release/institute" "$BASE/institute-$PLATFORM-$BINARY_DIGEST"
         curl --fail --silent --show-error --location --retry 3 \
@@ -170,7 +170,7 @@ runs:
         DIR="$RUNNER_TEMP/institute-ci-sources"
         rm -rf "$DIR"
         git init --quiet "$DIR"
-        git -C "$DIR" remote add origin https://github.com/swift-institute/institute-application.git
+        git -C "$DIR" remote add origin https://github.com/swift-institute/institute.git
         git -C "$DIR" fetch --quiet --depth 1 origin "$SOURCES_REVISION"
         git -C "$DIR" checkout --quiet --detach FETCH_HEAD
         HEAD="$(git -C "$DIR" rev-parse HEAD)"
@@ -260,7 +260,7 @@ runs:
         {
           echo "### Institute CI planner"
           echo
-          echo "Built \`institute\` from swift-institute/institute-application@\`${SOURCES_REVISION}\`."
+          echo "Built \`institute\` from swift-institute/institute@\`${SOURCES_REVISION}\`."
           echo
           echo "Build wall clock: ${WALL}s."
         } >> "$GITHUB_STEP_SUMMARY"

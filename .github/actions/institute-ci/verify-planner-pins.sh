@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Contract between the planner publisher (institute-application's
+# Contract between the planner publisher (swift-institute/institute's
 # publish-planner, release `ci-binaries`) and its consumer (this action,
 # which reads `.institute-ci-pin` and `.institute-ci-planner` live).
 #
@@ -18,7 +18,7 @@
 #   does not hash to the row's digest.
 set -euo pipefail
 pin_file=$1 planner_file=$2
-base=${PLANNER_ASSET_BASE:-https://github.com/swift-institute/institute-application/releases/download/ci-binaries}
+base=${PLANNER_ASSET_BASE:-https://github.com/swift-institute/institute/releases/download/ci-binaries}
 platforms="linux-x86_64 macos-arm64"
 sha() { (sha256sum "$1" 2>/dev/null || shasum -a 256 "$1") | cut -d' ' -f1; }
 refuse() { echo "refused: $*" >&2; exit 1; }
@@ -47,7 +47,7 @@ published="$work/published"
 if [ -n "${PLANNER_PUBLISHED_PINS:-}" ]; then
   cat "$PLANNER_PUBLISHED_PINS" > "$published"
 else
-  for asset in $(gh release view ci-binaries -R swift-institute/institute-application --json assets \
+  for asset in $(gh release view ci-binaries -R swift-institute/institute --json assets \
       --jq ".assets[].name | select(startswith(\"PIN-$revision-\"))"); do
     curl --fail --silent --show-error --location --retry 3 "$base/$asset" >> "$published"
     echo >> "$published"
