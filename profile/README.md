@@ -14,27 +14,25 @@ Swift Institute applies that idea to infrastructure itself: specifications becom
 
 ## How it is organized
 
-The realised ecosystem spans GitHub organizations for three package layers. Layers are intended
-to depend downward only, and packages are converging on shared dependency, naming, typed-error,
-memory-ownership, and API-shape conventions. Components and Applications remain planned layers,
-not evidence of a populated package tier.
+The ecosystem spans GitHub organizations for four package layers. Dependencies point down
+only, and packages are converging on shared dependency, naming, typed-error, memory-ownership,
+and API-shape conventions.
 
 | Layer | Organization | Role |
 |-------|--------------|------|
-| 1 | [swift-molecules](https://github.com/swift-molecules) | Atomic building blocks — buffer, memory, geometry, time, async |
-| 2 | [swift-standards](https://github.com/swift-standards) + per-authority orgs | Specification implementations — RFC, ISO, W3C, WHATWG |
-| 3 | [swift-compositions](https://github.com/swift-compositions) | Composed systems — I/O, filesystem, HTML, CSS, PDF, networking |
-| 4 | Components — planned | Opinionated assemblies |
-| 5 | Applications — planned | End-user systems |
+| 1 | [swift-atoms](https://github.com/swift-atoms) | Atoms — what must exist |
+| 2 | [swift-molecules](https://github.com/swift-molecules) | Molecules — what is built from atoms alone: buffers, memory, async, parsing, trees |
+| 3 | [swift-standards](https://github.com/swift-standards) + per-authority orgs | Specification implementations — RFC, ISO, W3C, WHATWG |
+| 4 | [swift-compositions](https://github.com/swift-compositions) | Composed systems — I/O, filesystem, HTML, CSS, PDF, networking |
 
-Layer 2 is an organization of organizations: each standards authority has its own GitHub organization — [swift-ietf](https://github.com/swift-ietf) (RFCs), [swift-iso](https://github.com/swift-iso), [swift-w3c](https://github.com/swift-w3c), [swift-whatwg](https://github.com/swift-whatwg), plus single-package organizations for IEEE, IEC, ECMA, INCITS, ARM, Intel, RISC-V (pending), and Microsoft.
+Layer 3 is an organization of organizations: each standards authority has its own GitHub organization — [swift-ietf](https://github.com/swift-ietf) (RFCs), [swift-iso](https://github.com/swift-iso), [swift-w3c](https://github.com/swift-w3c), [swift-whatwg](https://github.com/swift-whatwg), plus single-package organizations for IEEE, IEC, ECMA, INCITS, ARM, Intel, RISC-V (pending), and Microsoft.
 
 ## Where to go next
 
 | If you want to... | Go to |
 |-------------------|-------|
 | Set up the ecosystem or inspect its public package inventory | [Workspace](https://github.com/swift-institute/Workspace) |
-| Use atomic primitives | [swift-molecules](https://github.com/swift-molecules) |
+| Use atomic building blocks | [swift-atoms](https://github.com/swift-atoms) and [swift-molecules](https://github.com/swift-molecules) |
 | Consume an RFC, ISO, W3C, or WHATWG specification | [swift-standards](https://github.com/swift-standards) |
 | Use composed systems (I/O, filesystem, HTML, CSS, PDF) | [swift-compositions](https://github.com/swift-compositions) |
 | Call the reusable CI workflows | [.github/workflows](https://github.com/swift-institute/.github/tree/main/.github/workflows) — pin an immutable SHA; not formally supported outside the ecosystem |
