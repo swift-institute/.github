@@ -19,8 +19,8 @@ considerations during review.
 
 - Follow the conventions in the relevant skill
 - Every new type needs a test. Every bug fix needs a regression test
-- No Foundation imports in Primitives or Standards packages — Foundation is a
-  Foundations-layer concern
+- No Foundation imports in Atoms, Molecules or Standards packages — Foundation
+  is a Compositions-layer concern
 - Run `swift build` and `swift test` before submitting
 - Run `xcrun swift-format format --in-place --recursive .` before submitting
   (see *Development environment* below)

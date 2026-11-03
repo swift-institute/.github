@@ -17,7 +17,7 @@
 
 - [ ] `swift build` passes
 - [ ] `swift test` passes
-- [ ] No Foundation imports in Primitives or Standards layers
+- [ ] No Foundation imports in the Atoms, Molecules or Standards layers
 - [ ] Conventions from relevant Skills followed
 
 ## Related

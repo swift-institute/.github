@@ -10,6 +10,6 @@ org:
   name: "Swift Institute"
   description: "A layered Swift package ecosystem organized around shared conventions."
   email: "coen@coenttb.com"
-  blog: "https://swift-institute.org"
+  blog: ""
   twitter: "coenttb"
   location: "Netherlands"
