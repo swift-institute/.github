@@ -1,0 +1,41 @@
+name: Org profiles
+
+# An organization's .github repository has no package and no ci.yml, so nothing
+# else checks its profile. This runs the README rules over every organization's.
+
+on:
+  schedule:
+    - cron: "0 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  profiles:
+    name: Check every organization's profile
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+      - id: institute-ci
+        uses: swift-institute/.github/.github/actions/institute-ci@50595dd24c7540cfd2de57cf38cafa7da79f7236
+      - name: Check profiles
+        shell: bash
+        env:
+          BINARY: ${{ steps.institute-ci.outputs.binary }}
+        run: |
+          set -uo pipefail
+          status=0
+          count=0
+          while read -r organization; do
+            count=$((count + 1))
+            root="$RUNNER_TEMP/$organization"
+            git clone --quiet --depth 1 "https://github.com/$organization/.github.git" "$root" || { status=1; continue; }
+            "$BINARY" ci -- package readme --repository "$organization/.github" --root "$root" || status=1
+          done < <("$BINARY" organizations | jq -r '.[]')
+          [ "$count" -gt 0 ] || { echo "::error::no organizations listed"; exit 1; }
+          echo "Checked $count profiles."
+          exit "$status"
