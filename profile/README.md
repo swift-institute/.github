@@ -6,7 +6,7 @@ Every rule a machine can check lives in that check, not here: the lint rules in 
 
 ## Organizations
 
-`swift-institute` is the control organization: policy, CI and tooling, and no layer. It governs four layer organizations, and their public repositories are the fleet. An organization's layer is `Institute.Organization` in [institute](https://github.com/swift-institute/institute); never infer a layer from a package name. A repository that deviates from the uniform CI says so in its own `.github/metadata.yaml` (`platforms:`, `embedded-target:`).
+`swift-institute` is the control organization: policy, CI and tooling, and no layer. It governs four layer organizations, and their public repositories are the fleet. An organization's layer is `Institute.Organization` in [institute](https://github.com/swift-institute/institute); never infer a layer from a package name. A repository that deviates from the uniform CI says so in its own `.github/metadata.yaml` (`platforms:`, `embedded-target:`, `ci:`).
 
 | Layer | Organization | Holds |
 |---|---|---|
