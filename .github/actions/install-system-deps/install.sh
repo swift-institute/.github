@@ -42,6 +42,21 @@ for lib in $libs; do
   fi
 done
 
+# A system library target names its apt packages itself: GRDB's GRDBSQLite has
+# providers: [.apt(["libsqlite3-dev"])] and links through its module map, with no
+# .linkedLibrary to find. Only a package map_lib already knows is installed, so a
+# dependency's manifest can't choose what goes on the runner.
+known=" uuid-dev liburing-dev zlib1g-dev libssl-dev libcurl4-openssl-dev libsqlite3-dev libxml2-dev "
+declared=$(grep -hoE '\.apt\(\[[^]]*\]' "$@" 2>/dev/null \
+           | grep -oE '"[^"]+"' | tr -d '"' | sort -u || true)
+echo "Declared apt providers in dependency graph: ${declared:-<none>}" >&2
+for p in $declared; do
+  case "$known" in
+    *" $p "*) pkgs="$pkgs $p" ;;
+    *) echo "::warning::Apt provider '$p' is not in install.sh's known packages. If it is needed at compile time, add it." >&2 ;;
+  esac
+done
+
 pkgs=$(printf '%s\n' $pkgs | sort -u | tr '\n' ' ')
 if [ -z "${pkgs// }" ]; then
   echo "No system dev-packages required." >&2

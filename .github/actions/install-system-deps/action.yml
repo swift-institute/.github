@@ -28,21 +28,23 @@
 #      compiles from `Tests/`.
 #   2. Scan every compiled package root AND every resolved dependency manifest
 #      (incl. version-specific `Package@swift-*.swift`) for
-#      `.linkedLibrary("<name>")`. The linked library is usually declared by
-#      a DEPENDENCY, not the root package, so scanning only the root manifest
+#      `.linkedLibrary("<name>")` and `.apt(["<package>"])`, the provider of a
+#      system library target such as GRDB's. Either is usually declared by a
+#      DEPENDENCY, not the root package, so scanning only the root manifest
 #      is insufficient.
-#   3. Map each linker name to its apt `-dev` package and install the union
+#   3. Map each linker name to its apt `-dev` package, keep each declared
+#      provider the map already knows, and install the union
 #      (install.sh, shared with the fleet-epoch certification).
 #      Libraries provided by `libc6-dev` (already in the image) map to nothing;
-#      an unmapped library emits a `::warning::` (one-line map addition) rather
-#      than a silent miss.
+#      an unmapped library or unknown provider emits a `::warning::` (one-line
+#      map addition) rather than a silent miss.
 #
 # Best-effort + apt-only: a no-op on non-Debian runners (macOS/Windows) and
 # when no mapped libraries are found, so it is safe to add to every build job.
 name: Install system dependencies
 description: >-
   Derive required Linux system dev-packages from the resolved SwiftPM
-  dependency graph's .linkedLibrary declarations and apt-install them, so
+  dependency graph's .linkedLibrary and .apt declarations and apt-install them, so
   C-shim targets that #include system headers compile in CI. No-op on
   non-apt runners. Run AFTER configure-private-repos.
 runs:
