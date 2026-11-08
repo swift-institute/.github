@@ -21,7 +21,7 @@ jobs:
         with:
           egress-policy: audit
       - id: institute-ci
-        uses: swift-institute/.github/.github/actions/institute-ci@603b1a2c75ab160aa121bd455b5925336ff38efd
+        uses: swift-institute/.github/.github/actions/institute-ci@9277b6d2474d35a7866ed1575912c66f57070381
       - name: Check profiles
         shell: bash
         env:
