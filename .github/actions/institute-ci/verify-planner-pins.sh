@@ -49,7 +49,7 @@ if [ -n "${PLANNER_PUBLISHED_PINS:-}" ]; then
 else
   for asset in $(gh release view ci-binaries -R swift-institute/institute --json assets \
       --jq ".assets[].name | select(startswith(\"PIN-$revision-\"))"); do
-    curl --fail --silent --show-error --location --retry 3 "$base/$asset" >> "$published"
+    curl --fail --silent --show-error --location --retry 10 --retry-max-time 600 "$base/$asset" >> "$published"
     echo >> "$published"
   done
 fi
@@ -59,10 +59,10 @@ for platform in $platforms; do
   [ -n "$row" ] || refuse "pinned revision $revision has no planner row for $platform; every $platform run would build the planner from source"
   grep -qxF "$row" "$published" || refuse "planner row for $revision $platform was not published by any PIN-$revision-* asset: '$row'"
   read -r _ _ binary graph <<< "$row"
-  curl --fail --silent --show-error --location --retry 3 -o "$work/binary" "$base/institute-$platform-$binary" \
+  curl --fail --silent --show-error --location --retry 10 --retry-max-time 600 -o "$work/binary" "$base/institute-$platform-$binary" \
     || refuse "release has no institute-$platform-$binary"
   [ "$(sha "$work/binary")" = "$binary" ] || refuse "institute-$platform-$binary does not hash to its name"
-  curl --fail --silent --show-error --location --retry 3 -o "$work/graph" "$base/Package.resolved-$platform-$graph" \
+  curl --fail --silent --show-error --location --retry 10 --retry-max-time 600 -o "$work/graph" "$base/Package.resolved-$platform-$graph" \
     || refuse "release has no Package.resolved-$platform-$graph"
   [ "$(sha "$work/graph")" = "$graph" ] || refuse "Package.resolved-$platform-$graph does not hash to its name"
   echo "ok: $revision $platform binary $binary graph $graph"

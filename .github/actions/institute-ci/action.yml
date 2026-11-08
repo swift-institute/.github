@@ -86,7 +86,7 @@ runs:
           || { echo "::error::could not resolve swift-institute/.github@main"; exit 1; }
         AUTHORITY_BASE="https://raw.githubusercontent.com/swift-institute/.github/$AUTHORITY_REVISION"
         if [ -z "$SOURCES_REVISION" ]; then
-          SOURCES_REVISION="$(curl --fail --silent --show-error --location --retry 3 \
+          SOURCES_REVISION="$(curl --fail --silent --show-error --location --retry 10 --retry-max-time 600 \
             "$AUTHORITY_BASE/.institute-ci-pin" \
             | grep -v '^[[:space:]]*#' | tr -d '[:space:]')" \
             || { echo "::error::could not read .institute-ci-pin from swift-institute/.github@main"; exit 1; }
@@ -107,7 +107,7 @@ runs:
         esac
         PUBLISHED=""
         if [ -n "$PLATFORM" ]; then
-          PUBLISHED="$(curl --fail --silent --show-error --location --retry 3 \
+          PUBLISHED="$(curl --fail --silent --show-error --location --retry 10 --retry-max-time 600 \
             "$AUTHORITY_BASE/.institute-ci-planner" \
             | { grep -v '^[[:space:]]*#' || true; } \
             | awk -v r="$SOURCES_REVISION" -v p="$PLATFORM" '$1 == r && $2 == p {v = $3 " " $4} END {print v}')" \
@@ -140,9 +140,9 @@ runs:
         rm -rf "$DIR"
         mkdir -p "$DIR/.build/release"
         BASE=https://github.com/swift-institute/institute/releases/download/ci-binaries
-        curl --fail --silent --show-error --location --retry 3 \
+        curl --fail --silent --show-error --location --retry 10 --retry-max-time 600 \
           -o "$DIR/.build/release/institute" "$BASE/institute-$PLATFORM-$BINARY_DIGEST"
-        curl --fail --silent --show-error --location --retry 3 \
+        curl --fail --silent --show-error --location --retry 10 --retry-max-time 600 \
           -o "$DIR/Package.resolved" "$BASE/Package.resolved-$PLATFORM-$GRAPH_DIGEST"
         sha() { (sha256sum "$1" 2>/dev/null || shasum -a 256 "$1") | cut -d' ' -f1; }
         [ "$(sha "$DIR/.build/release/institute")" = "$BINARY_DIGEST" ] \
