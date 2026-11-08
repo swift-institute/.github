@@ -43,7 +43,7 @@ jobs:
         with:
           egress-policy: audit
       - id: institute-ci
-        uses: swift-institute/.github/.github/actions/institute-ci@50595dd24c7540cfd2de57cf38cafa7da79f7236
+        uses: swift-institute/.github/.github/actions/institute-ci@603b1a2c75ab160aa121bd455b5925336ff38efd
       - id: list
         shell: bash
         env:

@@ -58,7 +58,7 @@ jobs:
           egress-policy: audit
 
       - id: institute-ci
-        uses: swift-institute/.github/.github/actions/institute-ci@50595dd24c7540cfd2de57cf38cafa7da79f7236
+        uses: swift-institute/.github/.github/actions/institute-ci@603b1a2c75ab160aa121bd455b5925336ff38efd
 
       # The roster is Institute.Organization, read from the pinned planner;
       # this file keeps no list of its own.
@@ -88,7 +88,7 @@ jobs:
           egress-policy: audit
 
       - id: institute-ci
-        uses: swift-institute/.github/.github/actions/institute-ci@50595dd24c7540cfd2de57cf38cafa7da79f7236
+        uses: swift-institute/.github/.github/actions/institute-ci@603b1a2c75ab160aa121bd455b5925336ff38efd
 
       - name: Mint installation token (swift-institute-bot)
         id: token
