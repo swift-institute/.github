@@ -66,8 +66,23 @@ runs:
       shell: bash
       env:
         SOURCES_REVISION: ${{ inputs.sources-revision }}
+        GH_TOKEN: ${{ github.token }}
       run: |
         set -euo pipefail
+        # Reads swift-institute/.github at a commit: authenticated through `gh`
+        # when the runner has it (8 Nov 2026: GitHub's timeouts hit
+        # unauthenticated traffic while ~300 repositories started CI at
+        # once), else unauthenticated curl. Both retry for up to 10 minutes.
+        read_authority() {
+          if command -v gh >/dev/null; then
+            for delay in 0 5 20; do
+              sleep "$delay"
+              gh api -H 'Accept: application/vnd.github.raw' \
+                "repos/swift-institute/.github/contents/$1?ref=$AUTHORITY_REVISION" && return 0
+            done
+          fi
+          curl --fail --silent --show-error --location --retry 10 --retry-max-time 600 "$AUTHORITY_BASE/$1"
+        }
         # One authority. `.institute-ci-pin` on the default branch of the
         # central repository, read live at run time. Reading it through
         # GITHUB_ACTION_PATH was a frozen copy: callers self-pin this
@@ -86,8 +101,7 @@ runs:
           || { echo "::error::could not resolve swift-institute/.github@main"; exit 1; }
         AUTHORITY_BASE="https://raw.githubusercontent.com/swift-institute/.github/$AUTHORITY_REVISION"
         if [ -z "$SOURCES_REVISION" ]; then
-          SOURCES_REVISION="$(curl --fail --silent --show-error --location --retry 10 --retry-max-time 600 \
-            "$AUTHORITY_BASE/.institute-ci-pin" \
+          SOURCES_REVISION="$(read_authority .institute-ci-pin \
             | grep -v '^[[:space:]]*#' | tr -d '[:space:]')" \
             || { echo "::error::could not read .institute-ci-pin from swift-institute/.github@main"; exit 1; }
         fi
@@ -107,8 +121,7 @@ runs:
         esac
         PUBLISHED=""
         if [ -n "$PLATFORM" ]; then
-          PUBLISHED="$(curl --fail --silent --show-error --location --retry 10 --retry-max-time 600 \
-            "$AUTHORITY_BASE/.institute-ci-planner" \
+          PUBLISHED="$(read_authority .institute-ci-planner \
             | { grep -v '^[[:space:]]*#' || true; } \
             | awk -v r="$SOURCES_REVISION" -v p="$PLATFORM" '$1 == r && $2 == p {v = $3 " " $4} END {print v}')" \
             || { echo "::error::could not read .institute-ci-planner from swift-institute/.github@main"; exit 1; }
@@ -134,16 +147,27 @@ runs:
         PLATFORM: ${{ steps.identity.outputs.platform }}
         BINARY_DIGEST: ${{ steps.identity.outputs.binary-digest }}
         GRAPH_DIGEST: ${{ steps.identity.outputs.graph-digest }}
+        GH_TOKEN: ${{ github.token }}
       run: |
         set -euo pipefail
         DIR="$RUNNER_TEMP/institute-ci-sources"
         rm -rf "$DIR"
         mkdir -p "$DIR/.build/release"
         BASE=https://github.com/swift-institute/institute/releases/download/ci-binaries
-        curl --fail --silent --show-error --location --retry 10 --retry-max-time 600 \
-          -o "$DIR/.build/release/institute" "$BASE/institute-$PLATFORM-$BINARY_DIGEST"
-        curl --fail --silent --show-error --location --retry 10 --retry-max-time 600 \
-          -o "$DIR/Package.resolved" "$BASE/Package.resolved-$PLATFORM-$GRAPH_DIGEST"
+        # Authenticated through `gh` when the runner has it, else unauthenticated
+        # curl; both retry for up to 10 minutes. The digests below verify
+        # whichever path delivered the file.
+        fetch_asset() {
+          if command -v gh >/dev/null; then
+            for delay in 0 5 20; do
+              sleep "$delay"
+              gh release download ci-binaries -R swift-institute/institute -p "$1" -O "$2" --clobber && return 0
+            done
+          fi
+          curl --fail --silent --show-error --location --retry 10 --retry-max-time 600 -o "$2" "$BASE/$1"
+        }
+        fetch_asset "institute-$PLATFORM-$BINARY_DIGEST" "$DIR/.build/release/institute"
+        fetch_asset "Package.resolved-$PLATFORM-$GRAPH_DIGEST" "$DIR/Package.resolved"
         sha() { (sha256sum "$1" 2>/dev/null || shasum -a 256 "$1") | cut -d' ' -f1; }
         [ "$(sha "$DIR/.build/release/institute")" = "$BINARY_DIGEST" ] \
           || { echo "::error::published planner for $SOURCES_REVISION $PLATFORM does not match its pinned digest"; exit 1; }
