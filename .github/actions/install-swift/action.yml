@@ -102,7 +102,12 @@ runs:
         fetch() { curl --fail --silent --show-error --location --retry 10 --retry-all-errors --retry-max-time 600 -o "$2" "$1"; }
         fetch "$URL" "$WORK/toolchain.tar.gz"
         fetch "$URL.sig" "$WORK/toolchain.tar.gz.sig"
-        fetch https://swift.org/keys/all-keys.asc "$WORK/keys.asc"
+        # swift.org serves the keys with Content-Encoding: gzip whatever the
+        # request says, so this one fetch must decompress.
+        curl --fail --silent --show-error --location --compressed --retry 10 --retry-all-errors --retry-max-time 600 \
+          -o "$WORK/keys.asc" https://swift.org/keys/all-keys.asc
+        grep -q "BEGIN PGP PUBLIC KEY BLOCK" "$WORK/keys.asc" \
+          || { echo "::error::swift.org/keys/all-keys.asc did not return PGP keys."; exit 1; }
         export GNUPGHOME="$WORK/gnupg"
         mkdir -m 700 "$GNUPGHOME"
         gpg --batch --quiet --import "$WORK/keys.asc"
