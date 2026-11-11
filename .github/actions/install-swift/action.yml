@@ -1,0 +1,131 @@
+name: 'Install Swift'
+description: >-
+  Install a released Swift toolchain on a Linux runner from swift.org:
+  download it, verify its signature against swift.org's own keys, cache
+  it, and put it first on PATH.
+
+# This replaces SwiftyLab/setup-swift on Linux (swift-institute/.github#659).
+# That action, whenever it downloads a toolchain, also refreshes the signing
+# keys from hkp://keyserver.ubuntu.com and aborts when the keyserver does not
+# answer. A repository with the toolchain cached never asks; a repository
+# with an empty cache (every new one) could not get a first green while the
+# keyserver was unreachable from the runners, 11 Nov 2026.
+#
+# Nothing here talks to a keyserver. The keys come from swift.org over TLS,
+# into a keyring made for this one check, and the toolchain is used only
+# after `gpg --verify` accepts its signature with one of them. That is the
+# trust setup-swift had, without the refresh, which only looks for
+# revocations on a third party's server.
+#
+# The exact release is committed, in `releases` beside this file: a line
+# `6.4 6.4.2` says what "6.4" means. Plan and ci-ok must install the very
+# same toolchain (the planner seal compares `swift --version`), so the
+# answer cannot depend on what swift.org lists on the day.
+#
+# A cache hit needs no network beyond GitHub's own cache.
+
+inputs:
+  swift-version:
+    description: >-
+      A line of `releases` (such as 6.4) or an exact release (such as
+      6.4.2). Anything else is refused.
+    required: true
+
+outputs:
+  release:
+    description: 'The exact release installed, such as 6.4.2.'
+    value: ${{ steps.resolve.outputs.release }}
+  directory:
+    description: 'The toolchain directory; its usr/bin is on PATH.'
+    value: ${{ steps.resolve.outputs.directory }}
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve the release and the platform
+      id: resolve
+      shell: bash
+      env:
+        REQUESTED: ${{ inputs.swift-version }}
+        RELEASES: ${{ github.action_path }}/releases
+      run: |
+        set -euo pipefail
+        [ "$RUNNER_OS" = "Linux" ] || { echo "::error::install-swift installs on Linux runners only, not $RUNNER_OS."; exit 1; }
+        RELEASE="$(awk -v want="$REQUESTED" '$1 == want { print $2 }' "$RELEASES")"
+        if [ -z "$RELEASE" ]; then
+          if grep -qE "^[^ ]+ ${REQUESTED//./\\.}\$" "$RELEASES"; then
+            RELEASE="$REQUESTED"
+          else
+            echo "::error::'$REQUESTED' is not in .github/actions/install-swift/releases; add a line for it."
+            exit 1
+          fi
+        fi
+        [[ "$RELEASE" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] || { echo "::error::malformed release '$RELEASE' in releases."; exit 1; }
+        . /etc/os-release
+        case "$ID" in
+          ubuntu|debian|amzn|fedora|rhel) ;;
+          *) echo "::error::no swift.org toolchain known for '$ID'."; exit 1 ;;
+        esac
+        case "$(uname -m)" in
+          x86_64) ARCH="" ;;
+          aarch64) ARCH="-aarch64" ;;
+          *) echo "::error::no swift.org toolchain known for $(uname -m)."; exit 1 ;;
+        esac
+        NAME="$ID$VERSION_ID$ARCH"
+        FOLDER="$ID${VERSION_ID//./}$ARCH"
+        TAG="swift-$RELEASE-RELEASE"
+        DIRECTORY="$RUNNER_TOOL_CACHE/institute-swift/$TAG-$NAME"
+        {
+          echo "release=$RELEASE"
+          echo "tag=$TAG"
+          echo "name=$NAME"
+          echo "directory=$DIRECTORY"
+          echo "url=https://download.swift.org/swift-$RELEASE-release/$FOLDER/$TAG/$TAG-$NAME.tar.gz"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Restore the toolchain
+      id: cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ steps.resolve.outputs.directory }}
+        key: institute-swift-${{ steps.resolve.outputs.tag }}-${{ steps.resolve.outputs.name }}
+
+    - name: Download and verify the toolchain
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        URL: ${{ steps.resolve.outputs.url }}
+        DIRECTORY: ${{ steps.resolve.outputs.directory }}
+      run: |
+        set -euo pipefail
+        WORK="$(mktemp -d "$RUNNER_TEMP/install-swift.XXXXXX")"
+        fetch() { curl --fail --silent --show-error --location --retry 10 --retry-all-errors --retry-max-time 600 -o "$2" "$1"; }
+        fetch "$URL" "$WORK/toolchain.tar.gz"
+        fetch "$URL.sig" "$WORK/toolchain.tar.gz.sig"
+        fetch https://swift.org/keys/all-keys.asc "$WORK/keys.asc"
+        export GNUPGHOME="$WORK/gnupg"
+        mkdir -m 700 "$GNUPGHOME"
+        gpg --batch --quiet --import "$WORK/keys.asc"
+        STATUS="$(gpg --batch --status-fd 1 --verify "$WORK/toolchain.tar.gz.sig" "$WORK/toolchain.tar.gz" 2>"$WORK/verify.log")" \
+          || { cat "$WORK/verify.log"; echo "::error::the toolchain's signature does not verify against swift.org's keys: $URL"; exit 1; }
+        SIGNER="$(awk '$2 == "VALIDSIG" { print $3 }' <<< "$STATUS")"
+        [ -n "$SIGNER" ] || { echo "::error::gpg reported no valid signature for $URL"; exit 1; }
+        rm -rf "$DIRECTORY"
+        mkdir -p "$DIRECTORY"
+        tar -xzf "$WORK/toolchain.tar.gz" -C "$DIRECTORY" --strip-components=1
+        rm -rf "$WORK"
+        echo "Installed \`$URL\`, signed by \`$SIGNER\`." >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Put the toolchain on PATH
+      shell: bash
+      env:
+        DIRECTORY: ${{ steps.resolve.outputs.directory }}
+        RELEASE: ${{ steps.resolve.outputs.release }}
+      run: |
+        set -euo pipefail
+        [ -x "$DIRECTORY/usr/bin/swift" ] || { echo "::error::no swift under $DIRECTORY/usr/bin."; exit 1; }
+        echo "$DIRECTORY/usr/bin" >> "$GITHUB_PATH"
+        VERSION="$("$DIRECTORY/usr/bin/swift" --version 2>&1)"
+        echo "$VERSION"
+        grep -qF "Swift version $RELEASE " <<< "$VERSION" \
+          || { echo "::error::the installed toolchain is not Swift $RELEASE."; exit 1; }
