@@ -208,7 +208,7 @@ runs:
     # keyserver (swift-institute/.github#659). Windows keeps setup-swift.
     - name: Install Swift
       if: runner.os == 'Linux'
-      uses: swift-institute/.github/.github/actions/install-swift@1c7a8006ba7cf38a60dcaca44a924798cc93c5ff
+      uses: swift-institute/.github/.github/actions/install-swift@5129ee2ec62209a99b6475885a5a0691f9a1f85e
       with:
         swift-version: ${{ inputs.swift-version }}
 
