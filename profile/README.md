@@ -1,6 +1,6 @@
 # Swift Institute
 
-A layered Swift package ecosystem: specifications become types, conventions become compiler checks, and one discipline runs from the smallest buffer to a PDF renderer. This page is the entry point for people and agents alike. To align a project with the Institute, add one line to its agent instructions (`CLAUDE.md`, `AGENTS.md`): *Align with https://github.com/swift-institute.*
+A layered Swift package ecosystem: specifications become types, conventions become compiler checks, and one discipline runs from the smallest buffer to a PDF renderer. This page is the entry point for people and agents alike. To bind a project to the Institute, add one line to its agent instructions (`CLAUDE.md`, `AGENTS.md`): *Before changing code here, read https://github.com/swift-institute in full and follow it.*
 
 Every rule a machine can check lives in that check, not here: the lint rules in [institute](https://github.com/swift-institute/institute), `institute ci -- package validate` over the package graph, SwiftPM and the compiler, and GitHub's own settings and rulesets. A finding names its rule. What follows is what no check can say.
 
