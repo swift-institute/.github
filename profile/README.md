@@ -23,11 +23,17 @@ Older text says Primitives for layers 1 and 2 and Foundations for layer 4; neith
 
 Can you point to an external spec, man page or SDK document that defines this surface? Yes: layer 3. No: layer 1 if it is an atomic prerequisite, layer 2 if it is built from atoms alone, layer 4 otherwise. An extraction without a clear answer goes to swift-compositions.
 
-Dependencies point down: atoms on atoms; molecules on atoms and molecules; standards on atoms, molecules and standards; compositions on anything. What the check cannot decide:
+Dependencies point down: atoms on atoms; molecules on atoms and molecules; standards on atoms, molecules and standards; compositions on anything; products, which live outside the Institute, on all of it. The lower a package sits, the more it is perfected on its own terms, and everything above it bends to fit. What the check cannot decide:
 
-- Layer follows essence, never the current edges. When an edge points up, move the capability down; the consumer never lifts.
+- **A package is finished to its own laws.** It is designed around the concept it names, never around what one consumer needs. No app, product or higher package shapes a lower one.
+- **A general idea lives at the lowest layer its dependencies allow, now.** Layer follows essence, never the current edges or the current home. When part of a higher package is a general concept (an exact rate, a floor, a PSNR), it moves down in the same piece of work; waiting for a second consumer is deciding from downstream. When an edge points up, the capability moves down; the consumer never lifts. This is about where existing code lives, not about building what nothing uses yet.
+- **A gap is fixed where it is.** Every capability has one owner; everything else composes it. A helper in a higher package that makes up for something missing below is a defect in the lower package: file it there, fix it there, then delete the helper.
+- **Downstream adjusts, always.** When a lower package improves, every package above is rewritten to use it, breaking its own API where that is needed. A lower package is never bent, delayed or kept compatible for a consumer.
+- **A top-level name is a claim.** A top-level type `X` says it is the universal X, and so owns `swift-x`. A type that is less than that nests under the domain it belongs to (`Motion.Scene`, not `Scene`).
+- **Glue stays at the top.** An adapter over a platform framework (AppKit, AVFoundation) is a composition and holds no general logic; whatever in it is general moves down.
 - A same-layer edge must be an essential semantic prerequisite and push no higher-layer policy down.
-- Every capability has one owner; everything else composes it. When the owner falls short, improve it instead of working around it or adding a dependency.
+
+The test for any piece of code: what is this, stripped of the name its current home gave it? The answer picks the layer, the layer picks the repository, and everything above is rewritten to use it.
 
 ## A repository
 
