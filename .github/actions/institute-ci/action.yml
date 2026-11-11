@@ -204,8 +204,16 @@ runs:
         fi
         echo "directory=$DIR" >> "$GITHUB_OUTPUT"
 
+    # Linux installs through the Institute's own action, which asks no
+    # keyserver (swift-institute/.github#659). Windows keeps setup-swift.
     - name: Install Swift
-      if: runner.os != 'macOS'
+      if: runner.os == 'Linux'
+      uses: swift-institute/.github/.github/actions/install-swift@1c7a8006ba7cf38a60dcaca44a924798cc93c5ff
+      with:
+        swift-version: ${{ inputs.swift-version }}
+
+    - name: Install Swift on Windows
+      if: runner.os == 'Windows'
       uses: SwiftyLab/setup-swift@38f54a76b70d989321de9dc7c840618c08cf56e9 # v1.14.0
       with:
         swift-version: ${{ inputs.swift-version }}
