@@ -148,7 +148,7 @@ jobs:
           sha: ${{ steps.subject.outputs.sha }}
 
       - id: institute-ci
-        uses: swift-institute/.github/.github/actions/institute-ci@6690aa1e1fb16f2faff9657d38887d926f61677b
+        uses: swift-institute/.github/.github/actions/institute-ci@255dd9b55d9eef5b8cc1c9c2058e347fec0dd57f
 
       - name: Materialize the institute-ci action at the workflow revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -651,7 +651,7 @@ jobs:
           repository: ${{ needs.plan.outputs.subject-repository }}
           sha: ${{ needs.plan.outputs.subject-sha }}
       - id: institute-ci
-        uses: swift-institute/.github/.github/actions/institute-ci@9277b6d2474d35a7866ed1575912c66f57070381
+        uses: swift-institute/.github/.github/actions/institute-ci@255dd9b55d9eef5b8cc1c9c2058e347fec0dd57f
       - name: Measure source
         shell: bash
         env:
