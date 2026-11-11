@@ -148,7 +148,7 @@ jobs:
           sha: ${{ steps.subject.outputs.sha }}
 
       - id: institute-ci
-        uses: swift-institute/.github/.github/actions/institute-ci@9277b6d2474d35a7866ed1575912c66f57070381
+        uses: swift-institute/.github/.github/actions/institute-ci@6690aa1e1fb16f2faff9657d38887d926f61677b
 
       - name: Materialize the institute-ci action at the workflow revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -767,7 +767,7 @@ jobs:
       # attempt, platform or toolchain, a replaced binary or graph) fails
       # here, so ci-ok stays non-success.
       - name: Install Swift for the restored planner
-        uses: SwiftyLab/setup-swift@38f54a76b70d989321de9dc7c840618c08cf56e9 # v1.14.0
+        uses: ./.github/actions/install-swift
         with:
           swift-version: ${{ env.SWIFT_VERSION }}
       - name: Put the Swift runtime on the loader path
