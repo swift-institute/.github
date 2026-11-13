@@ -44,7 +44,7 @@ The test for any piece of code: what is this, stripped of the name its current h
 
 Each package repository carries one generated `ci.yml` that calls the reusable `swift-ci.yml` in [swift-institute/.github](https://github.com/swift-institute/.github). That workflow runs only the `institute` command: `ci -- package validate|plan|aggregate`, and `ci -- source` for Institute lint in the `Quality · source` job. `institute install` puts the same pinned binary on a Mac.
 
-Evidence of record is a `workflow_dispatch` run of that CI, which always plans the full tier. A local green, a filtered run or a local `institute ci -- source` is iteration evidence. `gh run rerun` replays the old snapshot; dispatch a fresh run.
+Evidence of record is that CI's run at the pushed head of `main`, which plans the full tier; no second run is dispatched for it. A local green, a filtered run or a local `institute ci -- source` is iteration evidence. `gh run rerun` replays the old snapshot; where a fresh run is needed, dispatch one.
 
 ## State
 
