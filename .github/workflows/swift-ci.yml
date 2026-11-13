@@ -665,7 +665,13 @@ jobs:
     name: Quality · source
     needs: plan
     if: ${{ !github.event.repository.private && !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',source,') }}
-    runs-on: xcode-27
+    # Linux, since swift-institute/institute#287: the lint reads source text
+    # and its three tools are pinned by digest for linux-x86_64 as they are
+    # for macOS, so it needs no macOS runner. The image is named exactly,
+    # not ubuntu-latest: Institute.Source.Policy pins the swift-format of
+    # swift.org's ubuntu24.04 toolchain, and another image would install
+    # another build of it, which the planner refuses.
+    runs-on: ubuntu-24.04
     timeout-minutes: ${{ fromJSON(needs.plan.outputs.timeout-minutes) }}
     permissions:
       contents: read
@@ -677,13 +683,19 @@ jobs:
         with:
           repository: ${{ needs.plan.outputs.subject-repository }}
           sha: ${{ needs.plan.outputs.subject-sha }}
+      # The exact release, not the 6.4 line: this toolchain's swift-format is
+      # the lint's engine, pinned by digest in Institute.Source.Policy. The
+      # action puts the toolchain first on PATH, where the planner looks for
+      # swift-format, and its runtime on the loader path. When the policy's
+      # pin moves to another release, this line moves with it.
       - id: institute-ci
         uses: swift-institute/.github/.github/actions/institute-ci@255dd9b55d9eef5b8cc1c9c2058e347fec0dd57f
+        with:
+          swift-version: '6.4.2'
       - name: Measure source
         shell: bash
         env:
           BINARY: ${{ steps.institute-ci.outputs.binary }}
-          DYLD_LIBRARY_PATH: ${{ steps.institute-ci.outputs.runtime-library-path }}
         # The JSON report on stdout is also kept as the `quality-report`
         # artifact: the log copy is subject to GitHub's secret masking, which
         # rewrites substrings to `***` and leaves the JSON unparsable.
@@ -695,7 +707,6 @@ jobs:
             --repository "${{ needs.plan.outputs.subject-repository }}" \
             --revision "${{ needs.plan.outputs.subject-sha }}" \
             --root "$GITHUB_WORKSPACE" \
-            --xcode-application "/Applications/Xcode_${XCODE_VERSION}.app" \
             | tee "$RUNNER_TEMP/quality/report.json"
       - name: Keep the Quality report
         if: always()
