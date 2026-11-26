@@ -80,6 +80,7 @@ GitHub is the only state outside the code: issues, labelled `decision` or `lint-
 
 - Standalone package work: SwiftPM in the package directory (`swift build`, `swift test`).
 - App work, or a package change proven through an app: that app's `.xcworkspace` through Xcode's own tools, with local package checkouts referenced by the workspace.
+- A change that spans packages: one workspace that holds their local checkouts, built once. A member is not built a second time in its own folder.
 
 ## Status
 
