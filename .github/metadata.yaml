@@ -17,3 +17,24 @@ org:
 readme:
   family: G
 layer: control
+
+# The organizations this organization governs. Each states its own layer in its own `.github` repository.
+governs:
+  - swift-atoms
+  - swift-molecules
+  - swift-standards
+  - swift-arm-ltd
+  - swift-bipm
+  - swift-ecma
+  - swift-iec
+  - swift-ieee
+  - swift-ietf
+  - swift-incits
+  - swift-intel
+  - swift-iso
+  - swift-linux-foundation
+  - swift-microsoft
+  - swift-riscv
+  - swift-w3c
+  - swift-whatwg
+  - swift-compositions
