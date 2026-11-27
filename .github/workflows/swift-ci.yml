@@ -42,7 +42,7 @@ env:
 #
 # Every build and test job binds the plan's `timeout-minutes`: 40 minutes,
 # or what the repository's .github/metadata.yaml sets (Institute.CI.Timeout
-# in institute; swift-institute/.github#660). ci-ok names a job the limit
+# in institute). ci-ok names a job the limit
 # stopped.
 jobs:
 # Top-level job names are intentionally static. GitHub may render
@@ -271,7 +271,7 @@ jobs:
           # swift test passes the test process's output on with print(), and
           # C stdio holds what print() writes until its buffer fills or the
           # process ends when stdout is a pipe, as it is here: a hung test
-          # left no line naming it (swift-institute/.github#660). stdbuf
+          # left no line naming it. stdbuf
           # makes that stdout line-buffered, so each line reaches the log
           # as it is written.
           test_package() {
@@ -394,7 +394,7 @@ jobs:
           # Test output here still arrives when swift test's stdout buffer
           # fills or it exits, not line by line: Git Bash has neither stdbuf
           # nor a pseudo-terminal, and the cause is SwiftPM's print() without
-          # a flush (swift-institute/.github#660). The time limit still ends
+          # a flush (swift-institute/Issues#269). The time limit still ends
           # a hung run; the hung test's name waits for that SwiftPM fix.
           # [swift-institute/.github#498] Swift Build expands every linked module
           # into a separate response-file argument and can exceed Windows'
@@ -434,8 +434,8 @@ jobs:
           swift --version
           # swift test passes the test process's output on with print(), which
           # C stdio holds until its buffer fills or the process ends when
-          # stdout is a pipe: a hung test left no line naming it
-          # (swift-institute/.github#660). macOS has no stdbuf, and the
+          # stdout is a pipe: a hung test left no line naming it.
+          # macOS has no stdbuf, and the
           # system swift is a protected shim that drops DYLD variables, so
           # swift test runs on a pseudo-terminal, where stdout is
           # line-buffered. script returns swift test's exit status.
@@ -642,7 +642,7 @@ jobs:
     name: Quality · source
     needs: plan
     if: ${{ !github.event.repository.private && !cancelled() && contains(format(',{0},', needs.plan.outputs.legs), ',source,') }}
-    # Linux, since swift-institute/institute#287: the lint reads source text
+    # Linux: the lint reads source text
     # and its three tools are pinned by digest for linux-x86_64 as they are
     # for macOS, so it needs no macOS runner. The image is named exactly,
     # not ubuntu-latest: Institute.Source.Policy pins the swift-format of
