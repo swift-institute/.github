@@ -22,7 +22,7 @@ Older text says Primitives for layer 1 and Foundations for layer 3; neither orga
 
 ## Placement and direction
 
-Can you point to an external spec, man page or SDK document that defines this surface? Yes: layer 2. No: layer 1 if it is built from atoms alone, layer 3 otherwise. A library that needs a package outside the Institute, or a framework that only some platforms have, is layer 3. An extraction without a clear answer goes to swift-compositions.
+Can you point to an external spec, man page or SDK document that defines this surface? Yes: layer 2. No: layer 1 if it is built from atoms alone, layer 3 otherwise. A library whose own model needs a package outside the Institute, or a framework that only some platforms have, is layer 3. swift-syntax in a macro target is no such package, and an adapter in a target of its own is platform glue (I2), at whatever layer its package sits. An extraction without a clear answer goes to swift-compositions.
 
 Dependencies point down: atoms on atoms; standards on atoms and standards; compositions on anything; products, which live outside the Institute, on all of it. The lower a package sits, the more it is perfected on its own terms, and everything above it bends to fit. What the check cannot decide:
 
@@ -39,7 +39,7 @@ Dependencies point down: atoms on atoms; standards on atoms and standards; compo
   - A concept defined by a published standard lives canonically under its authority's dotted namespace, 1:1 with the authoritative specification document (`W3C.Compositing`, `W3C.CSS`, `W3C.PNG`, `WHATWG.HTML`, ``ISO.`9945` ``, ``IETF.RFC.`1035` ``, ``IEC.`61966` ``); higher domains use it directly rather than wrapping a duplicate.
   - A higher-layer capability inverts ownership at the end of the noun chain (`Radix.Formatter`, `Byte.Size.Formatter`, `Map.Coder`, `Predicate.Parser`, `X.View`) so dependencies still point down, with only capability-internal support types (`.Error`, `.Options`, `.Context`) beneath it. A type `X` has at most one coder, `X.Coder`, declared once.
   - Standalone `Y` and nested `X.Y` coexist only when semantically distinct, with `Y` the generic concept and `X.Y` the `X`-specific one (`Order` and `Bit.Order`, `Line` and `ASCII.Line`, `Vector` and `CPU.Vector`).
-- **Glue stays at the top.** An adapter over a platform framework (AppKit, AVFoundation) is a composition and holds no general logic; whatever in it is general moves down.
+- **Platform glue holds no general logic.** An adapter over a platform framework (AppKit, AVFoundation) is a target of its own in the package whose type it adapts, at whatever layer that package sits (I2). A library whose own model is the framework is a composition. Whatever in either is general moves down.
 - A same-layer edge must be an essential semantic prerequisite and push no higher-layer policy down. Glue behind a trait (I9) is the one optional same-layer edge.
 
 The test for any piece of code: what is this, stripped of the name its current home gave it? The answer picks the layer, the layer picks the repository, and everything above is rewritten to use it.
